@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "test": "task2_hybrid_single_pass_real_gpu_preflight",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 4090 D",
+    "shared_gpu": true,
+    "external_process": {
+      "pid": 80524,
+      "memory_mib_at_start": 3576
+    }
+  },
+  "configuration": {
+    "dataset": "task2_lerobotv3/train",
+    "real_samples": true,
+    "batch_per_gpu": 4,
+    "gradient_accumulation": 1,
+    "effective_batch": 4,
+    "cameras": 2,
+    "horizon": 50,
+    "parameters": 505620341,
+    "trainable_parameters": 505620341,
+    "all_parameters_require_grad": true,
+    "training_update_algorithm": "single_pass_batch_local",
+    "optimizer_steps_per_update": 1,
+    "scheduler_steps_per_update": 1
+  },
+  "steps": [
+    {
+      "step": 1,
+      "cuda_ms": 975.305908203125,
+      "wall_seconds": 0.9759437050088309,
+      "peak_allocated_gib": 5.759816646575928,
+      "peak_reserved_gib": 6.849609375,
+      "flow": 10.800750732421875,
+      "total": 10.82953929901123,
+      "gradient_norm_before_clip": 152.93312072753906,
+      "route_counts": [48, 23, 501, 0]
+    },
+    {
+      "step": 2,
+      "cuda_ms": 429.23284912109375,
+      "wall_seconds": 0.42938325100112706,
+      "peak_allocated_gib": 7.918078899383545,
+      "peak_reserved_gib": 8.603515625,
+      "flow": 12.446541786193848,
+      "total": 12.475091934204102,
+      "gradient_norm_before_clip": 160.71649169921875,
+      "route_counts": [50, 24, 498, 0]
+    },
+    {
+      "step": 3,
+      "cuda_ms": 338.22735595703125,
+      "wall_seconds": 0.3383669539762195,
+      "peak_allocated_gib": 7.925560474395752,
+      "peak_reserved_gib": 8.603515625,
+      "flow": 11.455362319946289,
+      "total": 11.48353385925293,
+      "gradient_norm_before_clip": 160.692138671875,
+      "route_counts": [52, 25, 495, 0]
+    }
+  ],
+  "steady_state": {
+    "definition": "mean of steps 2 and 3",
+    "cuda_ms_per_update": 383.7301025390625,
+    "wall_seconds_per_update": 0.3838751024886733,
+    "projected_20000_update_only_hours": 2.132639458270407,
+    "peak_allocated_gib": 7.925560474395752,
+    "peak_reserved_gib": 8.603515625
+  },
+  "gradient_observations": {
+    "nonfinite_gradient_tensors": 0,
+    "step_2_and_3_nonzero_among_present_gradient_tensors": "569/569",
+    "no_gradient_tensors": [
+      "model.vlm_with_expert.vlm.lm_head.weight",
+      "model.force_branch.refiner.experts.3.linear_in.weight",
+      "model.force_branch.refiner.experts.3.linear_in.bias",
+      "model.force_branch.refiner.experts.3.linear_out.weight",
+      "model.force_branch.refiner.experts.3.linear_out.bias"
+    ],
+    "interpretation": "lm_head is not used by the action loss; expert 3 received zero routes in this repeated fixed B4 fixture"
+  },
+  "checkpoint_written": false,
+  "robot_actions_sent": 0,
+  "detached_signature": null,
+  "approval": null
+}

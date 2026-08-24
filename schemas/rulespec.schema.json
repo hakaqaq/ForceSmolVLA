@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.forcesmolvla/schemas/rulespec-v4.1.schema.json",
+  "title": "ForceSmolVLA v4.1 RuleSpec artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_status",
+    "profile",
+    "rules",
+    "approval",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_status": {
+      "enum": ["development_only", "approved"]
+    },
+    "acceptance_status": {
+      "enum": ["development_only", "approved"]
+    },
+    "profile": {"const": "forcesmolvla-v4.1-available-sensor"},
+    "mode": {"enum": ["test_only", "development_only", "production"]},
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/rule"}
+    },
+    "approval": {"$ref": "#/$defs/approval"},
+    "signature": {"$ref": "#/$defs/signature"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"artifact_status": {"const": "approved"}},
+        "required": ["artifact_status"]
+      },
+      "then": {
+        "properties": {
+          "rules": {
+            "items": {
+              "properties": {
+                "threshold": {
+                  "properties": {
+                    "value": {"type": ["number", "integer", "boolean"]},
+                    "approval_status": {"const": "approved"}
+                  }
+                }
+              }
+            }
+          },
+          "approval": {
+            "properties": {"status": {"const": "approved"}}
+          },
+          "signature": {
+            "properties": {"status": {"const": "verified"}}
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "artifactHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "sha256"],
+      "properties": {
+        "artifact": {"type": "string", "minLength": 1},
+        "sha256": {
+          "anyOf": [
+            {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "threshold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "comparator",
+        "provenance",
+        "approval_status"
+      ],
+      "properties": {
+        "value": {"type": ["number", "integer", "boolean", "null"]},
+        "comparator": {
+          "enum": ["lt", "le", "gt", "ge", "eq", "all_true"]
+        },
+        "provenance": {"type": "string", "minLength": 1},
+        "approval_status": {
+          "enum": ["approval_pending", "approved"]
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "description",
+        "scope",
+        "inputs",
+        "input_artifacts",
+        "frame",
+        "unit",
+        "clock_domain",
+        "formula",
+        "formula_revision",
+        "window",
+        "sampling",
+        "aggregation",
+        "threshold",
+        "failure_code",
+        "severity",
+        "remediation",
+        "golden_fixture"
+      ],
+      "properties": {
+        "rule_id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+        "description": {"type": "string", "minLength": 1},
+        "scope": {"enum": ["sample", "tuple", "episode", "candidate", "run_aggregate"]},
+        "inputs": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "input_artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifactHash"}},
+        "frame": {"type": ["string", "null"]},
+        "unit": {"type": "string", "minLength": 1},
+        "clock_domain": {"type": "string", "minLength": 1},
+        "formula": {"type": "string", "minLength": 1},
+        "formula_revision": {"type": "string", "minLength": 1},
+        "window": {"type": "string", "minLength": 1},
+        "sampling": {"type": "string", "minLength": 1},
+        "aggregation": {"type": "string", "minLength": 1},
+        "threshold": {"$ref": "#/$defs/threshold"},
+        "failure_code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+        "severity": {"enum": ["exclude_sample", "exclude_tuple", "exclude_episode", "reject_candidate", "reject_run"]},
+        "remediation": {"type": "string", "minLength": 1},
+        "golden_fixture": {"$ref": "#/$defs/artifactHash"},
+        "parameters": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "approval_id", "approver_identity", "approver_role", "approved_at"],
+      "properties": {
+        "status": {"enum": ["approval_pending", "approved"]},
+        "approval_id": {"type": ["string", "null"]},
+        "approver_identity": {"type": ["string", "null"]},
+        "approver_role": {"type": ["string", "null"]},
+        "approved_at": {"type": ["string", "null"], "format": "date-time"}
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "format", "algorithm", "digest", "key_id", "signature_file"],
+      "properties": {
+        "status": {"enum": ["configuration_pending", "verified"]},
+        "format": {"type": ["string", "null"]},
+        "algorithm": {"type": ["string", "null"]},
+        "digest": {"type": ["string", "null"]},
+        "key_id": {"type": ["string", "null"]},
+        "signature_file": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

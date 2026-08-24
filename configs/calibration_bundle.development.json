@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_status": "development_only",
+  "calibration_id": "sha256:409c462adb03b249df605d6e964344ac9e5a30ee1a2653137774a257541cc37b",
+  "source_artifact": {
+    "path": "/home/rlc123/fr3_client_ws/datasets/calibrations/fr3_hexe_onrobot_robotiq_d405_20260814.json",
+    "sha256": "409c462adb03b249df605d6e964344ac9e5a30ee1a2653137774a257541cc37b",
+    "format_version": "fr3-hexe-calibration-v1"
+  },
+  "validated": true,
+  "sensor_bias6": [
+    0.3599995129877914,
+    -0.11406195726162782,
+    0.0014076209007569413,
+    0.021966629378423756,
+    -0.06956154713843489,
+    0.05169364651002663
+  ],
+  "wrench_sign6": [1, 1, 1, 1, 1, 1],
+  "downstream_mass_kg": 0.9913623868368147,
+  "downstream_com_sensor_m": [-0.008006372456408815, 0.0005728473818194663, 0.05495264507383149],
+  "gravity_base_m_s2": [0.0, 0.0, -9.80665],
+  "static_transform_tcp_sensor": {
+    "translation_m": [0.0, 0.0, -0.195],
+    "quaternion_xyzw": [0.0, 0.0, 0.7071067811865475, 0.7071067811865476],
+    "tool_profile_sha256": "2e293913950d933a7fe96985e43ab7cf5585fc9a6dca86237faca2dc8203c45a"
+  },
+  "frames": {
+    "base": "fr3_link0",
+    "tcp": "franka_desk_ee_tcp",
+    "sensor_measurement": "onrobot_fts_measurement_link"
+  },
+  "formal_ready": false
+}

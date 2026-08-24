@@ -1,0 +1,36 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "total_bytes": 911597417,
+  "base_checkpoint": {
+    "repo": "lerobot/smolvla_base",
+    "revision": "d5ef92b547b2bf36bdd50f18ea6ed6463cb5c5af",
+    "local_root": "assets/base_checkpoint",
+    "files": {
+      "config.json": {"bytes": 2037, "sha256": "971b1154cf562822319fc50b482d9b3234b5badb1dd3c553d6d0681ad8fbe47b"},
+      "model.safetensors": {"bytes": 906720008, "sha256": "8f8dc071d5b933e79edd2b73b8d6b5cca482ef0437c099ea3ec13ab978a38fc8"},
+      "train_config.json": {"bytes": 20967, "sha256": "b66ca306a88aa9c784df34a47a15fdcf4fea4431f90b4fa7c7f41a1f0d3b49a1"}
+    }
+  },
+  "constructor_assets": {
+    "repo": "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+    "revision": "7b375e1b73b11138ff12fe22c8f2822d8fe03467",
+    "local_root": "assets/smolvlm_constructor",
+    "files": {
+      "added_tokens.json": {"bytes": 4739, "sha256": "74135b8664b56088c0006f1c8e848d79a8eba003411f72ebf1dc2ee96227be3a"},
+      "chat_template.json": {"bytes": 430, "sha256": "b585e3598909a5687f9f9d738d35223724dedef256b9b274e1cbfb32b13c74bf"},
+      "config.json": {"bytes": 3767, "sha256": "ea6bc1237e96247f6258de3e202e2e62b93d6f386dc47e7b36b5588bf3a15e17"},
+      "merges.txt": {"bytes": 466391, "sha256": "0b54e8aa4e53d5383e2e4bc635a56b43f9647f7b13832d5d9ecd8f82dac4f510"},
+      "preprocessor_config.json": {"bytes": 599, "sha256": "149e315d9410368e5491455bb06e0f763426e9e56cca731c13b24404a29b6374"},
+      "processor_config.json": {"bytes": 67, "sha256": "f3ad45028447b3562b4752be0d5916d6806c1ef589091a469608dcf0faa1737c"},
+      "special_tokens_map.json": {"bytes": 868, "sha256": "2dfea2a426162316ff1567c82bc6d36d9690cd9f90455f075c77daca78b45c60"},
+      "tokenizer.json": {"bytes": 3548256, "sha256": "5ece781dc8d2b2f3e2f289ca0ae50b17cfc27dd27bfe7971bb8241e0b964331a"},
+      "tokenizer_config.json": {"bytes": 28626, "sha256": "dd9ce2ab89a3dd881bd9378f1a79b943a064b9275a7e1706d5b7b47b68977913"},
+      "vocab.json": {"bytes": 800662, "sha256": "82b84012e3add4d01d12ba14442026e49b8cbbaead1f79ecf3d919784f82dc79"}
+    }
+  },
+  "local_sha256_verification": "pass",
+  "offline_config_tokenizer_processor_reload": "pass",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

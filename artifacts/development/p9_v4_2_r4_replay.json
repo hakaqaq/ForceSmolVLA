@@ -1,0 +1,15 @@
+{
+  "acceptance_status": "development_only",
+  "actual_dispatch_sha256": "f1c757860c3a4f359bd718b26fcfb64b6dfcbe4fb154e1d379975fedc3acabe3",
+  "approval": null,
+  "detached_signature": null,
+  "formal_eligible": false,
+  "gate": "P9_replay",
+  "gate_status": "pass",
+  "production_shadow": false,
+  "record_count": 1,
+  "replay_exact": true,
+  "robot_actions_sent": 0,
+  "schema_version": "1.0",
+  "source_artifact_sha256": "553717d9b1649361c860c9881441aca72a4607ce2c7fefd5c9c231c760bf2473"
+}

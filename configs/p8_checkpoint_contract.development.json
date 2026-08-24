@@ -1,0 +1,112 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "artifact_type": "forcesmolvla_p8_checkpoint",
+  "model_variant": "force_token_moe",
+  "training_stage": "offline_full_finetune",
+  "gate_contract_version": "v4.2-b4x1-single-pass-exact-resume",
+  "training_update_algorithm": "single_pass_batch_local",
+  "p7_prerequisite": {
+    "training_recipe": {
+      "path": "configs/p7_training_recipe.development.yaml",
+      "sha256": "bdaba473fce1d132d2ab8d481a2a8056f32bf142a3159e222476c6db9fd1e9f4"
+    },
+    "source_binding": {
+      "path": "artifacts/development/p7_v4_2_r7_source_binding.json",
+      "sha256": "c276405aaed1f3a3f70dff344ac3cbd988037dc87ebf3d9d2db302834223760b"
+    },
+    "resolved_config": {
+      "path": "artifacts/development/p7_v4_2_r7_resolved_config.json",
+      "sha256": "6c510aabcb8cbdb3bd4ae3596dd455ba8ef117f310986f3a88ed83f828ac2026"
+    },
+    "gate_result": {
+      "path": "artifacts/development/p7_v4_2_r7_gpu_preflight.json",
+      "sha256": "120745433fd8e73b0e6427b0b8940daec5a365a900005978fc42c8d02cbbea5e"
+    },
+    "validation_fixture": {
+      "path": "artifacts/development/p7_v4_2_r7_fixed_fixture.json",
+      "sha256": "5589500e80dfc9b3a8607cc27aae7237f9672b10037c00029b151d33ca2def50"
+    },
+    "required_gate_status": "pass",
+    "required_acceptance_status": "development_only",
+    "required_formal_eligible": false
+  },
+  "load_paths": {
+    "base_initialization": "strict=false exactly once with force-key missing allowlist",
+    "force_checkpoint": "local directory only; local_files_only=true; strict=true"
+  },
+  "required_payloads": [
+    "config.json",
+    "model.safetensors",
+    "base_assets/smolvlm_constructor",
+    "trainability_manifest.json",
+    "manifests/normalizer_manifest.json",
+    "manifests/action_delta_spec.json",
+    "manifests/feature_mask_spec.json",
+    "manifests/processor_graph_manifest.json",
+    "manifests/visual_language_manifest.json",
+    "manifests/wrench_geometry_spec.development.json",
+    "manifests/force_quality_thresholds.development.yaml",
+    "manifests/wrench_filter_resample_spec.development.json",
+    "manifests/calibration_bundle.development.json",
+    "manifests/p7_training_recipe.development.yaml",
+    "manifests/p7_resolved_config.json",
+    "manifests/p7_source_binding.json",
+    "manifests/p7_gate_result.json",
+    "manifests/p7_validation_fixture.json",
+    "manifests/p8_source_binding.json",
+    "manifests/parity_acceptance.development.json",
+    "manifests/p8_force_parity_gpu_fp32.json",
+    "manifests/p8_force_parity_gpu_bf16.json",
+    "manifests/implementation_spec_v4_2.md",
+    "environment/requirements.lock",
+    "training_state/optimizer_state.safetensors",
+    "training_state/optimizer_param_groups.json",
+    "training_state/scheduler_state.json",
+    "training_state/rng_state.safetensors",
+    "training_state/scaler_state.json",
+    "training_state/sampler_state.json",
+    "training_state/accumulation_state.json",
+    "training_state/resume_contract.json",
+    "artifact_manifest.json"
+  ],
+  "resume_requires_exact": [
+    "training_stage",
+    "optimizer_state",
+    "scheduler_state",
+    "scaler_state",
+    "python_rng",
+    "numpy_rng",
+    "torch_cpu_rng",
+    "torch_cuda_rng",
+    "sampler_rng_and_cursor",
+    "accumulation_phase",
+    "batch_size_4_and_gradient_accumulation_1",
+    "source_binding_sha256",
+    "resolved_training_config_sha256",
+    "dataset_manifest_sha256",
+    "optimizer_groups"
+  ],
+  "cold_start": {
+    "empty_hf_cache": true,
+    "network_denied": true,
+    "hub_apis_denied": true,
+    "fixed_batch_size": 2,
+    "must_match": [
+      "PrefixContext",
+      "prefix_cache",
+      "velocity",
+      "normalized_delta7_chunk",
+      "absolute7_chunk",
+      "normalizer_call_count"
+    ]
+  },
+  "long_development_sft_unlock": "only_after_exact_resume_dry_run_and_force_full_parity",
+  "formal_behavior": "fail_closed_without approved manifest, trusted detached signature, approval and configured verifier",
+  "p8_phase_boundary": {
+    "shadow": "not_implemented_until_P9"
+  },
+  "detached_signature": null,
+  "approval": null
+}

@@ -1,0 +1,11 @@
+{
+  "fixture_id": "shadow-safety-schema-v1",
+  "status": "development_only",
+  "note": "Numerical boundary cases are intentionally pending experiment-lead thresholds.",
+  "structural_cases": [
+    {"id": "missing-required-input", "expected": "fail_closed"},
+    {"id": "nan-input", "expected": "fail_closed"},
+    {"id": "clock-domain-mismatch", "expected": "fail_closed"},
+    {"id": "artifact-hash-mismatch", "expected": "fail_closed"}
+  ]
+}

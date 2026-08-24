@@ -1,0 +1,17 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "physical_length": 177,
+  "spans": [
+    {"name": "camera1", "start": 0, "stop": 64, "segment_id": 0},
+    {"name": "camera2", "start": 64, "stop": 128, "segment_id": 1},
+    {"name": "language", "start": 128, "stop": 176, "segment_id": 2},
+    {"name": "state", "start": 176, "stop": 177, "segment_id": 3}
+  ],
+  "language_physical_slots": 48,
+  "language_valid_length_may_differ_by_batch_item": true,
+  "valid_length_must_not_crop_cache": true,
+  "source_sha256": "6d620161014f2422f47a4018e11bd35d4dca94e5a25190c7e61a85c92a83938a",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

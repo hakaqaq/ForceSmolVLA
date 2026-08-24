@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "config_id": "forcesmolvla-p8-parity-development-v1",
+  "mode": "development_only",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "production_allowed": false,
+  "operator_overrides_allowed": false,
+  "approval_status": "P8_development_only_approved",
+  "provenance": "Approved by the experiment owner on 2026-08-21 after observing fp32 max_abs=2.86102294921875e-6, bf16 prefix_hidden_max_abs=0.25, and bf16 velocity_cache_max_abs=0.06651902198791504. This approval permits a new P8 development gate run only and does not approve its future artifact or any formal threshold.",
+  "thresholds": {
+    "P8": {
+      "fp32": {
+        "atol": 1e-5,
+        "rtol": 0.0,
+        "approval_scope": "P8_development_only"
+      },
+      "bf16": {
+        "prefix_hidden_atol": 0.3,
+        "velocity_cache_atol": 0.1,
+        "rtol": 0.0,
+        "approval_scope": "P8_development_only"
+      },
+      "comparisons": {
+        "prefix_hidden": {
+          "applies_to": ["prefill_prefix_vs_full_prefix_valid_tokens"],
+          "dtype": "compared_after_float32_cast",
+          "direction": "max_abs(lhs-rhs) <= prefix_hidden_atol + rtol*prefix_reference_scale",
+          "observed_bf16_max_abs": 0.25
+        },
+        "velocity_cache": {
+          "applies_to": [
+            "cached_batch_vs_full_batch",
+            "cached_batch_vs_cached_single",
+            "full_batch_vs_full_single",
+            "cached_single_vs_full_single",
+            "cached_10_step_vs_uncached_10_step"
+          ],
+          "dtype": "compared_after_float32_cast",
+          "direction": "each max_abs(lhs-rhs) <= velocity_cache_atol + rtol*velocity_reference_scale",
+          "observed_bf16_max_abs": 0.06651902198791504
+        }
+      },
+      "structural_contracts_exact": [
+        "prefix_layout",
+        "prefix_mask",
+        "prefix_physical_length",
+        "invalid_suffix_velocity_zero",
+        "zero_init_force_shared_fp32_output_parity",
+        "state_padding_7d_25d_isolation",
+        "action_noise_padding_7d_25d_isolation",
+        "invalid_horizon_tail_isolation",
+        "cache_append_crop_restoration",
+        "cache_snapshot_unchanged",
+        "force_kv_once_per_10_step_chunk"
+      ]
+    }
+  },
+  "formal_thresholds": {
+    "P8": {
+      "fp32": {
+        "atol": null,
+        "rtol": null,
+        "approval_status": "unapproved"
+      },
+      "bf16": {
+        "prefix_hidden_atol": null,
+        "velocity_cache_atol": null,
+        "rtol": null,
+        "approval_status": "unapproved"
+      }
+    }
+  },
+  "detached_signature": null
+}

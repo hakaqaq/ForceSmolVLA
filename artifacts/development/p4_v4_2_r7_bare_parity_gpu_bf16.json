@@ -1,0 +1,132 @@
+{
+  "acceptance_status": "development_only",
+  "artifact_status": "development_only",
+  "base_loaded_tensors": 500,
+  "batch_size": 2,
+  "cache_unchanged_after_each_call": true,
+  "comparison_groups": {
+    "prefix_hidden": {
+      "applies_to": [
+        "prefill_prefix_vs_full_prefix_valid_tokens"
+      ],
+      "direction": "prefill_valid_prefix_hidden_vs_full_valid_prefix_hidden",
+      "dtype": "bf16",
+      "limit": 0.3,
+      "pass": true,
+      "reference_scale": 23.0
+    },
+    "velocity_cache": {
+      "applies_to": [
+        "cached_batch_vs_full_batch",
+        "cached_batch_vs_cached_single",
+        "full_batch_vs_full_single",
+        "cached_single_vs_full_single",
+        "cached_10_step_vs_uncached_10_step"
+      ],
+      "direction": "named_lhs_vs_named_rhs",
+      "dtype": "bf16",
+      "limit": 0.1,
+      "pass": true,
+      "reference_scale": 8.487934112548828
+    }
+  },
+  "debug_cache_comparison_hot_path": false,
+  "device": "cuda",
+  "force_variant": "smolvla_cartesian7d",
+  "formal_eligible": false,
+  "gate": "P4_bare_smolvla_parity",
+  "gate_status": "pass",
+  "language_valid_lengths": [
+    48,
+    17
+  ],
+  "max_abs_error": {
+    "cached_10_step_vs_uncached_10_step": 0.009806245565414429,
+    "cached_batch_vs_cached_single": 0.04501652717590332,
+    "cached_batch_vs_full_batch": 0.029414892196655273,
+    "cached_single_vs_full_single": 0.030823469161987305,
+    "full_batch_vs_full_single": 0.04691457748413086,
+    "invalid_velocity": 0.0,
+    "prefill_prefix_vs_full_prefix_valid_tokens": 0.25
+  },
+  "missing_keys": [],
+  "peak_cuda_memory": {
+    "allocated_bytes": 1309543936,
+    "reserved_bytes": 1409286144
+  },
+  "precision": "bf16",
+  "prefix_physical_lengths": [
+    177,
+    177
+  ],
+  "prefix_valid_lengths": [
+    177,
+    146
+  ],
+  "schema_version": "1.0",
+  "seed": 4107,
+  "source_binding": {
+    "acceptance_status": "development_only",
+    "approval": null,
+    "base_checkpoint_config_sha256": "971b1154cf562822319fc50b482d9b3234b5badb1dd3c553d6d0681ad8fbe47b",
+    "base_checkpoint_model_sha256": "8f8dc071d5b933e79edd2b73b8d6b5cca482ef0437c099ea3ec13ab978a38fc8",
+    "constructor_assets_tree_sha256": "9993a1cf660fc9d2a74cfe97bd42e3207f03d4c7de47fca4a1281ec992b124ed",
+    "detached_signature": null,
+    "formal_eligible": false,
+    "lerobot_commit": "30da8e687a6dfc617fcd94afc367ac7071c376ce",
+    "lerobot_dirty_worktree": false,
+    "lerobot_file_sha256": {
+      "src/lerobot/policies/smolvla/configuration_smolvla.py": "2fb637cb428fa2fdf1d114646dcffaf4728216bfe5b7039d5d0cac4857ffc4e0",
+      "src/lerobot/policies/smolvla/modeling_smolvla.py": "5daaa297954acf9ae89397b571322f07bf30798e72f566e61a09393342cb1f99",
+      "src/lerobot/policies/smolvla/smolvlm_with_expert.py": "f7542fa2bf904f9ef64d26843809f913a5e93c4dfa538dda06db0b288391ab4d"
+    },
+    "project_file_sha256": {
+      "ForceSmolVLA_Implementation_Spec_v4_2.md": "555811badc84b88087bcb9b246e7ff3bf1383d2700738f2493637f5ca648b787",
+      "configs/parity_acceptance.development.json": "fefe35a92bcbf22de67c7c7b43e9f97d2658afef41745182b2b8207f750592f4",
+      "src/forcesmolvla/acceptance.py": "d57eec75a7204c1e0ba7f4799ed6d183ea0334e325abdeb5e73818b92f9939b5",
+      "src/forcesmolvla/checkpoint.py": "234576b00aa157a1de57295ddcd87d9dfe3b5f490a66ed9ebb5809713acce6e2",
+      "src/forcesmolvla/configuration_forcesmolvla.py": "8cf600e1c4d508cd466c2ced9a59fca827ed3bf7d714b1694474bced20f9366b",
+      "src/forcesmolvla/force_token.py": "afe246fd1eed83d3fdf48eff67d9456c614cd9ae775d226cf5119aa2ca974d35",
+      "src/forcesmolvla/modeling_forcesmolvla.py": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610",
+      "src/forcesmolvla/prefix.py": "ca38b4dc940e0c36514d4891793c026ffec22a58c7eb96698d5f6675b62d4cc9",
+      "tools/preflight_p4_bare_parity.py": "1bb66e8cddfdf47062ce0a125ad35b3d909923b7629aa5625c845632c3d51eeb"
+    },
+    "schema_version": "1.0"
+  },
+  "source_binding_sha256": "dd205856db61de6ed5f0b5406a706ddc127ca7a928406a756645cede73f8fec5",
+  "status": "pass",
+  "structural_contracts_exact": {
+    "cache_append_crop_restoration": true,
+    "cache_snapshot_unchanged": true,
+    "invalid_suffix_velocity_zero": true,
+    "prefix_layout": true,
+    "prefix_mask": true,
+    "prefix_physical_length": true
+  },
+  "suffix_valid_lengths": [
+    50,
+    47
+  ],
+  "tolerance": {
+    "acceptance_config_sha256": "fefe35a92bcbf22de67c7c7b43e9f97d2658afef41745182b2b8207f750592f4",
+    "config_id": "forcesmolvla-parity-development-v2-p4-scoped-bf16",
+    "prefix_hidden_atol": 0.3,
+    "rtol": 0.0,
+    "source": "versioned_hash_bound_acceptance_config",
+    "velocity_cache_atol": 0.1
+  },
+  "topology": {
+    "add_image_special_tokens": false,
+    "attention_mode": "cross_attn",
+    "expert_width_multiplier": 0.75,
+    "num_expert_layers": 0,
+    "num_vlm_layers": 16,
+    "resize_imgs_with_padding": [
+      512,
+      512
+    ],
+    "self_attn_every_n_layers": 2,
+    "use_cache": true
+  },
+  "unexpected_keys": []
+}

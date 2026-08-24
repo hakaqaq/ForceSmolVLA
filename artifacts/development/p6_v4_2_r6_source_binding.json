@@ -1,0 +1,230 @@
+{
+  "base_assets": {
+    "base_checkpoint_files": {
+      "config.json": "971b1154cf562822319fc50b482d9b3234b5badb1dd3c553d6d0681ad8fbe47b",
+      "model.safetensors": "8f8dc071d5b933e79edd2b73b8d6b5cca482ef0437c099ea3ec13ab978a38fc8"
+    },
+    "constructor_tree_sha256": "9993a1cf660fc9d2a74cfe97bd42e3207f03d4c7de47fca4a1281ec992b124ed",
+    "smolvla_revision": "d5ef92b547b2bf36bdd50f18ea6ed6463cb5c5af"
+  },
+  "dataset": {
+    "manifest_files": {
+      "conversion_manifest.json": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477",
+      "normalizer_manifest.json": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
+      "split_manifest.json": "5e63e21d1daf47cfe51fe169497cc77f69bc42e7c919cce708cb2bb0de3dc8d7"
+    },
+    "repo_id": "local/task2_lerobotv3",
+    "split": "train",
+    "split_semantics": "episode_disjoint_within_session_development",
+    "storage_tree": {
+      "file_count": 51,
+      "files": {
+        "data/chunk-000/file-000.parquet": "e6b9272218cbb729082fd56830413bce4b55e3fad18dd0aeee94552d0b7bb847",
+        "data/chunk-000/file-001.parquet": "dfa308047b85ba4621dea8097ee34298a8acc0a82a2b623cc750b6fea2ea8023",
+        "data/chunk-000/file-002.parquet": "703c3200a21ec2cf8f6166a49f44c3f026ffee63ae52f2fb8ec4451a70d04164",
+        "data/chunk-000/file-003.parquet": "fdc30e3a264f9ff297f658a0952ed2d11e2f6ec790ad9201961e6d3d329513ee",
+        "data/chunk-000/file-004.parquet": "e6443af22950348a4d83fe691fb0ad3e55f1e606a80efe5da7db0f24d90ba654",
+        "data/chunk-000/file-005.parquet": "4f76de8176686570d888e71671898779ee7dc270c70262a22604f02a9c079bd6",
+        "data/chunk-000/file-006.parquet": "9b0bdeefb78fdc2e412b82cb472d82bc8f39a85b34cc00dbaa1b9eac92f7707a",
+        "data/chunk-000/file-007.parquet": "673239ae0b9cd0a91d9f73e27cfe5a0bd09119e96e19a8a57758c3c53f5795a0",
+        "data/chunk-000/file-008.parquet": "b15d0dde8524ec2378f7954b8a2faebbcf84229fc81ebcf0f442d89a9df1673b",
+        "data/chunk-000/file-009.parquet": "9a79e673604832e5097ee23ca1947774410c290f187a429ad3c27c9a1b3474b6",
+        "data/chunk-000/file-010.parquet": "c4c9ef9f5a4aae3572c187c6288bbed73448fc4e408449d2679c0b0dc95f4ec5",
+        "data/chunk-000/file-011.parquet": "871020a156665be00b8d9dd0f3a691dfe13639d4e603ece8a173df94af703975",
+        "data/chunk-000/file-012.parquet": "bf20a9939edbae9602875f58ba0f9ea4f3d19b9ddbc101a284155b1fcd0407ed",
+        "data/chunk-000/file-013.parquet": "0db152d35ef3189c5fa556e309bb36998c1d6d94fc9926e652007510e9a8a7b0",
+        "data/chunk-000/file-014.parquet": "3b355c082d91307c8e1c6874d5dff52f26c93f9c1ffcc2350753e08b8636daaa",
+        "data/chunk-000/file-015.parquet": "1678c4b3efffd433ccf5c42a00d043339267c6d19b2fd7717c6b774f4a672732",
+        "data/chunk-000/file-016.parquet": "1f1d072019ab0a369610ad73ce6b5d14e49502982cca85c6f0fec64142f3f6b3",
+        "data/chunk-000/file-017.parquet": "38b9ce1df454d9be4a153710239d78257adb1035fa88f44ed8737fa9068d1ce5",
+        "data/chunk-000/file-018.parquet": "90d73fc7b98cb2e099cf7c3b8642a9805318d91162995259c32ad0c7f9b018fd",
+        "data/chunk-000/file-019.parquet": "adfddc7cddf9510567e345dd23a406d4d7bfab25bbeae3cacb4650053ef55719",
+        "data/chunk-000/file-020.parquet": "498be0451962e5772e2ba0a1dd0b56ae7a5a08f5e7e0d1044cc71be78919313e",
+        "data/chunk-000/file-021.parquet": "41f6a8df0480fd299e14a6fd2c28b904d2f245e9f740f36623cb399877f0be60",
+        "data/chunk-000/file-022.parquet": "378953a9422b128eabbffbae9e0774c324d7c83a4e2689c3194c52ae45ab5331",
+        "data/chunk-000/file-023.parquet": "e5ceb89ec51b83ba89febe97c1fa5d1433ebbaabe036a9e234b9fc30dddb14c0",
+        "data/chunk-000/file-024.parquet": "e0920d4a90cbf8eab8cd46e32f60f77352167e4bda94146d1e86625339ac2dde",
+        "data/chunk-000/file-025.parquet": "8be1ab6e13d1c697674f964d517e60f66563463725108294aa55a2796d7a49d2",
+        "data/chunk-000/file-026.parquet": "c534fba0f5b0936dd29cffd594c27bd8583270864aed9edfa235ab717e2b5671",
+        "data/chunk-000/file-027.parquet": "f26a16920709a3fc5b547d77fdeafaf1988c33f3e5fc421616414bd287beabbf",
+        "data/chunk-000/file-028.parquet": "c5632f22e168f73b8398fe4426ee13022f68b5f0d987cecf0b1e08b07918607b",
+        "data/chunk-000/file-029.parquet": "f112fb9329bc53cf233704d46c1dac659a725f324ca7721f6c665e831f7e873e",
+        "data/chunk-000/file-030.parquet": "c3fb7d5a08da06fcdd6f90f2ac44c0d6f801431eb613e82d4534647752f8467c",
+        "data/chunk-000/file-031.parquet": "785c1e65ab3bf57e28b6f74698de62943aa9c6033e00361d15ed51c79b9b2ee6",
+        "data/chunk-000/file-032.parquet": "9785ad87b07fdde9e47ca25a5cdd0821d937582eddf7f4057050bcf8b654002a",
+        "data/chunk-000/file-033.parquet": "d590287c839af91ad5a7e99ae3bf8d2471c617e148f8e383153ea168961a3e43",
+        "data/chunk-000/file-034.parquet": "ebf912fd36079326de0a5d8a047983a1dd2d59e6812bbae86e89a78df631978b",
+        "data/chunk-000/file-035.parquet": "b03a57dcfa9d553800ec55a0d9452286e4a822f83cd62dcb9797defe5c384b7e",
+        "data/chunk-000/file-036.parquet": "0102f9c732d0357e93a138906de122d539018045404c2a271be4b1ad1005ffb9",
+        "data/chunk-000/file-037.parquet": "2989491b4a454af0def8640d0c8d63c99a3ee137c1176bb3b4b4803f01c5ec2c",
+        "data/chunk-000/file-038.parquet": "2f55e166342dfa8f60e545f0e95242c87d3cf35a93d9b58eeba9b9e2ffaeabe9",
+        "data/chunk-000/file-039.parquet": "07311991f3f1837abaad96e73e1013833b4665652745cf6136afd5f047ada5b1",
+        "data/chunk-000/file-040.parquet": "50dfca3ac50fbe02bd38cd1e863c1ec75e4ef2425b0382bd16f1f3af47a4c605",
+        "data/chunk-000/file-041.parquet": "bdcb1b78b5d38d823ebed41c859d8ad66a5f5f21cdd9f3fdfc492cab5a68d3f0",
+        "data/chunk-000/file-042.parquet": "471e9210ab9bab3bd594e58777eee5c70882c36094bf22526d7dfb2fce04dc38",
+        "data/chunk-000/file-043.parquet": "33476197260c2049de3f72906bb51bbac66aa98eef28876fc1e9ec684edf5cce",
+        "data/chunk-000/file-044.parquet": "686e470898c221423a43ab81388d51f3a88c110711228da593080831dd03354c",
+        "data/chunk-000/file-045.parquet": "3086334315c606630fbedb01dac8dab9a8bdd57a4f8c35ea333c78d1e948436d",
+        "data/chunk-000/file-046.parquet": "414dcbac8e8c5e1ca2e05c8cf65a3beb064dcf96551dc50687fac032d913ce42",
+        "meta/episodes/chunk-000/file-000.parquet": "2544f704f84ba5ea0e5b471c5c69fa10e4b1706c3861a5a45d6e87bed038cf5f",
+        "meta/info.json": "841a80224f4159fe4ee3bf308c99eecb4e8289faea3dac98eecab53cb6f4b5a8",
+        "meta/stats.json": "4229b29f0579a624f84516fe8d97bdd91de4ddec9bbf72e2cab50fbe494e7caa",
+        "meta/tasks.parquet": "5e021778313e3ba358b5558e5f0f4f38350801fd65df03713ac452bc9ac9562a"
+      },
+      "roots": [
+        "data",
+        "videos",
+        "meta"
+      ],
+      "tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+    }
+  },
+  "detached_signature": null,
+  "forcesmolvla_files": {
+    "ForceSmolVLA_Implementation_Spec_v4_2.md": "d1ac0078fbf5b665353417e4f8ba218d10105009990a6a68e5bc5699e2513c0f",
+    "artifacts/development/action_delta_spec.json": "3c0c512060b0f7c2c291d4b0ffb026fac8e396ff18c29fef7b0e8c3ca9958557",
+    "configs/calibration_bundle.development.json": "f041784b78e08f1359e27b8f841e6a61f687b59bce1b3db841ca4986937a53f6",
+    "configs/p5_force_token_dense_compute.development.json": "7ab3307874c4b27e723b27972b4fee2d80629ecd60da60a9e463b13d380d9405",
+    "configs/p6_dense_param_moe.development.json": "2d37d6746e745b90880a7204dff787448d2f8e05493045002340c2e03d716587",
+    "configs/parity_acceptance.development.json": "fefe35a92bcbf22de67c7c7b43e9f97d2658afef41745182b2b8207f750592f4",
+    "configs/training_stage.development.json": "5449bfe36634a9c32ba5b03a5dbf16847f9660085cb0cba2ed973daf55a1edc5",
+    "configs/wrench_geometry_spec.development.json": "5986fbf60ea7c7ddc9ec7bd9b90c9c37ec20749a679cab5a6c23827b9a2599de",
+    "src/forcesmolvla/__init__.py": "dfe49aa09019557347217262aa5098e01eb6313a6a51b6423380e527f21baa05",
+    "src/forcesmolvla/acceptance.py": "d57eec75a7204c1e0ba7f4799ed6d183ea0334e325abdeb5e73818b92f9939b5",
+    "src/forcesmolvla/action_delta.py": "2de899db6136d2462bb4d93e25472248d35f2be252a82d3abddd68afaaff90d5",
+    "src/forcesmolvla/checkpoint.py": "234576b00aa157a1de57295ddcd87d9dfe3b5f490a66ed9ebb5809713acce6e2",
+    "src/forcesmolvla/configuration_forcesmolvla.py": "8cf600e1c4d508cd466c2ced9a59fca827ed3bf7d714b1694474bced20f9366b",
+    "src/forcesmolvla/context.py": "d5a729808b0dd1b8fa9b662a44a2d27d005a52bbcab63dee96ab255f1c4fd027",
+    "src/forcesmolvla/conversion_gate.py": "02f2b47b9800a284b4d679b0a33256533d7acac2e54b5401b4569057bf8cbc0c",
+    "src/forcesmolvla/dataset_v3.py": "2e0e40ed48a3e9849554f25a3b88a0bae2d701ed3a522d37d967a710b7293cfc",
+    "src/forcesmolvla/force_token.py": "afe246fd1eed83d3fdf48eff67d9456c614cd9ae775d226cf5119aa2ca974d35",
+    "src/forcesmolvla/geometry.py": "c0c74c943099ee66a0b33f5119586ec602e0830aa3010a5cb470f2681d3d4429",
+    "src/forcesmolvla/inference.py": "b26166ea8fde078f6780f37d9a282bf0ef2fc4ca21e440191a536efa36c6c483",
+    "src/forcesmolvla/masks.py": "9266b4d30e3fc4828b7d9c5d5e2ae448930f2aff4c9c72a30eb816e3848e3031",
+    "src/forcesmolvla/modeling_forcesmolvla.py": "1d88f664dc93b285b2b9637f2fcca62c7b4143415832f5a48904d5c270a7db2e",
+    "src/forcesmolvla/normalizer.py": "df4faa89a6c580b30b12d1496df4b76be68d2b1329cbcaa63adc77fac0100525",
+    "src/forcesmolvla/prefix.py": "ca38b4dc940e0c36514d4891793c026ffec22a58c7eb96698d5f6675b62d4cc9",
+    "src/forcesmolvla/raw_to_lerobot_v3.py": "49ac92461c49a4c6cf8dac242095ceeff2e47225c3c045174e229cd5ca71807e",
+    "src/forcesmolvla/router_training.py": "f14ef41e8264992cd7d5990043bbcf32cc7ff4fc8126798c7063e02349b4a8cb",
+    "src/forcesmolvla/rules.py": "1efae1bbc26a49e45e7a0773bf52260430e1c405fbf88c7d345253f1ab9fd9f5",
+    "src/forcesmolvla/shadow.py": "76c6cdeb66eb4740c93ac83326e70e61ff92cfbe6a23bae8d2e2cd3a2221a75f",
+    "src/forcesmolvla/split.py": "b0be78347ac8a4ca04a464414da90f309ce2dadba410396d92f8ae5916c3968c",
+    "src/forcesmolvla/temporal.py": "ea6fd6baed9178d2ea2dd345b2b08bf5ec558c0c77dfe33f0ddd22b2a656132f",
+    "src/forcesmolvla/training_data.py": "388ce254bfb3adb0fd80b1e7bfa9e2734e786fc56549bf1fc157ca15ada0c8d4",
+    "tools/build_p5_source_binding.py": "9fdef60ac9a3f73dc2bce3a5778d5a2e4ec6e38eea38d87866b2397ba26c55a5",
+    "tools/build_p6_source_binding.py": "5d287eb20619dbe1fbe413ac8fb6e2f42d1e941633c5112691b715463b0934c2",
+    "tools/preflight_p4_bare_parity.py": "1bb66e8cddfdf47062ce0a125ad35b3d909923b7629aa5625c845632c3d51eeb",
+    "tools/preflight_p5_dense_compute_gpu.py": "d96ea882bd37fe1710148a1fd4fba8044c78190f8de294ebcefce7137dc6c619",
+    "tools/preflight_p6_variants_gpu.py": "d4d07ab20021d5721192483151d76730857113a635991d315616d61360e27d4d"
+  },
+  "formal_eligible": false,
+  "lerobot": {
+    "commit": "30da8e687a6dfc617fcd94afc367ac7071c376ce",
+    "dirty_worktree": false,
+    "files": {
+      "pyproject.toml": "bf2140842c4568ac77cb99f97bbe092def5fa8cb30d011a19a0d0077764ce80a",
+      "src/lerobot/policies/pretrained.py": "39e30b8ff6216d71c59a1a798b5693cbb356659d9fc23597d83232c76eaf0e36",
+      "src/lerobot/policies/smolvla/configuration_smolvla.py": "2fb637cb428fa2fdf1d114646dcffaf4728216bfe5b7039d5d0cac4857ffc4e0",
+      "src/lerobot/policies/smolvla/modeling_smolvla.py": "5daaa297954acf9ae89397b571322f07bf30798e72f566e61a09393342cb1f99",
+      "src/lerobot/policies/smolvla/smolvlm_with_expert.py": "f7542fa2bf904f9ef64d26843809f913a5e93c4dfa538dda06db0b288391ab4d"
+    },
+    "repository": "https://github.com/huggingface/lerobot.git",
+    "tag": "v0.6.0"
+  },
+  "p5_prerequisite": {
+    "gate_result": {
+      "path": "artifacts/development/p5_v4_2_r6_gpu_preflight.json",
+      "sha256": "1c6c5d7345b3aa59e3e7f3e96050a992f5c176d9f828c7e4dea9759412726afe"
+    },
+    "required_acceptance_status": "development_only",
+    "required_formal_eligible": false,
+    "required_gate_status": "pass",
+    "resolved_config": {
+      "path": "artifacts/development/p5_v4_2_r6_resolved_config.json",
+      "sha256": "ade54b84e2a99efc10061b428394318af376b6cb2b666a4b971e33d0767bbd35"
+    },
+    "source_binding": {
+      "path": "artifacts/development/p5_v4_2_r6_source_binding.json",
+      "sha256": "d9efa8adc19fd3247bacccc80a2574e91aebef7bcd26403c25d24ee1030446f0"
+    },
+    "static_spec": {
+      "path": "configs/p5_force_token_dense_compute.development.json",
+      "sha256": "7ab3307874c4b27e723b27972b4fee2d80629ecd60da60a9e463b13d380d9405"
+    }
+  },
+  "runtime_imports": {
+    "forcesmolvla": "/home/rlc123/ForceSmolVLA/src/forcesmolvla/__init__.py",
+    "lerobot": "/home/rlc123/ForceSmolVLA/vendor/lerobot/src/lerobot/__init__.py"
+  },
+  "schema_version": "1.0",
+  "signature_status": "development_only_untrusted",
+  "stage": "P6",
+  "status": "development_only",
+  "test_evidence": {
+    "format": "junit_xml",
+    "report": {
+      "path": "artifacts/development/p6_v4_2_r6_pytest_pass2.xml",
+      "sha256": "503ae8d7042019516ccf413d7ce3bdc873cb369df31a61f7de59a19d0956ee56"
+    },
+    "selection": {
+      "excluded_downstream_prefixes": [
+        "test_p7_",
+        "test_p8_",
+        "test_p9_"
+      ],
+      "included_files": [
+        "tests/test_acceptance.py",
+        "tests/test_action_delta_and_masks.py",
+        "tests/test_architecture_positioning.py",
+        "tests/test_cartesian7d_flow_contract.py",
+        "tests/test_chunk_context.py",
+        "tests/test_conversion_gate.py",
+        "tests/test_force_config.py",
+        "tests/test_force_token_dense_compute.py",
+        "tests/test_geometry.py",
+        "tests/test_inference.py",
+        "tests/test_lerobot_v3_smoke.py",
+        "tests/test_normalizer_ownership.py",
+        "tests/test_p1_artifacts.py",
+        "tests/test_p5_gate_contract.py",
+        "tests/test_p6_dense_param_moe.py",
+        "tests/test_p6_gate_contract.py",
+        "tests/test_policy_action_api.py",
+        "tests/test_prefix_contract.py",
+        "tests/test_raw_to_lerobot_v3.py",
+        "tests/test_rulespec.py",
+        "tests/test_split_normalizer.py",
+        "tests/test_temporal.py",
+        "tests/test_training_data.py",
+        "tests/test_training_stage.py"
+      ],
+      "stage": "P6_and_upstream"
+    },
+    "test_files": {
+      "tests/test_acceptance.py": "1322b1d33148d7de9c1fc1f1943f50d5ec37fbdeb21ba2dab83a8db3ed92b633",
+      "tests/test_action_delta_and_masks.py": "1ef8763c57b5c68d2816fc5b531a7641304443df10a12a9fce5b9bd2acb4bcb0",
+      "tests/test_architecture_positioning.py": "aacad3d6fdc2017fe7ec65dbb8484251d390a66e94a1c35b3e2ffefe89fa9037",
+      "tests/test_cartesian7d_flow_contract.py": "a4514cf9cc773d757493be2d28074a6d0ac75836e83015c9daf70f275f21be6c",
+      "tests/test_chunk_context.py": "86c99a4421276917293125331f7696c67d4184c2516f987263b05eebdd693e5d",
+      "tests/test_conversion_gate.py": "43bc3f1512cb918365f3650e953ce217fdce0e026cd8b4b28c791043e861f387",
+      "tests/test_force_config.py": "24e4c236f392fb08f158b675986f965f3103f219776be7044ec63048d90e7bd6",
+      "tests/test_force_token_dense_compute.py": "5fad5ee9c753ffacb514d20b5b8cafd2b0d3e876442c1e02c59c1d9e4806f20e",
+      "tests/test_geometry.py": "1581398977cdb88ed14c65d29aaec7ff835a6ce71188d1fa8ddc6ef30d32263c",
+      "tests/test_inference.py": "6cb42689bddd81dd1ce50658a226ea66a529b21f291fd626220e6542083f8502",
+      "tests/test_lerobot_v3_smoke.py": "3d12be4854e8b6bfc081799eadda89ce632021395e04a4ff42b473cbc1c7f6a9",
+      "tests/test_normalizer_ownership.py": "1b1ba56c87099408178c89cbd316e7c83313319134c59151367ae3fbe6c11b1b",
+      "tests/test_p1_artifacts.py": "bc596984a2dc74d45a11c7926be40ae4ef55a280a50a5da0c18382fbe71ff627",
+      "tests/test_p5_gate_contract.py": "da71a4a5459ce5cf9faafd47d96377a67d4a3c691d02e1d663744be186b78210",
+      "tests/test_p6_dense_param_moe.py": "eb0b873b5362ab2ed16c1aaaf29e129a9f6dbe27ea2154aee84ca5f5ca0a9e7f",
+      "tests/test_p6_gate_contract.py": "bce6946efbff13e11f5c1526efea10fa24d8a027778116fa5a0454a00e5bc541",
+      "tests/test_policy_action_api.py": "35cf06f9c6f1798b59513d2d61e57303c7631b3fa1697e478baa3a4e82e47082",
+      "tests/test_prefix_contract.py": "2b3fec9b4457226c15c767fac04efd9175bb8eac021621c48c3b3fd9b5f67c63",
+      "tests/test_raw_to_lerobot_v3.py": "8af3ca721f1df7b0aecfd96ea4cef71f6b117ffe6221f9418a9dc3b9c870769c",
+      "tests/test_rulespec.py": "f14822badcca361121dfb5919db5afa105cd929e065ffb75de2a621490fb595a",
+      "tests/test_split_normalizer.py": "bcd893b97b5eece58826eb6b3d42750e4026469da98938e5f1c1cf2771847675",
+      "tests/test_temporal.py": "56020119bb0ed5413ad3654d19f7901642ea202597a0f881dd4e133c46adfbfe",
+      "tests/test_training_data.py": "0060bf9c0309a449f39080e1db300c27e43a4dd4591befb06cda2dd6c75bb285",
+      "tests/test_training_stage.py": "7e43a8b364fe4abe8f335c51dbef958c2ca1cf100a22f57ae8294f54421ab887"
+    }
+  }
+}

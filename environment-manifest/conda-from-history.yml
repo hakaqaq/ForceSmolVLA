@@ -1,0 +1,9 @@
+name: forcesmolvla
+channels:
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free/
+  - defaults
+dependencies:
+  - pip
+  - python=3.12
+prefix: /home/rlc123/anaconda3/envs/forcesmolvla

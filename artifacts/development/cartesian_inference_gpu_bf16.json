@@ -1,0 +1,21 @@
+{
+  "artifact_status": "development_only",
+  "base_loaded_tensors": 500,
+  "consumed_context_error": "CHUNK_CONTEXT_ALREADY_CONSUMED: ['chunk0', 'chunk1']",
+  "deterministic_reset_replay_max_abs": 0.0,
+  "device": "cuda",
+  "invalid_tail_max_abs": 0.0,
+  "missing_keys": [],
+  "output_float32_sha256": "c10785daff9779a3ad4148cc47cbe383e9c594fb4c51094af099f38974e8b8b2",
+  "output_shape": [
+    2,
+    50,
+    7
+  ],
+  "reset_context_error": "CHUNK_CONTEXT_INVALIDATED_BY_RESET",
+  "robot_actions_sent": 0,
+  "select_action_error": "SELECT_ACTION_FORBIDDEN_READ_ONLY_OFFLINE_PROJECT",
+  "status": "pass",
+  "unexpected_keys": []
+}
+

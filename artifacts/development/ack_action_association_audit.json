@@ -1,0 +1,32 @@
+{
+  "accepted_acknowledgements": 13842,
+  "association_candidate": "for each accepted reference_ack, select latest accepted_reference.accepted_receive_monotonic_ns <= reference_ack.receive_monotonic_ns; require accepted pose equality, take pose and target_gripper_width_m from that record",
+  "future_reference_associations": 0,
+  "position_error_m": {
+    "count": 13842,
+    "max": 0.0,
+    "min": 0.0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "p99": 0.0
+  },
+  "quaternion_geodesic_error_rad": {
+    "count": 13842,
+    "max": 4.2146848510894035e-08,
+    "min": 0.0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "p99": 2.9802322387695312e-08
+  },
+  "reference_minus_ack_ms": {
+    "count": 13842,
+    "max": -0.035271,
+    "min": -0.417518,
+    "p50": -0.113847,
+    "p95": -0.08892115000000002,
+    "p99": -0.04441673999999997
+  },
+  "rejected_acknowledgements": 0,
+  "status": "development_only_measurement"
+}
+

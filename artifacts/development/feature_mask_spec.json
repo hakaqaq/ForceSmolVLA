@@ -1,0 +1,30 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "state": {
+    "active_dim": 7,
+    "maximum_dim": 32,
+    "mask_shape": ["B", 32],
+    "padding_value": 0
+  },
+  "action": {
+    "active_dim": 7,
+    "maximum_dim": 32,
+    "horizon": 50,
+    "action_valid_mask_shape": ["B", 50],
+    "action_feature_mask_shape": ["B", 50, 32],
+    "flow_valid_mask": "action_feature_mask",
+    "suffix_valid_mask": "action_valid_mask",
+    "padding_value": 0
+  },
+  "invariants": [
+    "noise is zero outside active valid features",
+    "flow interpolation and target are zero outside active valid features",
+    "invalid suffix embeddings, queries, outputs and velocities are zero",
+    "loss denominator is the global valid feature-token count"
+  ],
+  "numpy_mask_source_sha256": "9266b4d30e3fc4828b7d9c5d5e2ae448930f2aff4c9c72a30eb816e3848e3031",
+  "torch_flow_source_sha256": "0682f15ee152dd2328cb2e4529267479bf325f44269df06eaad2942302206364",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

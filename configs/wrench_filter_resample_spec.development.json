@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_status": "development_only",
+  "profile": "forcesmolvla-v4.1-available-sensor",
+  "input": {
+    "stream": "wrench_notch_sensor",
+    "clock": "ros_source_timestamp_ns",
+    "observed_nominal_rate_hz": 500,
+    "rate_status": "measured_per_episode_required"
+  },
+  "filter_candidate": {
+    "candidate_status": "approval_pending",
+    "family": "butterworth_sos_causal",
+    "order": 4,
+    "cutoff_hz": 8.0,
+    "library": "scipy",
+    "library_version": "1.16.3",
+    "coefficient_sample_rate_hz": 500.0,
+    "sos_coefficients": [
+      [5.6165622863812905e-06, 1.1233124572762581e-05, 5.6165622863812905e-06, 1.0, -1.8210503582611859, 0.8302914688064609],
+      [1.0, 2.0, 1.0, 1.0, -1.9163030327246362, 0.9260275129309734]
+    ],
+    "irregular_timestamp_policy": "apply fixed-500Hz SOS once per valid source-ordered sample; no timing regularization/interpolation; exclude episode if a source gap exceeds approved max_source_gap_ms",
+    "max_source_gap_ms_candidate": 9.0,
+    "initialization": "first-valid steady-state",
+    "reset": "every episode",
+    "warmup_samples": 250,
+    "warmup_disposition": "invalid"
+  },
+  "resampler": {
+    "output_rate_hz": 30,
+    "method": "causal_zoh_latest_filtered_sample",
+    "predicate": "t_filter_output <= t_ref",
+    "future_interpolation": "forbidden"
+  },
+  "formal_ready": false,
+  "unresolved_fields": [
+    "experiment_lead_approval_of_filter_candidate",
+    "detached_signature_fields"
+  ]
+}

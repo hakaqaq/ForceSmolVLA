@@ -1,0 +1,69 @@
+{
+  "acceptance_status": "development_only",
+  "approval": null,
+  "cpu_fallback_used": false,
+  "detached_signature": null,
+  "formal_blockers": [
+    "production sensor->controller and GPU->controller clock map absent",
+    "shadow safety thresholds remain unapproved/null outside tests/fixtures",
+    "trusted detached signature algorithm/key/approver unresolved",
+    "task1 result is within-session algorithmic development replay only"
+  ],
+  "formal_eligible": false,
+  "gate": "P9",
+  "gate_status": "pass",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "total_memory_bytes": 25257967616
+  },
+  "inference": {
+    "batch_size": 2,
+    "camera_count": 2,
+    "cuda_ms": 411.5150451660156,
+    "execution_horizon": 3,
+    "horizon": 50,
+    "peak_memory": {
+      "allocated_bytes": 1552972288,
+      "reserved_bytes": 1677721600
+    },
+    "recorded_candidates": 1,
+    "wall_seconds": 0.411540702014463
+  },
+  "native_queue_used": false,
+  "p8_checkpoint_payload_count": 78,
+  "production_fail_closed": {
+    "missing_clock_map_candidate_valid": false,
+    "missing_clock_map_reasons": [
+      "SHADOW_RULESPEC_FAIL_CLOSED:PermissionError:formal mode requires an approved RuleSpec",
+      "SHADOW_CLOCK_MAP_MISSING"
+    ],
+    "stale_or_mismatched_clock_behavior": "covered by tests; candidate_valid=false",
+    "test_only_asset_reasons": [
+      "SHADOW_RULESPEC_FAIL_CLOSED:PermissionError:formal mode requires an approved RuleSpec",
+      "PRODUCTION_CLOCK_MAP_SIGNATURE_OR_APPROVAL_MISSING"
+    ],
+    "test_only_assets_accepted": false
+  },
+  "production_shadow": false,
+  "records_file_sha256": "416365e38dcb5a4e22a04e4366577e6db7024e068ff174c173cdae102f3ad7d9",
+  "replay_file_sha256": "c6b743cb2a2b329a3869213cafa2e1f1eb2c1b5df52cac4bf7121dda722899c1",
+  "resolved_config_sha256": "77dfb12e9073f8a8859eb55953ca3385aa6ae5efa419effa979c557db123623a",
+  "robot_actions_sent": 0,
+  "ros_connected": false,
+  "rtc_configured": false,
+  "schema_version": "1.0",
+  "shadow_status": "algorithmic_development_replay",
+  "source_binding_sha256": "403fffc0361895bc2c2945144106558503e9a6ce43d03fa42cf0e9bc0ab668e8",
+  "task1_record": {
+    "actual_dispatched_indices": [],
+    "candidate_reasons": [
+      "SHADOW_END_TO_APPLY_EXCEEDED"
+    ],
+    "candidate_valid": false,
+    "dataset": "/home/rlc123/ForceSmolVLA/datasets/task1_forcesmolvla_v4_1",
+    "episode_index": 4,
+    "frame_index": 0,
+    "record_artifact_sha256": "98d783a3d9208dc3a9c995eb1e481708bf01d01bc879a2260216eecafd9e8009",
+    "replay_exact": true
+  }
+}

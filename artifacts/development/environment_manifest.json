@@ -1,0 +1,40 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "environment_name": "forcesmolvla",
+  "environment_path": "/home/rlc123/anaconda3/envs/forcesmolvla",
+  "base_environment_modified": false,
+  "python": "3.12.13",
+  "conda": "25.11.0",
+  "packages": {
+    "lerobot": "0.6.0 editable @ 30da8e687a6dfc617fcd94afc367ac7071c376ce",
+    "torch": "2.11.0+cu128",
+    "torchvision": "0.26.0+cu128",
+    "cuda_runtime": "12.8",
+    "transformers": "5.5.4",
+    "datasets": "4.8.5",
+    "numpy": "2.2.6",
+    "scipy": "1.16.3",
+    "fsspec": "2026.2.0",
+    "safetensors": "0.8.0"
+  },
+  "gpu": {
+    "model": "NVIDIA GeForce RTX 4090 D",
+    "driver": "570.211.01",
+    "memory_mib": 24564,
+    "bf16_matrix_smoke": "pass"
+  },
+  "isolation": {
+    "unset_pythonpath_required": true,
+    "reason": "prevent ROS Python 3.10 pytest/plugin contamination",
+    "pip_check": "pass"
+  },
+  "locks": {
+    "conda-explicit.txt": "cc4f9d9323576f3340f1a03bf746047ffa3f199b83c1f335afed1769060ca292",
+    "conda-from-history.yml": "04500f428919accd2c7817d19d79912e528831142800ba138204179181aab9dd",
+    "pip-freeze.txt": "1ff407f46b6e20c3b88dc3b228e6f51ef7e7f08a979bea58b686a15409f83532",
+    "requirements.lock": "5b95fa25264637c9e114b9137015f0f7cf43b866b88d212e3d16b80b823cbd25"
+  },
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

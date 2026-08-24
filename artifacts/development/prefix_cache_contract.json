@@ -1,0 +1,43 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "prefill": {
+    "use_cache": true,
+    "fill_kv_cache": true,
+    "physical_length": 177
+  },
+  "training_full_forward": {
+    "use_cache": false,
+    "fill_kv_cache": false
+  },
+  "cached_denoise": {
+    "use_cache": true,
+    "fill_kv_cache": false,
+    "prefix_to_suffix_mask": "suffix_valid_mask[:,:,None] & prefix_valid_mask[:,None,:]",
+    "suffix_position_offset": "sum(prefix_valid_mask)",
+    "cache_postcondition": "key/value shape, physical length and content equal prefill snapshot"
+  },
+  "parity_measurements": {
+    "gpu_bf16": {
+      "artifact": "artifacts/development/prefix_parity_gpu_bf16.json",
+      "sha256": "3324a5d57228c6c9870369dfd4b1462da32f47d8537d645207ee40ed9ffffea9",
+      "cached_vs_full_max_abs_error": 0.03125,
+      "batch_vs_single_max_abs_error": 0.0625,
+      "reference_max_abs_velocity": 8.5
+    },
+    "gpu_fp32": {
+      "artifact": "artifacts/development/prefix_parity_gpu_fp32.json",
+      "sha256": "72d84b332c5969fdab28ee37f35d0d947ca8135421167bbf08bb602a7fa28ff8",
+      "cached_vs_full_max_abs_error": 0.0000029206275939941406,
+      "batch_vs_single_max_abs_error": 0.0000030994415283203125,
+      "reference_max_abs_velocity": 8.502609252929688
+    }
+  },
+  "invalid_velocity_max_abs": 0.0,
+  "cache_unchanged": true,
+  "tolerance": null,
+  "tolerance_status": "approval_pending",
+  "source_sha256": "0682f15ee152dd2328cb2e4529267479bf325f44269df06eaad2942302206364",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

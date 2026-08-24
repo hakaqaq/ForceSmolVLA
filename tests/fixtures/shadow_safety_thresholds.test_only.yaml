@@ -1,0 +1,127 @@
+schema_version: 1.0.0
+artifact_status: development_only
+acceptance_status: development_only
+profile: forcesmolvla-v4.1-available-sensor
+mode: test_only
+rules:
+  - rule_id: SS_WORKSPACE
+    description: Test-only Cartesian workspace structure.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: m
+    clock_domain: test_controller_monotonic_ns
+    formula: all(min_xyz_m <= xyz <= max_xyz_m)
+    formula_revision: p9-test-only-v1
+    window: full candidate chunk
+    sampling: every candidate action
+    aggregation: all_true
+    threshold: {value: true, comparator: all_true, provenance: synthetic test only, approval_status: approval_pending}
+    parameters: {min_xyz_m: [-10.0, -10.0, -10.0], max_xyz_m: [10.0, 10.0, 10.0]}
+    failure_code: SHADOW_WORKSPACE_INVALID
+    severity: reject_candidate
+    remediation: test-only reject
+    golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}
+  - rule_id: SS_ORIENTATION
+    description: Test-only RPY limits including the frozen two-degree singularity exclusion.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: rad
+    clock_domain: test_controller_monotonic_ns
+    formula: bounds and abs(abs(pitch)-pi/2)>=gimbal_margin_rad
+    formula_revision: p9-test-only-v1
+    window: full candidate chunk
+    sampling: every candidate action
+    aggregation: all_true
+    threshold: {value: true, comparator: all_true, provenance: synthetic test only, approval_status: approval_pending}
+    parameters: {min_rpy_rad: [-3.141592654, -3.141592654, -3.141592654], max_rpy_rad: [3.141592654, 3.141592654, 3.141592654], gimbal_margin_rad: 0.034906585}
+    failure_code: SHADOW_ORIENTATION_INVALID
+    severity: reject_candidate
+    remediation: test-only reject
+    golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}
+  - rule_id: SS_DELTA_XYZ
+    description: Test-only adjacent translation bound.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: m
+    clock_domain: test_controller_monotonic_ns
+    formula: max norm adjacent xyz
+    formula_revision: p9-test-only-v1
+    window: full candidate chunk
+    sampling: adjacent actions
+    aggregation: maximum
+    threshold: {value: 100.0, comparator: le, provenance: synthetic test only, approval_status: approval_pending}
+    failure_code: SHADOW_DELTA_XYZ_EXCEEDED
+    severity: reject_candidate
+    remediation: test-only reject
+    golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}
+  - rule_id: SS_DELTA_ROT_GEODESIC
+    description: Test-only adjacent SO3 bound.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: rad
+    clock_domain: test_controller_monotonic_ns
+    formula: max SO3 geodesic
+    formula_revision: p9-test-only-v1
+    window: full candidate chunk
+    sampling: adjacent actions
+    aggregation: maximum
+    threshold: {value: 3.141592654, comparator: le, provenance: synthetic test only, approval_status: approval_pending}
+    failure_code: SHADOW_DELTA_ROT_EXCEEDED
+    severity: reject_candidate
+    remediation: test-only reject
+    golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}
+  - rule_id: SS_GRIPPER_RANGE_RATE
+    description: Test-only gripper range and rate.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: null
+    unit: m_and_m_per_s
+    clock_domain: test_controller_monotonic_ns
+    formula: range and adjacent rate
+    formula_revision: p9-test-only-v1
+    window: full candidate chunk
+    sampling: every action
+    aggregation: all_true
+    threshold: {value: true, comparator: all_true, provenance: synthetic test only, approval_status: approval_pending}
+    parameters: {min_value: 0.0, max_value: 0.1, max_rate_per_s: 1000.0}
+    failure_code: SHADOW_GRIPPER_INVALID
+    severity: reject_candidate
+    remediation: test-only reject
+    golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}
+  - rule_id: SS_CONTINUITY
+    description: Test-only continuity with held target.
+    scope: candidate
+    inputs: [candidate_chunk, previous_plan]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: mixed
+    clock_domain: test_controller_monotonic_ns
+    formula: xyz SO3 and gripper bounds
+    formula_revision: p9-test-only-v1
+    window: plan boundary
+    sampling: held target and candidate target zero
+    aggregation: all_true
+    threshold: {value: true, comparator: all_true, provenance: synthetic test only, approval_status: approval_pending}
+    parameters: {max_xyz_m: 100.0, max_rotation_rad: 3.141592654, max_gripper_delta: 100.0}
+    failure_code: SHADOW_CONTINUITY_INVALID
+    severity: reject_candidate
+    remediation: test-only reject
+    golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}
+  - {rule_id: SS_OBSERVATION_AGE, description: Test-only observation age, scope: candidate, inputs: [t_ref, observation_timestamps], input_artifacts: [], frame: null, unit: ms, clock_domain: test_controller_monotonic_ns, formula: max age, formula_revision: p9-test-only-v1, window: one candidate, sampling: all modalities, aggregation: maximum, threshold: {value: 100.0, comparator: le, provenance: synthetic test only, approval_status: approval_pending}, failure_code: SHADOW_OBSERVATION_STALE, severity: reject_candidate, remediation: test-only reject, golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}}
+  - {rule_id: SS_TRANSPORT, description: Test-only transport age, scope: candidate, inputs: [t_ready, t_candidate], input_artifacts: [], frame: null, unit: ms, clock_domain: test_controller_monotonic_ns, formula: t_candidate-t_ready, formula_revision: p9-test-only-v1, window: one candidate, sampling: each candidate, aggregation: scalar, threshold: {value: 10.0, comparator: le, provenance: synthetic test only, approval_status: approval_pending}, failure_code: SHADOW_TRANSPORT_DELAY_EXCEEDED, severity: reject_candidate, remediation: test-only reject, golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}}
+  - {rule_id: SS_END_TO_APPLY, description: Test-only end to apply, scope: candidate, inputs: [t_ref, hypothetical_t_controller_apply], input_artifacts: [], frame: null, unit: ms, clock_domain: test_controller_monotonic_ns, formula: apply-t_ref, formula_revision: p9-test-only-v1, window: one candidate, sampling: each candidate, aggregation: maximum, threshold: {value: 150.0, comparator: le, provenance: synthetic test only, approval_status: approval_pending}, failure_code: SHADOW_END_TO_APPLY_EXCEEDED, severity: reject_candidate, remediation: test-only reject, golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}}
+  - {rule_id: SS_SLOT_LATENESS, description: Test-only slot lateness, scope: candidate, inputs: [scheduled_slot_time, hypothetical_apply_time], input_artifacts: [], frame: null, unit: ms, clock_domain: test_controller_monotonic_ns, formula: apply-slot, formula_revision: p9-test-only-v1, window: candidate, sampling: each slot, aggregation: maximum, threshold: {value: 1.0, comparator: le, provenance: synthetic test only, approval_status: approval_pending}, failure_code: SHADOW_SLOT_LATE, severity: reject_candidate, remediation: test-only reject, golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}}
+  - {rule_id: SS_EXPIRED_RATE, description: Test-only expired rate, scope: run_aggregate, inputs: [candidate_validity_records], input_artifacts: [], frame: null, unit: fraction, clock_domain: test_controller_monotonic_ns, formula: expired/all, formula_revision: p9-test-only-v1, window: full run, sampling: every candidate, aggregation: fraction, threshold: {value: 0.0, comparator: le, provenance: synthetic test only, approval_status: approval_pending}, failure_code: SHADOW_EXPIRED_RATE_EXCEEDED, severity: reject_run, remediation: test-only reject, golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}}
+  - {rule_id: SS_MISSED_TICK_RATE, description: Test-only missed tick rate, scope: run_aggregate, inputs: [shadow_tick_records], input_artifacts: [], frame: null, unit: fraction, clock_domain: test_controller_monotonic_ns, formula: missed/all, formula_revision: p9-test-only-v1, window: full run, sampling: every policy tick, aggregation: fraction, threshold: {value: 0.0, comparator: le, provenance: synthetic test only, approval_status: approval_pending}, failure_code: SHADOW_MISSED_TICK_RATE_EXCEEDED, severity: reject_run, remediation: test-only reject, golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}}
+  - {rule_id: SS_HOLD_OVERRUN, description: Test-only hold overrun, scope: run_aggregate, inputs: [shadow_plan_records], input_artifacts: [], frame: null, unit: ms, clock_domain: test_controller_monotonic_ns, formula: max terminal hold, formula_revision: p9-test-only-v1, window: full run, sampling: each exhaustion, aggregation: maximum, threshold: {value: 100.0, comparator: le, provenance: synthetic test only, approval_status: approval_pending}, failure_code: SHADOW_HOLD_OVERRUN, severity: reject_run, remediation: test-only reject, golden_fixture: {artifact: tests/fixtures/p9_shadow_cases.test_only.json, sha256: null}}
+approval: {status: approval_pending, approval_id: null, approver_identity: null, approver_role: null, approved_at: null}
+signature: {status: configuration_pending, format: null, algorithm: null, digest: null, key_id: null, signature_file: null}

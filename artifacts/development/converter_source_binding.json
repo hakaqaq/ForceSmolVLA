@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "status": "development_only",
+  "formal_ready": false,
+  "project_root": "/home/rlc123/ForceSmolVLA",
+  "direct_raw_root": "/home/rlc123/fr3_client_ws/datasets/task1",
+  "generated_development_output_root": "/home/rlc123/ForceSmolVLA/datasets/task1_forcesmolvla_v4_1",
+  "future_formal_output": "must use a new empty path after approval; never overwrite the development dataset",
+  "files": {
+    "tools/convert_franka_raw_to_lerobot_v3.py": "26d86c2da120a52a4c5a2903001cdd0f2616fbc6749029b36f0d9d5f4b5b1cf0",
+    "src/forcesmolvla/raw_to_lerobot_v3.py": "692a9fb050d9626c60df053c127a7413f458bb30d0dfd79b0c2096999dea2cf4",
+    "src/forcesmolvla/conversion_gate.py": "02f2b47b9800a284b4d679b0a33256533d7acac2e54b5401b4569057bf8cbc0c",
+    "src/forcesmolvla/dataset_v3.py": "9a0b8ffe5fe459354cf9587dd948deb12fe0d473a75fccffcf9dabb08718df2f",
+    "src/forcesmolvla/geometry.py": "c0c74c943099ee66a0b33f5119586ec602e0830aa3010a5cb470f2681d3d4429",
+    "src/forcesmolvla/temporal.py": "ea6fd6baed9178d2ea2dd345b2b08bf5ec558c0c77dfe33f0ddd22b2a656132f",
+    "src/forcesmolvla/split.py": "b0be78347ac8a4ca04a464414da90f309ce2dadba410396d92f8ae5916c3968c",
+    "src/forcesmolvla/normalizer.py": "883de67ee3e64ea5960565d796a7e99708dae1ea5e7e30fd77830a31e608e89b",
+    "configs/converter_runtime_spec.development.json": "12107ca53b460ad8ac4c596d467ab393bd7b2f7eb2a33ec365e4bb4964208a17",
+    "tools/validate_compare_lerobot_v3_v21.py": "25a33999c6390385034d7628a537d1cec971bdce9ce94b50aeb56e69d52a85b3"
+  },
+  "legacy_reference": {
+    "path": "/home/rlc123/fr3_client_ws/scripts/convert_franka_forcevla_raw_to_lerobot_v21.py",
+    "sha256": "f8dc57b0a69b29be36b8fb62820d4284c37b4687def4cc27bad4075040f96b1a",
+    "execution_dependency": false,
+    "note": "Read-only behavioral reference only; the v3 converter does not import or execute it."
+  },
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

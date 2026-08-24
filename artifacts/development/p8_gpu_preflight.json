@@ -1,0 +1,181 @@
+{
+  "acceptance_status": "development_only",
+  "architecture_downgrade_used": false,
+  "checkpoint": {
+    "artifact_manifest_sha256": "7b765940ae13407c7920cb79876254524e71f3956fafd8265dae960435100207",
+    "embedded_base_assets": true,
+    "model_sha256": "e83f0d6d1ce6753ea0801c197b6d79cd23f77dca2d92e387931f617cbe91ec1d",
+    "optimizer_update": 1,
+    "path": "/home/rlc123/ForceSmolVLA/outputs/development/p8_checkpoint_seed42_step000001",
+    "payload_count": 78,
+    "strict_local_only": true
+  },
+  "cold_start": {
+    "acceptance_status": "development_only",
+    "all_parameters_trainable": true,
+    "approval": null,
+    "checkpoint": "/home/rlc123/ForceSmolVLA/outputs/development/p8_checkpoint_seed42_step000001",
+    "cpu_fallback_used": false,
+    "detached_signature": null,
+    "empty_hf_cache_before": true,
+    "fixed_validation_L_flow": 25.60464859008789,
+    "force_download": false,
+    "formal_eligible": false,
+    "formal_rejection": "FORMAL_FORCE_CHECKPOINT_SIGNATURE_OR_APPROVAL_MISSING",
+    "fresh_process_pid": 3053393,
+    "gate": "P8_cold_start",
+    "gate_status": "pass",
+    "hub_api_attempt_count": 0,
+    "hub_or_model_cache_files_after": 0,
+    "local_dataset_cache_files_after": 15,
+    "local_files_only": true,
+    "network_attempt_count": 0,
+    "optimizer_groups": {
+      "decay_parameter_count": 456491776,
+      "decay_tensor_count": 333,
+      "group_name_sha256": "fe2d0636f084c7432e4a25425c9f7b0359b18c803b7f8a4bf781db01ccc8ea6b",
+      "no_decay_parameter_count": 49128565,
+      "no_decay_tensor_count": 241
+    },
+    "optimizer_state_sha256": "502247a76fe673c318c2267a0a249e388e27febb1f185932a5e51ebf8f7f47c9",
+    "p9_started": false,
+    "parity_exact": true,
+    "parity_sha256": "23db34b31f050663a96c167ce8e44b8a519db2b1e8b8a02da21268f038512252",
+    "peak_memory": {
+      "allocated_bytes": 4303471616,
+      "reserved_bytes": 4391436288
+    },
+    "python_executable": "/home/rlc123/anaconda3/envs/forcesmolvla/bin/python",
+    "rng_continuation_exact": true,
+    "robot_actions_sent": 0,
+    "sampler_continuation_exact": true,
+    "sampler_cursor_after_continuation": 24,
+    "scaler_enabled": false,
+    "scheduler_state": {
+      "_get_lr_called_within_step": false,
+      "_is_initial": false,
+      "_last_lr": [
+        1.9980019980019304e-07,
+        1.9980019980019304e-07
+      ],
+      "_step_count": 2,
+      "base_lrs": [
+        0.0001,
+        0.0001
+      ],
+      "last_epoch": 1,
+      "lr_lambdas": [
+        null,
+        null
+      ]
+    },
+    "schema_version": "1.0",
+    "strict": true,
+    "training_stage": "offline_full_finetune",
+    "training_step": 1
+  },
+  "cpu_fallback_used": false,
+  "fixed_validation": {
+    "L_flow_run_1": 25.60464859008789,
+    "L_flow_run_2": 25.60464859008789,
+    "exact": true
+  },
+  "formal_eligible": false,
+  "full_parameter_update": {
+    "backward_balance_sum": 2.4449949264526367,
+    "backward_flow_sum": 28.4218909740448,
+    "backward_total_sum": 28.45088005065918,
+    "backward_z_sum": 4.539465606212616,
+    "gradient_norm_before_clip": 179.94825744628906,
+    "logged_balance": 2.4449949264526367,
+    "max_router_probability_replay_error": 0.0,
+    "microbatch_count": 8,
+    "microbatch_identities": [
+      "p8-window-0-q-0",
+      "p8-window-0-q-1",
+      "p8-window-0-q-2",
+      "p8-window-0-q-3",
+      "p8-window-0-q-4",
+      "p8-window-0-q-5",
+      "p8-window-0-q-6",
+      "p8-window-0-q-7"
+    ],
+    "optimizer_steps": 1,
+    "pbar": [
+      0.19790807366371155,
+      0.06644055992364883,
+      0.691082239151001,
+      0.04456917941570282
+    ],
+    "rbar": [
+      0.11106418818235397,
+      0.04011824354529381,
+      0.8488175868988037,
+      0.0
+    ],
+    "route_counts": [
+      263,
+      95,
+      2010,
+      0
+    ],
+    "scheduler_steps": 1,
+    "valid_flow_features": 5600,
+    "valid_router_tokens": 2368,
+    "world_size": 1
+  },
+  "gate": "P8",
+  "gate_status": "pass",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "total_memory_bytes": 25257967616
+  },
+  "p9_started": false,
+  "real_data": {
+    "batch_per_gpu": 2,
+    "camera_count": 2,
+    "dataset": "/home/rlc123/ForceSmolVLA/datasets/task1_forcesmolvla_v4_1",
+    "horizon": 50,
+    "microbatches": 8,
+    "sampled_indices": [
+      7296,
+      1639,
+      18024,
+      16049,
+      14628,
+      9144,
+      6717,
+      5697,
+      27651,
+      2082,
+      1952,
+      6140,
+      14328,
+      15247,
+      1739,
+      13031
+    ],
+    "split": "train"
+  },
+  "remaining_blockers": [
+    "trusted detached signature algorithm/key/approver unresolved",
+    "formal checkpoint acceptance remains fail-closed",
+    "P9 offline record/replay Shadow is not started and requires approval"
+  ],
+  "resolved_config_sha256": "a2999a6e34d59db9c24558c9eb791b51775de2568d9f250f0c992c5be3513b95",
+  "resume": {
+    "cross_stage_optimizer_restore": "rejected",
+    "optimizer_scheduler_scaler_rng_sampler_accumulation": "exact"
+  },
+  "robot_actions_sent": 0,
+  "schema_version": "1.0",
+  "source_binding_sha256": "a207a4fa4e0758c5b8ddda41c8d9bec4b107fceb95fff4a749e6b4b9cad3a211",
+  "update_latency": {
+    "cuda_ms": 2203.473876953125,
+    "wall_seconds": 2.203457616007654
+  },
+  "update_peak_memory": {
+    "allocated_bytes": 7186935296,
+    "reserved_bytes": 7660896256
+  }
+}

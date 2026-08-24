@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "training_stage": "offline_full_finetune",
+  "design_basis": {
+    "smolvla": ["flow_matching", "AdamW", "bf16_autocast", "40000_training_samples"],
+    "forcevla": ["batch_per_gpu_4", "one_joint_force_and_action_forward_per_update"]
+  },
+  "all_existing_parameters_require_grad": true,
+  "optimizer": {
+    "type": "AdamW",
+    "lr": 0.0001,
+    "betas": [0.9, 0.95],
+    "eps": 1e-8,
+    "weight_decay": 1e-10,
+    "no_decay": ["bias", "normalization_scale", "embedding", "alpha", "learned_action_slot"],
+    "parameter_partition": "each_trainable_parameter_exactly_once",
+    "grad_clip_norm": 10.0
+  },
+  "schedule": {
+    "primary_budget_unit": "samples",
+    "target_samples": 40000,
+    "equivalent_epochs": "target_samples / resolved_train_split_samples",
+    "derived_optimizer_updates": 10000,
+    "warmup_samples": 2000,
+    "derived_warmup_updates": 500,
+    "peak_lr": 0.0001,
+    "decay_lr": 0.0000025,
+    "decay_end_samples": 40000,
+    "derived_decay_end_update": 10000
+  },
+  "batching": {
+    "batch_per_gpu": 4,
+    "gradient_accumulation_microbatches": 1,
+    "effective_samples_per_gpu_update": 4
+  },
+  "loss": {
+    "total": "L_flow + 0.01*L_balance + 0.001*L_z",
+    "flow_reduction": "valid_feature_token_weighted_within_physical_batch",
+    "router_algorithm": "single_pass_batch_local",
+    "shared_prefix_forward_for_flow_and_force": true,
+    "balance_weight": 0.01,
+    "z_weight": 0.001,
+    "num_experts": 4
+  },
+  "p7_exact_two_pass": {
+    "role": "acceptance_oracle_for_routing_gradients_and_numerics",
+    "active_sft_loop": false,
+    "long_running_sft_allowed": false,
+    "recipe": "p7_training_recipe.development.yaml"
+  },
+  "precision": {
+    "autocast": "bfloat16",
+    "force_adapter_and_action_head": "float32"
+  },
+  "checkpoint_interval_samples": 2000,
+  "validation_interval_samples": 2000,
+  "detached_signature": null,
+  "approval": null
+}

@@ -1,0 +1,587 @@
+{
+  "acceptance_status": "development_only",
+  "additive_parameter_match": {
+    "complete_tensor_equality": true,
+    "force_initialization_equal": true,
+    "initial_native_L_flow_additive": 10.27765941619873,
+    "initial_native_L_flow_main": 10.27765941619873,
+    "optimizer_groups_equal": true,
+    "state_schema_sha256": "41e8631783397160fabb3fa98981050babfe900ecb44a6c6f728827d94872f14",
+    "state_tensor_count": 574,
+    "total_parameters": 505620341
+  },
+  "all_parameters_trainable": true,
+  "architecture_downgrade_used": false,
+  "cpu_fallback_used": false,
+  "exact_oracle_gradient_coverage": {
+    "action_expert": {
+      "coverage_nonzero_gradient": 1.0,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 145,
+      "parameter_elements": 98245840,
+      "parameter_tensors": 145,
+      "with_gradient_tensors": 145,
+      "zero_gradient_names": []
+    },
+    "action_io": {
+      "coverage_nonzero_gradient": 1.0,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 10,
+      "parameter_elements": 1635152,
+      "parameter_tensors": 10,
+      "with_gradient_tensors": 10,
+      "zero_gradient_names": []
+    },
+    "all": {
+      "coverage_nonzero_gradient": 0.945993031358885,
+      "coverage_with_gradient": 0.9982578397212544,
+      "missing_gradient_names": [
+        "model.vlm_with_expert.vlm.lm_head.weight"
+      ],
+      "nonzero_gradient_tensors": 543,
+      "parameter_elements": 505620341,
+      "parameter_tensors": 574,
+      "with_gradient_tensors": 573,
+      "zero_gradient_names": [
+        "model.force_branch.refiner.experts.0.linear_in.weight",
+        "model.force_branch.refiner.experts.0.linear_in.bias",
+        "model.force_branch.refiner.experts.0.linear_out.weight",
+        "model.force_branch.refiner.experts.0.linear_out.bias",
+        "model.force_branch.refiner.experts.1.linear_in.weight",
+        "model.force_branch.refiner.experts.1.linear_in.bias",
+        "model.force_branch.refiner.experts.1.linear_out.weight",
+        "model.force_branch.refiner.experts.1.linear_out.bias",
+        "model.force_branch.refiner.experts.2.linear_in.weight",
+        "model.force_branch.refiner.experts.2.linear_in.bias",
+        "model.force_branch.refiner.experts.2.linear_out.weight",
+        "model.force_branch.refiner.experts.2.linear_out.bias",
+        "model.force_branch.refiner.experts.3.linear_in.weight",
+        "model.force_branch.refiner.experts.3.linear_in.bias",
+        "model.force_branch.refiner.experts.3.linear_out.weight",
+        "model.force_branch.refiner.experts.3.linear_out.bias",
+        "model.force_branch.guidance_projection.weight",
+        "model.force_branch.guidance_projection.bias",
+        "model.force_adapter.learned_action_slot",
+        "model.force_adapter.alpha",
+        "model.force_adapter.time_projection.weight",
+        "model.force_adapter.time_projection.bias",
+        "model.force_adapter.noisy_action_projection.weight",
+        "model.force_adapter.noisy_action_projection.bias",
+        "model.force_adapter.cross_attention.q_proj.weight",
+        "model.force_adapter.cross_attention.q_proj.bias",
+        "model.force_adapter.cross_attention.k_proj.weight",
+        "model.force_adapter.cross_attention.k_proj.bias",
+        "model.force_adapter.cross_attention.v_proj.weight",
+        "model.force_adapter.cross_attention.v_proj.bias"
+      ]
+    },
+    "base": {
+      "coverage_nonzero_gradient": 0.998,
+      "coverage_with_gradient": 0.998,
+      "missing_gradient_names": [
+        "model.vlm_with_expert.vlm.lm_head.weight"
+      ],
+      "nonzero_gradient_tensors": 499,
+      "parameter_elements": 450046176,
+      "parameter_tensors": 500,
+      "with_gradient_tensors": 499,
+      "zero_gradient_names": []
+    },
+    "force": {
+      "coverage_nonzero_gradient": 0.5945945945945946,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 44,
+      "parameter_elements": 55574165,
+      "parameter_tensors": 74,
+      "with_gradient_tensors": 74,
+      "zero_gradient_names": [
+        "model.force_branch.refiner.experts.0.linear_in.weight",
+        "model.force_branch.refiner.experts.0.linear_in.bias",
+        "model.force_branch.refiner.experts.0.linear_out.weight",
+        "model.force_branch.refiner.experts.0.linear_out.bias",
+        "model.force_branch.refiner.experts.1.linear_in.weight",
+        "model.force_branch.refiner.experts.1.linear_in.bias",
+        "model.force_branch.refiner.experts.1.linear_out.weight",
+        "model.force_branch.refiner.experts.1.linear_out.bias",
+        "model.force_branch.refiner.experts.2.linear_in.weight",
+        "model.force_branch.refiner.experts.2.linear_in.bias",
+        "model.force_branch.refiner.experts.2.linear_out.weight",
+        "model.force_branch.refiner.experts.2.linear_out.bias",
+        "model.force_branch.refiner.experts.3.linear_in.weight",
+        "model.force_branch.refiner.experts.3.linear_in.bias",
+        "model.force_branch.refiner.experts.3.linear_out.weight",
+        "model.force_branch.refiner.experts.3.linear_out.bias",
+        "model.force_branch.guidance_projection.weight",
+        "model.force_branch.guidance_projection.bias",
+        "model.force_adapter.learned_action_slot",
+        "model.force_adapter.alpha",
+        "model.force_adapter.time_projection.weight",
+        "model.force_adapter.time_projection.bias",
+        "model.force_adapter.noisy_action_projection.weight",
+        "model.force_adapter.noisy_action_projection.bias",
+        "model.force_adapter.cross_attention.q_proj.weight",
+        "model.force_adapter.cross_attention.q_proj.bias",
+        "model.force_adapter.cross_attention.k_proj.weight",
+        "model.force_adapter.cross_attention.k_proj.bias",
+        "model.force_adapter.cross_attention.v_proj.weight",
+        "model.force_adapter.cross_attention.v_proj.bias"
+      ]
+    },
+    "vision": {
+      "coverage_nonzero_gradient": 1.0,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 197,
+      "parameter_elements": 86433024,
+      "parameter_tensors": 197,
+      "with_gradient_tensors": 197,
+      "zero_gradient_names": []
+    },
+    "vlm_text": {
+      "coverage_nonzero_gradient": 1.0,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 146,
+      "parameter_elements": 204626880,
+      "parameter_tensors": 146,
+      "with_gradient_tensors": 146,
+      "zero_gradient_names": []
+    }
+  },
+  "exact_two_pass_oracle": {
+    "backward_balance_sum": 1.2195271700620651,
+    "backward_flow_sum": 30.32814359664917,
+    "backward_total_sum": 30.34401786327362,
+    "backward_z_sum": 3.6786269545555115,
+    "execution_role": "acceptance_oracle_only",
+    "gradient_norm_before_clip": 143.65794372558594,
+    "logged_balance": 1.219527244567871,
+    "long_running_sft_allowed": false,
+    "max_router_probability_replay_error": 0.0,
+    "microbatch_count": 8,
+    "microbatch_identities": [
+      "p7-exact-oracle-window-0-q-0",
+      "p7-exact-oracle-window-0-q-1",
+      "p7-exact-oracle-window-0-q-2",
+      "p7-exact-oracle-window-0-q-3",
+      "p7-exact-oracle-window-0-q-4",
+      "p7-exact-oracle-window-0-q-5",
+      "p7-exact-oracle-window-0-q-6",
+      "p7-exact-oracle-window-0-q-7"
+    ],
+    "optimizer_steps": 1,
+    "pbar": [
+      0.21895568072795868,
+      0.1729254275560379,
+      0.27980679273605347,
+      0.32831206917762756
+    ],
+    "rbar": [
+      0.08129370212554932,
+      0.00830419547855854,
+      0.2731643319129944,
+      0.6372377276420593
+    ],
+    "route_counts": [
+      186,
+      19,
+      625,
+      1458
+    ],
+    "scheduler_steps": 1,
+    "valid_flow_features": 5306,
+    "valid_router_tokens": 2288,
+    "world_size": 1
+  },
+  "fixed_validation": {
+    "L_flow_run_1": 10.262395858764648,
+    "L_flow_run_2": 10.262395858764648,
+    "algorithm": "single_pass_batch_local",
+    "exact_replay": true,
+    "fixture_sha256": "b360e9f63aa92820fbfb1eca3711d5a931369b2c8da0926fa56a0912f65a1e4d"
+  },
+  "force_initialization_tensor_sha256": "56f89b864e53a883ee61c4b0e39121563c283ce38ca6df31722df689f576e9f3",
+  "formal_eligible": false,
+  "frozen_parameters": 0,
+  "gate": "P7",
+  "gate_status": "pass",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "total_memory_bytes": 25257967616
+  },
+  "gradient_source_audit": {
+    "L_balance_only": {
+      "loss": 1.2344295978546143,
+      "router": {
+        "all_nonzero": true,
+        "missing_gradient_names": [],
+        "nonzero_gradient_tensors": 2,
+        "parameter_tensors": 2,
+        "zero_gradient_names": []
+      }
+    },
+    "L_z_only": {
+      "loss": 3.6880438327789307,
+      "router": {
+        "all_nonzero": true,
+        "missing_gradient_names": [],
+        "nonzero_gradient_tensors": 2,
+        "parameter_tensors": 2,
+        "zero_gradient_names": []
+      }
+    },
+    "step_1_L_flow_only": {
+      "L_flow": 10.574432373046875,
+      "after_optimizer_step": false,
+      "w_out": {
+        "all_nonzero": true,
+        "missing_gradient_names": [],
+        "nonzero_gradient_tensors": 2,
+        "parameter_tensors": 2,
+        "zero_gradient_names": []
+      }
+    },
+    "step_2_L_flow_only_after_optimizer_step": {
+      "L_flow": 10.566640853881836,
+      "active_expert_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "after_optimizer_step": true,
+      "routed_experts": {
+        "0": {
+          "all_nonzero": true,
+          "missing_gradient_names": [],
+          "nonzero_gradient_tensors": 4,
+          "parameter_tensors": 4,
+          "zero_gradient_names": []
+        },
+        "1": {
+          "all_nonzero": true,
+          "missing_gradient_names": [],
+          "nonzero_gradient_tensors": 4,
+          "parameter_tensors": 4,
+          "zero_gradient_names": []
+        },
+        "2": {
+          "all_nonzero": true,
+          "missing_gradient_names": [],
+          "nonzero_gradient_tensors": 4,
+          "parameter_tensors": 4,
+          "zero_gradient_names": []
+        },
+        "3": {
+          "all_nonzero": true,
+          "missing_gradient_names": [],
+          "nonzero_gradient_tensors": 4,
+          "parameter_tensors": 4,
+          "zero_gradient_names": []
+        }
+      },
+      "upstream_groups": {
+        "conditioner": {
+          "all_nonzero": true,
+          "missing_gradient_names": [],
+          "nonzero_gradient_tensors": 5,
+          "parameter_tensors": 5,
+          "zero_gradient_names": []
+        },
+        "cross_attention_qkv": {
+          "all_nonzero": true,
+          "missing_gradient_names": [],
+          "nonzero_gradient_tensors": 6,
+          "parameter_tensors": 6,
+          "zero_gradient_names": []
+        },
+        "force_mlp": {
+          "all_nonzero": true,
+          "missing_gradient_names": [],
+          "nonzero_gradient_tensors": 4,
+          "parameter_tensors": 4,
+          "zero_gradient_names": []
+        },
+        "fusion": {
+          "all_nonzero": true,
+          "missing_gradient_names": [],
+          "nonzero_gradient_tensors": 36,
+          "parameter_tensors": 36,
+          "zero_gradient_names": []
+        }
+      },
+      "w_out": {
+        "all_nonzero": true,
+        "missing_gradient_names": [],
+        "nonzero_gradient_tensors": 2,
+        "parameter_tensors": 2,
+        "zero_gradient_names": []
+      }
+    }
+  },
+  "latency": {
+    "exact_two_pass_oracle_cuda_ms": 3737.44482421875,
+    "exact_two_pass_oracle_wall_seconds": 3.7377775199711323,
+    "single_pass_optimizer_update_cuda_ms": 437.6191101074219,
+    "single_pass_optimizer_update_wall_seconds": 0.43779319000896066
+  },
+  "p8_started": false,
+  "peak_memory": {
+    "exact_two_pass_oracle": {
+      "allocated_bytes": 8438812672,
+      "reserved_bytes": 8841592832
+    },
+    "single_pass": {
+      "allocated_bytes": 6315636224,
+      "reserved_bytes": 6941573120
+    }
+  },
+  "real_data": {
+    "camera_count": 2,
+    "dataset": "/home/rlc123/ForceSmolVLA/datasets/task2_lerobotv3",
+    "exact_oracle_batch_per_gpu": 2,
+    "exact_oracle_microbatches": 8,
+    "horizon": 50,
+    "repo_id": "local/task2_lerobotv3",
+    "sampled_indices": [
+      20952,
+      3648,
+      819,
+      24299,
+      9012,
+      8024,
+      7314,
+      4572,
+      24132,
+      3358,
+      22174,
+      24270,
+      29234,
+      17870,
+      2848,
+      19349
+    ],
+    "sampler_cursor_after_draw": 16,
+    "single_pass_batch_per_gpu": 4,
+    "single_pass_gradient_accumulation_microbatches": 1,
+    "split": "train"
+  },
+  "remaining_blockers": [
+    "P8 strict checkpoint save/reload and cold-start parity not executed",
+    "P9 offline record/replay Shadow not implemented",
+    "trusted detached signature and formal approvals unresolved"
+  ],
+  "resolved_config_sha256": "cb4d80af5eec10aa0677fadb7e6a75ff43e2f12bdf881d31d1cbeee1854efa9f",
+  "scheduler": {
+    "last_epoch": 1,
+    "learning_rate_after_update": 1.9980019980019304e-07,
+    "learning_rate_before_update": 9.990009990009991e-08
+  },
+  "schema_version": "1.0",
+  "single_pass_gradient_coverage": {
+    "action_expert": {
+      "coverage_nonzero_gradient": 1.0,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 145,
+      "parameter_elements": 98245840,
+      "parameter_tensors": 145,
+      "with_gradient_tensors": 145,
+      "zero_gradient_names": []
+    },
+    "action_io": {
+      "coverage_nonzero_gradient": 1.0,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 10,
+      "parameter_elements": 1635152,
+      "parameter_tensors": 10,
+      "with_gradient_tensors": 10,
+      "zero_gradient_names": []
+    },
+    "all": {
+      "coverage_nonzero_gradient": 0.945993031358885,
+      "coverage_with_gradient": 0.9982578397212544,
+      "missing_gradient_names": [
+        "model.vlm_with_expert.vlm.lm_head.weight"
+      ],
+      "nonzero_gradient_tensors": 543,
+      "parameter_elements": 505620341,
+      "parameter_tensors": 574,
+      "with_gradient_tensors": 573,
+      "zero_gradient_names": [
+        "model.force_branch.refiner.experts.0.linear_in.weight",
+        "model.force_branch.refiner.experts.0.linear_in.bias",
+        "model.force_branch.refiner.experts.0.linear_out.weight",
+        "model.force_branch.refiner.experts.0.linear_out.bias",
+        "model.force_branch.refiner.experts.1.linear_in.weight",
+        "model.force_branch.refiner.experts.1.linear_in.bias",
+        "model.force_branch.refiner.experts.1.linear_out.weight",
+        "model.force_branch.refiner.experts.1.linear_out.bias",
+        "model.force_branch.refiner.experts.2.linear_in.weight",
+        "model.force_branch.refiner.experts.2.linear_in.bias",
+        "model.force_branch.refiner.experts.2.linear_out.weight",
+        "model.force_branch.refiner.experts.2.linear_out.bias",
+        "model.force_branch.refiner.experts.3.linear_in.weight",
+        "model.force_branch.refiner.experts.3.linear_in.bias",
+        "model.force_branch.refiner.experts.3.linear_out.weight",
+        "model.force_branch.refiner.experts.3.linear_out.bias",
+        "model.force_branch.guidance_projection.weight",
+        "model.force_branch.guidance_projection.bias",
+        "model.force_adapter.learned_action_slot",
+        "model.force_adapter.alpha",
+        "model.force_adapter.time_projection.weight",
+        "model.force_adapter.time_projection.bias",
+        "model.force_adapter.noisy_action_projection.weight",
+        "model.force_adapter.noisy_action_projection.bias",
+        "model.force_adapter.cross_attention.q_proj.weight",
+        "model.force_adapter.cross_attention.q_proj.bias",
+        "model.force_adapter.cross_attention.k_proj.weight",
+        "model.force_adapter.cross_attention.k_proj.bias",
+        "model.force_adapter.cross_attention.v_proj.weight",
+        "model.force_adapter.cross_attention.v_proj.bias"
+      ]
+    },
+    "base": {
+      "coverage_nonzero_gradient": 0.998,
+      "coverage_with_gradient": 0.998,
+      "missing_gradient_names": [
+        "model.vlm_with_expert.vlm.lm_head.weight"
+      ],
+      "nonzero_gradient_tensors": 499,
+      "parameter_elements": 450046176,
+      "parameter_tensors": 500,
+      "with_gradient_tensors": 499,
+      "zero_gradient_names": []
+    },
+    "force": {
+      "coverage_nonzero_gradient": 0.5945945945945946,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 44,
+      "parameter_elements": 55574165,
+      "parameter_tensors": 74,
+      "with_gradient_tensors": 74,
+      "zero_gradient_names": [
+        "model.force_branch.refiner.experts.0.linear_in.weight",
+        "model.force_branch.refiner.experts.0.linear_in.bias",
+        "model.force_branch.refiner.experts.0.linear_out.weight",
+        "model.force_branch.refiner.experts.0.linear_out.bias",
+        "model.force_branch.refiner.experts.1.linear_in.weight",
+        "model.force_branch.refiner.experts.1.linear_in.bias",
+        "model.force_branch.refiner.experts.1.linear_out.weight",
+        "model.force_branch.refiner.experts.1.linear_out.bias",
+        "model.force_branch.refiner.experts.2.linear_in.weight",
+        "model.force_branch.refiner.experts.2.linear_in.bias",
+        "model.force_branch.refiner.experts.2.linear_out.weight",
+        "model.force_branch.refiner.experts.2.linear_out.bias",
+        "model.force_branch.refiner.experts.3.linear_in.weight",
+        "model.force_branch.refiner.experts.3.linear_in.bias",
+        "model.force_branch.refiner.experts.3.linear_out.weight",
+        "model.force_branch.refiner.experts.3.linear_out.bias",
+        "model.force_branch.guidance_projection.weight",
+        "model.force_branch.guidance_projection.bias",
+        "model.force_adapter.learned_action_slot",
+        "model.force_adapter.alpha",
+        "model.force_adapter.time_projection.weight",
+        "model.force_adapter.time_projection.bias",
+        "model.force_adapter.noisy_action_projection.weight",
+        "model.force_adapter.noisy_action_projection.bias",
+        "model.force_adapter.cross_attention.q_proj.weight",
+        "model.force_adapter.cross_attention.q_proj.bias",
+        "model.force_adapter.cross_attention.k_proj.weight",
+        "model.force_adapter.cross_attention.k_proj.bias",
+        "model.force_adapter.cross_attention.v_proj.weight",
+        "model.force_adapter.cross_attention.v_proj.bias"
+      ]
+    },
+    "vision": {
+      "coverage_nonzero_gradient": 1.0,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 197,
+      "parameter_elements": 86433024,
+      "parameter_tensors": 197,
+      "with_gradient_tensors": 197,
+      "zero_gradient_names": []
+    },
+    "vlm_text": {
+      "coverage_nonzero_gradient": 1.0,
+      "coverage_with_gradient": 1.0,
+      "missing_gradient_names": [],
+      "nonzero_gradient_tensors": 146,
+      "parameter_elements": 204626880,
+      "parameter_tensors": 146,
+      "with_gradient_tensors": 146,
+      "zero_gradient_names": []
+    }
+  },
+  "single_pass_update": {
+    "backward_balance_sum": 1.2344295978546143,
+    "backward_flow_sum": 10.574432373046875,
+    "backward_total_sum": 10.59046459197998,
+    "backward_z_sum": 3.6880438327789307,
+    "batch_size": 4,
+    "gradient_accumulation_microbatches": 1,
+    "gradient_norm_before_clip": 103.29686737060547,
+    "logged_balance": 1.2344295978546143,
+    "microbatch_count": 1,
+    "microbatch_identities": [
+      "p7-b4x1-single-pass-update-0"
+    ],
+    "optimizer_steps": 1,
+    "pbar": [
+      0.21643924713134766,
+      0.17190657556056976,
+      0.27967965602874756,
+      0.33197450637817383
+    ],
+    "rbar": [
+      0.06818182021379471,
+      0.012237762100994587,
+      0.25874125957489014,
+      0.6608391404151917
+    ],
+    "route_counts": [
+      39,
+      7,
+      148,
+      378
+    ],
+    "scheduler_steps": 1,
+    "training_update_algorithm": "single_pass_batch_local",
+    "valid_flow_features": 1400,
+    "valid_router_tokens": 572,
+    "vlm_with_expert_forward_calls": 1,
+    "world_size": 1
+  },
+  "source_binding_evidence": {
+    "dataset_storage_file_count": 51,
+    "dataset_storage_tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d",
+    "p6_prerequisite": {
+      "gate_result": "72d7cb9abb5745db721aef14746d3cb70fbba976a4e251cfc91cbbb499a5659f",
+      "resolved_config": "a50d327d75a5fab595cc743daeb83e4f07e8dbe3a28b99012e3b25e8af38b18b",
+      "source_binding": "fb9f1e442c008d5ba4f58ea1b6a90dd197d7eec83991eb9457492d5b1994d341",
+      "static_spec": "4e1c3ab73793a625a526de808a20c167df6ece8f2c2c32518f76cf39a2ac91c3"
+    },
+    "pytest": {
+      "errors": 0,
+      "failures": 0,
+      "report_sha256": "b6d5bc0c2d171ea1b8a0270f43f2550673b40a02df4101a264f5f7ffded8230a",
+      "selection_stage": "P7_and_upstream",
+      "skipped": 0,
+      "test_file_count": 26,
+      "tests": 119
+    },
+    "runtime_imports": {
+      "forcesmolvla": "/home/rlc123/ForceSmolVLA/src/forcesmolvla/__init__.py",
+      "lerobot": "/home/rlc123/ForceSmolVLA/vendor/lerobot/src/lerobot/__init__.py"
+    }
+  },
+  "source_binding_sha256": "2fda1f8e0cefc8d5ae67a7f59d1f2a28011bf59b09c4631db3c38eca43362c74",
+  "total_parameters": 505620341,
+  "training_recipe_sha256": "88a2ae7d9be3b309d9191b2d3057fd43641a0db93f31489b9d42b834f1e567f0"
+}

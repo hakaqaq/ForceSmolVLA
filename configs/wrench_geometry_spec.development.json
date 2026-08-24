@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_status": "development_only",
+  "profile": "forcesmolvla-v4.1-available-sensor",
+  "wording": "calibrated TCP wrench conditioned on measured TCP pose",
+  "frames": {
+    "base": "fr3_link0",
+    "tcp": "franka_desk_ee_tcp",
+    "sensor_measurement": "onrobot_fts_measurement_link"
+  },
+  "clock_domain": "ros_source_timestamp_ns",
+  "pose_selection": {
+    "method": "causal_zoh_latest",
+    "predicate": "t_pose <= t_wrench",
+    "future_interpolation": "forbidden",
+    "max_pose_age_ms": 12.0,
+    "threshold_status": "approval_pending"
+  },
+  "static_transform_tcp_sensor": {
+    "translation_m": [0.0, 0.0, -0.195],
+    "quaternion_xyzw": [0.0, 0.0, 0.7071067811865475, 0.7071067811865476],
+    "source": "task1/session.json tool_profile.transforms.tcp_to_wrench_measurement",
+    "source_sha256": "7c5817d5139ce5cee34ef86f5dfb50e5ed1996cd9939e1b3b7c7f96d4261bbf8"
+  },
+  "calibration": {
+    "calibration_id": "sha256:409c462adb03b249df605d6e964344ac9e5a30ee1a2653137774a257541cc37b",
+    "artifact_sha256": "409c462adb03b249df605d6e964344ac9e5a30ee1a2653137774a257541cc37b",
+    "tool_profile_sha256": "2e293913950d933a7fe96985e43ab7cf5585fc9a6dca86237faca2dc8203c45a"
+  },
+  "operation_order": [
+    "wrench_sign",
+    "sensor_bias",
+    "payload_gravity_force_and_moment_compensation",
+    "sensor_to_base_rotation",
+    "moment_shift_sensor_to_tcp"
+  ],
+  "output": {
+    "shape": [6],
+    "force_expressed_in": "fr3_link0",
+    "moment_expressed_in": "fr3_link0",
+    "reference_point": "franka_desk_ee_tcp"
+  },
+  "formal_ready": false
+}

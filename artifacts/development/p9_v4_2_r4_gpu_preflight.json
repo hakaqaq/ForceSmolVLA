@@ -1,0 +1,78 @@
+{
+  "acceptance_assertions": {
+    "absolute_chunk_finite": true,
+    "actual_indices_match_expected": true,
+    "candidate_reasons_match_expected": true,
+    "candidate_valid_consistent_with_reasons": true,
+    "candidate_valid_matches_expected": true,
+    "invalid_candidate_dispatched_nothing": true,
+    "replay_exact": true
+  },
+  "acceptance_status": "development_only",
+  "approval": null,
+  "cpu_fallback_used": false,
+  "detached_signature": null,
+  "formal_blockers": [
+    "production sensor->controller and GPU->controller clock map absent",
+    "shadow safety thresholds remain unapproved/null outside tests/fixtures",
+    "trusted detached signature algorithm/key/approver unresolved",
+    "task2 result is within-session algorithmic development replay only"
+  ],
+  "formal_eligible": false,
+  "gate": "P9",
+  "gate_status": "pass",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "total_memory_bytes": 25257967616
+  },
+  "inference": {
+    "batch_size": 2,
+    "camera_count": 2,
+    "cuda_ms": 590.4783325195312,
+    "execution_horizon": 3,
+    "horizon": 50,
+    "peak_memory": {
+      "allocated_bytes": 1552972288,
+      "reserved_bytes": 1673527296
+    },
+    "recorded_candidates": 1,
+    "wall_seconds": 0.5905887510161847
+  },
+  "native_queue_used": false,
+  "offline_record": {
+    "actual_dispatched_indices": [],
+    "candidate_reasons": [
+      "SHADOW_END_TO_APPLY_EXCEEDED"
+    ],
+    "candidate_valid": false,
+    "dataset": "/home/rlc123/ForceSmolVLA/datasets/task2_lerobotv3",
+    "episode_index": 7,
+    "frame_index": 0,
+    "record_artifact_sha256": "553717d9b1649361c860c9881441aca72a4607ce2c7fefd5c9c231c760bf2473",
+    "replay_exact": true
+  },
+  "p8_checkpoint_payload_count": 82,
+  "production_fail_closed": {
+    "missing_clock_map_candidate_valid": false,
+    "missing_clock_map_reasons": [
+      "SHADOW_RULESPEC_FAIL_CLOSED:PermissionError:formal mode requires an approved RuleSpec",
+      "SHADOW_CLOCK_MAP_MISSING"
+    ],
+    "stale_or_mismatched_clock_behavior": "covered by tests; candidate_valid=false",
+    "test_only_asset_reasons": [
+      "SHADOW_RULESPEC_FAIL_CLOSED:PermissionError:formal mode requires an approved RuleSpec",
+      "PRODUCTION_CLOCK_MAP_SIGNATURE_OR_APPROVAL_MISSING"
+    ],
+    "test_only_assets_accepted": false
+  },
+  "production_shadow": false,
+  "records_file_sha256": "b0bf284346fddccc8d1c0d438680f184fe9d08b24599df7a98eba5f5b8d40263",
+  "replay_file_sha256": "ddfbec7753164697c8da29f82b9ea058f866b06b8839ba692b3e1d8df803136e",
+  "resolved_config_sha256": "67e2f5cddbd4a2df0b97d11d27f96ec31f269a340cf34454adb7f3276cf13f65",
+  "robot_actions_sent": 0,
+  "ros_connected": false,
+  "rtc_configured": false,
+  "schema_version": "1.0",
+  "shadow_status": "algorithmic_development_replay",
+  "source_binding_sha256": "009b9812a273a8e51610b72e2d360b052af432efe874c383c0d22ffd99d583e7"
+}

@@ -1,0 +1,105 @@
+{
+  "acceptance_assertions": {
+    "absolute_chunk_finite": true,
+    "actual_indices_match_expected": true,
+    "candidate_reasons_match_expected": true,
+    "candidate_valid_consistent_with_reasons": true,
+    "candidate_valid_matches_expected": true,
+    "invalid_candidate_dispatched_nothing": true,
+    "physical_session_id_not_invented": true,
+    "replay_exact": true,
+    "scheduler_candidate_delta_matches_amendment": true,
+    "scheduler_index_matches_candidate_formula": true,
+    "task2_collection_scope_replaced_legacy_session_id": true
+  },
+  "acceptance_status": "development_only",
+  "approval": null,
+  "cpu_fallback_used": false,
+  "detached_signature": null,
+  "formal_blockers": [
+    "production sensor->controller and GPU->controller clock map absent",
+    "shadow safety thresholds remain unapproved/null outside tests/fixtures",
+    "trusted detached signature algorithm/key/approver unresolved",
+    "task2 result is within-session algorithmic development replay only",
+    "task2 source does not record an explicit physical session id"
+  ],
+  "formal_eligible": false,
+  "gate": "P9",
+  "gate_status": "pass",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "total_memory_bytes": 25257967616
+  },
+  "inference": {
+    "batch_size": 2,
+    "camera_count": 2,
+    "cuda_ms": 494.65875244140625,
+    "execution_horizon": 3,
+    "horizon": 50,
+    "peak_memory": {
+      "allocated_bytes": 1552972288,
+      "reserved_bytes": 1673527296
+    },
+    "recorded_candidates": 1,
+    "wall_seconds": 0.4947110689827241
+  },
+  "native_queue_used": false,
+  "offline_record": {
+    "actual_dispatched_indices": [],
+    "candidate_minus_tau0_ns": 205000000,
+    "candidate_reasons": [
+      "SHADOW_END_TO_APPLY_EXCEEDED"
+    ],
+    "candidate_valid": false,
+    "dataset": "/home/rlc123/ForceSmolVLA/datasets/task2_lerobotv3",
+    "episode_index": 7,
+    "frame_index": 0,
+    "record_artifact_sha256": "3c9e867304540892fc3eb5998bee3302a77be8720bd20cca6755eca4530f29e7",
+    "replay_exact": true,
+    "scheduler_index_j": 7
+  },
+  "p8_checkpoint_payload_count": 82,
+  "production_fail_closed": {
+    "missing_clock_map_candidate_valid": false,
+    "missing_clock_map_reasons": [
+      "SHADOW_RULESPEC_FAIL_CLOSED:PermissionError:formal mode requires an approved RuleSpec",
+      "SHADOW_CLOCK_MAP_MISSING"
+    ],
+    "stale_or_mismatched_clock_behavior": "covered by tests; candidate_valid=false",
+    "test_only_asset_reasons": [
+      "SHADOW_RULESPEC_FAIL_CLOSED:PermissionError:formal mode requires an approved RuleSpec",
+      "PRODUCTION_CLOCK_MAP_SIGNATURE_OR_APPROVAL_MISSING"
+    ],
+    "test_only_assets_accepted": false
+  },
+  "production_shadow": false,
+  "records_file_sha256": "61a25910cd8b6876298ce7b13029b13942f5abc7db3d711dc36188fe3581b475",
+  "replay_file_sha256": "5ff47a617452e31213dd9ac503ebf6e2a024df0ec71f195a5b0436c68b1d9163",
+  "resolved_config_sha256": "fcd034ad3d66b24d2469b5dc627b29cc709a4d3877de4b72d47e7aba8d35e54a",
+  "robot_actions_sent": 0,
+  "ros_connected": false,
+  "rtc_configured": false,
+  "schema_version": "1.0",
+  "scope_amendment": {
+    "collection_scope_id": "task2_collection_scope_f87ae11e9831",
+    "derived_optimizer_updates": 20000,
+    "path": "configs/p9_task2_scope_amendment.development.json",
+    "physical_session_id": null,
+    "scheduler_index_semantics": {
+      "action_period_denominator": 3,
+      "action_period_numerator_ns": 100000000,
+      "exact_integer_formula": "j=ceil((t_candidate_controller_ns-tau0_controller_ns)*action_period_denominator/action_period_numerator_ns)",
+      "expected_j": 7,
+      "formula": "j=ceil((t_candidate_controller_ns-tau0_controller_ns)/Delta_a)",
+      "observed_candidate_minus_tau0_ns": 205000000,
+      "observed_unrounded_index": "6.15",
+      "t_apply_based_formula": false,
+      "t_candidate_definition": "t_ready_controller_ns+transport_ns"
+    },
+    "sha256": "b8e9918144b477408607a7ad90bb53ba2515481833acb144473fb5151caa7cf7",
+    "task2_data_scope_sha256": "2f3b7d91093f47567d976e800b3d7f4d5bb2eb885444eae0dc235f900384503c",
+    "training_target_samples": 80000
+  },
+  "shadow_status": "algorithmic_development_replay",
+  "source_binding_sha256": "d75c09fa230248dc34e05e22f62b238f774891fdfab286720d4869074ccce729"
+}

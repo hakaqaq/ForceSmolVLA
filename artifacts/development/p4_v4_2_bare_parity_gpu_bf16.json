@@ -1,0 +1,66 @@
+{
+  "acceptance_status": "development_only",
+  "artifact_status": "development_only",
+  "base_loaded_tensors": 500,
+  "batch_size": 2,
+  "cache_unchanged_after_each_call": true,
+  "debug_cache_comparison_hot_path": false,
+  "device": "cuda",
+  "force_variant": "smolvla_cartesian7d",
+  "formal_eligible": false,
+  "gate": "P4_bare_smolvla_parity",
+  "gate_status": "fail",
+  "language_valid_lengths": [
+    48,
+    17
+  ],
+  "max_abs_error": {
+    "cached_10_step_vs_uncached_10_step": 0.009806245565414429,
+    "cached_batch_vs_cached_single": 0.04501652717590332,
+    "cached_batch_vs_full_batch": 0.029414892196655273,
+    "cached_single_vs_full_single": 0.030823469161987305,
+    "full_batch_vs_full_single": 0.04691457748413086,
+    "invalid_velocity": 0.0,
+    "prefill_prefix_vs_full_prefix_valid_tokens": 0.25
+  },
+  "missing_keys": [],
+  "numerical_limit": 0.1,
+  "precision": "bf16",
+  "prefix_physical_lengths": [
+    177,
+    177
+  ],
+  "prefix_valid_lengths": [
+    177,
+    146
+  ],
+  "reference_scale_for_gate": 23.25,
+  "schema_version": "1.0",
+  "seed": 4107,
+  "status": "fail",
+  "suffix_valid_lengths": [
+    50,
+    47
+  ],
+  "tolerance": {
+    "acceptance_config_sha256": "d27ab301170577dbcbd7eff079c95b672476f89d74a01de92937500db92c7dcd",
+    "atol": 0.1,
+    "config_id": "forcesmolvla-parity-development-v1",
+    "rtol": 0.0,
+    "source": "versioned_hash_bound_acceptance_config"
+  },
+  "topology": {
+    "add_image_special_tokens": false,
+    "attention_mode": "cross_attn",
+    "expert_width_multiplier": 0.75,
+    "num_expert_layers": 0,
+    "num_vlm_layers": 16,
+    "resize_imgs_with_padding": [
+      512,
+      512
+    ],
+    "self_attn_every_n_layers": 2,
+    "use_cache": true
+  },
+  "unexpected_keys": []
+}

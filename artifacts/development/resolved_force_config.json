@@ -1,0 +1,46 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "variant": "SmolVLA-Cartesian7D",
+  "training_stage": "offline_full_finetune",
+  "parameter_policy": {
+    "total_parameters": 450046176,
+    "trainable_parameters": 450046176,
+    "frozen_parameters": 0,
+    "vlm_mode_during_updates": "train",
+    "vision_encoder_mode_during_updates": "train",
+    "future_online_hil_stage": "online_hil_vlm_frozen"
+  },
+  "policy_type": "force_smolvla",
+  "input_features_order": [
+    "observation.state",
+    "observation.images.camera1",
+    "observation.images.camera2"
+  ],
+  "camera_bindings": {
+    "observation.images.camera1": "D435 third-person",
+    "observation.images.camera2": "D405 wrist"
+  },
+  "state_active_dim": 7,
+  "action_active_dim": 7,
+  "max_state_dim": 32,
+  "max_action_dim": 32,
+  "chunk_size": 50,
+  "n_action_steps": 1,
+  "num_steps": 10,
+  "d_vlm": 960,
+  "d_expert": 720,
+  "d_action": 32,
+  "n_prefix_physical": 177,
+  "prefix_spans": {
+    "camera1": [0, 64],
+    "camera2": [64, 128],
+    "language": [128, 176],
+    "state": [176, 177]
+  },
+  "rtc": "forbidden",
+  "select_action": "forbidden",
+  "preflight_report_sha256": "b5ffc964a4fe64fa755a727c9d418f2ce7ac1de2c7493fc80d2454fb6a6f35f4",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

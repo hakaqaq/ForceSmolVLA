@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "status": "development_only",
+  "stage": "P6",
+  "parent_p5_source_binding_sha256": "53798a5c25529cec79fc28013346f59862d377dfc2d8cb7f66f5a1d634f967c2",
+  "parent_p5_gate_report_sha256": "0028c8aeb9bd9b62d401ec8ca61644d25dbd4f56cb0da821b45066a54e4034b0",
+  "lerobot": {
+    "repository": "https://github.com/huggingface/lerobot.git",
+    "tag": "v0.6.0",
+    "commit": "30da8e687a6dfc617fcd94afc367ac7071c376ce",
+    "dirty_worktree": false,
+    "files": {
+      "pyproject.toml": "bf2140842c4568ac77cb99f97bbe092def5fa8cb30d011a19a0d0077764ce80a",
+      "src/lerobot/policies/smolvla/configuration_smolvla.py": "2fb637cb428fa2fdf1d114646dcffaf4728216bfe5b7039d5d0cac4857ffc4e0",
+      "src/lerobot/policies/smolvla/modeling_smolvla.py": "5daaa297954acf9ae89397b571322f07bf30798e72f566e61a09393342cb1f99",
+      "src/lerobot/policies/smolvla/smolvlm_with_expert.py": "f7542fa2bf904f9ef64d26843809f913a5e93c4dfa538dda06db0b288391ab4d"
+    }
+  },
+  "forcesmolvla_files": {
+    "configs/p6_dense_param_moe.development.json": "e7812ce5840fdc19193e56f041da1df29f245ee68c8bb55a408972cdb1c7e7b1",
+    "tests/test_force_config.py": "24e4c236f392fb08f158b675986f965f3103f219776be7044ec63048d90e7bd6",
+    "tests/test_force_token_dense_compute.py": "3ed8bce315d92dc99ace750cf171c04d43002cbc64ace4cb646aa7eb8b31a2fb",
+    "tests/test_p6_dense_param_moe.py": "bb6d1e161878adfa4ea6453b7c1bca53fc62089953771b3954b57b0f040a7b70",
+    "tools/preflight_p6_variants_gpu.py": "2fbf9754252932405a52e99c6c2f78c45d4636270236d988cd641ebcc41deefa"
+  },
+  "detached_signature": null,
+  "signature_status": "development_only_untrusted"
+}

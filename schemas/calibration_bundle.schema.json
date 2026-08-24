@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.forcesmolvla/schemas/calibration-bundle-v4.1.schema.json",
+  "title": "ForceSmolVLA v4.1 static wrench calibration bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "artifact_status", "calibration_id", "source_artifact",
+    "validated", "sensor_bias6", "wrench_sign6", "downstream_mass_kg",
+    "downstream_com_sensor_m", "gravity_base_m_s2", "static_transform_tcp_sensor",
+    "frames", "formal_ready"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_status": {"enum": ["development_only", "approved"]},
+    "calibration_id": {"type": "string", "minLength": 1},
+    "source_artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "format_version"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "format_version": {"const": "fr3-hexe-calibration-v1"}
+      }
+    },
+    "validated": {"const": true},
+    "sensor_bias6": {"$ref": "#/$defs/vec6"},
+    "wrench_sign6": {
+      "type": "array", "items": {"enum": [-1, 1]}, "minItems": 6, "maxItems": 6
+    },
+    "downstream_mass_kg": {"type": "number", "minimum": 0},
+    "downstream_com_sensor_m": {"$ref": "#/$defs/vec3"},
+    "gravity_base_m_s2": {"$ref": "#/$defs/vec3"},
+    "static_transform_tcp_sensor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["translation_m", "quaternion_xyzw", "tool_profile_sha256"],
+      "properties": {
+        "translation_m": {"$ref": "#/$defs/vec3"},
+        "quaternion_xyzw": {"$ref": "#/$defs/quat4"},
+        "tool_profile_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "frames": {
+      "type": "object", "additionalProperties": false,
+      "required": ["base", "tcp", "sensor_measurement"],
+      "properties": {
+        "base": {"const": "fr3_link0"},
+        "tcp": {"const": "franka_desk_ee_tcp"},
+        "sensor_measurement": {"const": "onrobot_fts_measurement_link"}
+      }
+    },
+    "formal_ready": {"type": "boolean"}
+  },
+  "allOf": [{
+    "if": {"properties": {"artifact_status": {"const": "approved"}}},
+    "then": {"properties": {"formal_ready": {"const": true}}}
+  }],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "vec3": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+    "vec6": {"type": "array", "items": {"type": "number"}, "minItems": 6, "maxItems": 6},
+    "quat4": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4}
+  }
+}

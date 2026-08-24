@@ -1,0 +1,15 @@
+{
+  "fixture_id": "causal-pose-zoh-v1",
+  "clock_domain": "synthetic_source_timestamp_ns",
+  "max_pose_age_ms_candidate": 12.0,
+  "pose_stamps_ns": [1000000000, 1010000000, 1020000000],
+  "wrench_cases": [
+    {"stamp_ns": 999999999, "expected_pose_index": null, "expected_valid": false, "failure_code": "WRENCH_POSE_MISSING_OR_STALE"},
+    {"stamp_ns": 1000000000, "expected_pose_index": 0, "expected_pose_age_ms": 0.0, "expected_valid": true},
+    {"stamp_ns": 1009999999, "expected_pose_index": 0, "expected_pose_age_ms": 9.999999, "expected_valid": true},
+    {"stamp_ns": 1010000000, "expected_pose_index": 1, "expected_pose_age_ms": 0.0, "expected_valid": true},
+    {"stamp_ns": 1032000000, "expected_pose_index": 2, "expected_pose_age_ms": 12.0, "expected_valid": true},
+    {"stamp_ns": 1032000001, "expected_pose_index": 2, "expected_pose_age_ms": 12.000001, "expected_valid": false, "failure_code": "WRENCH_POSE_MISSING_OR_STALE"}
+  ],
+  "forbidden": ["future_pose", "linear_interpolation", "slerp", "se3_interpolation"]
+}

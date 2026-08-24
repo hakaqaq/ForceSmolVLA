@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.forcesmolvla/schemas/wrench-geometry-spec-v4.1.schema.json",
+  "title": "ForceSmolVLA v4.1 measured-TCP wrench geometry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "artifact_status", "profile", "wording", "frames",
+    "clock_domain", "pose_selection", "static_transform_tcp_sensor",
+    "calibration", "operation_order", "output", "formal_ready"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_status": {"enum": ["development_only", "approved"]},
+    "profile": {"const": "forcesmolvla-v4.1-available-sensor"},
+    "wording": {"const": "calibrated TCP wrench conditioned on measured TCP pose"},
+    "frames": {
+      "type": "object", "additionalProperties": false,
+      "required": ["base", "tcp", "sensor_measurement"],
+      "properties": {
+        "base": {"const": "fr3_link0"},
+        "tcp": {"const": "franka_desk_ee_tcp"},
+        "sensor_measurement": {"const": "onrobot_fts_measurement_link"}
+      }
+    },
+    "clock_domain": {"const": "ros_source_timestamp_ns"},
+    "pose_selection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["method", "predicate", "future_interpolation", "max_pose_age_ms", "threshold_status"],
+      "properties": {
+        "method": {"const": "causal_zoh_latest"},
+        "predicate": {"const": "t_pose <= t_wrench"},
+        "future_interpolation": {"const": "forbidden"},
+        "max_pose_age_ms": {"type": "number", "minimum": 0},
+        "threshold_status": {"enum": ["approval_pending", "approved"]}
+      }
+    },
+    "static_transform_tcp_sensor": {"$ref": "#/$defs/transform"},
+    "calibration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["calibration_id", "artifact_sha256", "tool_profile_sha256"],
+      "properties": {
+        "calibration_id": {"type": "string", "minLength": 1},
+        "artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "tool_profile_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "operation_order": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "wrench_sign"}, {"const": "sensor_bias"},
+        {"const": "payload_gravity_force_and_moment_compensation"},
+        {"const": "sensor_to_base_rotation"}, {"const": "moment_shift_sensor_to_tcp"}
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "output": {
+      "type": "object", "additionalProperties": false,
+      "required": ["shape", "force_expressed_in", "moment_expressed_in", "reference_point"],
+      "properties": {
+        "shape": {"const": [6]},
+        "force_expressed_in": {"const": "fr3_link0"},
+        "moment_expressed_in": {"const": "fr3_link0"},
+        "reference_point": {"const": "franka_desk_ee_tcp"}
+      }
+    },
+    "formal_ready": {"type": "boolean"}
+  },
+  "allOf": [{
+    "if": {"properties": {"artifact_status": {"const": "approved"}}},
+    "then": {
+      "properties": {
+        "pose_selection": {"properties": {"threshold_status": {"const": "approved"}}},
+        "formal_ready": {"const": true}
+      }
+    }
+  }],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "vec3": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+    "quat4": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+    "transform": {
+      "type": "object", "additionalProperties": false,
+      "required": ["translation_m", "quaternion_xyzw", "source", "source_sha256"],
+      "properties": {
+        "translation_m": {"$ref": "#/$defs/vec3"},
+        "quaternion_xyzw": {"$ref": "#/$defs/quat4"},
+        "source": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

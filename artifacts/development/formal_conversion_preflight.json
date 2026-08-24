@@ -1,0 +1,7 @@
+{
+  "error_type": "PermissionError",
+  "output_created": false,
+  "reason": "formal mode requires an approved RuleSpec",
+  "status": "fail_closed"
+}
+

@@ -1,0 +1,9 @@
+{
+  "fixture_id": "wrench-quality-structural-v1",
+  "cases": [
+    {"id": "finite-pass", "raw_wrench6": [0, 1, 2, 3, 4, 5], "expected": true},
+    {"id": "nan-fail", "raw_wrench6": [0, 1, "NaN", 3, 4, 5], "expected": false, "failure_code": "WRENCH_NONFINITE"},
+    {"id": "monotonic-pass", "timestamps_ns": [1, 2, 3], "expected": true},
+    {"id": "duplicate-fail", "timestamps_ns": [1, 2, 2], "expected": false, "failure_code": "SOURCE_TIMESTAMP_NONMONOTONIC"}
+  ]
+}

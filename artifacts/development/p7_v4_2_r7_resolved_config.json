@@ -1,0 +1,52 @@
+{
+  "acceptance_status": "development_only",
+  "approval": null,
+  "complete_main_additive_state": {
+    "complete_tensor_equality": true,
+    "state_schema_sha256": "41e8631783397160fabb3fa98981050babfe900ecb44a6c6f728827d94872f14",
+    "state_tensor_count": 574
+  },
+  "detached_signature": null,
+  "exact_two_pass_role": "acceptance_oracle_only",
+  "fixed_validation_algorithm": "single_pass_batch_local",
+  "fixed_validation_fixture_sha256": "5589500e80dfc9b3a8607cc27aae7237f9672b10037c00029b151d33ca2def50",
+  "force_initialization_tensor_sha256": "56f89b864e53a883ee61c4b0e39121563c283ce38ca6df31722df689f576e9f3",
+  "formal_eligible": false,
+  "optimizer_groups": {
+    "decay_parameter_count": 456491776,
+    "decay_tensor_count": 333,
+    "each_trainable_parameter_exactly_once": true,
+    "group_name_sha256": "fe2d0636f084c7432e4a25425c9f7b0359b18c803b7f8a4bf781db01ccc8ea6b",
+    "no_decay_parameter_count": 49128565,
+    "no_decay_tensor_count": 241,
+    "optimizer_tensor_count": 574,
+    "trainable_tensor_count": 574
+  },
+  "p6_prerequisite": {
+    "gate_result": "e7adfa8968c9bbf11aee3377e7d54f8645f5166daa13e3ead73ce905de92be7a",
+    "resolved_config": "c57ce93f3cf96458427fc96ecc61bf2bb62d6e45bec013c57a9e9fe536185800",
+    "source_binding": "291983591fce875b04b3632b1c503243b1881c3f92021c18765c494a27a24395",
+    "static_spec": "b3988b12665d1c9668da27dde3256ae47042996f55cd81384d4f32a5a7e27681"
+  },
+  "p7_phase_boundary": {
+    "checkpoint_strict_reload": "not_accepted_until_P8",
+    "development_checkpoint_save": "permitted_but_not_created_by_preflight",
+    "long_development_sft": "blocked_until_P8_exact_resume_and_force_parity",
+    "shadow": "not_implemented_until_P9"
+  },
+  "scheduler": {
+    "last_epoch": 1,
+    "learning_rate_after_update": 1.9980019980019304e-07,
+    "learning_rate_before_update": 9.990009990009991e-08
+  },
+  "schema_version": "1.0",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "source_binding_sha256": "c276405aaed1f3a3f70dff344ac3cbd988037dc87ebf3d9d2db302834223760b",
+  "training_recipe_sha256": "bdaba473fce1d132d2ab8d481a2a8056f32bf142a3159e222476c6db9fd1e9f4",
+  "training_stage": "offline_full_finetune",
+  "training_update_algorithm": "single_pass_batch_local"
+}

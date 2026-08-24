@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "status": "pass",
+  "dataset_root": "/home/rlc123/ForceSmolVLA/datasets/task2_lerobotv3",
+  "repo_id": "local/task2_lerobotv3",
+  "raw_source_tree_sha256": "0425cf2b573b43cdc27d73287277842da0ad5f967dcd56afacdaee1de74ba7c0",
+  "lerobot_commit": "30da8e687a6dfc617fcd94afc367ac7071c376ce",
+  "codebase_version": "v3.0",
+  "raw_episode_count": 50,
+  "converted_episode_count": 47,
+  "converted_frame_count": 38639,
+  "excluded_episodes": [
+    {
+      "raw_episode_id": "episode_000041",
+      "reason": "WRENCH_SOURCE_GAP_EXCEEDED"
+    },
+    {
+      "raw_episode_id": "episode_000047",
+      "reason": "CAMERA_AGE_EXCEEDED"
+    },
+    {
+      "raw_episode_id": "episode_000049",
+      "reason": "CAMERA_AGE_EXCEEDED"
+    }
+  ],
+  "storage": {
+    "parquet_files": 47,
+    "videos": false,
+    "image_encoding": "LeRobot image struct with binary bytes embedded in episode parquet",
+    "camera1": "D435 third-person RGB [3,480,640]",
+    "camera2": "D405 wrist RGB [3,480,640]"
+  },
+  "split": {
+    "method": "sha256-ranked-episode-disjoint-v1",
+    "seed": "forcesmolvla-v4.1-task2-split-1",
+    "split_sha256": "3bb050ca35a39898a1834922254eeb29f9deafecdcad0be1add2c9649d5e0e4a",
+    "episode_counts": {
+      "train": 38,
+      "val": 5,
+      "test": 4
+    },
+    "sample_counts": {
+      "train": 31824,
+      "val": 3775,
+      "test": 3040
+    },
+    "episode_disjoint": true,
+    "complete_coverage": true
+  },
+  "normalizer": {
+    "schema_version": "2.0",
+    "owner": "forcesmolvla.CartesianNormalizerBundle",
+    "fit_scope": "train state/wrench per tuple; every valid H=50 future action target relative to its t_ref state; padded tail excluded",
+    "task1_normalizer_reused": false,
+    "inherited_lerobot_normalizers": "Identity/disconnected",
+    "normalizer_manifest_sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
+    "normalizer_stats_sha256": "6ea38335e307b1a5db28e8982dec11dd5a18973107aff18578d837372d08cdf7",
+    "valid_chunk_target_count": 1544650,
+    "forcevla_semantic_parity": {
+      "first_six_dimensions": "whole future chunk relative to the same t_ref state",
+      "seventh_dimension": "absolute target_gripper_width_m",
+      "status": "pass"
+    },
+    "action_target_population_parity": {
+      "gate": "ActionTargetPopulationParityGate",
+      "status": "pass",
+      "artifact_path": "artifacts/development/action_target_population_parity_r1.json",
+      "artifact_sha256": "0d3e2fb411708554ed27f97f015638d7d2d55a9ed3d2b03e4e88f810ce9e7725",
+      "valid_pair_count": 1544650,
+      "ordered_pair_identity_sha256": "77d5326c282738efa17c6d84bb27ac9fbb98a94bfe4c77571424adcbbd2153a9",
+      "action_target7_float64_tensor_sha256": "5d7bd103d24db0d02332d84b8bd9c8df6ea5438bf349930e1490fb84e6397e29",
+      "statistics_sha256": "fb3c48c750624fe8a3ea15467a0fc238229d6668fae01e72f1bb209fc9919cb4",
+      "forcevla_numeric_comparison_role": "auxiliary_only_not_acceptance_oracle"
+    }
+  },
+  "full_numeric_and_causal_scan": {
+    "status": "pass",
+    "finite_state7_wrench6_action7": true,
+    "future_host_samples": 0,
+    "future_geometry_pose_samples": 0,
+    "filter_timestamp_changes": 0,
+    "invalid_calibration_or_validity_rows": 0,
+    "observed_max_ms": {
+      "state_pose_age": 11.202396392822266,
+      "wrench_pose_age": 11.312329292297363,
+      "camera1_age": 33.569427490234375,
+      "camera2_age": 33.55910110473633,
+      "intercamera_skew": 32.93642044067383,
+      "action_ack_age": 110.41497802734375
+    }
+  },
+  "horizon_50_loader_smoke": {
+    "status": "pass",
+    "splits": ["train", "val", "test"],
+    "state_shape": [7],
+    "wrench_shape": [6],
+    "action_shape": [50, 7],
+    "action_valid_mask_shape": [50],
+    "camera_shape": [3, 480, 640],
+    "prompt": "Pick up the purple ring and place it onto the red peg."
+  },
+  "robot_actions_sent": 0,
+  "detached_signature": null,
+  "approval": null
+}

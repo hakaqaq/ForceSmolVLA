@@ -1,0 +1,18 @@
+.venv/
+.cache/
+assets/
+datasets/
+outputs/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.py[cod]
+*.so
+*.log
+.DS_Store
+
+# Local review/release bundles and machine-specific trust material.
+test/
+releases/
+configs/trust/

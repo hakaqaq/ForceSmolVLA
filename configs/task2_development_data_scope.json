@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "dataset": {
+    "path": "datasets/task2_lerobotv3",
+    "repo_id": "local/task2_lerobotv3",
+    "conversion_manifest_sha256": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477",
+    "raw_root": "/home/rlc123/fr3_client_ws/datasets/task2",
+    "raw_source_tree_sha256": "0425cf2b573b43cdc27d73287277842da0ad5f967dcd56afacdaee1de74ba7c0",
+    "evaluation_scope": "episode-disjoint within one task2 collection root; no cross-session generalization claim"
+  },
+  "session_provenance": {
+    "raw_session_manifest_path": "/home/rlc123/fr3_client_ws/datasets/task2/session.json",
+    "raw_session_manifest_sha256": "f87ae11e98312688a1673bba4581898f27ec2e7045bcc87d8afc8aea816791f2",
+    "raw_format_version": "fr3-hilserl-impedance-native-raw-v5",
+    "created_at": "2026-08-19T10:34:20.560080+00:00",
+    "explicit_physical_session_id": null,
+    "physical_session_id_status": "not_recorded_in_source",
+    "collection_scope_id": "task2_collection_scope_f87ae11e9831",
+    "collection_scope_id_semantics": "deterministic label for the task2 raw root governed by the bound session manifest; not a physical-session identity",
+    "legacy_fixture_session_id": "task1_within_session",
+    "legacy_fixture_session_id_status": "invalid_legacy_metadata_for_task2",
+    "replacement_chunk_context_session_id": "task2_collection_scope_f87ae11e9831"
+  },
+  "training_budget": {
+    "recipe_path": "configs/offline_sft_training_recipe.development.yaml",
+    "recipe_sha256": "3e377efe37beb172af91ebdd32a5480f74430fe8eb1aebfef2b81544f7c978c6",
+    "primary_unit": "samples",
+    "target_samples": 40000,
+    "batch_per_gpu": 4,
+    "gradient_accumulation_microbatches": 1,
+    "effective_samples_per_update": 4,
+    "derived_optimizer_updates": 10000,
+    "checkpoint_policy": "final_update_only",
+    "final_checkpoint_training_samples": 40000,
+    "effective_schedule": {
+      "warmup_updates": 500,
+      "decay_end_update": 10000,
+      "peak_lr": 0.0001,
+      "final_lr": 0.0000025,
+      "lerobot_short_run_auto_scale": true
+    },
+    "legacy_recipe_checkpoint_interval_samples": 2000,
+    "validation_interval_samples": 2000
+  },
+  "detached_signature": null,
+  "approval": null
+}

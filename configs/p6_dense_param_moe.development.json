@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "training_stage": "offline_full_finetune",
+  "seed": 42,
+  "execution": {
+    "batch_size": 4,
+    "gradient_accumulation_microbatches": 1,
+    "camera_count": 2,
+    "horizon": 50,
+    "optimizer_steps": 2
+  },
+  "common_architecture_binding": {
+    "p5_static_spec_sha256": "7ab3307874c4b27e723b27972b4fee2d80629ecd60da60a9e463b13d380d9405",
+    "D_vlm": 960,
+    "D_expert": 720,
+    "fusion_blocks": 2,
+    "fusion_heads": 8,
+    "force_cross_attention_heads": 1,
+    "N_fused_physical": 177
+  },
+  "p5_prerequisite": {
+    "static_spec": {
+      "path": "configs/p5_force_token_dense_compute.development.json",
+      "sha256": "edc33ab18b015007039a2355c16768e736ceb1b3a4620b74e8d9fd540614ea19"
+    },
+    "source_binding": {
+      "path": "artifacts/development/p5_v4_2_r7_source_binding.json",
+      "sha256": "4a2d2ab0c515cc5b45687f46f736ac9cad05b88b6df5a15256cea3f7207c46f9"
+    },
+    "resolved_config": {
+      "path": "artifacts/development/p5_v4_2_r7_resolved_config.json",
+      "sha256": "19834558943477d0d24662a8251f3e19f9609b29a55c9bb8265c32cc32d9c3ea"
+    },
+    "gate_result": {
+      "path": "artifacts/development/p5_v4_2_r7_gpu_preflight.json",
+      "sha256": "cadfb8e399182f6c981fe57e943fed6d755648144cb37139568b3e7bc4a1b3ba"
+    },
+    "required_gate_status": "pass",
+    "required_acceptance_status": "development_only",
+    "required_formal_eligible": false
+  },
+  "dense_param": {
+    "variant": "force_token_dense_param",
+    "hidden_dim": 15364,
+    "refiner_shape": [960, 15364, 960],
+    "refiner_mlp_parameters": 29515204,
+    "refiner_total_parameters_including_norm": 29517124,
+    "force_parameters": 55575125,
+    "total_parameters": 505621301,
+    "moe_refiner_parameter_difference": 960,
+    "relative_moe_refiner_parameter_difference": 0.000032524551632115884,
+    "router": null
+  },
+  "moe": {
+    "variant": "force_token_moe",
+    "num_experts": 4,
+    "expert_shape": [960, 3840, 960],
+    "router": "Linear(960,4,bias=True)",
+    "router_weight_initialization": "deterministic_normal_mean_0_std_0.02",
+    "router_bias_initialization": "zeros",
+    "router_initialization_basis": "ForceVLA_FlaxFormer_RouterWeights_default_kernel_init",
+    "router_jitter": 0.0,
+    "router_temperature": 1.0,
+    "top_k": 1,
+    "capacity_free": true,
+    "deterministic_tie_break": "minimum_expert_id",
+    "token_drop": false,
+    "fallback_expert": false,
+    "refiner_parameters_excluding_norm": 29514244,
+    "refiner_total_parameters_including_norm": 29516164,
+    "force_parameters": 55574165,
+    "total_parameters": 505620341,
+    "active_macs_per_valid_token": 7377600
+  },
+  "dense_compute_reference": {
+    "variant": "force_token_dense_compute",
+    "active_macs_per_valid_token": 7372800,
+    "relative_moe_active_mac_difference": 0.0006506180871828257
+  },
+  "p6_phase_boundary": {
+    "router_auxiliary_loss": "implemented_not_accepted_until_P7_gate",
+    "exact_two_pass_oracle": "implemented_not_accepted_until_P7_gate",
+    "additive_adapter": "implemented_not_accepted_until_P7_gate",
+    "checkpoint_strict_reload": "implemented_not_accepted_until_P8_gate",
+    "shadow": "implemented_not_accepted_until_P9_gate"
+  },
+  "source_binding_required": true,
+  "detached_signature": null,
+  "approval": null
+}

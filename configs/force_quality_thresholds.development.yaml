@@ -1,0 +1,237 @@
+schema_version: 1.0.0
+artifact_status: development_only
+profile: forcesmolvla-v4.1-available-sensor
+rules:
+  - rule_id: WQ_FINITE
+    description: Every selected raw wrench axis and derived calibrated wrench axis is finite.
+    scope: sample
+    inputs: [raw_wrench6, calibrated_tcp_wrench6]
+    input_artifacts: []
+    frame: sensor_and_fr3_link0_at_tcp
+    unit: bool
+    clock_domain: ros_source_timestamp_ns
+    formula: all(isfinite(raw_wrench6)) and all(isfinite(calibrated_tcp_wrench6))
+    formula_revision: finite-v1
+    window: one raw wrench sample
+    sampling: every raw wrench sample
+    aggregation: all axes
+    threshold:
+      value: true
+      comparator: all_true
+      provenance: deterministic validity contract; numeric approval not applicable
+      approval_status: approval_pending
+    failure_code: WRENCH_NONFINITE
+    severity: exclude_sample
+    remediation: Exclude the sample and do not update filter state.
+    golden_fixture: {artifact: golden_fixtures/wrench_quality.json, sha256: 0db6fd378dc3baf925309b184437ba209323292222378a758fcf32edee318e12}
+  - rule_id: WQ_TIMESTAMP_MONOTONIC
+    description: Pose and wrench source timestamps are strictly increasing within an episode.
+    scope: episode
+    inputs: [pose_source_stamp_ns, wrench_source_stamp_ns]
+    input_artifacts: []
+    frame: null
+    unit: bool
+    clock_domain: ros_source_timestamp_ns
+    formula: all(diff(pose_source_stamp_ns)>0) and all(diff(wrench_source_stamp_ns)>0)
+    formula_revision: monotonic-v1
+    window: full episode
+    sampling: every source record in original order
+    aggregation: all adjacent differences
+    threshold:
+      value: true
+      comparator: all_true
+      provenance: deterministic timestamp contract
+      approval_status: approval_pending
+    failure_code: SOURCE_TIMESTAMP_NONMONOTONIC
+    severity: exclude_episode
+    remediation: Exclude the episode and inspect recorder clock/order.
+    golden_fixture: {artifact: golden_fixtures/wrench_quality.json, sha256: 0db6fd378dc3baf925309b184437ba209323292222378a758fcf32edee318e12}
+  - rule_id: WQ_GEOMETRY_POSE_AGE
+    description: Each wrench uses the latest nonfuture measured TCP pose and meets max pose age.
+    scope: sample
+    inputs: [wrench_source_stamp_ns, pose_source_stamp_ns, pose_age_ms, geometry_valid]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: ms
+    clock_domain: ros_source_timestamp_ns
+    formula: geometry_valid and pose_source_stamp_ns<=wrench_source_stamp_ns and 0<=pose_age_ms<=max_pose_age_ms
+    formula_revision: measured-tcp-causal-zoh-v1
+    window: one raw wrench sample
+    sampling: every raw wrench sample
+    aggregation: all predicates
+    threshold:
+      value: 12.0
+      comparator: le
+      provenance: candidate = ceil_1ms(observed maximum 11.775707 ms over 699134 causal matches)
+      approval_status: approval_pending
+    failure_code: WRENCH_POSE_MISSING_OR_STALE
+    severity: exclude_sample
+    remediation: Exclude the sample; never select a future pose or interpolate.
+    golden_fixture: {artifact: golden_fixtures/causal_pose_zoh.json, sha256: 44dce5d5a66497f43f98bfd4f364f5e885205575af0b7b7465a077ff260e9dc5}
+  - rule_id: WQ_DEVICE_STATUS
+    description: Device status indicates a valid raw wrench sample when the device exposes status.
+    scope: sample
+    inputs: [device_status]
+    input_artifacts: []
+    frame: sensor
+    unit: device_defined
+    clock_domain: ros_source_timestamp_ns
+    formula: pending exact device status field and valid-code mapping
+    formula_revision: unresolved
+    window: one raw wrench sample
+    sampling: every raw wrench sample
+    aggregation: unresolved
+    threshold:
+      value: null
+      comparator: eq
+      provenance: raw task1 exposes no independent device-status field; confirmation required
+      approval_status: approval_pending
+    failure_code: WRENCH_DEVICE_STATUS_INVALID_OR_UNAVAILABLE
+    severity: exclude_episode
+    remediation: Confirm field availability and valid codes; do not fabricate pass values.
+    golden_fixture: {artifact: golden_fixtures/wrench_quality.json, sha256: 0db6fd378dc3baf925309b184437ba209323292222378a758fcf32edee318e12}
+  - rule_id: WQ_SATURATION
+    description: Raw wrench axes stay outside the approved full-scale margin.
+    scope: episode
+    inputs: [raw_wrench6, full_scale_axis, margin_axis]
+    input_artifacts: []
+    frame: sensor
+    unit: fraction
+    clock_domain: ros_source_timestamp_ns
+    formula: max_axis(count(abs(raw_axis)>=full_scale_axis-margin_axis)/N)
+    formula_revision: saturation-v1
+    window: full episode
+    sampling: every finite raw wrench sample
+    aggregation: maximum axis fraction
+    threshold:
+      value: null
+      comparator: le
+      provenance: sensor full-scale, margin and allowed fraction require approval
+      approval_status: approval_pending
+    failure_code: WRENCH_SATURATION_RATE_EXCEEDED
+    severity: exclude_episode
+    remediation: Confirm device range and inspect overloaded episodes.
+    golden_fixture: {artifact: golden_fixtures/wrench_quality.json, sha256: 0db6fd378dc3baf925309b184437ba209323292222378a758fcf32edee318e12}
+  - rule_id: WQ_BIAS_DRIFT
+    description: Bias drift stays below the approved per-axis slope threshold.
+    scope: episode
+    inputs: [calibrated_tcp_wrench6, zero_contact_window]
+    input_artifacts: []
+    frame: fr3_link0_at_tcp
+    unit: N/s_or_Nm/s
+    clock_domain: ros_source_timestamp_ns
+    formula: max_axis(abs(TheilSenSlope(bias_estimate_axis(t),t)))
+    formula_revision: bias-drift-v1
+    window: unresolved zero-contact window
+    sampling: unresolved
+    aggregation: maximum absolute per-axis slope
+    threshold:
+      value: null
+      comparator: le
+      provenance: window, sampling and numeric threshold require approval
+      approval_status: approval_pending
+    failure_code: WRENCH_BIAS_DRIFT_EXCEEDED
+    severity: exclude_episode
+    remediation: Confirm protocol/window and recalibrate or exclude the episode.
+    golden_fixture: {artifact: golden_fixtures/wrench_quality.json, sha256: 0db6fd378dc3baf925309b184437ba209323292222378a758fcf32edee318e12}
+  - rule_id: WQ_GRAVITY_RESIDUAL
+    description: Compensated force and moment residuals stay within approved limits in a declared free-space static-pose window.
+    scope: episode
+    inputs: [calibrated_tcp_wrench6, free_space_static_pose_window]
+    input_artifacts: []
+    frame: fr3_link0_at_tcp
+    unit: N_and_Nm
+    clock_domain: ros_source_timestamp_ns
+    formula: median(norm(force_xyz_n)) and median(norm(moment_xyz_nm))
+    formula_revision: gravity-residual-v1
+    window: unresolved free-space/static-pose window
+    sampling: unresolved
+    aggregation: median force norm and median moment norm
+    threshold:
+      value: null
+      comparator: le
+      provenance: window and separate force/moment numeric limits require approval
+      approval_status: approval_pending
+    failure_code: WRENCH_GRAVITY_RESIDUAL_EXCEEDED
+    severity: exclude_episode
+    remediation: Confirm protocol and limits; inspect calibration/payload or exclude the episode.
+    golden_fixture: {artifact: golden_fixtures/wrench_quality.json, sha256: 0db6fd378dc3baf925309b184437ba209323292222378a758fcf32edee318e12}
+  - rule_id: WQ_TCP_LEVER_ARM
+    description: TCP moment shift agrees with the approved known-lever-arm fixture.
+    scope: episode
+    inputs: [measured_tcp_moment3, reference_tcp_moment3, lever_arm_fixture_window]
+    input_artifacts: []
+    frame: fr3_link0_at_tcp
+    unit: Nm
+    clock_domain: ros_source_timestamp_ns
+    formula: percentile_95(norm(measured_tcp_moment3-reference_tcp_moment3))
+    formula_revision: tcp-lever-arm-v1
+    window: unresolved lever-arm fixture window
+    sampling: unresolved
+    aggregation: percentile_95 residual norm
+    threshold:
+      value: null
+      comparator: le
+      provenance: fixture window and residual threshold require approval
+      approval_status: approval_pending
+    failure_code: WRENCH_TCP_LEVER_ARM_RESIDUAL_EXCEEDED
+    severity: exclude_episode
+    remediation: Confirm fixture/protocol and verify T_TCP_sensor and moment convention.
+    golden_fixture: {artifact: golden_fixtures/wrench_geometry.json, sha256: d08dc94c67aa6185f537d59918698a54ff56ae093aef12b288cbb6f3a906a9b8}
+  - rule_id: WQ_CLOCK_OFFSET
+    description: The source-to-controller clock map offset plus confidence bound meets the approved limit.
+    scope: episode
+    inputs: [clock_offset_ms, clock_offset_confidence_bound_ms, clock_map_hash]
+    input_artifacts: []
+    frame: null
+    unit: ms
+    clock_domain: ros_source_timestamp_ns_to_upper_host_receive_monotonic_ns
+    formula: abs(clock_offset_ms)+clock_offset_confidence_bound_ms
+    formula_revision: clock-offset-bound-v1
+    window: full episode
+    sampling: every selected source stream record
+    aggregation: declared confidence bound
+    threshold:
+      value: null
+      comparator: le
+      provenance: estimator/confidence definition and limit require approval
+      approval_status: approval_pending
+    failure_code: CLOCK_OFFSET_BOUND_EXCEEDED
+    severity: exclude_episode
+    remediation: Freeze the clock-map estimator and numeric bound before formal conversion.
+    golden_fixture: {artifact: golden_fixtures/wrench_quality.json, sha256: 0db6fd378dc3baf925309b184437ba209323292222378a758fcf32edee318e12}
+  - rule_id: WQ_FILTER_RESET_WARMUP
+    description: Filter state resets per episode and warm-up samples never produce tuples.
+    scope: episode
+    inputs: [filter_reset_episode_id, filter_warmup_valid, tuple_source_sample_ids]
+    input_artifacts: []
+    frame: fr3_link0_at_tcp
+    unit: bool
+    clock_domain: ros_source_timestamp_ns
+    formula: reset_once_at_episode_start and no(tuple_uses_warmup_sample)
+    formula_revision: filter-reset-warmup-v1
+    window: full episode
+    sampling: every filter output and tuple
+    aggregation: all predicates
+    threshold:
+      value: true
+      comparator: all_true
+      provenance: deterministic causal filtering contract; exact warm-up length remains in filter spec
+      approval_status: approval_pending
+    failure_code: FILTER_RESET_OR_WARMUP_CONTRACT_VIOLATION
+    severity: exclude_episode
+    remediation: Exclude the episode and inspect the per-episode filter audit.
+    golden_fixture: {artifact: golden_fixtures/wrench_quality.json, sha256: 0db6fd378dc3baf925309b184437ba209323292222378a758fcf32edee318e12}
+approval:
+  status: approval_pending
+  approval_id: null
+  approver_identity: null
+  approver_role: null
+  approved_at: null
+signature:
+  status: configuration_pending
+  format: null
+  algorithm: null
+  digest: null
+  key_id: null
+  signature_file: null

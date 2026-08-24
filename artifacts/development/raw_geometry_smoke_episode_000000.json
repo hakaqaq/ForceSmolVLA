@@ -1,0 +1,16 @@
+{
+  "calibration_id": "sha256:409c462adb03b249df605d6e964344ac9e5a30ee1a2653137774a257541cc37b",
+  "episode": "episode_000000",
+  "filter_or_resample_applied": false,
+  "future_pose_count": 0,
+  "invalid_geometry_records": 5,
+  "max_pose_age_ms_candidate": 12.0,
+  "maximum_selected_pose_age_ms": 11.146415,
+  "output_float64_sha256": "65f59016bb7261b1185c4c2c4730891eac22cf4d1155b780f07b811e942c087d",
+  "raw_root": "/home/rlc123/fr3_client_ws/datasets/task1",
+  "raw_wrench_records_examined": 5000,
+  "status": "development_only_smoke_pass",
+  "valid_geometry_records": 4995,
+  "wording": "calibrated TCP wrench conditioned on measured TCP pose"
+}
+

@@ -1,0 +1,19 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "variant": "SmolVLA-Cartesian7D",
+  "chunk_size": 50,
+  "active_action_dim": 7,
+  "packed_action_dim": 32,
+  "noise_contract": "caller supplies 7D noise or exactly zero-padded equivalent 32D noise",
+  "interpolation": "x_t=(t*epsilon32+(1-t)*action32)*flow_valid_mask",
+  "target": "u_t=(epsilon32-action32)*flow_valid_mask",
+  "loss": "sum(flow_valid_mask*(velocity32-u_t)^2)/sum(flow_valid_mask)",
+  "batch_reduction": "single global valid feature-token numerator/denominator",
+  "training_cache": false,
+  "cached_inference_cache": true,
+  "suffix_temporal_mask_required": true,
+  "source_sha256": "0682f15ee152dd2328cb2e4529267479bf325f44269df06eaad2942302206364",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

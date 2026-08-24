@@ -1,0 +1,14 @@
+{
+  "fixture_id": "wrench-geometry-moment-shift-v1",
+  "description": "Zero payload, identity rotation, sensor origin 0.2 m below TCP.",
+  "T_TCP_sensor": {
+    "translation_m": [0.0, 0.0, -0.2],
+    "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+  },
+  "wrench_sign": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+  "bias_sensor": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "payload_mass_kg": 0.0,
+  "raw_wrench_sensor": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "expected_wrench_base_at_tcp": [1.0, 0.0, 0.0, 0.0, -0.2, 0.0],
+  "formula": "M_TCP = M_sensor + (p_sensor - p_TCP) cross F"
+}

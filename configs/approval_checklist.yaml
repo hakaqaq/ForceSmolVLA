@@ -1,0 +1,75 @@
+schema_version: 1.0.0
+profile: forcesmolvla-v4.1-available-sensor
+status: approval_pending
+thresholds_requiring_experiment_lead_decision:
+  - field: max_pose_age_ms
+    candidate: 12.0
+    unit: ms
+    evidence: P50=5.026, P95=9.536, P99=10.161, max=11.775707 over 699134 causal matches
+  - field: camera_max_age_ms
+    candidate: 34.0
+    unit: ms
+    evidence: causal latest-only aggregate maxima external=33.642849 ms, wrist=33.437617 ms over 41933 proposed grid ticks
+    dependency: grid_anchor_and_clock_map_semantics must be approved first
+  - field: max_intercamera_skew_ms
+    candidate: 33.0
+    unit: ms
+    evidence: causal selected-camera skew P99=28.823456 ms, max=32.785671 ms over 41933 proposed grid ticks
+    dependency: grid_anchor_and_clock_map_semantics must be approved first
+  - field: controller_grid_anchor
+    candidate: first reference_ack.receive_monotonic_ns per episode on a global zero-phase rational 30 Hz grid
+  - field: ros_source_to_upper_host_clock_map
+    candidate: null
+    note: exact estimator, confidence bound and clock-map id/hash semantics require approval
+  - field: acknowledgement_to_absolute_action_association
+    candidate: latest accepted_reference.accepted_receive_monotonic_ns <= reference_ack.receive_monotonic_ns; require position exact and sign-invariant quaternion geodesic <=1e-7 rad; use that record's pose and target_gripper_width_m, then ZOH the ack-associated target
+    evidence: 13842/13842 accepted acks have causal matches; position error max=0; quaternion geodesic max=4.214685e-8 rad; reference precedes ack by 0.035271 to 0.417518 ms; rejected acks=0
+  - field: wrench_device_status_field_and_valid_codes
+    candidate: null
+    note: no independent device status field observed in task1 wrench stream
+  - field: wrench_full_scale_axis_and_margin_axis
+    candidate: null
+  - field: wrench_saturation_allowed_fraction
+    candidate: null
+  - field: bias_drift_window_sampling_and_thresholds
+    candidate: null
+  - field: gravity_residual_window_and_force_torque_thresholds
+    candidate: null
+  - field: tcp_lever_arm_fixture_and_p95_threshold_nm
+    candidate: null
+  - field: filter_family_order_coefficients_warmup_samples
+    candidate: scipy 1.16.3 butterworth_sos_causal order=4 cutoff=8Hz fs=500Hz; apply once per source-ordered valid sample without timing interpolation; per-episode reset; first-valid steady-state init; warmup=250 samples invalid; max source gap=9ms
+    evidence: exact two-section SOS is in wrench_filter_resample_spec.development.json; task1 wrench max-gap P50/P95/P99/max=6.577/8.353/8.625/8.654 ms
+  - field: episode_split_ratios_and_seed
+    candidate: ratios=[0.8,0.1,0.1], seed=forcesmolvla-v4.1-task1-split-1
+    note: with 50 eligible episodes this yields 40 train, 5 validation, 5 test before any episode-quality exclusions alter counts
+  - field: prefix_cache_parity_tolerances
+    candidate: {fp32_atol: 1.0e-5, bf16_atol: 0.1, rtol: 0.0}
+    evidence: fp32 max abs 3.099442e-6; bf16 max abs 0.0625; reference max abs velocity approximately 8.5
+detached_signature_fields_requiring_confirmation:
+  - signature_format
+  - signature_file_extension
+  - signature_algorithm
+  - digest_algorithm
+  - canonical_serialization_name_and_version
+  - key_id
+  - public_key_or_certificate_source
+  - trust_store_path_or_registry
+  - signature_encoding
+  - signature_scope
+  - signer_identity
+  - signer_role
+  - experiment_approver_identity
+  - experiment_approver_role
+  - whether_signer_and_approver_may_match
+  - approval_quorum
+  - approval_id_issuer_and_format
+  - approval_timestamp_source
+  - tsa_required
+  - key_expiry_and_revocation_source
+  - offline_revocation_cache_policy
+  - artifact_expiry_and_renewal_policy
+  - verification_cli_or_registry_entrypoint
+  - verification_failure_codes
+  - emergency_revocation_and_rollback_process
+formal_gate: fail_closed_until_all_required_fields_are_approved_and_signature_verifies

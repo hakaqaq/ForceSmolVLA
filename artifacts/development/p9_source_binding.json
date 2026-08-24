@@ -1,0 +1,60 @@
+{
+  "status": "development_only",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "schema_version": "1.0",
+  "stage": "P9",
+  "parent_p8_source_binding_sha256": "a207a4fa4e0758c5b8ddda41c8d9bec4b107fceb95fff4a749e6b4b9cad3a211",
+  "lerobot": {
+    "repository": "https://github.com/huggingface/lerobot.git",
+    "tag": "v0.6.0",
+    "commit": "30da8e687a6dfc617fcd94afc367ac7071c376ce",
+    "files": {
+      "pyproject.toml": "bf2140842c4568ac77cb99f97bbe092def5fa8cb30d011a19a0d0077764ce80a",
+      "src/lerobot/policies/smolvla/configuration_smolvla.py": "2fb637cb428fa2fdf1d114646dcffaf4728216bfe5b7039d5d0cac4857ffc4e0",
+      "src/lerobot/policies/smolvla/modeling_smolvla.py": "5daaa297954acf9ae89397b571322f07bf30798e72f566e61a09393342cb1f99",
+      "src/lerobot/policies/smolvla/smolvlm_with_expert.py": "f7542fa2bf904f9ef64d26843809f913a5e93c4dfa538dda06db0b288391ab4d",
+      "src/lerobot/policies/pretrained.py": "39e30b8ff6216d71c59a1a798b5693cbb356659d9fc23597d83232c76eaf0e36",
+      "src/lerobot/common/train_utils.py": "2c16a61fb486253ebce7684786c73f141a6d2d57c8bcdab681ad26d2c9716698",
+      "src/lerobot/optim/optimizers.py": "9b028586c0c2f9b07693bcb42df0dd0719388f439a8bfb764e6ebfd01faf1aea",
+      "src/lerobot/utils/random_utils.py": "a93dab012ee377afa315b8a4379dcf39e6d1b7c02a64fcc4d5b4084b2552f477",
+      "src/lerobot/optim/schedulers.py": "05d57770348fbb3f412f52804a8d0f015f8128a37c55d5ce8ed9af6ed8522bc9"
+    }
+  },
+  "forcesmolvla_files": {
+    "src/forcesmolvla/configuration_forcesmolvla.py": "75adf28408413c30c53baea1b32381c78ee8a056ae23ed644a5c1b0b003b02bb",
+    "src/forcesmolvla/modeling_forcesmolvla.py": "dfd220377dfab705d8a3c096a1f807bf2aff9b4fb956ce8287de0118f47c2231",
+    "src/forcesmolvla/checkpoint.py": "ec6307c360824d03127dc5cc98081002d9af2ca6a1b8066f4a61fa73524a64e1",
+    "src/forcesmolvla/context.py": "f97a8792f52c1fe9b50e5d7db18d44ec2af8f9705e5ccb5a1f4e6bd5f4baed85",
+    "src/forcesmolvla/action_delta.py": "eb0b77d3de1987d5b4dcbecb171148a0c5a73e74b384dc10408ae079221e0fd3",
+    "src/forcesmolvla/normalizer.py": "883de67ee3e64ea5960565d796a7e99708dae1ea5e7e30fd77830a31e608e89b",
+    "src/forcesmolvla/dataset_v3.py": "9a0b8ffe5fe459354cf9587dd948deb12fe0d473a75fccffcf9dabb08718df2f",
+    "src/forcesmolvla/training_data.py": "50763abf976783e6e78f5ec0cb91a5167e745fdfe6f19f1a8488d2d98b6580b5",
+    "src/forcesmolvla/rules.py": "d81e84d6f3b90e03337a0e575fd6284fad13450f64a8c14c2d86cf8bbc13efaf",
+    "src/forcesmolvla/shadow.py": "76c6cdeb66eb4740c93ac83326e70e61ff92cfbe6a23bae8d2e2cd3a2221a75f",
+    "schemas/rulespec.schema.json": "3a726dea8509c91fe5e77e4ae89cc2b9a7cf40bc2c018a75650af950cce795ef",
+    "configs/p9_shadow_replay.development.json": "507adf23f5c5d3dd54a8ad1843dda1622cef28de23323fcb47ed39585715bb31",
+    "configs/shadow_safety_thresholds.development.yaml": "7639c7224733800774d659efed867634eb4405319c182e080be05c0a4222e7bc",
+    "tests/fixtures/shadow_clock_map.test_only.json": "2faa414f0b34762495cd203a86c6354c5497e81942d91c9e238d5700f85dedd8",
+    "tests/fixtures/shadow_safety_thresholds.test_only.yaml": "9c7720b3fbbd990909032be0818209f3c65e56d4188588b85f3ecfa1240467b1",
+    "tests/fixtures/p9_shadow_cases.test_only.json": "05791188f8080b4e39f9397d9da5537da965fb182e92c3cc7c8948607ae06cfc",
+    "tests/test_p9_shadow.py": "904d592953ad1177059086d7626de32ccdb46d16ebaa99fa59a11b94ab1fed57",
+    "tests/test_rulespec.py": "f14822badcca361121dfb5919db5afa105cd929e065ffb75de2a621490fb595a",
+    "tools/preflight_p9_offline_replay.py": "9fdeba6d3f5049243d68dc784593cea62bbdbacdd8b9e37342f8d042d17a73a1",
+    "tools/p8_checkpoint_common.py": "aaa6cf48f6d9ab81624909f9748469fd5a7c5f96e39384e1565eb71b22d94eaa",
+    "ForceSmolVLA_Codex_Implementation_Plan_Final_Revised_v4_1.md": "3f24f7b7d02551592d6f311c0695ae8734a79984fda8e7feae1abd194851b1f4"
+  },
+  "bound_inputs": {
+    "artifacts/development/p8_source_binding.json": "a207a4fa4e0758c5b8ddda41c8d9bec4b107fceb95fff4a749e6b4b9cad3a211",
+    "artifacts/development/p8_resolved_config.json": "a2999a6e34d59db9c24558c9eb791b51775de2568d9f250f0c992c5be3513b95",
+    "artifacts/development/p8_gpu_preflight.json": "9a1b2942017bcf511b1dba30871a483da25edcaf086f64b68118d3edd1323c5f",
+    "artifacts/development/p8_cold_start_result.json": "599d33f29ac9d3b3df32bbe16c592ee6b3d5a46f04eae5036ed6bd27a4fd7b28",
+    "datasets/task1_forcesmolvla_v4_1/conversion_manifest.json": "3cf7918209e6ae640f8160c15e17ca25f8d449eb535bf68d574290b75afb15e6",
+    "datasets/task1_forcesmolvla_v4_1/split_manifest.json": "d4170a24e2ded45e250329c40218fd3856ea391bfe7832aec6f2b4968542f43b",
+    "datasets/task1_forcesmolvla_v4_1/normalizer_manifest.json": "8ac6d0e804e0c3d7ba431abae127cf992f80dd9d391ac70c53a85ef3e9f936e2",
+    "outputs/development/p8_checkpoint_seed42_step000001/artifact_manifest.json": "7b765940ae13407c7920cb79876254524e71f3956fafd8265dae960435100207"
+  },
+  "test_only_artifacts_never_formal": true,
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

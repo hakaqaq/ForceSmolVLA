@@ -1,0 +1,28 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "camera_order": [
+    "observation.images.camera1",
+    "observation.images.camera2"
+  ],
+  "exact_camera_set_required": true,
+  "image_input_shape": [3, 480, 640],
+  "model_image_shape": [3, 512, 512],
+  "resize_mode": "bilinear aspect-preserving, zero pad on left/top",
+  "image_tokens_per_camera": 64,
+  "language": {
+    "max_length": 48,
+    "padding": "max_length",
+    "padding_side": "right",
+    "truncation": true,
+    "truncation_side": "right",
+    "task_suffix": "newline"
+  },
+  "physical_prefix": {
+    "length": 177,
+    "valid_length_is_not_physical_length": true
+  },
+  "offline_constructor_assets": "assets/smolvlm_constructor",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

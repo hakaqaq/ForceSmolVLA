@@ -1,0 +1,18 @@
+{
+  "artifact_status": "development_only",
+  "base_loaded_tensors": 500,
+  "batch_size": 1,
+  "device": "cuda",
+  "dtype": "bf16 autocast",
+  "gradient_global_norm": 30.719166521705475,
+  "gradient_parameter_tensors": 155,
+  "loss": 5.6822919845581055,
+  "missing_keys": [],
+  "optimizer_step_performed": false,
+  "robot_actions_sent": 0,
+  "status": "pass",
+  "unexpected_keys": [],
+  "valid_feature_tokens": 329,
+  "valid_horizon": 47
+}
+

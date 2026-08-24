@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_status": "development_only",
+  "formal_ready": false,
+  "current_stage": "offline_full_finetune",
+  "offline_full_finetune": {
+    "all_existing_model_parameters_require_grad": true,
+    "vlm_mode_during_updates": "train",
+    "vision_encoder_mode_during_updates": "train",
+    "data_source": "offline LeRobot v3 train split only"
+  },
+  "online_hil_vlm_frozen": {
+    "implementation_status": "not_implemented",
+    "vlm_requires_grad": false,
+    "vlm_mode_during_updates": "eval",
+    "action_expert_and_force_modules_require_grad": true
+  },
+  "stage_transition": {
+    "model_tensor_loading": "allowed after compatibility checks",
+    "optimizer_scheduler_scaler_accumulation_state": "must be rebuilt; cross-stage restore forbidden"
+  },
+  "directive": "User-approved v4.1 amendment on 2026-08-19: offline full finetuning now; freeze VLM for future human-in-the-loop online finetuning.",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

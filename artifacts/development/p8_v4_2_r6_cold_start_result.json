@@ -1,0 +1,69 @@
+{
+  "acceptance_status": "development_only",
+  "all_parameters_trainable": true,
+  "approval": null,
+  "checkpoint": "/home/rlc123/ForceSmolVLA/outputs/development/p8_v4_2_r6_checkpoint_seed42_step000001",
+  "cpu_fallback_used": false,
+  "detached_signature": null,
+  "empty_hf_cache_before": true,
+  "exact_resume_dry_run": true,
+  "fixed_validation_L_flow": 3.4331343173980713,
+  "force_download": false,
+  "formal_eligible": false,
+  "formal_rejection": "FORMAL_FORCE_CHECKPOINT_SIGNATURE_OR_APPROVAL_MISSING",
+  "fresh_process_pid": 4025026,
+  "gate": "P8_cold_start",
+  "gate_contract_version": "v4.2-b4x1-single-pass-exact-resume",
+  "gate_status": "pass",
+  "hub_api_attempt_count": 0,
+  "hub_or_model_cache_files_after": 0,
+  "local_dataset_cache_files_after": 15,
+  "local_files_only": true,
+  "network_attempt_count": 0,
+  "optimizer_groups": {
+    "decay_parameter_count": 456491776,
+    "decay_tensor_count": 333,
+    "each_trainable_parameter_exactly_once": true,
+    "group_name_sha256": "fe2d0636f084c7432e4a25425c9f7b0359b18c803b7f8a4bf781db01ccc8ea6b",
+    "no_decay_parameter_count": 49128565,
+    "no_decay_tensor_count": 241,
+    "optimizer_tensor_count": 574,
+    "trainable_tensor_count": 574
+  },
+  "optimizer_state_sha256": "e40251b5cf7dcd800e18f52728121c0ad833f96e5ed3dcaf40e5c6f6ed3dc8fa",
+  "p9_started": false,
+  "parity_exact": true,
+  "parity_sha256": "aac3710e124e51a92740ad0cab193a7947324d39f81759aa8427f77dab60b92b",
+  "peak_memory": {
+    "allocated_bytes": 4341219840,
+    "reserved_bytes": 4429185024
+  },
+  "python_executable": "/home/rlc123/anaconda3/envs/forcesmolvla/bin/python",
+  "rng_continuation_exact": true,
+  "robot_actions_sent": 0,
+  "sampler_continuation_exact": true,
+  "sampler_cursor_after_continuation": 8,
+  "scaler_enabled": false,
+  "scheduler_state": {
+    "_get_lr_called_within_step": false,
+    "_is_initial": false,
+    "_last_lr": [
+      1.9980019980019304e-07,
+      1.9980019980019304e-07
+    ],
+    "_step_count": 2,
+    "base_lrs": [
+      0.0001,
+      0.0001
+    ],
+    "last_epoch": 1,
+    "lr_lambdas": [
+      null,
+      null
+    ]
+  },
+  "schema_version": "1.0",
+  "strict": true,
+  "training_stage": "offline_full_finetune",
+  "training_step": 1
+}

@@ -1,0 +1,64 @@
+{
+  "acceptance_status": "development_only",
+  "all_parameters_trainable": true,
+  "approval": null,
+  "checkpoint": "/home/rlc123/ForceSmolVLA/outputs/development/p8_checkpoint_seed42_step000001",
+  "cpu_fallback_used": false,
+  "detached_signature": null,
+  "empty_hf_cache_before": true,
+  "fixed_validation_L_flow": 25.60464859008789,
+  "force_download": false,
+  "formal_eligible": false,
+  "formal_rejection": "FORMAL_FORCE_CHECKPOINT_SIGNATURE_OR_APPROVAL_MISSING",
+  "fresh_process_pid": 3044145,
+  "gate": "P8_cold_start",
+  "gate_status": "pass",
+  "hub_api_attempt_count": 0,
+  "hub_or_model_cache_files_after": 0,
+  "local_dataset_cache_files_after": 15,
+  "local_files_only": true,
+  "network_attempt_count": 0,
+  "optimizer_groups": {
+    "decay_parameter_count": 456491776,
+    "decay_tensor_count": 333,
+    "group_name_sha256": "fe2d0636f084c7432e4a25425c9f7b0359b18c803b7f8a4bf781db01ccc8ea6b",
+    "no_decay_parameter_count": 49128565,
+    "no_decay_tensor_count": 241
+  },
+  "optimizer_state_sha256": "502247a76fe673c318c2267a0a249e388e27febb1f185932a5e51ebf8f7f47c9",
+  "p9_started": false,
+  "parity_exact": true,
+  "parity_sha256": "23db34b31f050663a96c167ce8e44b8a519db2b1e8b8a02da21268f038512252",
+  "peak_memory": {
+    "allocated_bytes": 4302855680,
+    "reserved_bytes": 4391436288
+  },
+  "python_executable": "/home/rlc123/anaconda3/envs/forcesmolvla/bin/python",
+  "rng_continuation_exact": true,
+  "robot_actions_sent": 0,
+  "sampler_continuation_exact": true,
+  "sampler_cursor_after_continuation": 24,
+  "scaler_enabled": false,
+  "scheduler_state": {
+    "_get_lr_called_within_step": false,
+    "_is_initial": false,
+    "_last_lr": [
+      1.9980019980019304e-07,
+      1.9980019980019304e-07
+    ],
+    "_step_count": 2,
+    "base_lrs": [
+      0.0001,
+      0.0001
+    ],
+    "last_epoch": 1,
+    "lr_lambdas": [
+      null,
+      null
+    ]
+  },
+  "schema_version": "1.0",
+  "strict": true,
+  "training_stage": "offline_full_finetune",
+  "training_step": 1
+}

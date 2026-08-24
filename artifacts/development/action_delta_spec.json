@@ -1,0 +1,33 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "representation": "Cartesian7D_xyz_rpy_gripper",
+  "to_delta": {
+    "xyz": "absolute_action_xyz - raw_state_snapshot_xyz",
+    "rpy": "wrap_to_pi(absolute_action_rpy - raw_state_snapshot_rpy)",
+    "gripper": "absolute target_gripper_width_m unchanged"
+  },
+  "from_delta": {
+    "xyz": "delta_xyz + raw_state_snapshot_xyz",
+    "rpy": "canonicalize_ZYX_principal_chart(delta_rpy + raw_state_snapshot_rpy); reject within 2 degrees of gimbal lock",
+    "gripper": "absolute target_gripper_width_m unchanged"
+  },
+  "public_inference_gripper_decode": {
+    "type": "binary_width",
+    "training_target_support_m": [0.0, 0.085],
+    "model_candidate_tolerance_m": [-0.01, 0.095],
+    "switch_width_m": 0.0425,
+    "decoded_widths_m": [0.0, 0.085],
+    "tie_break": "candidate >= 0.0425 maps to 0.085",
+    "clipping": false,
+    "first_six_action_features_unchanged": true
+  },
+  "public_output": "raw absolute action7[B,H,7] float32 on input device; invalid right-padded tail is exact zero",
+  "second_lerobot_postprocessor_allowed": false,
+  "whole_chunk_state_binding": true,
+  "batch_state_binding": true,
+  "normalizer_fit": "for every train t_ref, fit all valid action7[t_ref:t_ref+50] after whole-chunk to_delta against state7[t_ref]; exclude right-padded tail",
+  "source_sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

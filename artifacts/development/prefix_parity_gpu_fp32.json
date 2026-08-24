@@ -1,0 +1,35 @@
+{
+  "artifact_status": "development_only",
+  "base_loaded_tensors": 500,
+  "batch_size": 2,
+  "cache_unchanged_after_each_call": true,
+  "device": "cuda",
+  "dtype": "float32 model and inputs",
+  "language_valid_lengths": [
+    48,
+    17
+  ],
+  "max_abs_error": {
+    "cached_batch_vs_cached_single": 3.0994415283203125e-06,
+    "cached_batch_vs_full_batch": 2.9206275939941406e-06,
+    "cached_single_vs_full_single": 0.0,
+    "full_batch_vs_full_single": 2.86102294921875e-06,
+    "invalid_velocity": 0.0
+  },
+  "missing_keys": [],
+  "prefix_physical_lengths": [
+    177,
+    177
+  ],
+  "reference_max_abs_velocity": 8.502609252929688,
+  "seed": 4107,
+  "status": "measurement_complete",
+  "suffix_valid_lengths": [
+    50,
+    47
+  ],
+  "tolerance": null,
+  "tolerance_status": "approval_pending_after_measurement",
+  "unexpected_keys": []
+}
+

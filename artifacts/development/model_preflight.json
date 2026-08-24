@@ -1,0 +1,76 @@
+{
+  "base_load": {
+    "checkpoint": "/home/rlc123/ForceSmolVLA/assets/base_checkpoint/model.safetensors",
+    "dropped_keys": [
+      "normalize_inputs.so100-blue_buffer_observation_state.mean",
+      "normalize_inputs.so100-blue_buffer_observation_state.std",
+      "normalize_inputs.so100-red_buffer_observation_state.mean",
+      "normalize_inputs.so100-red_buffer_observation_state.std",
+      "normalize_inputs.so100_buffer_observation_state.mean",
+      "normalize_inputs.so100_buffer_observation_state.std",
+      "normalize_targets.so100-blue_buffer_action.mean",
+      "normalize_targets.so100-blue_buffer_action.std",
+      "normalize_targets.so100-red_buffer_action.mean",
+      "normalize_targets.so100-red_buffer_action.std",
+      "normalize_targets.so100_buffer_action.mean",
+      "normalize_targets.so100_buffer_action.std",
+      "unnormalize_outputs.so100-blue_buffer_action.mean",
+      "unnormalize_outputs.so100-blue_buffer_action.std",
+      "unnormalize_outputs.so100-red_buffer_action.mean",
+      "unnormalize_outputs.so100-red_buffer_action.std",
+      "unnormalize_outputs.so100_buffer_action.mean",
+      "unnormalize_outputs.so100_buffer_action.std"
+    ],
+    "dropped_tensor_count": 18,
+    "key_transform": "replace leading model._orig_mod. with model. exactly once",
+    "loaded_tensor_count": 500,
+    "missing_keys": [],
+    "source_tensor_count": 518,
+    "unexpected_keys": []
+  },
+  "offline_socket_guard": true,
+  "resolved": {
+    "chunk_size": 50,
+    "d_action": 32,
+    "d_expert": 720,
+    "d_vlm": 960,
+    "frozen_parameter_count": 0,
+    "image_tokens_per_camera": 64,
+    "n_action_steps": 1,
+    "n_prefix_physical": 177,
+    "num_steps": 10,
+    "policy_model_class": "ForceVLAFlowMatching",
+    "prefix_attention_shape": [
+      2,
+      177
+    ],
+    "prefix_shape": [
+      2,
+      177,
+      960
+    ],
+    "prefix_valid_counts": [
+      177,
+      146
+    ],
+    "prefix_valid_shape": [
+      2,
+      177
+    ],
+    "tokenizer_max_length": 48,
+    "tokenizer_padding_side": "right",
+    "tokenizer_truncation_side": "right"
+    ,
+    "total_parameters": 450046176,
+    "trainable_parameters": 450046176,
+    "training_stage": "offline_full_finetune",
+    "vlm_train_mode_after_policy_train": true
+  },
+  "rtc": {
+    "model_enabled": false,
+    "policy_enabled": false,
+    "processor_is_none": true,
+    "supports_rtc": false
+  },
+  "status": "pass"
+}

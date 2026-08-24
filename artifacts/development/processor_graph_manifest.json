@@ -1,0 +1,57 @@
+{
+  "status": "development_only",
+  "schema_version": "1.0",
+  "variant": "SmolVLA-Cartesian7D",
+  "graph": [
+    {
+      "order": 1,
+      "callable": "ActionDeltaProcessor.to_delta",
+      "inputs": ["raw absolute action7[B,H,7]", "raw state snapshot7[B,7]"],
+      "outputs": ["raw action_target7[B,H,7] = delta xyz/rpy plus absolute gripper width"],
+      "sha256": "2de899db6136d2462bb4d93e25472248d35f2be252a82d3abddd68afaaff90d5"
+    },
+    {
+      "order": 2,
+      "callable": "CartesianNormalizerBundle.normalize_once",
+      "inputs": ["state7", "wrench6", "action_target7 (runtime key delta_action7)", "batch_id"],
+      "outputs": ["normalized state7", "normalized wrench6", "normalized action_target7"],
+      "owner": "forcesmolvla only",
+      "expected_call_count_per_batch": {"state7": 1, "wrench6": 1, "action_target7": 1},
+      "sha256": "df4faa89a6c580b30b12d1496df4b76be68d2b1329cbcaa63adc77fac0100525"
+    },
+    {
+      "order": 3,
+      "callable": "7D-to-32D pack and masks",
+      "inputs": ["normalized state7", "normalized action_target7", "action_valid_mask"],
+      "outputs": ["state32", "action32", "feature/time masks"],
+      "sha256": "9266b4d30e3fc4828b7d9c5d5e2ae448930f2aff4c9c72a30eb816e3848e3031"
+    },
+    {
+      "order": 4,
+      "callable": "right-pad/right-truncate tokenizer plus exact camera processor",
+      "inputs": ["camera1", "camera2", "prompt"],
+      "outputs": ["ordered images", "48 physical language slots"]
+    },
+    {
+      "order": 5,
+      "callable": "ForceSmolVLAPolicy.forward",
+      "inputs": ["processed batch"],
+      "outputs": ["global valid-feature flow loss"],
+      "sha256": "1d88f664dc93b285b2b9637f2fcca62c7b4143415832f5a48904d5c270a7db2e"
+    },
+    {
+      "order": 6,
+      "callable": "ForceSmolVLAPolicy.predict_action_chunk",
+      "inputs": ["normalized delta7", "raw_state_snapshot at the same t_ref", "hash-bound runtime artifacts", "hash-bound RuleSpec"],
+      "outputs": ["raw absolute action7[B,H,7] float32; exact-zero invalid tail"],
+      "operations": ["custom action unnormalize exactly once", "ActionDeltaProcessor.from_delta", "ZYX principal-chart canonicalization", "intrinsic safety validation", "atomic chunk-id consumption"],
+      "inherited_lerobot_action_postprocessor_after_output": false,
+      "sha256": "1d88f664dc93b285b2b9637f2fcca62c7b4143415832f5a48904d5c270a7db2e"
+    }
+  ],
+  "inherited_normalization_mapping": "Identity",
+  "inherited_aloha_transforms": false,
+  "wrench_model_connection": "disconnected in Cartesian7D baseline",
+  "detached_signature": null,
+  "signature_status": "approval_fields_pending"
+}

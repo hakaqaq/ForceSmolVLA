@@ -1,0 +1,223 @@
+{
+  "acceptance_status": "development_only",
+  "architecture_downgrade_used": false,
+  "checkpoint": {
+    "artifact_manifest_sha256": "cd500cc9d71bd5c64f4f7b074109de2f1d90748851cc3833f90885687a9a0329",
+    "embedded_base_assets": true,
+    "model_sha256": "5a3613b343deb2382401d3cafa17c92ba2b86ca12842cb460f6ccb856ab875e1",
+    "optimizer_update": 1,
+    "path": "/home/rlc123/ForceSmolVLA/outputs/development/p8_v4_2_r6_checkpoint_seed42_step000001",
+    "payload_count": 82,
+    "strict_local_only": true
+  },
+  "cold_start": {
+    "acceptance_status": "development_only",
+    "all_parameters_trainable": true,
+    "approval": null,
+    "checkpoint": "/home/rlc123/ForceSmolVLA/outputs/development/p8_v4_2_r6_checkpoint_seed42_step000001",
+    "cpu_fallback_used": false,
+    "detached_signature": null,
+    "empty_hf_cache_before": true,
+    "exact_resume_dry_run": true,
+    "fixed_validation_L_flow": 3.4331343173980713,
+    "force_download": false,
+    "formal_eligible": false,
+    "formal_rejection": "FORMAL_FORCE_CHECKPOINT_SIGNATURE_OR_APPROVAL_MISSING",
+    "fresh_process_pid": 4025026,
+    "gate": "P8_cold_start",
+    "gate_contract_version": "v4.2-b4x1-single-pass-exact-resume",
+    "gate_status": "pass",
+    "hub_api_attempt_count": 0,
+    "hub_or_model_cache_files_after": 0,
+    "local_dataset_cache_files_after": 15,
+    "local_files_only": true,
+    "network_attempt_count": 0,
+    "optimizer_groups": {
+      "decay_parameter_count": 456491776,
+      "decay_tensor_count": 333,
+      "each_trainable_parameter_exactly_once": true,
+      "group_name_sha256": "fe2d0636f084c7432e4a25425c9f7b0359b18c803b7f8a4bf781db01ccc8ea6b",
+      "no_decay_parameter_count": 49128565,
+      "no_decay_tensor_count": 241,
+      "optimizer_tensor_count": 574,
+      "trainable_tensor_count": 574
+    },
+    "optimizer_state_sha256": "e40251b5cf7dcd800e18f52728121c0ad833f96e5ed3dcaf40e5c6f6ed3dc8fa",
+    "p9_started": false,
+    "parity_exact": true,
+    "parity_sha256": "aac3710e124e51a92740ad0cab193a7947324d39f81759aa8427f77dab60b92b",
+    "peak_memory": {
+      "allocated_bytes": 4341219840,
+      "reserved_bytes": 4429185024
+    },
+    "python_executable": "/home/rlc123/anaconda3/envs/forcesmolvla/bin/python",
+    "rng_continuation_exact": true,
+    "robot_actions_sent": 0,
+    "sampler_continuation_exact": true,
+    "sampler_cursor_after_continuation": 8,
+    "scaler_enabled": false,
+    "scheduler_state": {
+      "_get_lr_called_within_step": false,
+      "_is_initial": false,
+      "_last_lr": [
+        1.9980019980019304e-07,
+        1.9980019980019304e-07
+      ],
+      "_step_count": 2,
+      "base_lrs": [
+        0.0001,
+        0.0001
+      ],
+      "last_epoch": 1,
+      "lr_lambdas": [
+        null,
+        null
+      ]
+    },
+    "schema_version": "1.0",
+    "strict": true,
+    "training_stage": "offline_full_finetune",
+    "training_step": 1
+  },
+  "cpu_fallback_used": false,
+  "exact_resume_dry_run": true,
+  "fixed_validation": {
+    "L_flow_run_1": 3.4331343173980713,
+    "L_flow_run_2": 3.4331343173980713,
+    "exact": true
+  },
+  "force_full_parity": {
+    "bf16": {
+      "acceptance_config_sha256": "e86f936c493cf80ad2c053b2e801e422634080978cdc1168b9b41c54362a6c2d",
+      "max_abs_error": {
+        "cached_10_step_vs_uncached_10_step": 0.00947539508342743,
+        "cached_batch_vs_cached_single": 0.0537259578704834,
+        "cached_batch_vs_full_batch": 0.03554189205169678,
+        "cached_single_vs_full_single": 0.053787946701049805,
+        "full_batch_vs_full_single": 0.06651902198791504,
+        "invalid_velocity": 0.0,
+        "prefill_prefix_vs_full_prefix_valid_tokens": 0.25
+      },
+      "report_sha256": "897820036bd92797215527c98663e426ab09aa6e654995b63d4efc6e9540a40c"
+    },
+    "fp32": {
+      "acceptance_config_sha256": "e86f936c493cf80ad2c053b2e801e422634080978cdc1168b9b41c54362a6c2d",
+      "max_abs_error": {
+        "cached_10_step_vs_uncached_10_step": 0.0,
+        "cached_batch_vs_cached_single": 2.86102294921875e-06,
+        "cached_batch_vs_full_batch": 0.0,
+        "cached_single_vs_full_single": 0.0,
+        "full_batch_vs_full_single": 2.86102294921875e-06,
+        "invalid_velocity": 0.0,
+        "prefill_prefix_vs_full_prefix_valid_tokens": 0.0
+      },
+      "report_sha256": "9d0109aee05d8201107b2c0e955b0c56b25a87fa89e49e765f09342732389929"
+    }
+  },
+  "formal_eligible": false,
+  "full_parameter_update": {
+    "backward_balance_sum": 1.2344295978546143,
+    "backward_flow_sum": 6.113560199737549,
+    "backward_total_sum": 6.129592418670654,
+    "backward_z_sum": 3.6880438327789307,
+    "gradient_norm_before_clip": 79.35537719726562,
+    "logged_balance": 1.2344295978546143,
+    "microbatch_count": 1,
+    "microbatch_identities": [
+      "p8-b4x1-single-pass-update-0"
+    ],
+    "optimizer_steps": 1,
+    "pbar": [
+      0.21643924713134766,
+      0.17190657556056976,
+      0.27967965602874756,
+      0.33197450637817383
+    ],
+    "rbar": [
+      0.06818182021379471,
+      0.012237762100994587,
+      0.25874125957489014,
+      0.6608391404151917
+    ],
+    "route_counts": [
+      39,
+      7,
+      148,
+      378
+    ],
+    "scheduler_steps": 1,
+    "training_update_algorithm": "single_pass_batch_local",
+    "valid_flow_features": 1400,
+    "valid_router_tokens": 572,
+    "world_size": 1
+  },
+  "gate": "P8",
+  "gate_contract_version": "v4.2-b4x1-single-pass-exact-resume",
+  "gate_status": "pass",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090 D",
+    "total_memory_bytes": 25257967616
+  },
+  "long_development_sft_unlocked": true,
+  "p9_started": false,
+  "real_data": {
+    "batch_per_gpu": 4,
+    "camera_count": 2,
+    "dataset": "/home/rlc123/ForceSmolVLA/datasets/task2_lerobotv3",
+    "horizon": 50,
+    "microbatches": 1,
+    "repo_id": "local/task2_lerobotv3",
+    "sampled_indices": [
+      20952,
+      3648,
+      819,
+      24299
+    ],
+    "split": "train"
+  },
+  "remaining_blockers": [
+    "trusted detached signature algorithm/key/approver unresolved",
+    "formal checkpoint acceptance remains fail-closed",
+    "P9 offline record/replay Shadow is not started and requires approval"
+  ],
+  "resolved_config_sha256": "aa6fcff168ef7084c0f76f021c757f34665ebe0cefc87c82c4a9d1d9d5787e08",
+  "resume": {
+    "cross_stage_optimizer_restore": "rejected",
+    "optimizer_scheduler_scaler_rng_sampler_accumulation": "exact"
+  },
+  "robot_actions_sent": 0,
+  "schema_version": "1.0",
+  "source_binding_evidence": {
+    "dataset_storage_file_count": 51,
+    "dataset_storage_tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d",
+    "p7_prerequisite": {
+      "gate_result": "042292c8680691c80ebc7cac18277052d4803f081c7c093091d3b354f96b5d86",
+      "resolved_config": "69a92e560fd9fb48dc0c2014a69008bff91a6bfb2e087b6b88f88ba19e3a37f2",
+      "source_binding": "807ec75eec5bc22a35db2c539442cf77dc85cd12947c0297be958337d1c046eb",
+      "training_recipe": "346780d6b2ae15ff3526aa7401780c9159760aafefccaf6816aca305f6e3c6b6",
+      "validation_fixture": "5589500e80dfc9b3a8607cc27aae7237f9672b10037c00029b151d33ca2def50"
+    },
+    "pytest": {
+      "errors": 0,
+      "failures": 0,
+      "report_sha256": "d57dfc3335aaf0ad715e67e9a1d21c67ffd09bc90ffb4e58e22b474ec60f66c9",
+      "selection_stage": "P8_and_upstream",
+      "skipped": 0,
+      "test_file_count": 31,
+      "tests": 147
+    },
+    "runtime_imports": {
+      "forcesmolvla": "/home/rlc123/ForceSmolVLA/src/forcesmolvla/__init__.py",
+      "lerobot": "/home/rlc123/ForceSmolVLA/vendor/lerobot/src/lerobot/__init__.py"
+    }
+  },
+  "source_binding_sha256": "8ee454e51fa839b6ded386a0a5a9047f3abefaf2776c7e9678afbd0c2be41acb",
+  "update_latency": {
+    "cuda_ms": 669.8052368164062,
+    "wall_seconds": 0.6698205469874665
+  },
+  "update_peak_memory": {
+    "allocated_bytes": 6288963584,
+    "reserved_bytes": 6910115840
+  }
+}
