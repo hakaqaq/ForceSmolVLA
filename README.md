@@ -99,8 +99,14 @@ python tools/convert_franka_raw_to_lerobot_v3.py \
 ```bash
 env PYTHONHASHSEED=42 CUBLAS_WORKSPACE_CONFIG=:4096:8 \
   HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_DATASETS_OFFLINE=1 \
-  python tools/train_task2_full_gpu.py
+  python tools/train.py \
+    --dataset datasets/task2_lerobotv3 \
+    --config configs/train/task2.json
 ```
+
+`tools/train.py`是通用训练入口，不包含task1/task2/task3分支。`--dataset`指定任意满足
+ForceSmolVLA数据契约的LeRobot v3目录；任务名、输出目录、数据准入工件、P8证据和日志间隔
+由`--config`指定。新增数据集时创建新的`configs/train/<experiment>.json`，无需修改训练代码。
 
 该长程入口只有在当前源码绑定的 P8 B4×1 single-pass exact-resume dry-run 通过后
 才允许启动；历史 P8、缺失 checkpoint 或旧 B2×8 evidence 均不能解锁训练。

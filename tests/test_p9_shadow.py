@@ -18,8 +18,8 @@ from preflight_p9_offline_replay import (
     _load_scope_amendment,
     _source_stamp_to_host_monotonic,
 )
-from train_task2_full_gpu import (
-    _bind_task2_fixture_provenance,
+from train import (
+    _bind_fixture_provenance,
     _final_checkpoint_due,
 )
 
@@ -298,7 +298,7 @@ def test_task2_long_sft_fixture_replaces_legacy_task1_session_metadata():
         },
         "chunk_context_sha256": "stale",
     }
-    _bind_task2_fixture_provenance(fixture, data_scope)
+    _bind_fixture_provenance(fixture, data_scope)
     expected = data_scope["session_provenance"]["collection_scope_id"]
     assert fixture["chunk_context"]["session_id"] == [expected, expected]
     assert "task1_within_session" not in fixture["chunk_context"]["session_id"]
