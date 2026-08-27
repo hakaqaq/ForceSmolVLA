@@ -1,0 +1,20 @@
+{
+  "branch_pid": 2913833,
+  "checkpoint": {
+    "file_count": 25,
+    "total_file_size": 4177700347,
+    "tree_sha256": "0df397122ec1b0db32f6b15f43736c4c05a45c3c54286b421e0cbafc7cfae4b5"
+  },
+  "checkpoint_save_side_effect": {
+    "exact_unchanged": true,
+    "training_state_after_sha256": "1b22d3ce47c1208bfc1da02e06916cff55c3bf4fdb9dd84d3df070ab9a79abbd",
+    "training_state_before_sha256": "1b22d3ce47c1208bfc1da02e06916cff55c3bf4fdb9dd84d3df070ab9a79abbd",
+    "tree": {
+      "file_count": 25,
+      "total_file_size": 4177700347,
+      "tree_sha256": "0df397122ec1b0db32f6b15f43736c4c05a45c3c54286b421e0cbafc7cfae4b5"
+    }
+  },
+  "cycle1_g5_exact": true,
+  "state_digest": "1b22d3ce47c1208bfc1da02e06916cff55c3bf4fdb9dd84d3df070ab9a79abbd"
+}

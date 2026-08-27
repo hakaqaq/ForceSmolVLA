@@ -1,0 +1,10 @@
+{
+  "actor_optimizer_updates": 1,
+  "actor_scheduler_steps": 1,
+  "actor_target_updates": 0,
+  "critic_optimizer_updates": 2,
+  "critic_scheduler_steps": 2,
+  "q1_target_polyak_updates": 2,
+  "q2_target_polyak_updates": 2,
+  "training_cycles": 1
+}

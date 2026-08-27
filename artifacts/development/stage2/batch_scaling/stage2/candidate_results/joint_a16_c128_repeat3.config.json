@@ -1,0 +1,7 @@
+{
+  "actor_batch_size": 16,
+  "candidate_id": "joint_a16_c128_repeat3",
+  "critic_batch_size": 128,
+  "mode": "joint",
+  "repeat": 3
+}

@@ -1,0 +1,29 @@
+{
+  "absolute_or_32d_action_created": false,
+  "gripper_legal_discrete_endpoint_only": true,
+  "per_dimension_or_slot_mixing": false,
+  "population_count": 10047,
+  "proposal_source": "automatic_detector_g1_train_full_macro_valid_behavior_actions",
+  "row_identity_sha256": "ddee88b929254ce7d1ee01a60e67efce38c43f7b45d429a6e2ae479e9b71f6a3",
+  "runtime_endpoint_canonicalization": {
+    "gripper_values_changed": 9603,
+    "maximum_allowed_abs_correction": 1.6788587231530983e-07,
+    "maximum_normalized_abs_correction": 1.1920928955078125e-07,
+    "reason": "CPU/GPU_frozen_normalizer_open_endpoint_one_ULP_representation",
+    "runtime_normalized_endpoints": [
+      -0.7100614905357361,
+      1.4083287715911865
+    ],
+    "semantic_physical_endpoint_changed": false,
+    "tcp_value_changed": false
+  },
+  "sampling": "whole_k3x7_macro_with_replacement",
+  "source_tensor_sha256": "be371696e1285cf0a4537ce8d29dbd335d29828c174d689217a4d6acde3dbd16",
+  "status": "G5_test_only_not_long_train_or_paper_proposal",
+  "tensor_sha256": "4225e00c4bff273f4792a33f99b2632b36ac1cee9d1ff7032b988990d810b740",
+  "tensor_shape": [
+    10047,
+    3,
+    7
+  ]
+}

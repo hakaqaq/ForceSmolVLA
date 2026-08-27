@@ -1,0 +1,43 @@
+schema_version: forcesmolvla_stage1_batch_scaling.development.v1
+authorization: temporary_throughput_updates_only
+parent_checkpoint: outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000
+dataset: datasets/task2_lerobotv3
+split: train
+train_anchors: 31824
+frozen_semantics:
+  horizon: 50
+  cameras: 2
+  full_model_trainable: true
+  training_update_algorithm: single_pass_batch_local
+  loss: L_flow_plus_0.01_balance_plus_0.001_z
+  dtype: bf16_outer_with_existing_fp32_islands
+  optimizer: stage1_AdamW_groups
+  learning_rate_schedule: identical_across_candidates
+  linear_lr_scaling: false
+benchmark:
+  mandatory_physical_batches: [4, 8, 16]
+  conditional_physical_batches: [24, 32]
+  independent_repeats: 3
+  warmup_updates_per_repeat: 1
+  timed_updates_per_repeat: 20
+  dataloader_threads: 8
+  fixed_seed: 42
+  maximum_peak_reserved_fraction: 0.85
+  minimum_incremental_throughput_gain: 0.05
+  candidate_checkpoint_created: false
+sample_budget:
+  reference_samples: 40000
+  reference_batch: 4
+  reference_updates: 10000
+  reference_train_anchor_exposure: 1.256912
+  projected_updates:
+    4: 10000
+    8: 5000
+    16: 2500
+    24: 1667
+    32: 1250
+limits:
+  persistent_training_checkpoint: false
+  stage1_retraining: false
+  long_run: false
+  robot_execution: false

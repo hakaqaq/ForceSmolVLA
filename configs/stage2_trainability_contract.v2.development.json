@@ -1,0 +1,58 @@
+{
+  "schema_version": "forcesmolvla_stage2_trainability_contract.v2.development",
+  "status": "current_candidate",
+  "scope": "development_only",
+  "stage_boundaries": {
+    "stage1": "full-model force-conditioned behavior adaptation",
+    "stage2a": "Twin-Q warm-up with the entire Actor frozen",
+    "stage2b": "frozen-backbone value-guided force-action refinement"
+  },
+  "frozen_actor_prefixes": [
+    "model.vlm_with_expert.vlm.",
+    "model.state_proj."
+  ],
+  "frozen_requirements": {
+    "requires_grad": false,
+    "excluded_from_actor_optimizer": true,
+    "always_eval": true,
+    "prefix_prefill_grad_enabled": false,
+    "prefix_representation_detached": true,
+    "prefix_cache_detached": true,
+    "parameter_and_buffer_hash_unchanged": true
+  },
+  "trainable_actor_prefixes": [
+    "model.force_branch.",
+    "model.force_adapter.",
+    "model.vlm_with_expert.lm_expert.",
+    "model.action_in_proj.",
+    "model.action_out_proj.",
+    "model.action_time_mlp_in.",
+    "model.action_time_mlp_out."
+  ],
+  "actor_objective": {
+    "formula": "beta * L_FM - eta * mean(min(Q1,Q2))",
+    "q_gradient_action_dims": [0, 1, 2, 3, 4, 5],
+    "gripper_q_gradient": false,
+    "gripper_flow_matching_gradient": true
+  },
+  "unchanged_semantics": {
+    "action_contract": "v2",
+    "critic_action_shape": ["B", 3, 7],
+    "flow_horizon": 50,
+    "flow_euler_steps": 10,
+    "critic_objective": "G4-v2",
+    "reward_source": "g1_frozen_detector_transition_view.v1",
+    "public_inference_behavior_changed": false
+  },
+  "historical_status": {
+    "G7B_FULL_ACTOR_JOINT_SMOKE": "historical_valid_development_mechanics",
+    "G7B_CHECKPOINT_ALLOWED_AS_LONG_RUN_PARENT": false,
+    "STAGE2_FULL_ACTOR_TRAINABILITY": "historical_superseded_for_long_run",
+    "STAGE2_FROZEN_VLM_TRAINABILITY": "current_candidate"
+  },
+  "limits": {
+    "long_run_authorized": false,
+    "robot_execution_authorized": false,
+    "stage1_retraining_authorized": false
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "schema_version": "forcesmolvla_g1_manual_reward_transition_view.v1",
+  "artifact_status": "DEVELOPMENT_AUTHORIZED_VIEW_ONLY",
+  "scope": "G1_MANUAL_REWARD_TRANSITION_VIEW_ONLY",
+  "frozen_inputs": {
+    "reviewed_labels": {
+      "path": "labels/task2_reward_frame_labels.v2.reviewed.json",
+      "sha256": "ecda7d480f6a4c49dbe63a31b7e3172b30a5470437510522b1da2217eae77a9c"
+    },
+    "classifier_checkpoint": {
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+      "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+    },
+    "rejected_detector_candidate": {
+      "path": "configs/stage2_r0_reward_detector.candidate.development.json",
+      "sha256": "d493c9f398a2f14ae5e11d1d1cf44ef769c66759c61220eed53e00eedb2d3362",
+      "probability_threshold": 0.83,
+      "consecutive_positive_frames": 5
+    },
+    "rejected_detector_disposition": {
+      "path": "configs/stage2_r0_reward_detector.rejected_after_one_shot_test.json",
+      "sha256": "d8e586575b5cd64fb19277f6b1770c42e1e85ee530ae953ce1c200c6caf4f257"
+    },
+    "one_shot_test_artifact": {
+      "path": "artifacts/development/stage2/reward_classifier/r0_one_shot_test_evaluation.v1.json",
+      "sha256": "ec02e805c84a80778be9e16525d751da058a28bd1ebde85f394b33875b6a3988",
+      "required_status": "FAIL_ONE_SHOT_DEVELOPMENT_TEST_CANDIDATE_REJECTED"
+    },
+    "one_shot_test_predictions": {
+      "path": "/tmp/forcesmolvla_r0_one_shot_test/test_predictions.npz",
+      "sha256": "d23d1fbd29e1dbb0d53e957bb20f479ae03f888c008b8c03f8a323f9c7ba53a8"
+    },
+    "p8_dataset_storage_tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d",
+    "r5_checkpoint": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000"
+  },
+  "reward_contract": {
+    "terminal_frame": "first_confident_complete_frame",
+    "reward_source": "human_reviewed_completion_boundary_v2",
+    "terminal_reward": 1.0,
+    "nonterminal_reward": 0.0,
+    "terminal_bootstrap_mask": 0,
+    "nonterminal_bootstrap_mask": 1,
+    "terminal_discount": 0.0,
+    "nonterminal_discount": 0.99,
+    "forbidden_sources": [
+      "episode_last_frame",
+      "rejected_detector_trigger_frame",
+      "classifier_prediction",
+      "saved_true",
+      "last_valid_frame",
+      "file_name_or_episode_end_inference"
+    ]
+  },
+  "temporal_contract": {
+    "f_data_hz": 30,
+    "f_policy_hz": 10,
+    "K": 3,
+    "H": 50,
+    "anchor_stride": 3,
+    "next_frame": "min(anchor_frame + K, terminal_frame)",
+    "executed_steps": "next_frame - anchor_frame",
+    "partial_terminal_action_allowed": true,
+    "terminal_self_loop": false
+  },
+  "action_contract": {
+    "path": "absolute_action7 -> ActionDeltaProcessor -> frozen action normalizer -> normalized_delta_action[H,7] -> action_valid_mask",
+    "normalizer_refit": false,
+    "delta_reimplementation": false,
+    "images_copied": false
+  },
+  "permissions": {
+    "classifier_inference": false,
+    "G2": false,
+    "TwinQ": false,
+    "target_critic": false,
+    "CalQL": false,
+    "actor_optimizer": false,
+    "training_loop": false,
+    "online_or_robot_path": false
+  },
+  "output_root": "artifacts/development/stage2/g1_manual_reward_transition_view.v1"
+}

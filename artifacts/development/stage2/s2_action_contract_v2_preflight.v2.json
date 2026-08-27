@@ -1,0 +1,160 @@
+{
+  "ACTION_CONTRACT_V1": "historical_superseded",
+  "ACTION_CONTRACT_V2": "pass",
+  "BINARY_STE_ADDED": "no",
+  "CLIPPING_ADDED": "no",
+  "G7A_R1_FAIL": "preserved",
+  "INTERNAL_GRIPPER_PROJECTION": "total_binary",
+  "PUBLIC_INFERENCE_BEHAVIOR_CHANGED": "no",
+  "PUBLIC_TOLERANCE_CHANGED": "no",
+  "RESAMPLING_ADDED": "no",
+  "acceptance": {
+    "all_finite_total_binary": true,
+    "duplicates_preserved_no_resampling": true,
+    "gripper_gradient_zero": true,
+    "offender_internal_open_endpoint": true,
+    "offender_public_still_rejected": true,
+    "only_normalized_endpoints_enter_q": true,
+    "padding_gradient_zero": true,
+    "projector_rng_unchanged": true,
+    "public_and_frozen_sha_unchanged": true,
+    "public_execution_calls_zero": true,
+    "tcp6_gradient_nonzero": true,
+    "threshold_direction_tie_public_golden": true
+  },
+  "call_counts": {
+    "RuleSpec_calls": 0,
+    "absolute_inverse_calls": 0,
+    "public_validator_calls": 0
+  },
+  "candidate_duplicate_rate": 0.9998,
+  "config": {
+    "actor_q_gradient_mask_per_slot": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0
+    ],
+    "actor_q_guided_action_dims": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "all_critic_action_slots_valid": true,
+    "artifact_status": "development_only",
+    "boundary": "internal critic canonicalization != public execution authorization",
+    "critic_action_input_dim": 7,
+    "critic_action_shape": [
+      3,
+      7
+    ],
+    "critic_action_slots": 3,
+    "critic_duration_mode": "fixed_k",
+    "critic_receives_terminal_derived_duration_or_mask": false,
+    "flow_matching_action_dims": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "frozen_normalizer_manifest": {
+      "path": "datasets/task2_lerobotv3/normalizer_manifest.json",
+      "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+    },
+    "gripper": {
+      "binary_ste": false,
+      "binary_threshold_m": 0.0425,
+      "closed_endpoint_m": 0.0,
+      "closed_rule": "continuous_width_m < threshold",
+      "finite_required": true,
+      "input": "normalized_flow_gripper",
+      "inverse": "frozen_delta_action7_normalizer",
+      "open_endpoint_m": 0.085,
+      "open_rule_and_tie": "continuous_width_m >= threshold",
+      "public_tolerance_check": false,
+      "renormalization": "frozen_delta_action7_normalizer",
+      "stop_gradient": true
+    },
+    "gripper_objective": "flow_matching_only",
+    "gripper_q_gradient": false,
+    "paper_description": "value-guided 6-DoF Cartesian refinement with imitation-regularized discrete gripper control",
+    "partial_action_interface": false,
+    "public_inference": {
+      "absolute_action_and_rulespec_validation": true,
+      "behavior_changed": false,
+      "candidate_tolerance_m": [
+        -0.01,
+        0.095
+      ]
+    },
+    "public_inference_contract_unchanged": true,
+    "representation": "mixed_continuous_discrete_cartesian7d",
+    "schema_version": "forcesmolvla_stage2_action_contract.v2.development",
+    "supersedes_for_current_stage2_training": "configs/stage2_action_contract.development.json",
+    "tcp6": "normalized_continuous_flow_action_with_actor_q_gradient",
+    "v1_sha256": "ce67becfb7008efb152fec5f944906d90b79072ea4eee2ded67c70560eeb105a"
+  },
+  "frozen_sha_after": {
+    "normalizer": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
+    "public_inference": "f27fb012692c8dcbca0cd7892e9800693c46fe7a8c4fb71c5077445cd65ab73b",
+    "public_model": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610",
+    "public_source": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1",
+    "r1": "1a9b6aa20c88df7cacddfaf29bbfb6e7a18270461ccd18cb074101a3ee371001",
+    "r1_report": "bba3075124a0773bec31f2161ed2e513c52c3834e043a71489c76a46a1277cef",
+    "v1": "ce67becfb7008efb152fec5f944906d90b79072ea4eee2ded67c70560eeb105a"
+  },
+  "frozen_sha_before": {
+    "normalizer": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
+    "public_inference": "f27fb012692c8dcbca0cd7892e9800693c46fe7a8c4fb71c5077445cd65ab73b",
+    "public_model": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610",
+    "public_source": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1",
+    "r1": "1a9b6aa20c88df7cacddfaf29bbfb6e7a18270461ccd18cb074101a3ee371001",
+    "r1_report": "bba3075124a0773bec31f2161ed2e513c52c3834e043a71489c76a46a1277cef",
+    "v1": "ce67becfb7008efb152fec5f944906d90b79072ea4eee2ded67c70560eeb105a"
+  },
+  "normalized_endpoints": [
+    -0.7100614905357361,
+    1.4083287715911865
+  ],
+  "offender": {
+    "continuous_width_m": 0.09740415960550308,
+    "internal_endpoint_m": 0.085,
+    "normalized": 1.71746826171875,
+    "public_rejected": true
+  },
+  "optimizer_created": 0,
+  "optimizer_updates": 0,
+  "projected_endpoint_counts": {
+    "0.0": 5073,
+    "0.08500000089406967": 4927
+  },
+  "raw_gripper_out_of_public_tolerance_rate": 0.9984999895095825,
+  "rng_unchanged": true,
+  "schema_version": "forcesmolvla_s2_action_contract_v2_preflight.v1",
+  "threshold_golden": {
+    "input_m": [
+      0.0424999,
+      0.0425,
+      0.042500100000000006
+    ],
+    "internal_m": [
+      0.0,
+      0.08500000089406967,
+      0.08500000089406967
+    ],
+    "public_m": [
+      0.0,
+      0.085,
+      0.085
+    ]
+  }
+}

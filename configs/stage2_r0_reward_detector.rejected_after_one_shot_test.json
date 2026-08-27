@@ -1,0 +1,116 @@
+{
+  "approval_scope": "none_candidate_rejected",
+  "artifact_status": "REJECTED_AFTER_FROZEN_ONE_SHOT_TEST",
+  "bindings": {
+    "adapter_source": {
+      "file_size": 5627,
+      "path": "tools/reward_classifier/conrft_lerobot_v3_adapter.py",
+      "sha256": "ba44cbbadbb36925b7ad3d6cc846db3c21fa6ae299915401296383106c7a45df"
+    },
+    "candidate_config": {
+      "file_size": 5139,
+      "path": "configs/stage2_r0_reward_detector.candidate.development.json",
+      "sha256": "d493c9f398a2f14ae5e11d1d1cf44ef769c66759c61220eed53e00eedb2d3362"
+    },
+    "classifier_checkpoint": {
+      "file_size": 87217825,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+      "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+    },
+    "one_shot_test_report": {
+      "file_size": 405907,
+      "path": "artifacts/development/stage2/reward_classifier/r0_one_shot_test_evaluation.v1.json",
+      "sha256": "ec02e805c84a80778be9e16525d751da058a28bd1ebde85f394b33875b6a3988"
+    },
+    "one_shot_test_source": {
+      "file_size": 49902,
+      "path": "tools/reward_classifier/evaluate_task2_reward_detector_test.py",
+      "sha256": "c3facb3c3010b9059811d50b3a8b8d187d145db7e18904d85c4110e4ab562141"
+    },
+    "validation_calibration": {
+      "file_size": 1862311,
+      "path": "artifacts/development/stage2/reward_classifier/r0_validation_detector_calibration.v1.json",
+      "sha256": "5d52475ce518eef2315bbf6908140d318d89d025311efdb3f7e8c8204d6bdb47"
+    },
+    "validation_calibration_source": {
+      "file_size": 48261,
+      "path": "tools/reward_classifier/calibrate_task2_reward_detector.py",
+      "sha256": "f6a7f5f411423bd6a09a94e39516f92bbe5edb6dd0d6d7d399d364ec84c684a5"
+    }
+  },
+  "created_at": "2026-08-25T12:51:31.845211+00:00",
+  "detector": {
+    "consecutive_positive_frames": 5,
+    "detector_frequency_hz": 30,
+    "latch_after_trigger": true,
+    "probability_threshold": 0.83,
+    "reset_on": [
+      "episode_start_or_end",
+      "non_consecutive_frame_index",
+      "invalid_or_missing_image",
+      "classifier_inference_failure",
+      "any_input_validity_failure"
+    ],
+    "trigger_on_current_Mth_frame_without_backfill": true
+  },
+  "formal_ready": false,
+  "next_allowed_action": "return_to_validation_redesign_or_collect_independent_calibration_episodes",
+  "permissions": {
+    "G1_created_or_authorized_by_this_artifact": false,
+    "formal_or_production_use": false,
+    "reward_or_terminal_created": false
+  },
+  "preprocessing_and_camera_contract": {
+    "classifier_camera_keys_in_order": [
+      "d435_third_person",
+      "d405_wrist"
+    ],
+    "classifier_input_shape_per_camera": [
+      "batch",
+      1,
+      480,
+      640,
+      3
+    ],
+    "dropout": false,
+    "eval_mode": true,
+    "frame_stack": 1,
+    "random_augmentation": false,
+    "random_crop": false,
+    "resizing_and_imagenet_normalization_owner": "frozen unmodified ConRFT ResNet10 encoder",
+    "source_camera_keys_in_order": [
+      "observation.images.camera1",
+      "observation.images.camera2"
+    ],
+    "source_color_order": "RGB",
+    "source_image_shape_HWC": [
+      480,
+      640,
+      3
+    ]
+  },
+  "production_ready": false,
+  "schema_version": "forcesmolvla_r0_reward_detector_spec.v1",
+  "test_acceptance": {
+    "conditions": {
+      "early_trigger_episode_count_equals_0": false,
+      "max_detection_delay_frames_lte_6": true,
+      "max_detection_delay_ms_lte_200": true,
+      "missed_success_episode_count_equals_0": true
+    },
+    "decision": "FAIL",
+    "frozen_before_test": {
+      "early_trigger_episode_count": 0,
+      "max_detection_delay_frames_lte": 6,
+      "max_detection_delay_ms_lte": 200.0,
+      "missed_success_episode_count": 0
+    },
+    "observed": {
+      "detected_success_episode_count": 4,
+      "early_trigger_episode_count": 2,
+      "max_detection_delay_frames": 4,
+      "max_detection_delay_ms": 133.33333333333334,
+      "missed_success_episode_count": 0
+    }
+  }
+}

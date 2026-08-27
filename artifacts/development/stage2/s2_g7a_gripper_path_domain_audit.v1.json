@@ -1,0 +1,235 @@
+{
+  "ACTOR_UPDATES": 0,
+  "CLIPPING_OR_RESAMPLING_ADDED": "no",
+  "CRITIC_NUMERICAL_STABILITY": "not_measured",
+  "CRITIC_WARMUP_UPDATES": 0,
+  "ETA_G7B_APPROVED": "no",
+  "FAILURE_SCOPE": "true_action_contract_error",
+  "G7A_R1_FAIL": "preserved",
+  "G7A_R2_CRITIC_WARMUP": "not_started",
+  "G7B_STARTED": "no",
+  "GRIPPER_PATH_DOMAIN_AUDIT": "pass",
+  "LONG_RUN_AUTHORIZED": "no",
+  "NEXT_ALLOWED_ACTION": "request_action_contract_revision_approval",
+  "NORMALIZED_VALUE_COMPARED_AS_METERS": "no",
+  "PUBLIC_INFERENCE_BEHAVIOR_CHANGED": "no",
+  "PUBLIC_SAFETY_THRESHOLD_CHANGED": "no",
+  "ROBOT_EXECUTION_AUTHORIZED": false,
+  "actor_updates": 0,
+  "call_audit": {
+    "absolute_inverse_calls": 0,
+    "detached_public_gripper_decode_calls": 2,
+    "optimizer_created": 0,
+    "optimizer_updates": 0,
+    "polyak_updates": 0,
+    "public_predict_calls": 0,
+    "public_safety_check_calls_in_flow_generation": 0
+  },
+  "checkpoint_created": false,
+  "data_access": {
+    "manual_g1_opens": 0,
+    "manual_label_opens": 0,
+    "reward_classifier_inference": 0,
+    "reward_classifier_updates": 0,
+    "test_image_reads": 0,
+    "test_transition_reads": 0
+  },
+  "domain_conclusion": {
+    "ACTION_CONTRACT_MISMATCH": "new_boundary_principle_vs_frozen_G3_G4_contract",
+    "internal_adapter_contains_public_execution_tolerance": true,
+    "new_boundary_principle_matches_hash_bound_contract": false,
+    "normalized_direct_meter_comparison": false,
+    "r2_condition_A_or_B_satisfied": false,
+    "range_check_is_meters": true,
+    "range_check_layer": "g_unnormalized_continuous_width_m",
+    "source_matches_hash_bound_contract": true
+  },
+  "environment": {
+    "actor_autocast_dtype": "torch.bfloat16",
+    "critic_dtype": "torch.float32",
+    "cublas_workspace_config": ":4096:8",
+    "cuda": "12.8",
+    "cudnn": 91900,
+    "data_augmentation": false,
+    "deterministic_algorithms": true,
+    "driver": "570.211.01",
+    "gpu_name": "NVIDIA GeForce RTX 4090 D",
+    "gpu_uuid": "GPU-0f7fb0c9-3905-7cd0-7e0e-bad412e1cc66",
+    "num_workers": 0,
+    "pid": 2992563,
+    "python": "3.12.13 | packaged by Anaconda, Inc. | (main, Jul  9 2026, 14:38:16) [GCC 14.3.0]",
+    "pythonhashseed": "42",
+    "pytorch": "2.11.0+cu128",
+    "tf32_cudnn": true,
+    "tf32_matmul": false,
+    "torch_compile": false
+  },
+  "frozen_contract": {
+    "action_contract": {
+      "payload": {
+        "actor_q_gradient_mask_per_slot": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          0
+        ],
+        "actor_q_guided_action_dims": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "all_critic_action_slots_valid": true,
+        "artifact_status": "development_only",
+        "critic_action_input_dim": 7,
+        "critic_action_shape": [
+          3,
+          7
+        ],
+        "critic_action_slots": 3,
+        "critic_duration_mode": "fixed_k",
+        "critic_receives_terminal_derived_duration_or_mask": false,
+        "flow_matching_action_dims": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "formal_eligible": false,
+        "frozen_normalizer_manifest": {
+          "path": "datasets/task2_lerobotv3/normalizer_manifest.json",
+          "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+        },
+        "gripper_actor_q_input": {
+          "candidate_space": "frozen_delta_action7_normalized_inverse",
+          "closed_width_m": 0.0,
+          "decode_owner": "forcesmolvla.action_delta.decode_binary_gripper_width",
+          "open_width_m": 0.085,
+          "renormalization": "frozen_delta_action7_normalizer",
+          "stop_gradient_after_decode": true,
+          "switch_width_m": 0.0425
+        },
+        "gripper_objective": "flow_matching_only",
+        "gripper_q_gradient": false,
+        "paper_description": "value-guided 6-DoF Cartesian refinement with imitation-regularized discrete gripper control",
+        "partial_action_interface": false,
+        "public_inference_contract_unchanged": true,
+        "representation": "mixed_continuous_discrete_cartesian7d",
+        "schema_version": "1.0",
+        "tcp_actor_q_input": "normalized_continuous_flow_action"
+      },
+      "sha256": "ce67becfb7008efb152fec5f944906d90b79072ea4eee2ded67c70560eeb105a"
+    },
+    "flow_sampling_source_sha256": "2a82085432647c4907257e41f0bd6ebfd7e9d4c7c98c5eba05331783320dc689",
+    "g3_artifact_sha256": "30020b624a4243b08248b1ae90144a88be0e87cc43e733477475fa78acd54acc",
+    "g4_artifact_sha256": "2fd063497ec9b803610c384d13149360a77531ac5dd6a784d83f5b3d2678cf3a",
+    "normalizer_sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+  },
+  "offender": {
+    "action_contract_sha256": "ce67becfb7008efb152fec5f944906d90b79072ea4eee2ded67c70560eeb105a",
+    "action_slot": 2,
+    "candidate_index": 0,
+    "episode_id": "episode_000017",
+    "executed_action_mask": [
+      true,
+      true,
+      true
+    ],
+    "gripper_value": 0.09740415960550308,
+    "internal_adapter_traceback": "Traceback (most recent call last):\n  File \"/home/rlc123/ForceSmolVLA/tools/audit_s2_g7a_gripper_path_domain_gpu.py\", line 166, in main\n    critic_action_for_q_guidance(\n  File \"/home/rlc123/ForceSmolVLA/src/forcesmolvla/rft/flow_sampling.py\", line 55, in critic_action_for_q_guidance\n    raise ValueError(\nValueError: model gripper candidate is outside the frozen [-0.01,0.095] m tolerance\n",
+    "layers": {
+      "clipping_or_resampling": false,
+      "failure_code": "PUBLIC_GRIPPER_CANDIDATE_OUTSIDE_FROZEN_TOLERANCE",
+      "g_critic_normalized": null,
+      "g_flow_normalized": 1.71746826171875,
+      "g_public_decoded_endpoint_m": null,
+      "g_unnormalized_continuous_width_m": 0.09740415960550308,
+      "global_rng_after": {
+        "numpy": "dbd4bd81d081270dea3c54f06c8b019104d24ab036d6f8f40d6a757386ad7bca",
+        "python": "2d1026d52826de68f9ba3a8438a5e74ad10a8269aaa1ac77873d4f9a41def20a",
+        "torch_cpu": "d339c4a93466b8f6012849d380368d0db48680994c10f3d20d6b138219a31095",
+        "torch_cuda": [
+          "4cbbd8ca5215b8d161aec181a74b694f4e24b001d5b081dc0030ed797a8973e0"
+        ]
+      },
+      "global_rng_before": {
+        "numpy": "dbd4bd81d081270dea3c54f06c8b019104d24ab036d6f8f40d6a757386ad7bca",
+        "python": "2d1026d52826de68f9ba3a8438a5e74ad10a8269aaa1ac77873d4f9a41def20a",
+        "torch_cpu": "d339c4a93466b8f6012849d380368d0db48680994c10f3d20d6b138219a31095",
+        "torch_cuda": [
+          "4cbbd8ca5215b8d161aec181a74b694f4e24b001d5b081dc0030ed797a8973e0"
+        ]
+      },
+      "global_rng_unchanged": true,
+      "public_exception_traceback": "Traceback (most recent call last):\n  File \"/home/rlc123/ForceSmolVLA/src/forcesmolvla/rft/gripper_domain_audit.py\", line 67, in gripper_domain_layers\n    decoded = decode_binary_gripper_width(continuous[None, :])[0]\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/rlc123/ForceSmolVLA/src/forcesmolvla/action_delta.py\", line 130, in decode_binary_gripper_width\n    raise ValueError(\nValueError: model gripper candidate is outside the frozen [-0.01,0.095] m tolerance\n",
+      "public_input_action7_sha256": "52861d66383870a98884faf4cfc22ff524f240f63da3b43847d1bddf7d238def",
+      "public_output_action7_sha256": null,
+      "replacement_action_created": false,
+      "valid": false
+    },
+    "normalizer_sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
+    "row_id": "4480|episode_000017|222|225",
+    "sampling_purpose": "calql_next_policy_candidate",
+    "tensor_domain": "normalized_action_target7_then_inverse_normalized_width_m",
+    "tensor_shape": {
+      "candidate_view": [
+        16,
+        2,
+        3,
+        7
+      ],
+      "flow_chunk": [
+        32,
+        50,
+        7
+      ],
+      "offending_action": [
+        7
+      ]
+    },
+    "transition_index": 4480,
+    "underlying_flow_purpose": "cql_next"
+  },
+  "optimizer_updates": 0,
+  "polyak_updates": 0,
+  "r1_failure_log_sha256": "609cdd064c4203785f3ceaab0a0b55bad6c75052afb1338bb0ba89f3ed94f911",
+  "r1_fixed_diagnostics_sha256": "002235cfc18cf939652c7a1bbe27ca0e752cf2e25e89fa415465ccfb3e8777e2",
+  "r1_sha_after": {
+    "artifact": "1a9b6aa20c88df7cacddfaf29bbfb6e7a18270461ccd18cb074101a3ee371001",
+    "report": "bba3075124a0773bec31f2161ed2e513c52c3834e043a71489c76a46a1277cef"
+  },
+  "r1_sha_before": {
+    "artifact": "1a9b6aa20c88df7cacddfaf29bbfb6e7a18270461ccd18cb074101a3ee371001",
+    "report": "bba3075124a0773bec31f2161ed2e513c52c3834e043a71489c76a46a1277cef"
+  },
+  "reproducibility": {
+    "actor_bitwise_unchanged": true,
+    "critic_bitwise_unchanged": true,
+    "failure_code_histogram": {
+      "PUBLIC_GRIPPER_CANDIDATE_OUTSIDE_FROZEN_TOLERANCE": 1
+    },
+    "fixed_input_noise_repeat_exact": true,
+    "global_rng_unchanged": true,
+    "public_action_digest": "52861d66383870a98884faf4cfc22ff524f240f63da3b43847d1bddf7d238def",
+    "valid_invalid_set_digest": "2d7f60b51087271ea5426e9ba9b1757dbdb1ac7f62fd6467353f302f7b1c35ee"
+  },
+  "sampling_purpose_taxonomy": {
+    "actor_q_action": "internal_actor_gradient_path",
+    "calql_current_policy_candidate": "internal_loss_path",
+    "calql_next_policy_candidate": "internal_loss_path_and_actual_offender",
+    "calql_random_candidate": "normalized_detector_g1_behavior_macro",
+    "critic_validation": "read_only_internal_loss_diagnostic",
+    "detached_public_validity_audit": "measurement_only",
+    "td_next_action": "internal_loss_path"
+  },
+  "schema_version": "forcesmolvla_g7a_gripper_path_domain_audit.v1",
+  "source_manifest_sha256": "0f02b7f3e28a5e929a0d1ddfbc2b6bfced6a8da86b224ce7180373eb22572866"
+}

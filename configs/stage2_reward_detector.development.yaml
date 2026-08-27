@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_status": "PREPARED_NOT_TRAINED",
+  "active_gate": "R0_PREPARATION_ONLY",
+  "probability_threshold": null,
+  "consecutive_positive_frames": null,
+  "max_detection_delay_frames": null,
+  "causal_confirmation": true,
+  "episode_boundary_reset": true,
+  "last_valid_frame_fallback": "disabled",
+  "input_rate_hz": 30,
+  "policy_decision_rate_hz": 10,
+  "policy_boundary_anchor_frame": 0,
+  "alignment_rule": "first legal policy boundary at or after causal confirmation",
+  "allowed_alignment_delay_frames": [0, 2],
+  "synthetic_parameters_may_be_persisted": false,
+  "formal_parameters_approved": false
+}

@@ -1,0 +1,2741 @@
+{
+  "action_contract": {
+    "paper_description": "value-guided 6-DoF Cartesian refinement with imitation-regularized discrete gripper control",
+    "relative_path": "configs/stage2_action_contract.development.json",
+    "sha256": "ce67becfb7008efb152fec5f944906d90b79072ea4eee2ded67c70560eeb105a"
+  },
+  "artifact_status": "development_only",
+  "checkpoint": "/home/rlc123/ForceSmolVLA/outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000",
+  "checkpoint_artifact_manifest_sha256": "46a82acff03414fbd03a3c874433e332b153d78712b27313f78332e6650492fe",
+  "config": {
+    "relative_path": "configs/stage2_g3_gradient_matrix.development.json",
+    "sha256": "7b138c17a97343ad39904164516858aa78f6db8fab2666c54601754c0a1773bb"
+  },
+  "contracts": {
+    "bf16_measurement_complete": true,
+    "formal_thresholds_unapproved": true,
+    "fp32_measurement_complete": true,
+    "optimizer_not_created": true,
+    "training_not_started": true
+  },
+  "critic_created": false,
+  "formal_eligible": false,
+  "gate": "S2-G3-supplement",
+  "gate_status": "pass",
+  "gpu": "NVIDIA GeForce RTX 4090 D",
+  "gradient_parity_formal_thresholds": "unapproved",
+  "measurements": {
+    "bf16_outer_with_v4_2_fp32_islands": {
+      "contracts": {
+        "all_measurements_finite": true,
+        "all_ten_euler_steps_receive_q_gradient": true,
+        "flow_matching_gripper_gradient_nonzero": true,
+        "force_kv_once_per_cached_flow": true,
+        "gripper_mode_visible_to_q_forward": true,
+        "gripper_q_gradient_exact_zero": true,
+        "no_parameter_grad_buffers_materialized": true,
+        "prefix_append_crop_cache_audit": true,
+        "representative_q_parameter_gradients_nonzero": true,
+        "sidecar_public_gripper_decode_exact": true,
+        "state_action_noise_padding_isolated": true,
+        "state_dict_and_generation_unchanged": true,
+        "tcp_k3x6_q_gradients_nonzero": true,
+        "three_fixed_input_repeats_complete": true
+      },
+      "flow_matching_gripper_probe": {
+        "fixed_timestep": 0.5,
+        "gripper_loss": 0.002531181089580059,
+        "gripper_velocity_output_gradient_norm": 0.014230054803192616,
+        "non_gripper_velocity_output_gradient_max_abs": 0.0,
+        "pass": true,
+        "related_parameter_gradient_norms": {
+          "model.action_in_proj.bias": 0.011903357692062855,
+          "model.action_out_proj.bias": 0.027470054104924202
+        }
+      },
+      "parameter_generation": {
+        "after": 7336899105989050234,
+        "before": 7336899105989050234
+      },
+      "per_module_gradient_parity": {
+        "model.action_in_proj.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0000001192092896,
+              "mean": 1.0000001192092896,
+              "min": 1.0000001192092896,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.action_out_proj.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 0.9999999403953552,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 0.9999999403953552,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 0.9999999403953552,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 0.9999999403953552,
+              "mean": 0.9999999403953552,
+              "min": 0.9999999403953552,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.force_adapter.w_out.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0,
+              "mean": 1.0,
+              "min": 1.0,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.force_branch.force_mlp.linear_out.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.593559656816069e-05,
+                "sha256": "119df91b6ebeb5a7574e18c4e074fc7c43015b3e309286bd40826bbc8e12a404",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9999827146530151,
+              "max_abs_error": 2.9802322387695312e-08,
+              "relative_l2_error": 0.005971903447061777,
+              "uncached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.5910940166795626e-05,
+                "sha256": "3c7e32d965bea9107ca0ff12ac433fd71253d6a74cef3b1fabf5c3ce9b1f3e2a",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.593559656816069e-05,
+                "sha256": "119df91b6ebeb5a7574e18c4e074fc7c43015b3e309286bd40826bbc8e12a404",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9999827146530151,
+              "max_abs_error": 2.9802322387695312e-08,
+              "relative_l2_error": 0.005971903447061777,
+              "uncached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.5910940166795626e-05,
+                "sha256": "3c7e32d965bea9107ca0ff12ac433fd71253d6a74cef3b1fabf5c3ce9b1f3e2a",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.593559656816069e-05,
+                "sha256": "119df91b6ebeb5a7574e18c4e074fc7c43015b3e309286bd40826bbc8e12a404",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9999827146530151,
+              "max_abs_error": 2.9802322387695312e-08,
+              "relative_l2_error": 0.005971903447061777,
+              "uncached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.5910940166795626e-05,
+                "sha256": "3c7e32d965bea9107ca0ff12ac433fd71253d6a74cef3b1fabf5c3ce9b1f3e2a",
+                "shape": [
+                  960
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 0.9999827146530151,
+              "mean": 0.9999827146530151,
+              "min": 0.9999827146530151,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 2.9802322387695312e-08,
+              "mean": 2.9802322387695312e-08,
+              "min": 2.9802322387695312e-08,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 0.005971903447061777,
+              "mean": 0.005971903447061777,
+              "min": 0.005971903447061777,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.force_branch.refiner.router.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 0.00011359562631696463,
+                "norm": 0.00013144522381480783,
+                "sha256": "e1c981960dcbfa67eb206bc8038d20d5b3c696ecdf46bd04d89e0e9e29de7b9e",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.4551915228366852e-11,
+              "relative_l2_error": 1.2064022314461909e-07,
+              "uncached": {
+                "max_abs": 0.00011359564086887985,
+                "norm": 0.00013144523836672306,
+                "sha256": "551298b43453c02e280c3a9a68beb2913b50d1aaf8267d0b1e2d745c180c490a",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.00011359562631696463,
+                "norm": 0.00013144522381480783,
+                "sha256": "e1c981960dcbfa67eb206bc8038d20d5b3c696ecdf46bd04d89e0e9e29de7b9e",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.4551915228366852e-11,
+              "relative_l2_error": 1.2064022314461909e-07,
+              "uncached": {
+                "max_abs": 0.00011359564086887985,
+                "norm": 0.00013144523836672306,
+                "sha256": "551298b43453c02e280c3a9a68beb2913b50d1aaf8267d0b1e2d745c180c490a",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.00011359562631696463,
+                "norm": 0.00013144522381480783,
+                "sha256": "e1c981960dcbfa67eb206bc8038d20d5b3c696ecdf46bd04d89e0e9e29de7b9e",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.4551915228366852e-11,
+              "relative_l2_error": 1.2064022314461909e-07,
+              "uncached": {
+                "max_abs": 0.00011359564086887985,
+                "norm": 0.00013144523836672306,
+                "sha256": "551298b43453c02e280c3a9a68beb2913b50d1aaf8267d0b1e2d745c180c490a",
+                "shape": [
+                  4
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0,
+              "mean": 1.0,
+              "min": 1.0,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 1.4551915228366852e-11,
+              "mean": 1.4551915228366852e-11,
+              "min": 1.4551915228366852e-11,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 1.2064022314461909e-07,
+              "mean": 1.2064022314461909e-07,
+              "min": 1.2064022314461909e-07,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.vlm_with_expert.vlm.model.text_model.layers.0.input_layernorm.weight": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 0.88671875,
+                "norm": 2.483144760131836,
+                "sha256": "31eeb1faa153cbd4fb9713e2f5a3897c4b6561257c7dd40f2c3deb66d6d3d2d3",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9998563528060913,
+              "max_abs_error": 0.013671875,
+              "relative_l2_error": 0.017671192064881325,
+              "uncached": {
+                "max_abs": 0.88671875,
+                "norm": 2.495849370956421,
+                "sha256": "e5e5f60ed7736d31aaa7ac4a7cde9f2855ff67aaccc3f1adc14c04652f9f94b4",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.88671875,
+                "norm": 2.483144760131836,
+                "sha256": "31eeb1faa153cbd4fb9713e2f5a3897c4b6561257c7dd40f2c3deb66d6d3d2d3",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9998563528060913,
+              "max_abs_error": 0.013671875,
+              "relative_l2_error": 0.017671192064881325,
+              "uncached": {
+                "max_abs": 0.88671875,
+                "norm": 2.495849370956421,
+                "sha256": "e5e5f60ed7736d31aaa7ac4a7cde9f2855ff67aaccc3f1adc14c04652f9f94b4",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.88671875,
+                "norm": 2.483144760131836,
+                "sha256": "31eeb1faa153cbd4fb9713e2f5a3897c4b6561257c7dd40f2c3deb66d6d3d2d3",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9998563528060913,
+              "max_abs_error": 0.013671875,
+              "relative_l2_error": 0.017671192064881325,
+              "uncached": {
+                "max_abs": 0.88671875,
+                "norm": 2.495849370956421,
+                "sha256": "e5e5f60ed7736d31aaa7ac4a7cde9f2855ff67aaccc3f1adc14c04652f9f94b4",
+                "shape": [
+                  960
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 0.9998563528060913,
+              "mean": 0.9998563528060913,
+              "min": 0.9998563528060913,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 0.013671875,
+              "mean": 0.013671875,
+              "min": 0.013671875,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 0.017671192064881325,
+              "mean": 0.017671192064881325,
+              "min": 0.017671192064881325,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 7.271766662597656e-06,
+                "norm": 4.798916052095592e-05,
+                "sha256": "92773bd4594b91e8c1f71238700e7d0218375bdfe8369b3d89c156de6d7ef37c",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 0.9996946454048157,
+              "max_abs_error": 2.384185791015625e-07,
+              "relative_l2_error": 0.025064045563340187,
+              "uncached": {
+                "max_abs": 7.510185241699219e-06,
+                "norm": 4.8206497012870386e-05,
+                "sha256": "ce2cf58c3e68c39b69683e096f396ae32a9d8fd2446c4c972133da620c23516f",
+                "shape": [
+                  768
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 7.271766662597656e-06,
+                "norm": 4.798916052095592e-05,
+                "sha256": "92773bd4594b91e8c1f71238700e7d0218375bdfe8369b3d89c156de6d7ef37c",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 0.9996946454048157,
+              "max_abs_error": 2.384185791015625e-07,
+              "relative_l2_error": 0.025064045563340187,
+              "uncached": {
+                "max_abs": 7.510185241699219e-06,
+                "norm": 4.8206497012870386e-05,
+                "sha256": "ce2cf58c3e68c39b69683e096f396ae32a9d8fd2446c4c972133da620c23516f",
+                "shape": [
+                  768
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 7.271766662597656e-06,
+                "norm": 4.798916052095592e-05,
+                "sha256": "92773bd4594b91e8c1f71238700e7d0218375bdfe8369b3d89c156de6d7ef37c",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 0.9996946454048157,
+              "max_abs_error": 2.384185791015625e-07,
+              "relative_l2_error": 0.025064045563340187,
+              "uncached": {
+                "max_abs": 7.510185241699219e-06,
+                "norm": 4.8206497012870386e-05,
+                "sha256": "ce2cf58c3e68c39b69683e096f396ae32a9d8fd2446c4c972133da620c23516f",
+                "shape": [
+                  768
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 0.9996946454048157,
+              "mean": 0.9996946454048157,
+              "min": 0.9996946454048157,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 2.384185791015625e-07,
+              "mean": 2.384185791015625e-07,
+              "min": 2.384185791015625e-07,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 0.025064045563340187,
+              "mean": 0.025064045563340187,
+              "min": 0.025064045563340187,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        }
+      },
+      "precision_mode": "bf16_outer_with_v4_2_fp32_islands",
+      "repeat_output_variance": {
+        "cached": {
+          "elementwise_variance_max": 0.0,
+          "elementwise_variance_mean": 0.0,
+          "max_abs_from_repeat_0": 0.0
+        },
+        "uncached": {
+          "elementwise_variance_max": 0.0,
+          "elementwise_variance_mean": 0.0,
+          "max_abs_from_repeat_0": 0.0
+        }
+      },
+      "repeats": [
+        {
+          "action_contract": {
+            "closed_to_open_q_probe_delta": 1.8006317615509033,
+            "full_chunk_expected_gradient_max_abs_error": 0.0,
+            "gripper_k3_gradient_max_abs": 0.0,
+            "sidecar_public_gripper_decode_exact": true,
+            "tcp_k3x6_gradient_min_abs": 0.10999999940395355
+          },
+          "force_kv_projection_calls": {
+            "cached": {
+              "k": 1,
+              "v": 1
+            },
+            "direct": {
+              "k": 1,
+              "v": 1
+            }
+          },
+          "independent_padding_perturbations": {
+            "action_7_to_32_velocity_max_abs_delta": 0.0,
+            "action_output_padding_max_abs": 0.0,
+            "noise_7_to_32_flow_output_max_abs_delta": 0.0,
+            "state_7_to_32_pre_core_sanitization_max_abs_delta": 0.0
+          },
+          "output": {
+            "cached_sha256": "46def8f8893e1e6685cdcf1da6da218f03f849a2cf1bc93921a4e8a246798303",
+            "cached_vs_uncached_max_abs": 0.0,
+            "uncached_sha256": "46def8f8893e1e6685cdcf1da6da218f03f849a2cf1bc93921a4e8a246798303",
+            "wrapper_vs_direct_core_max_abs": 0.0
+          },
+          "peak_memory": {
+            "cached": {
+              "allocated_bytes": 3399414272,
+              "reserved_bytes": 3506438144
+            },
+            "uncached_checkpointed": {
+              "allocated_bytes": 2890016768,
+              "reserved_bytes": 2977955840
+            }
+          },
+          "per_module_gradient_parity": {
+            "model.action_in_proj.bias": {
+              "cached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.action_out_proj.bias": {
+              "cached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 0.9999999403953552,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            "model.force_adapter.w_out.bias": {
+              "cached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.force_branch.force_mlp.linear_out.bias": {
+              "cached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.593559656816069e-05,
+                "sha256": "119df91b6ebeb5a7574e18c4e074fc7c43015b3e309286bd40826bbc8e12a404",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9999827146530151,
+              "max_abs_error": 2.9802322387695312e-08,
+              "relative_l2_error": 0.005971903447061777,
+              "uncached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.5910940166795626e-05,
+                "sha256": "3c7e32d965bea9107ca0ff12ac433fd71253d6a74cef3b1fabf5c3ce9b1f3e2a",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.force_branch.refiner.router.bias": {
+              "cached": {
+                "max_abs": 0.00011359562631696463,
+                "norm": 0.00013144522381480783,
+                "sha256": "e1c981960dcbfa67eb206bc8038d20d5b3c696ecdf46bd04d89e0e9e29de7b9e",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.4551915228366852e-11,
+              "relative_l2_error": 1.2064022314461909e-07,
+              "uncached": {
+                "max_abs": 0.00011359564086887985,
+                "norm": 0.00013144523836672306,
+                "sha256": "551298b43453c02e280c3a9a68beb2913b50d1aaf8267d0b1e2d745c180c490a",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.text_model.layers.0.input_layernorm.weight": {
+              "cached": {
+                "max_abs": 0.88671875,
+                "norm": 2.483144760131836,
+                "sha256": "31eeb1faa153cbd4fb9713e2f5a3897c4b6561257c7dd40f2c3deb66d6d3d2d3",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9998563528060913,
+              "max_abs_error": 0.013671875,
+              "relative_l2_error": 0.017671192064881325,
+              "uncached": {
+                "max_abs": 0.88671875,
+                "norm": 2.495849370956421,
+                "sha256": "e5e5f60ed7736d31aaa7ac4a7cde9f2855ff67aaccc3f1adc14c04652f9f94b4",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding.bias": {
+              "cached": {
+                "max_abs": 7.271766662597656e-06,
+                "norm": 4.798916052095592e-05,
+                "sha256": "92773bd4594b91e8c1f71238700e7d0218375bdfe8369b3d89c156de6d7ef37c",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 0.9996946454048157,
+              "max_abs_error": 2.384185791015625e-07,
+              "relative_l2_error": 0.025064045563340187,
+              "uncached": {
+                "max_abs": 7.510185241699219e-06,
+                "norm": 4.8206497012870386e-05,
+                "sha256": "ce2cf58c3e68c39b69683e096f396ae32a9d8fd2446c4c972133da620c23516f",
+                "shape": [
+                  768
+                ]
+              }
+            }
+          },
+          "prefix_append_crop_cache_audit_passed": true,
+          "repeat_index": 0,
+          "ten_euler_step_gradient_norms": [
+            0.030784722417593002,
+            0.034635525196790695,
+            0.039464253932237625,
+            0.04575982317328453,
+            0.05379949137568474,
+            0.06481241434812546,
+            0.07954675704240799,
+            0.10088828951120377,
+            0.12749263644218445,
+            0.19320973753929138
+          ]
+        },
+        {
+          "action_contract": {
+            "closed_to_open_q_probe_delta": 1.8006317615509033,
+            "full_chunk_expected_gradient_max_abs_error": 0.0,
+            "gripper_k3_gradient_max_abs": 0.0,
+            "sidecar_public_gripper_decode_exact": true,
+            "tcp_k3x6_gradient_min_abs": 0.10999999940395355
+          },
+          "force_kv_projection_calls": {
+            "cached": {
+              "k": 1,
+              "v": 1
+            },
+            "direct": {
+              "k": 1,
+              "v": 1
+            }
+          },
+          "independent_padding_perturbations": {
+            "action_7_to_32_velocity_max_abs_delta": 0.0,
+            "action_output_padding_max_abs": 0.0,
+            "noise_7_to_32_flow_output_max_abs_delta": 0.0,
+            "state_7_to_32_pre_core_sanitization_max_abs_delta": 0.0
+          },
+          "output": {
+            "cached_sha256": "46def8f8893e1e6685cdcf1da6da218f03f849a2cf1bc93921a4e8a246798303",
+            "cached_vs_uncached_max_abs": 0.0,
+            "uncached_sha256": "46def8f8893e1e6685cdcf1da6da218f03f849a2cf1bc93921a4e8a246798303",
+            "wrapper_vs_direct_core_max_abs": 0.0
+          },
+          "peak_memory": {
+            "cached": {
+              "allocated_bytes": 3399414272,
+              "reserved_bytes": 3506438144
+            },
+            "uncached_checkpointed": {
+              "allocated_bytes": 2890016768,
+              "reserved_bytes": 2977955840
+            }
+          },
+          "per_module_gradient_parity": {
+            "model.action_in_proj.bias": {
+              "cached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.action_out_proj.bias": {
+              "cached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 0.9999999403953552,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            "model.force_adapter.w_out.bias": {
+              "cached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.force_branch.force_mlp.linear_out.bias": {
+              "cached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.593559656816069e-05,
+                "sha256": "119df91b6ebeb5a7574e18c4e074fc7c43015b3e309286bd40826bbc8e12a404",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9999827146530151,
+              "max_abs_error": 2.9802322387695312e-08,
+              "relative_l2_error": 0.005971903447061777,
+              "uncached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.5910940166795626e-05,
+                "sha256": "3c7e32d965bea9107ca0ff12ac433fd71253d6a74cef3b1fabf5c3ce9b1f3e2a",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.force_branch.refiner.router.bias": {
+              "cached": {
+                "max_abs": 0.00011359562631696463,
+                "norm": 0.00013144522381480783,
+                "sha256": "e1c981960dcbfa67eb206bc8038d20d5b3c696ecdf46bd04d89e0e9e29de7b9e",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.4551915228366852e-11,
+              "relative_l2_error": 1.2064022314461909e-07,
+              "uncached": {
+                "max_abs": 0.00011359564086887985,
+                "norm": 0.00013144523836672306,
+                "sha256": "551298b43453c02e280c3a9a68beb2913b50d1aaf8267d0b1e2d745c180c490a",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.text_model.layers.0.input_layernorm.weight": {
+              "cached": {
+                "max_abs": 0.88671875,
+                "norm": 2.483144760131836,
+                "sha256": "31eeb1faa153cbd4fb9713e2f5a3897c4b6561257c7dd40f2c3deb66d6d3d2d3",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9998563528060913,
+              "max_abs_error": 0.013671875,
+              "relative_l2_error": 0.017671192064881325,
+              "uncached": {
+                "max_abs": 0.88671875,
+                "norm": 2.495849370956421,
+                "sha256": "e5e5f60ed7736d31aaa7ac4a7cde9f2855ff67aaccc3f1adc14c04652f9f94b4",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding.bias": {
+              "cached": {
+                "max_abs": 7.271766662597656e-06,
+                "norm": 4.798916052095592e-05,
+                "sha256": "92773bd4594b91e8c1f71238700e7d0218375bdfe8369b3d89c156de6d7ef37c",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 0.9996946454048157,
+              "max_abs_error": 2.384185791015625e-07,
+              "relative_l2_error": 0.025064045563340187,
+              "uncached": {
+                "max_abs": 7.510185241699219e-06,
+                "norm": 4.8206497012870386e-05,
+                "sha256": "ce2cf58c3e68c39b69683e096f396ae32a9d8fd2446c4c972133da620c23516f",
+                "shape": [
+                  768
+                ]
+              }
+            }
+          },
+          "prefix_append_crop_cache_audit_passed": true,
+          "repeat_index": 1,
+          "ten_euler_step_gradient_norms": [
+            0.030784722417593002,
+            0.034635525196790695,
+            0.039464253932237625,
+            0.04575982317328453,
+            0.05379949137568474,
+            0.06481241434812546,
+            0.07954675704240799,
+            0.10088828951120377,
+            0.12749263644218445,
+            0.19320973753929138
+          ]
+        },
+        {
+          "action_contract": {
+            "closed_to_open_q_probe_delta": 1.8006317615509033,
+            "full_chunk_expected_gradient_max_abs_error": 0.0,
+            "gripper_k3_gradient_max_abs": 0.0,
+            "sidecar_public_gripper_decode_exact": true,
+            "tcp_k3x6_gradient_min_abs": 0.10999999940395355
+          },
+          "force_kv_projection_calls": {
+            "cached": {
+              "k": 1,
+              "v": 1
+            },
+            "direct": {
+              "k": 1,
+              "v": 1
+            }
+          },
+          "independent_padding_perturbations": {
+            "action_7_to_32_velocity_max_abs_delta": 0.0,
+            "action_output_padding_max_abs": 0.0,
+            "noise_7_to_32_flow_output_max_abs_delta": 0.0,
+            "state_7_to_32_pre_core_sanitization_max_abs_delta": 0.0
+          },
+          "output": {
+            "cached_sha256": "46def8f8893e1e6685cdcf1da6da218f03f849a2cf1bc93921a4e8a246798303",
+            "cached_vs_uncached_max_abs": 0.0,
+            "uncached_sha256": "46def8f8893e1e6685cdcf1da6da218f03f849a2cf1bc93921a4e8a246798303",
+            "wrapper_vs_direct_core_max_abs": 0.0
+          },
+          "peak_memory": {
+            "cached": {
+              "allocated_bytes": 3399414272,
+              "reserved_bytes": 3506438144
+            },
+            "uncached_checkpointed": {
+              "allocated_bytes": 2890016768,
+              "reserved_bytes": 2977955840
+            }
+          },
+          "per_module_gradient_parity": {
+            "model.action_in_proj.bias": {
+              "cached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.031005859375,
+                "norm": 0.3171919584274292,
+                "sha256": "cbc7f00cbfe01afbf896d886ff5fb87da252f76a6fbc2f786f5dd4a8621517f8",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.action_out_proj.bias": {
+              "cached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 0.9999999403953552,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5440237522125244,
+                "norm": 0.8162156343460083,
+                "sha256": "493e344b850222ce8b40a5f140888a4a40bf55bca445f039beb716bb9cc39e8c",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            "model.force_adapter.w_out.bias": {
+              "cached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.203979137353599e-05,
+                "norm": 0.000562014989554882,
+                "sha256": "6e603cf26e537991a9661014ea37805ff5d8c977c9a61d816ee250f8031e8a7e",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.force_branch.force_mlp.linear_out.bias": {
+              "cached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.593559656816069e-05,
+                "sha256": "119df91b6ebeb5a7574e18c4e074fc7c43015b3e309286bd40826bbc8e12a404",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9999827146530151,
+              "max_abs_error": 2.9802322387695312e-08,
+              "relative_l2_error": 0.005971903447061777,
+              "uncached": {
+                "max_abs": 2.562999725341797e-06,
+                "norm": 2.5910940166795626e-05,
+                "sha256": "3c7e32d965bea9107ca0ff12ac433fd71253d6a74cef3b1fabf5c3ce9b1f3e2a",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.force_branch.refiner.router.bias": {
+              "cached": {
+                "max_abs": 0.00011359562631696463,
+                "norm": 0.00013144522381480783,
+                "sha256": "e1c981960dcbfa67eb206bc8038d20d5b3c696ecdf46bd04d89e0e9e29de7b9e",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.4551915228366852e-11,
+              "relative_l2_error": 1.2064022314461909e-07,
+              "uncached": {
+                "max_abs": 0.00011359564086887985,
+                "norm": 0.00013144523836672306,
+                "sha256": "551298b43453c02e280c3a9a68beb2913b50d1aaf8267d0b1e2d745c180c490a",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.text_model.layers.0.input_layernorm.weight": {
+              "cached": {
+                "max_abs": 0.88671875,
+                "norm": 2.483144760131836,
+                "sha256": "31eeb1faa153cbd4fb9713e2f5a3897c4b6561257c7dd40f2c3deb66d6d3d2d3",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 0.9998563528060913,
+              "max_abs_error": 0.013671875,
+              "relative_l2_error": 0.017671192064881325,
+              "uncached": {
+                "max_abs": 0.88671875,
+                "norm": 2.495849370956421,
+                "sha256": "e5e5f60ed7736d31aaa7ac4a7cde9f2855ff67aaccc3f1adc14c04652f9f94b4",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding.bias": {
+              "cached": {
+                "max_abs": 7.271766662597656e-06,
+                "norm": 4.798916052095592e-05,
+                "sha256": "92773bd4594b91e8c1f71238700e7d0218375bdfe8369b3d89c156de6d7ef37c",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 0.9996946454048157,
+              "max_abs_error": 2.384185791015625e-07,
+              "relative_l2_error": 0.025064045563340187,
+              "uncached": {
+                "max_abs": 7.510185241699219e-06,
+                "norm": 4.8206497012870386e-05,
+                "sha256": "ce2cf58c3e68c39b69683e096f396ae32a9d8fd2446c4c972133da620c23516f",
+                "shape": [
+                  768
+                ]
+              }
+            }
+          },
+          "prefix_append_crop_cache_audit_passed": true,
+          "repeat_index": 2,
+          "ten_euler_step_gradient_norms": [
+            0.030784722417593002,
+            0.034635525196790695,
+            0.039464253932237625,
+            0.04575982317328453,
+            0.05379949137568474,
+            0.06481241434812546,
+            0.07954675704240799,
+            0.10088828951120377,
+            0.12749263644218445,
+            0.19320973753929138
+          ]
+        }
+      ],
+      "state_dict": {
+        "after_sha256": "8b97dc1d15d13afb3c4fb28ebfaadc82ae43c19aee9460d95ada6f93a4d6cb1a",
+        "before_sha256": "8b97dc1d15d13afb3c4fb28ebfaadc82ae43c19aee9460d95ada6f93a4d6cb1a"
+      }
+    },
+    "fp32": {
+      "contracts": {
+        "all_measurements_finite": true,
+        "all_ten_euler_steps_receive_q_gradient": true,
+        "flow_matching_gripper_gradient_nonzero": true,
+        "force_kv_once_per_cached_flow": true,
+        "gripper_mode_visible_to_q_forward": true,
+        "gripper_q_gradient_exact_zero": true,
+        "no_parameter_grad_buffers_materialized": true,
+        "prefix_append_crop_cache_audit": true,
+        "representative_q_parameter_gradients_nonzero": true,
+        "sidecar_public_gripper_decode_exact": true,
+        "state_action_noise_padding_isolated": true,
+        "state_dict_and_generation_unchanged": true,
+        "tcp_k3x6_q_gradients_nonzero": true,
+        "three_fixed_input_repeats_complete": true
+      },
+      "flow_matching_gripper_probe": {
+        "fixed_timestep": 0.5,
+        "gripper_loss": 0.0025774610694497824,
+        "gripper_velocity_output_gradient_norm": 0.014359557069838047,
+        "non_gripper_velocity_output_gradient_max_abs": 0.0,
+        "pass": true,
+        "related_parameter_gradient_norms": {
+          "model.action_in_proj.bias": 0.013423403725028038,
+          "model.action_out_proj.bias": 0.03013872355222702
+        }
+      },
+      "parameter_generation": {
+        "after": 7336899105989050234,
+        "before": 7336899105989050234
+      },
+      "per_module_gradient_parity": {
+        "model.action_in_proj.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0,
+              "mean": 1.0,
+              "min": 1.0,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.action_out_proj.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0,
+              "mean": 1.0,
+              "min": 1.0,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.force_adapter.w_out.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0000001192092896,
+              "mean": 1.0000001192092896,
+              "min": 1.0000001192092896,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.force_branch.force_mlp.linear_out.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 2.5016895506269066e-06,
+                "norm": 2.5237010049750097e-05,
+                "sha256": "f7dff948b1fb2b9cc29cb4c1afaf01e62979014b3eb7b1b5b28641eed16c52ce",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.8189894035458565e-12,
+              "relative_l2_error": 4.314433681429364e-07,
+              "uncached": {
+                "max_abs": 2.501687731637503e-06,
+                "norm": 2.5237008230760694e-05,
+                "sha256": "93738d4a5a83f968fcf8d84bb0c52e8906ace1836032029d40fffa95f9efccf6",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 2.5016895506269066e-06,
+                "norm": 2.5237010049750097e-05,
+                "sha256": "f7dff948b1fb2b9cc29cb4c1afaf01e62979014b3eb7b1b5b28641eed16c52ce",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.8189894035458565e-12,
+              "relative_l2_error": 4.314433681429364e-07,
+              "uncached": {
+                "max_abs": 2.501687731637503e-06,
+                "norm": 2.5237008230760694e-05,
+                "sha256": "93738d4a5a83f968fcf8d84bb0c52e8906ace1836032029d40fffa95f9efccf6",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 2.5016895506269066e-06,
+                "norm": 2.5237010049750097e-05,
+                "sha256": "f7dff948b1fb2b9cc29cb4c1afaf01e62979014b3eb7b1b5b28641eed16c52ce",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.8189894035458565e-12,
+              "relative_l2_error": 4.314433681429364e-07,
+              "uncached": {
+                "max_abs": 2.501687731637503e-06,
+                "norm": 2.5237008230760694e-05,
+                "sha256": "93738d4a5a83f968fcf8d84bb0c52e8906ace1836032029d40fffa95f9efccf6",
+                "shape": [
+                  960
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0,
+              "mean": 1.0,
+              "min": 1.0,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 1.8189894035458565e-12,
+              "mean": 1.8189894035458565e-12,
+              "min": 1.8189894035458565e-12,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 4.314433681429364e-07,
+              "mean": 4.314433681429364e-07,
+              "min": 4.314433681429364e-07,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.force_branch.refiner.router.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "e88fb1c28863af3f6ed53157fd758fb82aa55d52a50a9238fe9f4069474a8a67",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 3.637978807091713e-12,
+              "relative_l2_error": 2.7569013738570902e-08,
+              "uncached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "6b8d4bec4f20a0e85f75b4eca15e83963798ffb74ced90deab9e2052ee9063b6",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "e88fb1c28863af3f6ed53157fd758fb82aa55d52a50a9238fe9f4069474a8a67",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 3.637978807091713e-12,
+              "relative_l2_error": 2.7569013738570902e-08,
+              "uncached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "6b8d4bec4f20a0e85f75b4eca15e83963798ffb74ced90deab9e2052ee9063b6",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "e88fb1c28863af3f6ed53157fd758fb82aa55d52a50a9238fe9f4069474a8a67",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 3.637978807091713e-12,
+              "relative_l2_error": 2.7569013738570902e-08,
+              "uncached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "6b8d4bec4f20a0e85f75b4eca15e83963798ffb74ced90deab9e2052ee9063b6",
+                "shape": [
+                  4
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0,
+              "mean": 1.0,
+              "min": 1.0,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 3.637978807091713e-12,
+              "mean": 3.637978807091713e-12,
+              "min": 3.637978807091713e-12,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 2.7569013738570902e-08,
+              "mean": 2.7569013738570902e-08,
+              "min": 2.7569013738570902e-08,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.vlm_with_expert.vlm.model.text_model.layers.0.input_layernorm.weight": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 0.8121710419654846,
+                "norm": 2.3733420372009277,
+                "sha256": "7d1d38daefb276eb21c2faedd14f66f780148ad6e8534cbbe50e33a901f1b7cf",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 5.364418029785156e-07,
+              "relative_l2_error": 1.181010816253547e-06,
+              "uncached": {
+                "max_abs": 0.8121713399887085,
+                "norm": 2.3733417987823486,
+                "sha256": "55dab508ef4aa3a20ff45dca538b48eeb57ae94b485a1f0a088cb3d30e43c3b8",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.8121710419654846,
+                "norm": 2.3733420372009277,
+                "sha256": "7d1d38daefb276eb21c2faedd14f66f780148ad6e8534cbbe50e33a901f1b7cf",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 5.364418029785156e-07,
+              "relative_l2_error": 1.181010816253547e-06,
+              "uncached": {
+                "max_abs": 0.8121713399887085,
+                "norm": 2.3733417987823486,
+                "sha256": "55dab508ef4aa3a20ff45dca538b48eeb57ae94b485a1f0a088cb3d30e43c3b8",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 0.8121710419654846,
+                "norm": 2.3733420372009277,
+                "sha256": "7d1d38daefb276eb21c2faedd14f66f780148ad6e8534cbbe50e33a901f1b7cf",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 5.364418029785156e-07,
+              "relative_l2_error": 1.181010816253547e-06,
+              "uncached": {
+                "max_abs": 0.8121713399887085,
+                "norm": 2.3733417987823486,
+                "sha256": "55dab508ef4aa3a20ff45dca538b48eeb57ae94b485a1f0a088cb3d30e43c3b8",
+                "shape": [
+                  960
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0000001192092896,
+              "mean": 1.0000001192092896,
+              "min": 1.0000001192092896,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 5.364418029785156e-07,
+              "mean": 5.364418029785156e-07,
+              "min": 5.364418029785156e-07,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 1.181010816253547e-06,
+              "mean": 1.181010816253547e-06,
+              "min": 1.181010816253547e-06,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        },
+        "model.vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding.bias": {
+          "repeats": [
+            {
+              "cached": {
+                "max_abs": 8.284001523861662e-06,
+                "norm": 5.046942169428803e-05,
+                "sha256": "44b9e54cf7ec1567c9a60f155d6b54c523d51387e61daaaa14aaf9dd6b512169",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 2.6929569685307797e-11,
+              "relative_l2_error": 2.727345872699516e-06,
+              "uncached": {
+                "max_abs": 8.2840215327451e-06,
+                "norm": 5.046941078035161e-05,
+                "sha256": "0d3028b42bc20a57db8df4a71391c32fe6ae775f211d99f7fbd5d00bfd56f70f",
+                "shape": [
+                  768
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 8.284001523861662e-06,
+                "norm": 5.046942169428803e-05,
+                "sha256": "44b9e54cf7ec1567c9a60f155d6b54c523d51387e61daaaa14aaf9dd6b512169",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 2.6929569685307797e-11,
+              "relative_l2_error": 2.727345872699516e-06,
+              "uncached": {
+                "max_abs": 8.2840215327451e-06,
+                "norm": 5.046941078035161e-05,
+                "sha256": "0d3028b42bc20a57db8df4a71391c32fe6ae775f211d99f7fbd5d00bfd56f70f",
+                "shape": [
+                  768
+                ]
+              }
+            },
+            {
+              "cached": {
+                "max_abs": 8.284001523861662e-06,
+                "norm": 5.046942169428803e-05,
+                "sha256": "44b9e54cf7ec1567c9a60f155d6b54c523d51387e61daaaa14aaf9dd6b512169",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 2.6929569685307797e-11,
+              "relative_l2_error": 2.727345872699516e-06,
+              "uncached": {
+                "max_abs": 8.2840215327451e-06,
+                "norm": 5.046941078035161e-05,
+                "sha256": "0d3028b42bc20a57db8df4a71391c32fe6ae775f211d99f7fbd5d00bfd56f70f",
+                "shape": [
+                  768
+                ]
+              }
+            }
+          ],
+          "summary": {
+            "cached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            },
+            "cosine_similarity": {
+              "max": 1.0000001192092896,
+              "mean": 1.0000001192092896,
+              "min": 1.0000001192092896,
+              "repeat_variance": 0.0
+            },
+            "maximum_absolute_error": {
+              "max": 2.6929569685307797e-11,
+              "mean": 2.6929569685307797e-11,
+              "min": 2.6929569685307797e-11,
+              "repeat_variance": 0.0
+            },
+            "relative_l2_error": {
+              "max": 2.727345872699516e-06,
+              "mean": 2.727345872699516e-06,
+              "min": 2.727345872699516e-06,
+              "repeat_variance": 0.0
+            },
+            "uncached_gradient_repeat": {
+              "elementwise_variance_max": 0.0,
+              "elementwise_variance_mean": 0.0,
+              "max_abs_from_repeat_0": 0.0
+            }
+          }
+        }
+      },
+      "precision_mode": "fp32",
+      "repeat_output_variance": {
+        "cached": {
+          "elementwise_variance_max": 0.0,
+          "elementwise_variance_mean": 0.0,
+          "max_abs_from_repeat_0": 0.0
+        },
+        "uncached": {
+          "elementwise_variance_max": 0.0,
+          "elementwise_variance_mean": 0.0,
+          "max_abs_from_repeat_0": 0.0
+        }
+      },
+      "repeats": [
+        {
+          "action_contract": {
+            "closed_to_open_q_probe_delta": 1.8006317615509033,
+            "full_chunk_expected_gradient_max_abs_error": 0.0,
+            "gripper_k3_gradient_max_abs": 0.0,
+            "sidecar_public_gripper_decode_exact": true,
+            "tcp_k3x6_gradient_min_abs": 0.10999999940395355
+          },
+          "force_kv_projection_calls": {
+            "cached": {
+              "k": 1,
+              "v": 1
+            },
+            "direct": {
+              "k": 1,
+              "v": 1
+            }
+          },
+          "independent_padding_perturbations": {
+            "action_7_to_32_velocity_max_abs_delta": 0.0,
+            "action_output_padding_max_abs": 0.0,
+            "noise_7_to_32_flow_output_max_abs_delta": 0.0,
+            "state_7_to_32_pre_core_sanitization_max_abs_delta": 0.0
+          },
+          "output": {
+            "cached_sha256": "973c5514c8b437cabb6da0a4ca4b5e3cdf4a32a1f16af7256b2e38b7713a02fc",
+            "cached_vs_uncached_max_abs": 0.0,
+            "uncached_sha256": "973c5514c8b437cabb6da0a4ca4b5e3cdf4a32a1f16af7256b2e38b7713a02fc",
+            "wrapper_vs_direct_core_max_abs": 0.0
+          },
+          "peak_memory": {
+            "cached": {
+              "allocated_bytes": 4510299648,
+              "reserved_bytes": 4592762880
+            },
+            "uncached_checkpointed": {
+              "allocated_bytes": 3754019840,
+              "reserved_bytes": 3795845120
+            }
+          },
+          "per_module_gradient_parity": {
+            "model.action_in_proj.bias": {
+              "cached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.action_out_proj.bias": {
+              "cached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            "model.force_adapter.w_out.bias": {
+              "cached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.force_branch.force_mlp.linear_out.bias": {
+              "cached": {
+                "max_abs": 2.5016895506269066e-06,
+                "norm": 2.5237010049750097e-05,
+                "sha256": "f7dff948b1fb2b9cc29cb4c1afaf01e62979014b3eb7b1b5b28641eed16c52ce",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.8189894035458565e-12,
+              "relative_l2_error": 4.314433681429364e-07,
+              "uncached": {
+                "max_abs": 2.501687731637503e-06,
+                "norm": 2.5237008230760694e-05,
+                "sha256": "93738d4a5a83f968fcf8d84bb0c52e8906ace1836032029d40fffa95f9efccf6",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.force_branch.refiner.router.bias": {
+              "cached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "e88fb1c28863af3f6ed53157fd758fb82aa55d52a50a9238fe9f4069474a8a67",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 3.637978807091713e-12,
+              "relative_l2_error": 2.7569013738570902e-08,
+              "uncached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "6b8d4bec4f20a0e85f75b4eca15e83963798ffb74ced90deab9e2052ee9063b6",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.text_model.layers.0.input_layernorm.weight": {
+              "cached": {
+                "max_abs": 0.8121710419654846,
+                "norm": 2.3733420372009277,
+                "sha256": "7d1d38daefb276eb21c2faedd14f66f780148ad6e8534cbbe50e33a901f1b7cf",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 5.364418029785156e-07,
+              "relative_l2_error": 1.181010816253547e-06,
+              "uncached": {
+                "max_abs": 0.8121713399887085,
+                "norm": 2.3733417987823486,
+                "sha256": "55dab508ef4aa3a20ff45dca538b48eeb57ae94b485a1f0a088cb3d30e43c3b8",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding.bias": {
+              "cached": {
+                "max_abs": 8.284001523861662e-06,
+                "norm": 5.046942169428803e-05,
+                "sha256": "44b9e54cf7ec1567c9a60f155d6b54c523d51387e61daaaa14aaf9dd6b512169",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 2.6929569685307797e-11,
+              "relative_l2_error": 2.727345872699516e-06,
+              "uncached": {
+                "max_abs": 8.2840215327451e-06,
+                "norm": 5.046941078035161e-05,
+                "sha256": "0d3028b42bc20a57db8df4a71391c32fe6ae775f211d99f7fbd5d00bfd56f70f",
+                "shape": [
+                  768
+                ]
+              }
+            }
+          },
+          "prefix_append_crop_cache_audit_passed": true,
+          "repeat_index": 0,
+          "ten_euler_step_gradient_norms": [
+            0.031080568209290504,
+            0.034971173852682114,
+            0.0398683100938797,
+            0.046239349991083145,
+            0.0543663389980793,
+            0.06547925621271133,
+            0.08029788732528687,
+            0.10166801512241364,
+            0.1283373236656189,
+            0.19320973753929138
+          ]
+        },
+        {
+          "action_contract": {
+            "closed_to_open_q_probe_delta": 1.8006317615509033,
+            "full_chunk_expected_gradient_max_abs_error": 0.0,
+            "gripper_k3_gradient_max_abs": 0.0,
+            "sidecar_public_gripper_decode_exact": true,
+            "tcp_k3x6_gradient_min_abs": 0.10999999940395355
+          },
+          "force_kv_projection_calls": {
+            "cached": {
+              "k": 1,
+              "v": 1
+            },
+            "direct": {
+              "k": 1,
+              "v": 1
+            }
+          },
+          "independent_padding_perturbations": {
+            "action_7_to_32_velocity_max_abs_delta": 0.0,
+            "action_output_padding_max_abs": 0.0,
+            "noise_7_to_32_flow_output_max_abs_delta": 0.0,
+            "state_7_to_32_pre_core_sanitization_max_abs_delta": 0.0
+          },
+          "output": {
+            "cached_sha256": "973c5514c8b437cabb6da0a4ca4b5e3cdf4a32a1f16af7256b2e38b7713a02fc",
+            "cached_vs_uncached_max_abs": 0.0,
+            "uncached_sha256": "973c5514c8b437cabb6da0a4ca4b5e3cdf4a32a1f16af7256b2e38b7713a02fc",
+            "wrapper_vs_direct_core_max_abs": 0.0
+          },
+          "peak_memory": {
+            "cached": {
+              "allocated_bytes": 4515308544,
+              "reserved_bytes": 4594860032
+            },
+            "uncached_checkpointed": {
+              "allocated_bytes": 3754019840,
+              "reserved_bytes": 3795845120
+            }
+          },
+          "per_module_gradient_parity": {
+            "model.action_in_proj.bias": {
+              "cached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.action_out_proj.bias": {
+              "cached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            "model.force_adapter.w_out.bias": {
+              "cached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.force_branch.force_mlp.linear_out.bias": {
+              "cached": {
+                "max_abs": 2.5016895506269066e-06,
+                "norm": 2.5237010049750097e-05,
+                "sha256": "f7dff948b1fb2b9cc29cb4c1afaf01e62979014b3eb7b1b5b28641eed16c52ce",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.8189894035458565e-12,
+              "relative_l2_error": 4.314433681429364e-07,
+              "uncached": {
+                "max_abs": 2.501687731637503e-06,
+                "norm": 2.5237008230760694e-05,
+                "sha256": "93738d4a5a83f968fcf8d84bb0c52e8906ace1836032029d40fffa95f9efccf6",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.force_branch.refiner.router.bias": {
+              "cached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "e88fb1c28863af3f6ed53157fd758fb82aa55d52a50a9238fe9f4069474a8a67",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 3.637978807091713e-12,
+              "relative_l2_error": 2.7569013738570902e-08,
+              "uncached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "6b8d4bec4f20a0e85f75b4eca15e83963798ffb74ced90deab9e2052ee9063b6",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.text_model.layers.0.input_layernorm.weight": {
+              "cached": {
+                "max_abs": 0.8121710419654846,
+                "norm": 2.3733420372009277,
+                "sha256": "7d1d38daefb276eb21c2faedd14f66f780148ad6e8534cbbe50e33a901f1b7cf",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 5.364418029785156e-07,
+              "relative_l2_error": 1.181010816253547e-06,
+              "uncached": {
+                "max_abs": 0.8121713399887085,
+                "norm": 2.3733417987823486,
+                "sha256": "55dab508ef4aa3a20ff45dca538b48eeb57ae94b485a1f0a088cb3d30e43c3b8",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding.bias": {
+              "cached": {
+                "max_abs": 8.284001523861662e-06,
+                "norm": 5.046942169428803e-05,
+                "sha256": "44b9e54cf7ec1567c9a60f155d6b54c523d51387e61daaaa14aaf9dd6b512169",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 2.6929569685307797e-11,
+              "relative_l2_error": 2.727345872699516e-06,
+              "uncached": {
+                "max_abs": 8.2840215327451e-06,
+                "norm": 5.046941078035161e-05,
+                "sha256": "0d3028b42bc20a57db8df4a71391c32fe6ae775f211d99f7fbd5d00bfd56f70f",
+                "shape": [
+                  768
+                ]
+              }
+            }
+          },
+          "prefix_append_crop_cache_audit_passed": true,
+          "repeat_index": 1,
+          "ten_euler_step_gradient_norms": [
+            0.031080568209290504,
+            0.034971173852682114,
+            0.0398683100938797,
+            0.046239349991083145,
+            0.0543663389980793,
+            0.06547925621271133,
+            0.08029788732528687,
+            0.10166801512241364,
+            0.1283373236656189,
+            0.19320973753929138
+          ]
+        },
+        {
+          "action_contract": {
+            "closed_to_open_q_probe_delta": 1.8006317615509033,
+            "full_chunk_expected_gradient_max_abs_error": 0.0,
+            "gripper_k3_gradient_max_abs": 0.0,
+            "sidecar_public_gripper_decode_exact": true,
+            "tcp_k3x6_gradient_min_abs": 0.10999999940395355
+          },
+          "force_kv_projection_calls": {
+            "cached": {
+              "k": 1,
+              "v": 1
+            },
+            "direct": {
+              "k": 1,
+              "v": 1
+            }
+          },
+          "independent_padding_perturbations": {
+            "action_7_to_32_velocity_max_abs_delta": 0.0,
+            "action_output_padding_max_abs": 0.0,
+            "noise_7_to_32_flow_output_max_abs_delta": 0.0,
+            "state_7_to_32_pre_core_sanitization_max_abs_delta": 0.0
+          },
+          "output": {
+            "cached_sha256": "973c5514c8b437cabb6da0a4ca4b5e3cdf4a32a1f16af7256b2e38b7713a02fc",
+            "cached_vs_uncached_max_abs": 0.0,
+            "uncached_sha256": "973c5514c8b437cabb6da0a4ca4b5e3cdf4a32a1f16af7256b2e38b7713a02fc",
+            "wrapper_vs_direct_core_max_abs": 0.0
+          },
+          "peak_memory": {
+            "cached": {
+              "allocated_bytes": 4515308544,
+              "reserved_bytes": 4594860032
+            },
+            "uncached_checkpointed": {
+              "allocated_bytes": 3754019840,
+              "reserved_bytes": 3795845120
+            }
+          },
+          "per_module_gradient_parity": {
+            "model.action_in_proj.bias": {
+              "cached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.0308380089700222,
+                "norm": 0.3154714107513428,
+                "sha256": "2bc340b07cfa71992c551cc2b7b579596152236e7ac0c02854adcc69cb3dfc42",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.action_out_proj.bias": {
+              "cached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 0.5512785315513611,
+                "norm": 0.8240001797676086,
+                "sha256": "ac8102a20192beea20179d2f7e092a40d02fcf4221fd4fda15c01af9a1e647ef",
+                "shape": [
+                  32
+                ]
+              }
+            },
+            "model.force_adapter.w_out.bias": {
+              "cached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 0.0,
+              "relative_l2_error": 0.0,
+              "uncached": {
+                "max_abs": 6.261985254241154e-05,
+                "norm": 0.0005662510520778596,
+                "sha256": "5d6d44e08531df9144fcb36edd13aa1ce7b0b9187b9ee2b8d4f5df25dd0b49e5",
+                "shape": [
+                  720
+                ]
+              }
+            },
+            "model.force_branch.force_mlp.linear_out.bias": {
+              "cached": {
+                "max_abs": 2.5016895506269066e-06,
+                "norm": 2.5237010049750097e-05,
+                "sha256": "f7dff948b1fb2b9cc29cb4c1afaf01e62979014b3eb7b1b5b28641eed16c52ce",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 1.8189894035458565e-12,
+              "relative_l2_error": 4.314433681429364e-07,
+              "uncached": {
+                "max_abs": 2.501687731637503e-06,
+                "norm": 2.5237008230760694e-05,
+                "sha256": "93738d4a5a83f968fcf8d84bb0c52e8906ace1836032029d40fffa95f9efccf6",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.force_branch.refiner.router.bias": {
+              "cached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "e88fb1c28863af3f6ed53157fd758fb82aa55d52a50a9238fe9f4069474a8a67",
+                "shape": [
+                  4
+                ]
+              },
+              "cosine_similarity": 1.0,
+              "max_abs_error": 3.637978807091713e-12,
+              "relative_l2_error": 2.7569013738570902e-08,
+              "uncached": {
+                "max_abs": 0.00011403646203689277,
+                "norm": 0.00013195897918194532,
+                "sha256": "6b8d4bec4f20a0e85f75b4eca15e83963798ffb74ced90deab9e2052ee9063b6",
+                "shape": [
+                  4
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.text_model.layers.0.input_layernorm.weight": {
+              "cached": {
+                "max_abs": 0.8121710419654846,
+                "norm": 2.3733420372009277,
+                "sha256": "7d1d38daefb276eb21c2faedd14f66f780148ad6e8534cbbe50e33a901f1b7cf",
+                "shape": [
+                  960
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 5.364418029785156e-07,
+              "relative_l2_error": 1.181010816253547e-06,
+              "uncached": {
+                "max_abs": 0.8121713399887085,
+                "norm": 2.3733417987823486,
+                "sha256": "55dab508ef4aa3a20ff45dca538b48eeb57ae94b485a1f0a088cb3d30e43c3b8",
+                "shape": [
+                  960
+                ]
+              }
+            },
+            "model.vlm_with_expert.vlm.model.vision_model.embeddings.patch_embedding.bias": {
+              "cached": {
+                "max_abs": 8.284001523861662e-06,
+                "norm": 5.046942169428803e-05,
+                "sha256": "44b9e54cf7ec1567c9a60f155d6b54c523d51387e61daaaa14aaf9dd6b512169",
+                "shape": [
+                  768
+                ]
+              },
+              "cosine_similarity": 1.0000001192092896,
+              "max_abs_error": 2.6929569685307797e-11,
+              "relative_l2_error": 2.727345872699516e-06,
+              "uncached": {
+                "max_abs": 8.2840215327451e-06,
+                "norm": 5.046941078035161e-05,
+                "sha256": "0d3028b42bc20a57db8df4a71391c32fe6ae775f211d99f7fbd5d00bfd56f70f",
+                "shape": [
+                  768
+                ]
+              }
+            }
+          },
+          "prefix_append_crop_cache_audit_passed": true,
+          "repeat_index": 2,
+          "ten_euler_step_gradient_norms": [
+            0.031080568209290504,
+            0.034971173852682114,
+            0.0398683100938797,
+            0.046239349991083145,
+            0.0543663389980793,
+            0.06547925621271133,
+            0.08029788732528687,
+            0.10166801512241364,
+            0.1283373236656189,
+            0.19320973753929138
+          ]
+        }
+      ],
+      "state_dict": {
+        "after_sha256": "21f78149c5582ce695780be210beca5cdf4e42b1e8fc93da05bc20a77598fa41",
+        "before_sha256": "21f78149c5582ce695780be210beca5cdf4e42b1e8fc93da05bc20a77598fa41"
+      }
+    }
+  },
+  "optimizer_created": false,
+  "optimizer_steps": 0,
+  "real_rft_training_started": false,
+  "robot_actions_sent": 0,
+  "router_q_origin_gradient": {
+    "parameter": "model.force_branch.refiner.router.bias",
+    "semantics_modified_in_this_gate": false,
+    "status": "measurement_only_deferred_to_G4"
+  },
+  "schema_version": "1.0",
+  "stage2_source_manifest": {
+    "closure_sha256": "388773b667b0d3c6d181be07cf8870eff3c123e41152ad09f3b1de46d6b2a063",
+    "conrft_file_count": 7,
+    "file_count": 21,
+    "file_size": 12693,
+    "files_sha256": "4bdd8359daf2d9322bcdbed407f0c711eb38de82b8ef4ad9a74a407524f619e6",
+    "qualification_file_count": 10,
+    "relative_path": "artifacts/development/stage2/stage2_source_manifest.v4.json",
+    "schema_version": "2.0",
+    "sha256": "defa5b1d1a975c465154ac62e009863163947065127c557b5600025ce77b29eb"
+  },
+  "training_loop_created": false
+}

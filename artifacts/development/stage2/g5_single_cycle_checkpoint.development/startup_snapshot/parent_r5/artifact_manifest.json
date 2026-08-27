@@ -1,0 +1,340 @@
+{
+  "acceptance_status": "development_only",
+  "approval": null,
+  "artifact_type": "forcesmolvla_training_checkpoint",
+  "detached_signature": null,
+  "formal_eligible": false,
+  "formal_signature_fields": "unresolved_per_configs/approval_checklist.yaml",
+  "hash_algorithm": "sha256",
+  "metadata": {
+    "dataset": "task2_lerobotv3",
+    "derived_optimizer_update": 10000,
+    "force_variant": "force_token_moe",
+    "training_samples_seen": 40000,
+    "training_stage": "offline_full_finetune",
+    "update_report": {
+      "backward_balance_sum": 1.0007725954055786,
+      "backward_flow_sum": 0.09511619061231613,
+      "backward_total_sum": 0.10512394458055496,
+      "backward_z_sum": 2.6696305212681182e-05,
+      "gradient_norm_before_clip": 4.181601047515869,
+      "logged_balance": 1.0007725954055786,
+      "microbatch_count": 1,
+      "microbatch_identities": [
+        "task2-step-10000-microbatch-0"
+      ],
+      "optimizer_steps": 1,
+      "pbar": [
+        0.2513030469417572,
+        0.25072789192199707,
+        0.24875637888908386,
+        0.24921268224716187
+      ],
+      "rbar": [
+        0.3304195702075958,
+        0.24125874042510986,
+        0.1660839170217514,
+        0.2622377574443817
+      ],
+      "route_counts": [
+        189,
+        138,
+        95,
+        150
+      ],
+      "scheduler_steps": 1,
+      "training_update_algorithm": "single_pass_batch_local",
+      "valid_flow_features": 1232,
+      "valid_router_tokens": 572,
+      "world_size": 1
+    },
+    "validation_L_flow": 0.18792884051799774
+  },
+  "payloads": {
+    "base_assets/smolvlm_constructor/.cache/huggingface/.gitignore": {
+      "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1",
+      "size_bytes": 1
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/CACHEDIR.TAG": {
+      "sha256": "f6572428f6d5e1575e73a1502895a8731f10757dfbb634909c6e154b849af91d",
+      "size_bytes": 191
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/added_tokens.json.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/added_tokens.json.metadata": {
+      "sha256": "090c88edb9a0109dd350d6580abf1c08466ee79da04944e2b9bb9843c7dabd86",
+      "size_bytes": 101
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/chat_template.json.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/chat_template.json.metadata": {
+      "sha256": "58b608e2b041664cb298e1e1661b59b74ed13fa118d21575f6011aa467de9cbf",
+      "size_bytes": 101
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/config.json.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/config.json.metadata": {
+      "sha256": "9dce42b52f43078f65bf94d6dcc69febea3f4d8448af82837c0f565043639621",
+      "size_bytes": 101
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/merges.txt.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/merges.txt.metadata": {
+      "sha256": "6916965aee07c6969a7e56687d5f06958efd5fec5625d3b0013e8238485a4e71",
+      "size_bytes": 100
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/preprocessor_config.json.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/preprocessor_config.json.metadata": {
+      "sha256": "6247f1133d7226061f3d1b3fa9f65be6a3dc9cf8ef987448bdec61933138d78d",
+      "size_bytes": 100
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/processor_config.json.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/processor_config.json.metadata": {
+      "sha256": "0c548fc54cb553743f437b7ae6682d058e317d8eab8dcb01bd9644ec02a5eb4a",
+      "size_bytes": 101
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/special_tokens_map.json.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/special_tokens_map.json.metadata": {
+      "sha256": "607a2c05630ddcbf4112b3447310a4c805471e472f4ab11c6d78c38990a2ba2e",
+      "size_bytes": 101
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/tokenizer.json.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/tokenizer.json.metadata": {
+      "sha256": "ae79a16bf014ee5b8143f038f8433fa1dd5c7fcb5d5932fa2c2831ed192d3d9a",
+      "size_bytes": 100
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/tokenizer_config.json.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/tokenizer_config.json.metadata": {
+      "sha256": "8a8f02acc993206f5da87bbf77afc0bc5b6532e924d2d664efa82fb1f88ea773",
+      "size_bytes": 100
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/vocab.json.lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/download/vocab.json.metadata": {
+      "sha256": "a3c97d6fa39f67e39122102bec8cfbd89527cf7f6f4514daded15eadecea7427",
+      "size_bytes": 101
+    },
+    "base_assets/smolvlm_constructor/.cache/huggingface/trees/7b375e1b73b11138ff12fe22c8f2822d8fe03467.json": {
+      "sha256": "384e21694bf540b85f741ad3c93be4d36f7054d08b5434409ee64cb308d0dff3",
+      "size_bytes": 9264
+    },
+    "base_assets/smolvlm_constructor/added_tokens.json": {
+      "sha256": "74135b8664b56088c0006f1c8e848d79a8eba003411f72ebf1dc2ee96227be3a",
+      "size_bytes": 4739
+    },
+    "base_assets/smolvlm_constructor/chat_template.json": {
+      "sha256": "b585e3598909a5687f9f9d738d35223724dedef256b9b274e1cbfb32b13c74bf",
+      "size_bytes": 430
+    },
+    "base_assets/smolvlm_constructor/config.json": {
+      "sha256": "ea6bc1237e96247f6258de3e202e2e62b93d6f386dc47e7b36b5588bf3a15e17",
+      "size_bytes": 3767
+    },
+    "base_assets/smolvlm_constructor/merges.txt": {
+      "sha256": "0b54e8aa4e53d5383e2e4bc635a56b43f9647f7b13832d5d9ecd8f82dac4f510",
+      "size_bytes": 466391
+    },
+    "base_assets/smolvlm_constructor/preprocessor_config.json": {
+      "sha256": "149e315d9410368e5491455bb06e0f763426e9e56cca731c13b24404a29b6374",
+      "size_bytes": 599
+    },
+    "base_assets/smolvlm_constructor/processor_config.json": {
+      "sha256": "f3ad45028447b3562b4752be0d5916d6806c1ef589091a469608dcf0faa1737c",
+      "size_bytes": 67
+    },
+    "base_assets/smolvlm_constructor/special_tokens_map.json": {
+      "sha256": "2dfea2a426162316ff1567c82bc6d36d9690cd9f90455f075c77daca78b45c60",
+      "size_bytes": 868
+    },
+    "base_assets/smolvlm_constructor/tokenizer.json": {
+      "sha256": "5ece781dc8d2b2f3e2f289ca0ae50b17cfc27dd27bfe7971bb8241e0b964331a",
+      "size_bytes": 3548256
+    },
+    "base_assets/smolvlm_constructor/tokenizer_config.json": {
+      "sha256": "dd9ce2ab89a3dd881bd9378f1a79b943a064b9275a7e1706d5b7b47b68977913",
+      "size_bytes": 28626
+    },
+    "base_assets/smolvlm_constructor/vocab.json": {
+      "sha256": "82b84012e3add4d01d12ba14442026e49b8cbbaead1f79ecf3d919784f82dc79",
+      "size_bytes": 800662
+    },
+    "config.json": {
+      "sha256": "27147413fd1062e77c312e3a9f5221318df138878de20099faa1a0012292d24b",
+      "size_bytes": 3038
+    },
+    "environment/conda-explicit.txt": {
+      "sha256": "cc4f9d9323576f3340f1a03bf746047ffa3f199b83c1f335afed1769060ca292",
+      "size_bytes": 2570
+    },
+    "environment/conda-from-history.yml": {
+      "sha256": "04500f428919accd2c7817d19d79912e528831142800ba138204179181aab9dd",
+      "size_bytes": 251
+    },
+    "environment/pip-freeze.txt": {
+      "sha256": "1ff407f46b6e20c3b88dc3b228e6f51ef7e7f08a979bea58b686a15409f83532",
+      "size_bytes": 2506
+    },
+    "environment/requirements.lock": {
+      "sha256": "5b95fa25264637c9e114b9137015f0f7cf43b866b88d212e3d16b80b823cbd25",
+      "size_bytes": 2313
+    },
+    "manifests/action_delta_spec.json": {
+      "sha256": "e83e4662d7b6936b4ed19acdc5fea2834c5834782a9d63c859d40843a8fbf014",
+      "size_bytes": 1498
+    },
+    "manifests/calibration_bundle.development.json": {
+      "sha256": "f041784b78e08f1359e27b8f841e6a61f687b59bce1b3db841ca4986937a53f6",
+      "size_bytes": 1267
+    },
+    "manifests/conversion_manifest.json": {
+      "sha256": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477",
+      "size_bytes": 44796
+    },
+    "manifests/converter_runtime_spec.task2.development.json": {
+      "sha256": "f6312bc580311077a5eec56c53c3013ab6cebd9744463cf4354651cdc0d616ea",
+      "size_bytes": 2624
+    },
+    "manifests/environment_manifest.json": {
+      "sha256": "8a1cec9ebe24683d88f46330059f55b63377991f37de9ddc8ba772508c74d38f",
+      "size_bytes": 1358
+    },
+    "manifests/feature_mask_spec.json": {
+      "sha256": "183205c6a84f4d6815f9666884f113cd70c066409ffe03b7a6f5613a3736f367",
+      "size_bytes": 1026
+    },
+    "manifests/fixed_validation_fixture.json": {
+      "sha256": "41a6876b9b481819eda64bb0267655865361ee1507a367bcb636856b24f4b179",
+      "size_bytes": 32419
+    },
+    "manifests/implementation_spec_v4_2.md": {
+      "sha256": "555811badc84b88087bcb9b246e7ff3bf1383d2700738f2493637f5ca648b787",
+      "size_bytes": 18636
+    },
+    "manifests/normalizer_manifest.json": {
+      "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
+      "size_bytes": 137827
+    },
+    "manifests/offline_sft_training_recipe.development.yaml": {
+      "sha256": "3e377efe37beb172af91ebdd32a5480f74430fe8eb1aebfef2b81544f7c978c6",
+      "size_bytes": 1993
+    },
+    "manifests/p7_training_recipe.development.yaml": {
+      "sha256": "bdaba473fce1d132d2ab8d481a2a8056f32bf142a3159e222476c6db9fd1e9f4",
+      "size_bytes": 4551
+    },
+    "manifests/parity_acceptance.development.json": {
+      "sha256": "fefe35a92bcbf22de67c7c7b43e9f97d2658afef41745182b2b8207f750592f4",
+      "size_bytes": 2574
+    },
+    "manifests/processor_graph_manifest.json": {
+      "sha256": "d023b33f3fc356091c5444cabb7cd736a7208fc0d8e974cc1f40727f2450f0c0",
+      "size_bytes": 2631
+    },
+    "manifests/resolved_training_config.json": {
+      "sha256": "bbf466043f5db6387f24ee03dec0e45213bac9b977d1ddb92bd95adbe38ae605",
+      "size_bytes": 3710
+    },
+    "manifests/source_binding.json": {
+      "sha256": "74587f4dbf1e52c3cac7c472ebc2a04f51e65ef2b55875f276e71f75aaf95254",
+      "size_bytes": 5535
+    },
+    "manifests/split_manifest.json": {
+      "sha256": "5e63e21d1daf47cfe51fe169497cc77f69bc42e7c919cce708cb2bb0de3dc8d7",
+      "size_bytes": 1224
+    },
+    "manifests/task2_development_data_scope.json": {
+      "sha256": "448067919552939b74da4ebcc7d68d57d614b6a55db684d65591b00cbc62d8ed",
+      "size_bytes": 2293
+    },
+    "manifests/task2_lerobotv3_validation.json": {
+      "sha256": "bea39acb2d01878fd9b8a3b9b42fbe51c201e8d4ebd547082725a13ed73457e1",
+      "size_bytes": 3993
+    },
+    "manifests/training_checkpoint_contract.development.json": {
+      "sha256": "f3d8527a9e63758283f80ebd2775d5f208a808c0a4d87efcb725ee2b1678d096",
+      "size_bytes": 2549
+    },
+    "manifests/training_stage.development.json": {
+      "sha256": "5449bfe36634a9c32ba5b03a5dbf16847f9660085cb0cba2ed973daf55a1edc5",
+      "size_bytes": 1016
+    },
+    "manifests/visual_language_manifest.json": {
+      "sha256": "909d96fa3c0fcfd0fe1d7e3554a9f8942042dae84d87e22df1a73aca1658109b",
+      "size_bytes": 791
+    },
+    "manifests/wrench_geometry_spec.development.json": {
+      "sha256": "5986fbf60ea7c7ddc9ec7bd9b90c9c37ec20749a679cab5a6c23827b9a2599de",
+      "size_bytes": 1592
+    },
+    "model.safetensors": {
+      "sha256": "49248561be7043b38bfce60f200d8bf265e1b16b4b9553ccc6aa4c87241b762e",
+      "size_bytes": 1420094908
+    },
+    "trainability_manifest.json": {
+      "sha256": "6397c5c8d7903e1387a0ec174a6206624ff947ece0d57d61f061801d5c2d62f6",
+      "size_bytes": 176701
+    },
+    "training_state/accumulation_state.json": {
+      "sha256": "720bf26f2916ac653f588ac48ab053e1f6905cebff830152ea6be6da8002973f",
+      "size_bytes": 133
+    },
+    "training_state/optimizer_param_groups.json": {
+      "sha256": "e92a9836dcb3f4447051de326d346cbf130e8cd90e34fbcab9877f8a88c613e8",
+      "size_bytes": 10478
+    },
+    "training_state/optimizer_state.safetensors": {
+      "sha256": "843bb0046f12d71ec2dfce60f16b85bb3968084f97d70d71bb3e55e75fc63229",
+      "size_bytes": 2461710756
+    },
+    "training_state/resume_contract.json": {
+      "sha256": "c1fbd7c6f472504858e6450e7b7f02343253b2096acc107151696451fd39be9d",
+      "size_bytes": 1810
+    },
+    "training_state/rng_state.safetensors": {
+      "sha256": "bc35d6ce4f6bf2746247d05dcc1852050f5760c64022e6192c3aa05092ea14f7",
+      "size_bytes": 15708
+    },
+    "training_state/sampler_state.json": {
+      "sha256": "64ac73fab513fac0d10711a3c55a31a359197a012a890845534f4990c3a404cc",
+      "size_bytes": 350161
+    },
+    "training_state/scaler_state.json": {
+      "sha256": "7d9ebeb334951cc2ed8971b2eae3c443823d469bf0cd1ba61563f6b521e36a17",
+      "size_bytes": 38
+    },
+    "training_state/scheduler_state.json": {
+      "sha256": "b920f9f64721b7d1850addb88cd62ba9a624a009119b73b2e5d34e28d294db37",
+      "size_bytes": 288
+    },
+    "training_state/training_step.json": {
+      "sha256": "2b62f49587b517054299e8074103caa0e5497c6ea32d62a65a54e8df6a5d629e",
+      "size_bytes": 66
+    }
+  },
+  "schema_version": "1.0"
+}

@@ -1,0 +1,62 @@
+{
+  "created_at": "2026-08-26T15:20:00+08:00",
+  "files": {
+    "g7a_config": {
+      "file_size": 3700,
+      "path": "configs/stage2_g7a_critic_warmup.development.yaml",
+      "sha256": "93d4103cdc63e8c3668e29b9936fa1b0890ae5a2e8b9a8a32a62127d39b37d39"
+    },
+    "g7a_coordinator_source": {
+      "file_size": 15998,
+      "path": "tools/preflight_s2_g7a_critic_warmup_gpu.py",
+      "sha256": "149d970359fd389f672280cee7552ad116eb688ad7d867b20ac0c0c8868d0098"
+    },
+    "g7a_runtime_source": {
+      "file_size": 16757,
+      "path": "src/forcesmolvla/rft/g7a.py",
+      "sha256": "16ef83737db8879cbf7c891f3dc1601aafc37e7a6cb2bef3488e82795f5b4948"
+    },
+    "g7a_unit_tests": {
+      "file_size": 4625,
+      "path": "tests/test_rft_g7a.py",
+      "sha256": "34d7a1b42789b057c6612879b815f633e6d654455bc63454a61c64a2bb822bd8"
+    },
+    "g7a_worker_source": {
+      "file_size": 58359,
+      "path": "tools/run_s2_g7a_worker.py",
+      "sha256": "c097215a76ffa2c9c7966e2763ac4e41e7a327bd48c30a80b43f685c23a5c882"
+    },
+    "g4_loss_regression_tests": {
+      "file_size": 11460,
+      "path": "tests/test_rft_losses.py",
+      "sha256": "c401b2c1145d9d051a392e20166aaba4153660841f1448320a6bf9e1fbec4bf3"
+    },
+    "g5_cycle_regression_tests": {
+      "file_size": 6024,
+      "path": "tests/test_rft_training_cycle.py",
+      "sha256": "2f46cc2bb70beb7dfcb6792403f18bbe71989001d7d621ad2dd259b0605dfdde"
+    },
+    "prior_g6_source_manifest": {
+      "file_size": 5447,
+      "path": "artifacts/development/stage2/stage2_source_manifest.v8_g6.json",
+      "sha256": "e3df23296fa1cd0106acf37aa2df8dcdeef4c6f4f91824894ac87688f427f77f"
+    }
+  },
+  "frozen_g2_g6_source_files_modified_for_g7a": false,
+  "manual_g1_or_manual_label_in_runtime_closure": false,
+  "runtime_imported_files": [
+    "g7a_config",
+    "g7a_coordinator_source",
+    "g7a_runtime_source",
+    "g7a_unit_tests",
+    "g7a_worker_source",
+    "g4_loss_regression_tests",
+    "g5_cycle_regression_tests",
+    "prior_g6_source_manifest"
+  ],
+  "schema_version": "forcesmolvla_stage2_source_manifest.v9_g7a",
+  "scope": "G7A_critic_only_warmup_and_q_gradient_measurement",
+  "status": "IMMUTABLE_G7A_STARTUP_SOURCE_CLOSURE",
+  "target_actor_source_or_artifact": null,
+  "transitive_frozen_import_closure": "prior_g6_source_manifest"
+}

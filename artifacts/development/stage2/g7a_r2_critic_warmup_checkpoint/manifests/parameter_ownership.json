@@ -1,0 +1,10 @@
+{
+  "actor_critic_parameter_intersection": 0,
+  "actor_optimizer_created": 0,
+  "actor_scheduler_created": 0,
+  "critic_optimizer_type": "Adam",
+  "critic_trainable_tensor_count": 106,
+  "frozen_backbone_in_optimizer": 0,
+  "q1_q2_storage_independent": true,
+  "target_parameter_in_optimizer": 0
+}

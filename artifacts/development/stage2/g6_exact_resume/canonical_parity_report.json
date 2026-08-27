@@ -1,0 +1,22 @@
+{
+  "comparison": {
+    "atol": 0.0,
+    "equal_nan": false,
+    "rtol": 0.0
+  },
+  "cycle2_trace_digest": "ed3f2cc2ae321a10bdf097aa15110cf8889199f425fdbf8baaa4e7afd62c85bf",
+  "cycle2_trace_exact": true,
+  "cycle2_training_state_digest": "f529fc44fec16af9fcb857c51d59e05484ca9ee545ed8c9e55e825f23ef16812",
+  "excluded_metadata": [
+    "branch",
+    "pid",
+    "timestamp",
+    "path",
+    "latency",
+    "vram",
+    "temporary_name"
+  ],
+  "s1_branch_a_equals_g5": true,
+  "s2_branch_a_equals_branch_b": true,
+  "schema_version": "forcesmolvla_g6_canonical_parity.v1"
+}

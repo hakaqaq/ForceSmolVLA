@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.1",
+  "artifact_status": "development_only",
+  "formal_reward_spec": "unapproved",
+  "real_g1_generation_permitted": false,
+  "terminal_and_reward_source": "external_frozen_episode_frame_reward_sidecar",
+  "terminal_inference": "forbidden",
+  "gamma_per_policy_decision": 0.99,
+  "mc_return_definition": "deferred_until_external_reward_labels_are_frozen"
+}

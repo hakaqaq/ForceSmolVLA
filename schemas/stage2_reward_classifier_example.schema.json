@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forcesmolvla.local/schemas/stage2_reward_classifier_example.schema.json",
+  "title": "ForceRFT R0 Reward Classifier Frame Label",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "collection_id",
+    "episode_id",
+    "frame_index",
+    "timestamp",
+    "source_row_reference",
+    "camera_row_identity",
+    "label",
+    "label_type",
+    "label_source",
+    "reviewer_id",
+    "review_timestamp",
+    "review_notes",
+    "split"
+  ],
+  "properties": {
+    "collection_id": {"type": "string", "minLength": 1},
+    "episode_id": {"type": "string", "minLength": 1},
+    "frame_index": {"type": "integer", "minimum": 0},
+    "timestamp": {"type": "number", "minimum": 0},
+    "source_row_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset_root_id", "parquet_relative_path", "row_index"],
+      "properties": {
+        "dataset_root_id": {"type": "string", "minLength": 1},
+        "parquet_relative_path": {"type": "string", "minLength": 1},
+        "row_index": {"type": "integer", "minimum": 0}
+      }
+    },
+    "camera_row_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["camera1_receive_monotonic_ns", "camera2_receive_monotonic_ns"],
+      "properties": {
+        "camera1_receive_monotonic_ns": {"type": "integer", "minimum": 0},
+        "camera2_receive_monotonic_ns": {"type": "integer", "minimum": 0}
+      }
+    },
+    "label": {"type": "integer", "enum": [0, 1]},
+    "label_type": {
+      "type": "string",
+      "enum": ["positive", "ordinary_negative", "hard_negative"]
+    },
+    "label_source": {"type": "string", "minLength": 1},
+    "reviewer_id": {"type": "string", "minLength": 1},
+    "review_timestamp": {"type": "string", "format": "date-time"},
+    "review_notes": {"type": "string"},
+    "split": {"type": "string", "enum": ["train", "val", "test", "independent_heldout"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"label_type": {"const": "positive"}}},
+      "then": {"properties": {"label": {"const": 1}}},
+      "else": {"properties": {"label": {"const": 0}}}
+    }
+  ]
+}

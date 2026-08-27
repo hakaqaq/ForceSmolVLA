@@ -1,0 +1,2421 @@
+{
+  "artifact_status": "PASS_APPEND_ONLY_VALIDATED_LABEL_INGESTION",
+  "bindings": {
+    "conversion_manifest": {
+      "file_size": 44796,
+      "path": "datasets/task2_lerobotv3/conversion_manifest.json",
+      "sha256": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477"
+    },
+    "dataset_info": {
+      "file_size": 6342,
+      "path": "datasets/task2_lerobotv3/meta/info.json",
+      "sha256": "841a80224f4159fe4ee3bf308c99eecb4e8289faea3dac98eecab53cb6f4b5a8"
+    },
+    "ingestion_validator": {
+      "file_size": 29518,
+      "path": "tools/reward_classifier/ingest_task2_frame_labels.py",
+      "sha256": "b1debdc65eea18c9c0d1078625e96140e20f7a10315bafc5314d1d049740a421"
+    },
+    "p8_dataset_hash_implementation": {
+      "file_size": 30779,
+      "path": "tools/preflight_p6_variants_gpu.py",
+      "sha256": "d4d07ab20021d5721192483151d76730857113a635991d315616d61360e27d4d"
+    },
+    "p8_dataset_storage": {
+      "dataset_root": "datasets/task2_lerobotv3",
+      "file_count": 51,
+      "hash_algorithm": "sha256(concat(sorted(relative_path + NUL + file_sha256 + LF)))",
+      "included_roots": [
+        "data",
+        "videos",
+        "meta"
+      ],
+      "tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+    },
+    "p8_source_binding": {
+      "file_size": 19362,
+      "path": "artifacts/development/p8_v4_2_r7_source_binding.json",
+      "sha256": "e402b489aa902272f61c7843b5595eeae22caa9ba358927d331020106c926756"
+    },
+    "review_bundle_manifest": {
+      "file_size": 14265,
+      "path": "artifacts/development/stage2/task2_reward_review_bundle_v1/bundle_manifest.json",
+      "sha256": "13d5748091c2255054d94f09a233ceeaf7d096d61c7161598e701a5fddfc3442"
+    },
+    "review_index": {
+      "file_size": 2303582,
+      "path": "artifacts/development/stage2/task2_reward_review_bundle_v1/review_index.json",
+      "sha256": "dc3b5c1f605814ffe4accde9baedd5eee05839f7689de6496ec6e1a201aa002f"
+    },
+    "reviewed_labels": {
+      "file_size": 40100,
+      "path": "labels/task2_reward_frame_labels.v2.reviewed.json",
+      "sha256": "ecda7d480f6a4c49dbe63a31b7e3172b30a5470437510522b1da2217eae77a9c"
+    },
+    "split_manifest": {
+      "file_size": 1224,
+      "path": "datasets/task2_lerobotv3/split_manifest.json",
+      "sha256": "5e63e21d1daf47cfe51fe169497cc77f69bc42e7c919cce708cb2bb0de3dc8d7"
+    },
+    "task_semantics_audit": {
+      "file_size": 3057,
+      "path": "artifacts/development/stage2/task_semantics_audit.v4.json",
+      "sha256": "3051b27112de1e5f8f5608df713c6a2d00f9a7aa5ff7c3b1a0380d84332953c6"
+    },
+    "v2_protocol": {
+      "file_size": 4922,
+      "path": "docs/task2_reward_labeling_protocol.v2.md",
+      "sha256": "1df11221d8c5072abdffa0a3cf3446ec5381fb8df0d84e715c6c50ee1942cdd6"
+    },
+    "v2_template": {
+      "file_size": 36063,
+      "path": "labels/task2_reward_frame_labels.v2.template.json",
+      "sha256": "9af3d5a391d0b3fc3afdf5d01351a2e2982a86cfeab1b6cba5028c79ff6658f7"
+    }
+  },
+  "class_statistics": {
+    "test": {
+      "classes": {
+        "ambiguous": {
+          "episode_count": 0,
+          "frame_count": 0
+        },
+        "hard_negative": {
+          "episode_count": 4,
+          "frame_count": 729
+        },
+        "ordinary_negative": {
+          "episode_count": 4,
+          "frame_count": 2167
+        },
+        "positive": {
+          "episode_count": 4,
+          "frame_count": 144
+        }
+      },
+      "episode_count": 4,
+      "frame_count": 3040,
+      "ignored_frame_count": 0,
+      "required_trainable_classes_present": true,
+      "trainable_frame_count": 3040
+    },
+    "train": {
+      "classes": {
+        "ambiguous": {
+          "episode_count": 1,
+          "frame_count": 197
+        },
+        "hard_negative": {
+          "episode_count": 38,
+          "frame_count": 10025
+        },
+        "ordinary_negative": {
+          "episode_count": 37,
+          "frame_count": 19890
+        },
+        "positive": {
+          "episode_count": 38,
+          "frame_count": 1712
+        }
+      },
+      "episode_count": 38,
+      "frame_count": 31824,
+      "ignored_frame_count": 197,
+      "required_trainable_classes_present": true,
+      "trainable_frame_count": 31627
+    },
+    "validation": {
+      "classes": {
+        "ambiguous": {
+          "episode_count": 0,
+          "frame_count": 0
+        },
+        "hard_negative": {
+          "episode_count": 5,
+          "frame_count": 811
+        },
+        "ordinary_negative": {
+          "episode_count": 5,
+          "frame_count": 2792
+        },
+        "positive": {
+          "episode_count": 5,
+          "frame_count": 172
+        }
+      },
+      "episode_count": 5,
+      "frame_count": 3775,
+      "ignored_frame_count": 0,
+      "required_trainable_classes_present": true,
+      "trainable_frame_count": 3775
+    }
+  },
+  "episodes": [
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 311,
+        "ordinary_negative": 477,
+        "positive": 93
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            477,
+            787
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            476
+          ]
+        ],
+        "positive": [
+          [
+            788,
+            880
+          ]
+        ]
+      },
+      "episode_id": "episode_000000",
+      "frame_count": 881,
+      "frame_label_sha256": "fa8f438336dcf93e618070bdf26a6b086e073333b307322a89c27e92682afd9d",
+      "output_episode_index": 0,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          0,
+          880
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          880
+        ],
+        "sha256": "8364fdb7fd115a5322e8d754c85ddc37ea40664e901ab5636a3167cf143e6b7a"
+      },
+      "source_data_relative_path": "data/chunk-000/file-000.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 339,
+        "ordinary_negative": 795,
+        "positive": 95
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            795,
+            1133
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            794
+          ]
+        ],
+        "positive": [
+          [
+            1134,
+            1228
+          ]
+        ]
+      },
+      "episode_id": "episode_000001",
+      "frame_count": 1229,
+      "frame_label_sha256": "0c94b81807a39b6d1414dfb3684104ca565924ba4bde44dcaa0a97e396407695",
+      "output_episode_index": 1,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          881,
+          2109
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          1228
+        ],
+        "sha256": "f07839d87341ee1af999719d682c5050e4ff585a191b50c6778534fcb4dfa3c0"
+      },
+      "source_data_relative_path": "data/chunk-000/file-001.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 355,
+        "ordinary_negative": 505,
+        "positive": 65
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            505,
+            859
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            504
+          ]
+        ],
+        "positive": [
+          [
+            860,
+            924
+          ]
+        ]
+      },
+      "episode_id": "episode_000002",
+      "frame_count": 925,
+      "frame_label_sha256": "d2ef711d6985df3d8bbafe8123c7866bbe9af51406d09f761598726e18e5a79a",
+      "output_episode_index": 2,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          2110,
+          3034
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          924
+        ],
+        "sha256": "c1765f14e4f2cef2bb8dea78151e7b559c3ca9cf7de05d7bd14e418f71cea2c4"
+      },
+      "source_data_relative_path": "data/chunk-000/file-002.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 221,
+        "ordinary_negative": 486,
+        "positive": 32
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            486,
+            706
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            485
+          ]
+        ],
+        "positive": [
+          [
+            707,
+            738
+          ]
+        ]
+      },
+      "episode_id": "episode_000003",
+      "frame_count": 739,
+      "frame_label_sha256": "8bc7f715104d141df58798a28d6594773777f50b7271b4a44e3d0ee94e123595",
+      "output_episode_index": 3,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          3035,
+          3773
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          738
+        ],
+        "sha256": "35b642cc25ac9d2da9c256a5134926ead4e9c5ee3eba52a2488f097f33fb6074"
+      },
+      "source_data_relative_path": "data/chunk-000/file-003.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 367,
+        "ordinary_negative": 691,
+        "positive": 64
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            691,
+            1057
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            690
+          ]
+        ],
+        "positive": [
+          [
+            1058,
+            1121
+          ]
+        ]
+      },
+      "episode_id": "episode_000004",
+      "frame_count": 1122,
+      "frame_label_sha256": "973c817e7316e6f0a3d6d851e2988e0aca3ca4af93b0ce47cbc04db48d2a1cc2",
+      "output_episode_index": 4,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          3774,
+          4895
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          1121
+        ],
+        "sha256": "badd236136988af4e4f1f92971c401f7cc1e080cb53ac15b4e1c6c6992a58f19"
+      },
+      "source_data_relative_path": "data/chunk-000/file-004.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 206,
+        "ordinary_negative": 541,
+        "positive": 64
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            541,
+            746
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            540
+          ]
+        ],
+        "positive": [
+          [
+            747,
+            810
+          ]
+        ]
+      },
+      "episode_id": "episode_000005",
+      "frame_count": 811,
+      "frame_label_sha256": "f8ffccfd70f873ff7868a01b78e9981ae16860308f7452afdf823bcc5dff78f7",
+      "output_episode_index": 5,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          4896,
+          5706
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          810
+        ],
+        "sha256": "2bb09dc748290771c5d587d033bff3da89fcc38f76c3ffbd41802ca9f857c59f"
+      },
+      "source_data_relative_path": "data/chunk-000/file-005.parquet",
+      "source_split_name": "test",
+      "split": "test"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 152,
+        "ordinary_negative": 534,
+        "positive": 50
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            534,
+            685
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            533
+          ]
+        ],
+        "positive": [
+          [
+            686,
+            735
+          ]
+        ]
+      },
+      "episode_id": "episode_000006",
+      "frame_count": 736,
+      "frame_label_sha256": "c2003daac8e604053a421747da10ae96604e28b0633f852ee6383b12f823fbdb",
+      "output_episode_index": 6,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          5707,
+          6442
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          735
+        ],
+        "sha256": "11636286c33f7b30aa6aeb808f517974617eb0bada1e737c35bdd51398e2a549"
+      },
+      "source_data_relative_path": "data/chunk-000/file-006.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 180,
+        "ordinary_negative": 528,
+        "positive": 42
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            528,
+            707
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            527
+          ]
+        ],
+        "positive": [
+          [
+            708,
+            749
+          ]
+        ]
+      },
+      "episode_id": "episode_000007",
+      "frame_count": 750,
+      "frame_label_sha256": "7bfbcd0563f0804c4de6106f84ab45010c96d285edda5a4a1c2f2dbfdb90a253",
+      "output_episode_index": 7,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          6443,
+          7192
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          749
+        ],
+        "sha256": "fd6d6ed8759baab50fd7573c3a3617b1f7ee907c1a11f5e45f477c678b3dd57e"
+      },
+      "source_data_relative_path": "data/chunk-000/file-007.parquet",
+      "source_split_name": "val",
+      "split": "validation"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 193,
+        "ordinary_negative": 390,
+        "positive": 44
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            390,
+            582
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            389
+          ]
+        ],
+        "positive": [
+          [
+            583,
+            626
+          ]
+        ]
+      },
+      "episode_id": "episode_000008",
+      "frame_count": 627,
+      "frame_label_sha256": "9f49ace551b6eaf2a3c148bc5933a7b0f7a8e638321a0f35be3a9cea1b91524c",
+      "output_episode_index": 8,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          7193,
+          7819
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          626
+        ],
+        "sha256": "f2d160c8b6de4111aa3cfc37e28c22c24607e6cd78d6db531b2b5c3f37722ead"
+      },
+      "source_data_relative_path": "data/chunk-000/file-008.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 255,
+        "ordinary_negative": 520,
+        "positive": 41
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            520,
+            774
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            519
+          ]
+        ],
+        "positive": [
+          [
+            775,
+            815
+          ]
+        ]
+      },
+      "episode_id": "episode_000009",
+      "frame_count": 816,
+      "frame_label_sha256": "f1036cd682b2cc16d56611b97ea6fdb4327b7878859f31892c1c5c5e6cc77508",
+      "output_episode_index": 9,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          7820,
+          8635
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          815
+        ],
+        "sha256": "cb1300f5a170b74ef225a74ba82e865f7681435e6e1d48d97252118ce2f9613c"
+      },
+      "source_data_relative_path": "data/chunk-000/file-009.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 335,
+        "ordinary_negative": 346,
+        "positive": 54
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            346,
+            680
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            345
+          ]
+        ],
+        "positive": [
+          [
+            681,
+            734
+          ]
+        ]
+      },
+      "episode_id": "episode_000010",
+      "frame_count": 735,
+      "frame_label_sha256": "20701f4fcd696e9445eb3fcb94924fe408694f50e7940b0e16cd973af26d5c66",
+      "output_episode_index": 10,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          8636,
+          9370
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          734
+        ],
+        "sha256": "c9b02a8f972a5163d3fe166af2956f2a806ac8087cafb09bea7caa93c778594b"
+      },
+      "source_data_relative_path": "data/chunk-000/file-010.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 307,
+        "ordinary_negative": 498,
+        "positive": 54
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            498,
+            804
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            497
+          ]
+        ],
+        "positive": [
+          [
+            805,
+            858
+          ]
+        ]
+      },
+      "episode_id": "episode_000011",
+      "frame_count": 859,
+      "frame_label_sha256": "6e4ea5392888e1ecc188dc505a786fea939a831ddb910e538df792593a6586df",
+      "output_episode_index": 11,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          9371,
+          10229
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          858
+        ],
+        "sha256": "5d7d0c92b16f172ead8ac46c76c89916cd91018e4b54c35e844a32eeb1f89239"
+      },
+      "source_data_relative_path": "data/chunk-000/file-011.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 162,
+        "ordinary_negative": 444,
+        "positive": 42
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            444,
+            605
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            443
+          ]
+        ],
+        "positive": [
+          [
+            606,
+            647
+          ]
+        ]
+      },
+      "episode_id": "episode_000012",
+      "frame_count": 648,
+      "frame_label_sha256": "d4df3dad9fee2ca074dcd3e40618f1351ec65449f9a690ff8447576a718dd08e",
+      "output_episode_index": 12,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          10230,
+          10877
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          647
+        ],
+        "sha256": "33b78d4dedae40770dc7a613158d93e0ea72e2f4ba121723dfe454a0e4279c38"
+      },
+      "source_data_relative_path": "data/chunk-000/file-012.parquet",
+      "source_split_name": "val",
+      "split": "validation"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 410,
+        "ordinary_negative": 444,
+        "positive": 109
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            444,
+            853
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            443
+          ]
+        ],
+        "positive": [
+          [
+            854,
+            962
+          ]
+        ]
+      },
+      "episode_id": "episode_000013",
+      "frame_count": 963,
+      "frame_label_sha256": "5ab116d7338693ce0be8f1b3e91a3d431f49d29fb6d676fb18552d28593836b2",
+      "output_episode_index": 13,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          10878,
+          11840
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          962
+        ],
+        "sha256": "8f97b9ea595d23accefc37be149019e56dd290cde2d11dfa10dcfc19cfca1331"
+      },
+      "source_data_relative_path": "data/chunk-000/file-013.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 423,
+        "ordinary_negative": 484,
+        "positive": 79
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            484,
+            906
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            483
+          ]
+        ],
+        "positive": [
+          [
+            907,
+            985
+          ]
+        ]
+      },
+      "episode_id": "episode_000014",
+      "frame_count": 986,
+      "frame_label_sha256": "ef1f1e71f92f0a90a3b3c92656d220a7500c3346954f2b0413b1c4a18e5eb835",
+      "output_episode_index": 14,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          11841,
+          12826
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          985
+        ],
+        "sha256": "34e9048289f895f2790dd4c90d3e080d83c676077f9d9195a075c6cdaecd3abd"
+      },
+      "source_data_relative_path": "data/chunk-000/file-014.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 211,
+        "ordinary_negative": 458,
+        "positive": 49
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            458,
+            668
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            457
+          ]
+        ],
+        "positive": [
+          [
+            669,
+            717
+          ]
+        ]
+      },
+      "episode_id": "episode_000015",
+      "frame_count": 718,
+      "frame_label_sha256": "59fd7b9d9952e83dc6c68579b7f970afc2d62fff544901f0eb9bca904af30a45",
+      "output_episode_index": 15,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          12827,
+          13544
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          717
+        ],
+        "sha256": "c0f1f543980f3fb7f58fe939ce62030b6f74b047781f36e8a1cac4f9e700722f"
+      },
+      "source_data_relative_path": "data/chunk-000/file-015.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 173,
+        "ordinary_negative": 444,
+        "positive": 28
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            444,
+            616
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            443
+          ]
+        ],
+        "positive": [
+          [
+            617,
+            644
+          ]
+        ]
+      },
+      "episode_id": "episode_000016",
+      "frame_count": 645,
+      "frame_label_sha256": "c9cdc3c08904819880faed7da5b8fc02b6bc63957c4a1737a197ed7b68a0d6ba",
+      "output_episode_index": 16,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          13545,
+          14189
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          644
+        ],
+        "sha256": "15c91c0a071635dd34e1c1f4ddbf2804d8010f0a251c253b97c88fd8645976ee"
+      },
+      "source_data_relative_path": "data/chunk-000/file-016.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 176,
+        "ordinary_negative": 530,
+        "positive": 32
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            530,
+            705
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            529
+          ]
+        ],
+        "positive": [
+          [
+            706,
+            737
+          ]
+        ]
+      },
+      "episode_id": "episode_000017",
+      "frame_count": 738,
+      "frame_label_sha256": "8de7b07802c2c278cdba3475f2dab18df41896485ab0178ae316223c99c5692c",
+      "output_episode_index": 17,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          14190,
+          14927
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          737
+        ],
+        "sha256": "55bad2faab52faeed0dad40fab28c93c51888438b85cf3326ed11a8857df88d1"
+      },
+      "source_data_relative_path": "data/chunk-000/file-017.parquet",
+      "source_split_name": "val",
+      "split": "validation"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 233,
+        "ordinary_negative": 620,
+        "positive": 30
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            620,
+            852
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            619
+          ]
+        ],
+        "positive": [
+          [
+            853,
+            882
+          ]
+        ]
+      },
+      "episode_id": "episode_000018",
+      "frame_count": 883,
+      "frame_label_sha256": "96682029ffd161e342caf6a121f364940d49627e0343ce538333907f9baf61ff",
+      "output_episode_index": 18,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          14928,
+          15810
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          882
+        ],
+        "sha256": "ee00bdfe7a69fc0e6ee7d8db22b8a5bd03b7aa3557d3549e1a673c88061eb845"
+      },
+      "source_data_relative_path": "data/chunk-000/file-018.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 197,
+        "hard_negative": 478,
+        "ordinary_negative": 0,
+        "positive": 30
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [
+          [
+            478,
+            674
+          ]
+        ],
+        "hard_negative": [
+          [
+            0,
+            477
+          ]
+        ],
+        "ordinary_negative": [],
+        "positive": [
+          [
+            675,
+            704
+          ]
+        ]
+      },
+      "episode_id": "episode_000019",
+      "frame_count": 705,
+      "frame_label_sha256": "c0bde335e347f042b8e535b7df346ea55a3e422309eff6409d3399a0c572130b",
+      "output_episode_index": 19,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          15811,
+          16515
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          704
+        ],
+        "sha256": "a1a1535010bcc4c5b2eba8ac470b83dcf34be247b16ce35fb1620170ac542354"
+      },
+      "source_data_relative_path": "data/chunk-000/file-019.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 321,
+        "ordinary_negative": 645,
+        "positive": 25
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            645,
+            965
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            644
+          ]
+        ],
+        "positive": [
+          [
+            966,
+            990
+          ]
+        ]
+      },
+      "episode_id": "episode_000020",
+      "frame_count": 991,
+      "frame_label_sha256": "dd82be0ab3d001f2eb4951a0d3e3e3c5f94d5dad11e59826f067fb5b9fc7663f",
+      "output_episode_index": 20,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          16516,
+          17506
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          990
+        ],
+        "sha256": "adced158e38522296d7b0c54cf0c843c858f4ca07fcff9dc32f2c8b8b88736c3"
+      },
+      "source_data_relative_path": "data/chunk-000/file-020.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 210,
+        "ordinary_negative": 484,
+        "positive": 23
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            484,
+            693
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            483
+          ]
+        ],
+        "positive": [
+          [
+            694,
+            716
+          ]
+        ]
+      },
+      "episode_id": "episode_000021",
+      "frame_count": 717,
+      "frame_label_sha256": "5409705dc674f9e83436b2009e93430f85988837018b674f930828cfe7505f78",
+      "output_episode_index": 21,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          17507,
+          18223
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          716
+        ],
+        "sha256": "556e87b8188e3abb080ac31a80915180e71694054ae5bc57adf706f4917ee76a"
+      },
+      "source_data_relative_path": "data/chunk-000/file-021.parquet",
+      "source_split_name": "test",
+      "split": "test"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 197,
+        "ordinary_negative": 519,
+        "positive": 25
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            519,
+            715
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            518
+          ]
+        ],
+        "positive": [
+          [
+            716,
+            740
+          ]
+        ]
+      },
+      "episode_id": "episode_000022",
+      "frame_count": 741,
+      "frame_label_sha256": "d80a57e5806300fd0a76c643509b4c6ab61abd6688b20d1b1de117eb0bd9fd22",
+      "output_episode_index": 22,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          18224,
+          18964
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          740
+        ],
+        "sha256": "eee3ecb9a203b574c9faf77fc77b4e264d5b700393253a276c1267f31ee54e07"
+      },
+      "source_data_relative_path": "data/chunk-000/file-022.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 242,
+        "ordinary_negative": 585,
+        "positive": 17
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            585,
+            826
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            584
+          ]
+        ],
+        "positive": [
+          [
+            827,
+            843
+          ]
+        ]
+      },
+      "episode_id": "episode_000023",
+      "frame_count": 844,
+      "frame_label_sha256": "b40d8dc88d5befa00e6123dbbe2381bc0422f233c8a7ce8b73d062ae240846d9",
+      "output_episode_index": 23,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          18965,
+          19808
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          843
+        ],
+        "sha256": "6ff4e91fbe6848c2c1e76f76dd409f4c38bb6e3c8c238eeefe3834b8d9bb941e"
+      },
+      "source_data_relative_path": "data/chunk-000/file-023.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 260,
+        "ordinary_negative": 619,
+        "positive": 53
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            619,
+            878
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            618
+          ]
+        ],
+        "positive": [
+          [
+            879,
+            931
+          ]
+        ]
+      },
+      "episode_id": "episode_000024",
+      "frame_count": 932,
+      "frame_label_sha256": "72e0dffe07d454df255e667e8800a6be259936eac4785e5ac0c948530b3d0805",
+      "output_episode_index": 24,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          19809,
+          20740
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          931
+        ],
+        "sha256": "d787d03a58aee53c9ef1cd3b59a6fae52e55fae0bf4feab87a38c7f1f8031b04"
+      },
+      "source_data_relative_path": "data/chunk-000/file-024.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 139,
+        "ordinary_negative": 603,
+        "positive": 35
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            603,
+            741
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            602
+          ]
+        ],
+        "positive": [
+          [
+            742,
+            776
+          ]
+        ]
+      },
+      "episode_id": "episode_000025",
+      "frame_count": 777,
+      "frame_label_sha256": "aad36426f7b05226f119f7df707282ec1093c4fd5b0f3774a28217fb7a1ed73b",
+      "output_episode_index": 25,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          20741,
+          21517
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          776
+        ],
+        "sha256": "b74f3d320aebbc6ba00e60b9909d2050adb61d1fa4bab80837a0542208576b75"
+      },
+      "source_data_relative_path": "data/chunk-000/file-025.parquet",
+      "source_split_name": "test",
+      "split": "test"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 246,
+        "ordinary_negative": 478,
+        "positive": 35
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            478,
+            723
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            477
+          ]
+        ],
+        "positive": [
+          [
+            724,
+            758
+          ]
+        ]
+      },
+      "episode_id": "episode_000026",
+      "frame_count": 759,
+      "frame_label_sha256": "8dbe94d63f228931ef3ec78c51434842bfb6980b312d403057fc726f02c460bd",
+      "output_episode_index": 26,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          21518,
+          22276
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          758
+        ],
+        "sha256": "3570ecfaf85db0539b05c5c442ea1e2bd876afc24b2031d75e6a95b12d892d6c"
+      },
+      "source_data_relative_path": "data/chunk-000/file-026.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 172,
+        "ordinary_negative": 549,
+        "positive": 32
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            549,
+            720
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            548
+          ]
+        ],
+        "positive": [
+          [
+            721,
+            752
+          ]
+        ]
+      },
+      "episode_id": "episode_000027",
+      "frame_count": 753,
+      "frame_label_sha256": "f996eafc58ee1e910e789723fc1865547682a424b1949c8facd9547228561674",
+      "output_episode_index": 27,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          22277,
+          23029
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          752
+        ],
+        "sha256": "beb3e274c14c6a11069e7e34c39b7ac2ececf451f3e9e18b3cdbe1db2a9183c2"
+      },
+      "source_data_relative_path": "data/chunk-000/file-027.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 183,
+        "ordinary_negative": 552,
+        "positive": 33
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            552,
+            734
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            551
+          ]
+        ],
+        "positive": [
+          [
+            735,
+            767
+          ]
+        ]
+      },
+      "episode_id": "episode_000028",
+      "frame_count": 768,
+      "frame_label_sha256": "8b5e86e580b56e6b7c811899f03082890c007eec1370216442a43558290b898c",
+      "output_episode_index": 28,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          23030,
+          23797
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          767
+        ],
+        "sha256": "4bc568651768cd1dd0f606bc1de0786edc24e09743752fc93e042ce020259d02"
+      },
+      "source_data_relative_path": "data/chunk-000/file-028.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 173,
+        "ordinary_negative": 493,
+        "positive": 30
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            493,
+            665
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            492
+          ]
+        ],
+        "positive": [
+          [
+            666,
+            695
+          ]
+        ]
+      },
+      "episode_id": "episode_000029",
+      "frame_count": 696,
+      "frame_label_sha256": "f99dab575509301f1ea494b4d3b5b9b041d5601be61d2b55d56a8badca84fe6d",
+      "output_episode_index": 29,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          23798,
+          24493
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          695
+        ],
+        "sha256": "e2a70279fb1ddc1283cab30fe0345393c4e73aa8de9d38359010fa5e4e24b6d2"
+      },
+      "source_data_relative_path": "data/chunk-000/file-029.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 360,
+        "ordinary_negative": 453,
+        "positive": 33
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            453,
+            812
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            452
+          ]
+        ],
+        "positive": [
+          [
+            813,
+            845
+          ]
+        ]
+      },
+      "episode_id": "episode_000030",
+      "frame_count": 846,
+      "frame_label_sha256": "7325a4710d2f9b22600de8f0d65f0671c81e1a81d4ee6c7475028208b72cc12b",
+      "output_episode_index": 30,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          24494,
+          25339
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          845
+        ],
+        "sha256": "a0d125b1d8eee35029cd9fa678ceb69b786ead21e895405b1a334a946fd85890"
+      },
+      "source_data_relative_path": "data/chunk-000/file-030.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 240,
+        "ordinary_negative": 710,
+        "positive": 35
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            710,
+            949
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            709
+          ]
+        ],
+        "positive": [
+          [
+            950,
+            984
+          ]
+        ]
+      },
+      "episode_id": "episode_000031",
+      "frame_count": 985,
+      "frame_label_sha256": "7d337070801706b3c8e90f8c507a101135a53eb4acbbc63c058e4591772546f6",
+      "output_episode_index": 31,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          25340,
+          26324
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          984
+        ],
+        "sha256": "c2482b9bb4a0fc34d58339133a8ae83b32e5d15a6babaf3564a2339c323e3167"
+      },
+      "source_data_relative_path": "data/chunk-000/file-031.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 154,
+        "ordinary_negative": 524,
+        "positive": 27
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            524,
+            677
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            523
+          ]
+        ],
+        "positive": [
+          [
+            678,
+            704
+          ]
+        ]
+      },
+      "episode_id": "episode_000032",
+      "frame_count": 705,
+      "frame_label_sha256": "667837bee0c603f5232751f40fc77cb074b5f2c15159498e5ddc7cfe71d2b4cd",
+      "output_episode_index": 32,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          26325,
+          27029
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          704
+        ],
+        "sha256": "e0351659e0e612f55d2b8cdd2f315b6d31319a257382af3235a2f0e9864e7c0c"
+      },
+      "source_data_relative_path": "data/chunk-000/file-032.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 174,
+        "ordinary_negative": 539,
+        "positive": 22
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            539,
+            712
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            538
+          ]
+        ],
+        "positive": [
+          [
+            713,
+            734
+          ]
+        ]
+      },
+      "episode_id": "episode_000033",
+      "frame_count": 735,
+      "frame_label_sha256": "b37cb4070d1a8deb3cd629336ff42381222ad744f27c750300a7c24aadcc519c",
+      "output_episode_index": 33,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          27030,
+          27764
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          734
+        ],
+        "sha256": "a257be36764933443bcc415ea75da458e2019aeff71fdfd71e635b1de905811e"
+      },
+      "source_data_relative_path": "data/chunk-000/file-033.parquet",
+      "source_split_name": "test",
+      "split": "test"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 204,
+        "ordinary_negative": 531,
+        "positive": 67
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            531,
+            734
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            530
+          ]
+        ],
+        "positive": [
+          [
+            735,
+            801
+          ]
+        ]
+      },
+      "episode_id": "episode_000034",
+      "frame_count": 802,
+      "frame_label_sha256": "82fef36f7c952bae53cf7f6c9dc68cdc1d97b87b439b1b0dec165b08490bed06",
+      "output_episode_index": 34,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          27765,
+          28566
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          801
+        ],
+        "sha256": "3db55118d4bdee109c7c0df90fb0929b6ce1e1c237b4fa0d37228eb71028a9b8"
+      },
+      "source_data_relative_path": "data/chunk-000/file-034.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 309,
+        "ordinary_negative": 629,
+        "positive": 41
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            629,
+            937
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            628
+          ]
+        ],
+        "positive": [
+          [
+            938,
+            978
+          ]
+        ]
+      },
+      "episode_id": "episode_000035",
+      "frame_count": 979,
+      "frame_label_sha256": "a3353630fe70692e08f9a4de2cec4683220e3476854adce8804befe4508a8dc6",
+      "output_episode_index": 35,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          28567,
+          29545
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          978
+        ],
+        "sha256": "86405d9b7d6b486fc9dcde083aae573c2904b95f505c6abc84766af8e879d47f"
+      },
+      "source_data_relative_path": "data/chunk-000/file-035.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 200,
+        "ordinary_negative": 588,
+        "positive": 59
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            588,
+            787
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            587
+          ]
+        ],
+        "positive": [
+          [
+            788,
+            846
+          ]
+        ]
+      },
+      "episode_id": "episode_000036",
+      "frame_count": 847,
+      "frame_label_sha256": "991b6270f41825ec3acebbe96737e6310a1dbe8b07ba9a32c17d094c6c7b46c8",
+      "output_episode_index": 36,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          29546,
+          30392
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          846
+        ],
+        "sha256": "c802a4e2f1edb6361535aaec0e75305d66a8af5485a915c31b11abb8b9dec28d"
+      },
+      "source_data_relative_path": "data/chunk-000/file-036.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 146,
+        "ordinary_negative": 690,
+        "positive": 26
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            690,
+            835
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            689
+          ]
+        ],
+        "positive": [
+          [
+            836,
+            861
+          ]
+        ]
+      },
+      "episode_id": "episode_000037",
+      "frame_count": 862,
+      "frame_label_sha256": "bb9876a4ca51e0216754f2898a19fe35dd8c9587a2973388f1e39ed953176c07",
+      "output_episode_index": 37,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          30393,
+          31254
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          861
+        ],
+        "sha256": "e11d9b637d1eec9e2e13340f01af6f2fd1a5d97b4eb1d60e87b55d8a8daf5991"
+      },
+      "source_data_relative_path": "data/chunk-000/file-037.parquet",
+      "source_split_name": "val",
+      "split": "validation"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 434,
+        "ordinary_negative": 545,
+        "positive": 39
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            545,
+            978
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            544
+          ]
+        ],
+        "positive": [
+          [
+            979,
+            1017
+          ]
+        ]
+      },
+      "episode_id": "episode_000038",
+      "frame_count": 1018,
+      "frame_label_sha256": "e7dca3506775d8829acfb72e47c33fa45b48baebc760206be9e970e59dae8cee",
+      "output_episode_index": 38,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          31255,
+          32272
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          1017
+        ],
+        "sha256": "fc1081911ebb934302cb8343d2ca3a2eee15d68d037cdbb458464df6adc2ef2d"
+      },
+      "source_data_relative_path": "data/chunk-000/file-038.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 147,
+        "ordinary_negative": 600,
+        "positive": 30
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            600,
+            746
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            599
+          ]
+        ],
+        "positive": [
+          [
+            747,
+            776
+          ]
+        ]
+      },
+      "episode_id": "episode_000039",
+      "frame_count": 777,
+      "frame_label_sha256": "1570495d8727bf7e61fe1433d263215072bc3e3d6fd00a34094f50a9ef9f046f",
+      "output_episode_index": 39,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          32273,
+          33049
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          776
+        ],
+        "sha256": "1265badd8e66d25c69dc713e7148edaa88b7bd0c38ae4adc47bf980978a85218"
+      },
+      "source_data_relative_path": "data/chunk-000/file-039.parquet",
+      "source_split_name": "val",
+      "split": "validation"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 157,
+        "ordinary_negative": 523,
+        "positive": 54
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            523,
+            679
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            522
+          ]
+        ],
+        "positive": [
+          [
+            680,
+            733
+          ]
+        ]
+      },
+      "episode_id": "episode_000040",
+      "frame_count": 734,
+      "frame_label_sha256": "b27b923a3fb7280773cf40de0e7e7ebbafbe505c4356086e9299ee9e1bccc9ea",
+      "output_episode_index": 40,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          33050,
+          33783
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          733
+        ],
+        "sha256": "66b0ca5762438f0ce70dba584e7359d94c3679cf0723eb5787cfd22fb376c301"
+      },
+      "source_data_relative_path": "data/chunk-000/file-040.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 379,
+        "ordinary_negative": 594,
+        "positive": 40
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            594,
+            972
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            593
+          ]
+        ],
+        "positive": [
+          [
+            973,
+            1012
+          ]
+        ]
+      },
+      "episode_id": "episode_000042",
+      "frame_count": 1013,
+      "frame_label_sha256": "dda07f2dedf34d2c9b77fde0bc54de009fc5b559f9952e6df2d1bdb1d5d3ae26",
+      "output_episode_index": 41,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          33784,
+          34796
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          1012
+        ],
+        "sha256": "89e8907afb0694c27d13a5908c6b81211b91a8db35d4a12bf8d929c6d1575ada"
+      },
+      "source_data_relative_path": "data/chunk-000/file-041.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 193,
+        "ordinary_negative": 533,
+        "positive": 43
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            533,
+            725
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            532
+          ]
+        ],
+        "positive": [
+          [
+            726,
+            768
+          ]
+        ]
+      },
+      "episode_id": "episode_000043",
+      "frame_count": 769,
+      "frame_label_sha256": "2a98fb9674bf64c5e7acc5596f7023eb2734d45d886b3be203b0194b981fed9c",
+      "output_episode_index": 42,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          34797,
+          35565
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          768
+        ],
+        "sha256": "59053c5bd37e234879672986966a65c5da01c666f1fe3cd511055ade0bb8b07d"
+      },
+      "source_data_relative_path": "data/chunk-000/file-042.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 122,
+        "ordinary_negative": 528,
+        "positive": 33
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            528,
+            649
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            527
+          ]
+        ],
+        "positive": [
+          [
+            650,
+            682
+          ]
+        ]
+      },
+      "episode_id": "episode_000044",
+      "frame_count": 683,
+      "frame_label_sha256": "278a4138eec92855ac5c3202597de843302f6967a688d008761562be955cb774",
+      "output_episode_index": 43,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          35566,
+          36248
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          682
+        ],
+        "sha256": "31ee0670b71d6703badfc8a6a66e687f70c182efa423e487fd077e3a03a99b8f"
+      },
+      "source_data_relative_path": "data/chunk-000/file-043.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 191,
+        "ordinary_negative": 666,
+        "positive": 29
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            666,
+            856
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            665
+          ]
+        ],
+        "positive": [
+          [
+            857,
+            885
+          ]
+        ]
+      },
+      "episode_id": "episode_000045",
+      "frame_count": 886,
+      "frame_label_sha256": "682a6356285fe7f177f03e436b19cbf464dcc62a2aa04057030e636adedb4fc6",
+      "output_episode_index": 44,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          36249,
+          37134
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          885
+        ],
+        "sha256": "aa77aa0dd110242f09e191c65279f2d16fedb1e52aa89f801a9d0fa38da0f4a4"
+      },
+      "source_data_relative_path": "data/chunk-000/file-044.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 148,
+        "ordinary_negative": 486,
+        "positive": 14
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            486,
+            633
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            485
+          ]
+        ],
+        "positive": [
+          [
+            634,
+            647
+          ]
+        ]
+      },
+      "episode_id": "episode_000046",
+      "frame_count": 648,
+      "frame_label_sha256": "a642edb092da553ff4903b947561a4eda43a69f54d123cce91552e78772fe82e",
+      "output_episode_index": 45,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          37135,
+          37782
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          647
+        ],
+        "sha256": "dd5f9d73f8480106db94088e4b2cf9b21f9c0025339f805c262d3c4e49c9f126"
+      },
+      "source_data_relative_path": "data/chunk-000/file-045.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    },
+    {
+      "class_frame_counts": {
+        "ambiguous": 0,
+        "hard_negative": 377,
+        "ordinary_negative": 448,
+        "positive": 31
+      },
+      "class_intervals_inclusive": {
+        "ambiguous": [],
+        "hard_negative": [
+          [
+            448,
+            824
+          ]
+        ],
+        "ordinary_negative": [
+          [
+            0,
+            447
+          ]
+        ],
+        "positive": [
+          [
+            825,
+            855
+          ]
+        ]
+      },
+      "episode_id": "episode_000048",
+      "frame_count": 856,
+      "frame_label_sha256": "e75c0e695293405c5756d6c2406c04b729ad77f86eb8fc30358dc08d9724f290",
+      "output_episode_index": 46,
+      "row_identity": {
+        "dataset_global_index_range_inclusive": [
+          37783,
+          38638
+        ],
+        "frame_index_range_inclusive": [
+          0,
+          855
+        ],
+        "sha256": "006f8543d1daf54c6e24419a6872aefcda6be15597165fe7443aff645d2f1c38"
+      },
+      "source_data_relative_path": "data/chunk-000/file-046.parquet",
+      "source_split_name": "train",
+      "split": "train"
+    }
+  ],
+  "frame_inventory_sha256": "58ea91dc6050d1eb5d8307e6c8d10c1ac8278a364bf5aa879482755cee3708da",
+  "label_semantics": {
+    "ambiguous_disposition": "excluded_from_training_threshold_selection_and_metrics",
+    "interval_convention": "inclusive",
+    "positive_interval": "first_confident_complete_frame through episode final frame",
+    "review_timestamp": "optional; absent/null accepted; present value must be timezone-aware ISO-8601",
+    "review_timestamp_autofill": false
+  },
+  "leakage_checks": {
+    "episode_intersection_counts": {
+      "train_test": 0,
+      "train_validation": 0,
+      "validation_test": 0
+    },
+    "episode_leakage": false,
+    "global_index_intersection_counts": {
+      "train_test": 0,
+      "train_validation": 0,
+      "validation_test": 0
+    },
+    "row_identity_intersection_counts": {
+      "train_test": 0,
+      "train_validation": 0,
+      "validation_test": 0
+    },
+    "row_leakage": false,
+    "unique_global_index_count": 38639,
+    "unique_row_identity_count": 38639
+  },
+  "operation": "R0_LABEL_INGESTION_AND_READINESS_ARTIFACT",
+  "schema_version": "force_rft_task2_frame_label_inventory.v2",
+  "scope_boundaries": {
+    "g1_or_g2_created": false,
+    "human_labels_modified": false,
+    "optimizer_or_checkpoint_created": false,
+    "reward_classifier_training_performed": false,
+    "reward_or_terminal_created": false,
+    "twin_q_cal_ql_or_actor_training_performed": false
+  },
+  "validation": {
+    "episode_leakage": false,
+    "human_reviewed_episode_count": 47,
+    "intervals_valid": true,
+    "manual_audit_complete": true,
+    "overlapping_frame_count": 0,
+    "p8_dataset_storage_exact_match": true,
+    "positive_continuous_to_episode_end": true,
+    "review_timestamp_absent_or_null_count": 47,
+    "review_timestamp_autofilled": false,
+    "review_timestamp_optional": true,
+    "review_timestamp_present_and_valid_count": 0,
+    "row_leakage": false,
+    "schema_valid": true,
+    "source_top_level_artifact_status": "BLANK_MANUAL_LABEL_TEMPLATE_V2",
+    "source_top_level_manual_audit_complete": false,
+    "unlabeled_frame_count": 0
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_status": "development_contract",
+  "active_gate": "R0_PREPARATION_ONLY",
+  "frame_stack": 1,
+  "causality": "current_observation_only",
+  "source_dataset": {
+    "root": "datasets/task2_lerobotv3",
+    "fps": 30,
+    "image_storage": "parquet_embedded_png",
+    "copy_or_mutation": "forbidden"
+  },
+  "camera_order": [
+    {
+      "source_feature_key": "observation.images.camera1",
+      "physical_camera": "D435",
+      "role": "third-person",
+      "classifier_key": "d435_third_person"
+    },
+    {
+      "source_feature_key": "observation.images.camera2",
+      "physical_camera": "D405",
+      "role": "wrist",
+      "classifier_key": "d405_wrist"
+    }
+  ],
+  "source_tensor": {
+    "rank": 3,
+    "layout": "CHW",
+    "shape": [3, 480, 640],
+    "color_order": "RGB",
+    "dtype": "uint8"
+  },
+  "classifier_tensor": {
+    "rank": 5,
+    "layout": "BTHWC",
+    "shape": [1, 1, 480, 640, 3],
+    "color_order": "RGB",
+    "dtype": "uint8"
+  },
+  "preprocessing": {
+    "adapter_resize": "none",
+    "adapter_crop": "none",
+    "adapter_pad": "none",
+    "adapter_normalization": "none",
+    "conrft_encoder_resize": {
+      "shape": [128, 128],
+      "interpolation": "jax.image.resize bilinear"
+    },
+    "conrft_encoder_normalization": "ImageNet mean/std inside resnet_v1.py exactly once",
+    "training_augmentation": "native ConRFT batched_random_crop padding=4 num_batch_dims=2",
+    "evaluation_augmentation": "disabled",
+    "evaluation_deterministic": true
+  },
+  "episode_boundary": {
+    "reset": true,
+    "frame_history_retained": 0
+  },
+  "classifier_training_contract": {
+    "implementation": "unmodified ConRFT reward_classifier.py BinaryClassifier and create_classifier",
+    "objective": "optax.sigmoid_binary_cross_entropy",
+    "sampling": "equal positive and negative batch halves",
+    "encoder": "ImageNet ResNet-10 frozen at pre-pooling output",
+    "trainable_components": "learned spatial embeddings, bottleneck, and binary classification head",
+    "r0_preparation_optimizer_updates": 0,
+    "real_training_authorized": false
+  },
+  "classifier_split_plan": {
+    "unit": "collection_id plus episode_id",
+    "train_val_test_episode_disjoint": true,
+    "threshold_selection_split": "validation_only",
+    "final_acceptance_split": "independent_heldout_collection",
+    "task2_outcome_attestation_is_frame_label": false
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "artifact_status": "development_only",
+  "formal_eligible": false,
+  "representation": "mixed_continuous_discrete_cartesian7d",
+  "critic_action_input_dim": 7,
+  "critic_action_slots": 3,
+  "critic_action_shape": [3, 7],
+  "critic_duration_mode": "fixed_k",
+  "partial_action_interface": false,
+  "critic_receives_terminal_derived_duration_or_mask": false,
+  "all_critic_action_slots_valid": true,
+  "actor_q_guided_action_dims": [0, 1, 2, 3, 4, 5],
+  "actor_q_gradient_mask_per_slot": [1, 1, 1, 1, 1, 1, 0],
+  "gripper_objective": "flow_matching_only",
+  "gripper_q_gradient": false,
+  "tcp_actor_q_input": "normalized_continuous_flow_action",
+  "gripper_actor_q_input": {
+    "decode_owner": "forcesmolvla.action_delta.decode_binary_gripper_width",
+    "candidate_space": "frozen_delta_action7_normalized_inverse",
+    "closed_width_m": 0.0,
+    "open_width_m": 0.085,
+    "switch_width_m": 0.0425,
+    "renormalization": "frozen_delta_action7_normalizer",
+    "stop_gradient_after_decode": true
+  },
+  "frozen_normalizer_manifest": {
+    "path": "datasets/task2_lerobotv3/normalizer_manifest.json",
+    "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+  },
+  "flow_matching_action_dims": [0, 1, 2, 3, 4, 5, 6],
+  "public_inference_contract_unchanged": true,
+  "paper_description": "value-guided 6-DoF Cartesian refinement with imitation-regularized discrete gripper control"
+}

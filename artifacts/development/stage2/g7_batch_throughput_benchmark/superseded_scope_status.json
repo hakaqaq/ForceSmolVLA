@@ -1,0 +1,17 @@
+{
+  "schema_version": "forcesmolvla_g7_batch_throughput_superseded_scope.v1",
+  "artifact_status": "incomplete_preserved",
+  "reason": "The user replaced the narrow Stage-2 accumulation benchmark with an independent Stage-1/Stage-2 physical-batch scaling audit.",
+  "completed_candidate_results": [
+    "stage_a_am1_aa4_ae4_cb16",
+    "stage_a_am2_aa2_ae4_cb16",
+    "stage_a_am4_aa1_ae4_cb16",
+    "stage_b_actor_am4_aa2_ae8_cb16"
+  ],
+  "interrupted_candidate": "stage_b_actor_am4_aa4_ae16_cb16",
+  "aggregate_benchmark_artifact_created": false,
+  "candidate_checkpoints_created": 0,
+  "candidate_training_state_authorized": false,
+  "long_run_started": false,
+  "superseded_by": "stage1_stage2_batch_scaling_audit"
+}

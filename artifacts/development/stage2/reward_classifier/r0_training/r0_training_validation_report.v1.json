@@ -1,0 +1,1097 @@
+{
+  "actual_sampling": {
+    "ambiguous_zero_consumption": true,
+    "primary_and_repeat_per_episode": {
+      "episode_000000": {
+        "ambiguous": 0,
+        "hard_negative": 298,
+        "ordinary_negative": 233,
+        "positive": 1096
+      },
+      "episode_000001": {
+        "ambiguous": 0,
+        "hard_negative": 322,
+        "ordinary_negative": 415,
+        "positive": 1046
+      },
+      "episode_000002": {
+        "ambiguous": 0,
+        "hard_negative": 341,
+        "ordinary_negative": 260,
+        "positive": 712
+      },
+      "episode_000003": {
+        "ambiguous": 0,
+        "hard_negative": 229,
+        "ordinary_negative": 235,
+        "positive": 353
+      },
+      "episode_000004": {
+        "ambiguous": 0,
+        "hard_negative": 361,
+        "ordinary_negative": 327,
+        "positive": 766
+      },
+      "episode_000006": {
+        "ambiguous": 0,
+        "hard_negative": 154,
+        "ordinary_negative": 258,
+        "positive": 547
+      },
+      "episode_000008": {
+        "ambiguous": 0,
+        "hard_negative": 177,
+        "ordinary_negative": 186,
+        "positive": 458
+      },
+      "episode_000009": {
+        "ambiguous": 0,
+        "hard_negative": 224,
+        "ordinary_negative": 221,
+        "positive": 428
+      },
+      "episode_000010": {
+        "ambiguous": 0,
+        "hard_negative": 353,
+        "ordinary_negative": 158,
+        "positive": 590
+      },
+      "episode_000011": {
+        "ambiguous": 0,
+        "hard_negative": 294,
+        "ordinary_negative": 237,
+        "positive": 615
+      },
+      "episode_000013": {
+        "ambiguous": 0,
+        "hard_negative": 384,
+        "ordinary_negative": 190,
+        "positive": 1252
+      },
+      "episode_000014": {
+        "ambiguous": 0,
+        "hard_negative": 431,
+        "ordinary_negative": 226,
+        "positive": 908
+      },
+      "episode_000015": {
+        "ambiguous": 0,
+        "hard_negative": 227,
+        "ordinary_negative": 217,
+        "positive": 549
+      },
+      "episode_000016": {
+        "ambiguous": 0,
+        "hard_negative": 158,
+        "ordinary_negative": 202,
+        "positive": 323
+      },
+      "episode_000018": {
+        "ambiguous": 0,
+        "hard_negative": 207,
+        "ordinary_negative": 302,
+        "positive": 332
+      },
+      "episode_000019": {
+        "ambiguous": 0,
+        "hard_negative": 433,
+        "ordinary_negative": 0,
+        "positive": 328
+      },
+      "episode_000020": {
+        "ambiguous": 0,
+        "hard_negative": 295,
+        "ordinary_negative": 325,
+        "positive": 288
+      },
+      "episode_000022": {
+        "ambiguous": 0,
+        "hard_negative": 196,
+        "ordinary_negative": 237,
+        "positive": 268
+      },
+      "episode_000023": {
+        "ambiguous": 0,
+        "hard_negative": 228,
+        "ordinary_negative": 314,
+        "positive": 197
+      },
+      "episode_000024": {
+        "ambiguous": 0,
+        "hard_negative": 266,
+        "ordinary_negative": 275,
+        "positive": 620
+      },
+      "episode_000026": {
+        "ambiguous": 0,
+        "hard_negative": 227,
+        "ordinary_negative": 213,
+        "positive": 361
+      },
+      "episode_000027": {
+        "ambiguous": 0,
+        "hard_negative": 134,
+        "ordinary_negative": 268,
+        "positive": 351
+      },
+      "episode_000028": {
+        "ambiguous": 0,
+        "hard_negative": 163,
+        "ordinary_negative": 274,
+        "positive": 419
+      },
+      "episode_000029": {
+        "ambiguous": 0,
+        "hard_negative": 164,
+        "ordinary_negative": 261,
+        "positive": 330
+      },
+      "episode_000030": {
+        "ambiguous": 0,
+        "hard_negative": 355,
+        "ordinary_negative": 203,
+        "positive": 371
+      },
+      "episode_000031": {
+        "ambiguous": 0,
+        "hard_negative": 231,
+        "ordinary_negative": 347,
+        "positive": 411
+      },
+      "episode_000032": {
+        "ambiguous": 0,
+        "hard_negative": 165,
+        "ordinary_negative": 254,
+        "positive": 282
+      },
+      "episode_000034": {
+        "ambiguous": 0,
+        "hard_negative": 195,
+        "ordinary_negative": 254,
+        "positive": 705
+      },
+      "episode_000035": {
+        "ambiguous": 0,
+        "hard_negative": 297,
+        "ordinary_negative": 293,
+        "positive": 428
+      },
+      "episode_000036": {
+        "ambiguous": 0,
+        "hard_negative": 174,
+        "ordinary_negative": 307,
+        "positive": 672
+      },
+      "episode_000038": {
+        "ambiguous": 0,
+        "hard_negative": 436,
+        "ordinary_negative": 252,
+        "positive": 458
+      },
+      "episode_000040": {
+        "ambiguous": 0,
+        "hard_negative": 148,
+        "ordinary_negative": 256,
+        "positive": 596
+      },
+      "episode_000042": {
+        "ambiguous": 0,
+        "hard_negative": 355,
+        "ordinary_negative": 312,
+        "positive": 455
+      },
+      "episode_000043": {
+        "ambiguous": 0,
+        "hard_negative": 183,
+        "ordinary_negative": 257,
+        "positive": 491
+      },
+      "episode_000044": {
+        "ambiguous": 0,
+        "hard_negative": 125,
+        "ordinary_negative": 244,
+        "positive": 383
+      },
+      "episode_000045": {
+        "ambiguous": 0,
+        "hard_negative": 165,
+        "ordinary_negative": 291,
+        "positive": 318
+      },
+      "episode_000046": {
+        "ambiguous": 0,
+        "hard_negative": 150,
+        "ordinary_negative": 273,
+        "positive": 153
+      },
+      "episode_000048": {
+        "ambiguous": 0,
+        "hard_negative": 355,
+        "ordinary_negative": 223,
+        "positive": 340
+      }
+    },
+    "primary_baseline_total_occurrences": {
+      "ambiguous": 0,
+      "hard_negative": 9600,
+      "ordinary_negative": 9600,
+      "positive": 19200
+    },
+    "repeat_baseline_total_occurrences": {
+      "ambiguous": 0,
+      "hard_negative": 9600,
+      "ordinary_negative": 9600,
+      "positive": 19200
+    },
+    "unique_train_frames_materialized": 15506
+  },
+  "artifact_status": "PASS_R0_DEVELOPMENT_CLASSIFIER_TRAINING_COMPLETE",
+  "authorization": "user_approved_R0_development_reward_classifier_training",
+  "checkpoint_artifacts": {
+    "best_checkpoint.msgpack": {
+      "file_size": 87217825,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+      "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+    },
+    "last_checkpoint.msgpack": {
+      "file_size": 87217825,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/last_checkpoint.msgpack",
+      "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+    },
+    "resume_state.msgpack": {
+      "file_size": 87218118,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/resume_state.msgpack",
+      "sha256": "2a6382eb5660c3233ca9f4abde8c5709e64614a53a59e9b0444d7f4d8a04d238"
+    }
+  },
+  "checkpoint_restore_audit": {
+    "best_checkpoint_restored_step": 150,
+    "last_and_resume_train_state_tree_exact": true,
+    "last_checkpoint_restored_step": 150,
+    "resume_completed_optimizer_updates": 150,
+    "resume_next_optimizer_update": 151,
+    "resume_rng_shape": [
+      2
+    ],
+    "resume_schedule_cursor": 150,
+    "resume_state_restored_step": 150,
+    "status": "pass"
+  },
+  "completed_at": "2026-08-25T12:12:55.624233+00:00",
+  "fixed_minibatch_overfit": {
+    "ambiguous_consumed": 0,
+    "backbone_parameter_sha256_after": "bed19b855a3605f9cbbc18b0e7d160374f628f26de8f3cdf698f5e0498592b69",
+    "backbone_parameter_sha256_before": "bed19b855a3605f9cbbc18b0e7d160374f628f26de8f3cdf698f5e0498592b69",
+    "backbone_sha_exactly_unchanged": true,
+    "batch_composition": {
+      "hard_negative": 64,
+      "ordinary_negative": 64,
+      "positive": 128
+    },
+    "deterministic_BCE_after": 0.02154760891060195,
+    "deterministic_BCE_before": 0.6706687926555172,
+    "deterministic_BCE_decreased": true,
+    "fixed_minibatch": true,
+    "optimizer_updates": 30,
+    "status": "pass",
+    "train_losses": [
+      0.6730474233627319,
+      0.3712249994277954,
+      0.1987050622701645,
+      0.12394207715988159,
+      0.08273231983184814,
+      0.05936070531606674,
+      0.05239782854914665,
+      0.04675310105085373,
+      0.04313552379608154,
+      0.038500599563121796,
+      0.0359555184841156,
+      0.036954864859580994,
+      0.031892143189907074,
+      0.03036530688405037,
+      0.030085578560829163,
+      0.031067345291376114,
+      0.025759145617485046,
+      0.028741955757141113,
+      0.028220631182193756,
+      0.02741372212767601,
+      0.026901349425315857,
+      0.02710416540503502,
+      0.02512720227241516,
+      0.02275974676012993,
+      0.023522179573774338,
+      0.026518555358052254,
+      0.023679737001657486,
+      0.022283602505922318,
+      0.024296771734952927,
+      0.023733561858534813
+    ]
+  },
+  "fixed_seed_reproducibility": {
+    "best_checkpoint_bytes_exact_match": true,
+    "exact_reproducibility_pass": true,
+    "full_150_update_repeat_executed": true,
+    "last_checkpoint_bytes_exact_match": true,
+    "primary": {
+      "best_checkpoint_sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510",
+      "last_checkpoint_sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510",
+      "resume_state_sha256": "2a6382eb5660c3233ca9f4abde8c5709e64614a53a59e9b0444d7f4d8a04d238"
+    },
+    "repeat": {
+      "best_checkpoint_sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510",
+      "last_checkpoint_sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510",
+      "resume_state_sha256": "2a6382eb5660c3233ca9f4abde8c5709e64614a53a59e9b0444d7f4d8a04d238"
+    },
+    "resume_state_bytes_exact_match": true,
+    "sampling_schedule_exactly_reused": true,
+    "seed": 0,
+    "train_loss_trace_exact_match": true,
+    "validation_trace_exact_match": true
+  },
+  "frozen_input_bindings": {
+    "ConRFT_git_commit": "a779fde7fa5db5a469960a8490c100f35b41b49e",
+    "ConRFT_worktree_clean": true,
+    "dataset_storage_tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d",
+    "inventory": {
+      "file_size": 60041,
+      "path": "artifacts/development/stage2/reward_classifier/task2_frame_label_inventory.v2.json",
+      "sha256": "8839793f0e5d5c6d866b41e32bcb7fa576cd984a9faf5507719a1735be611a65"
+    },
+    "readiness": {
+      "file_size": 7086,
+      "path": "artifacts/development/stage2/s2_r0_label_ingestion_readiness.v4.json",
+      "sha256": "64ae61e7d83c7be49451f4716c0e95921c2e9dbd062a553cec8f7fccdcc690aa"
+    },
+    "reviewed_labels": {
+      "file_size": 40100,
+      "path": "labels/task2_reward_frame_labels.v2.reviewed.json",
+      "sha256": "ecda7d480f6a4c49dbe63a31b7e3172b30a5470437510522b1da2217eae77a9c"
+    },
+    "safe_resnet10_manifest": {
+      "file_size": 22053,
+      "path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json",
+      "sha256": "2e54ec70420ebd9cd73c12689937fca2597cf74d8ea608526b805999647e22e8"
+    },
+    "safe_resnet10_npz": {
+      "file_size": 21684766,
+      "path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz",
+      "sha256": "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5"
+    }
+  },
+  "gpu_optimizer_smoke": {
+    "all_trainable_gradient_norm": 8.682578970976666,
+    "all_trainable_update_norm": 0.15113997305311838,
+    "ambiguous_consumed": 0,
+    "backbone_gradient_norm": 0.0,
+    "backbone_parameter_sha256_after": "bed19b855a3605f9cbbc18b0e7d160374f628f26de8f3cdf698f5e0498592b69",
+    "backbone_parameter_sha256_before": "bed19b855a3605f9cbbc18b0e7d160374f628f26de8f3cdf698f5e0498592b69",
+    "backbone_sha_exactly_unchanged": true,
+    "batch_composition": {
+      "hard_negative": 64,
+      "ordinary_negative": 64,
+      "positive": 128
+    },
+    "classifier_head_gradient_norm": 1.8438093929430373,
+    "classifier_head_update_norm": 0.03634174392901254,
+    "forward_backward_optimizer_updates_per_batch": 1,
+    "loss": 0.6730474233627319,
+    "optimizer_updates": 1,
+    "real_gpu": true,
+    "spatial_embedding_gradient_norm": 6.957404059483983,
+    "spatial_embedding_update_norm": 0.029629206592901927,
+    "status": "pass",
+    "train_state_step_after": 1,
+    "train_state_step_before": 0
+  },
+  "implementation": {
+    "batch_size": 256,
+    "classifier": "ConRFT BinaryClassifier via unmodified create_classifier()",
+    "frame_stack": 1,
+    "gradient_accumulation": false,
+    "objective": "optax.sigmoid_binary_cross_entropy",
+    "one_forward_backward_optimizer_update_per_training_batch": true,
+    "optimizer": "Adam learning_rate=1e-4",
+    "pretrained_backbone_frozen_by": "ConRFT resnetv1-10-frozen pre-pooling stop_gradient",
+    "safe_asset_loading": "allow_pickle=False NPZ reconstructed in memory; temporary trusted pickle bridge only because frozen create_classifier() accepts a pickle path",
+    "safe_asset_output_head_consumed": false,
+    "sampling_relationship": {
+      "ConRFT_compatible": "50_percent_positive_and_50_percent_negative",
+      "ForceRFT_development_extension": "negative_half_split_64_ordinary_and_64_hard",
+      "unmodified_ConRFT_sampling_claim": false
+    },
+    "shared_backbone_parameter_scope": "encoder_def/encoder_d405_wrist/pretrained_encoder shared by both camera encoder calls in frozen ConRFT source",
+    "train_random_crop": "native ConRFT batched_random_crop padding=4 num_batch_dims=2",
+    "validation_random_augmentation": false
+  },
+  "label_semantics": {
+    "ambiguous": "fully_excluded",
+    "binary_classes_only": true,
+    "hard_negative": 0,
+    "ordinary_negative": 0,
+    "positive": 1
+  },
+  "next_validation_only_recommendation": "Request approval for validation-only DetectorSpec calibration of probability threshold and consecutive-positive frames; keep test images sealed and do not generate reward/terminal during that calibration request.",
+  "primary_training_run": {
+    "ambiguous_consumed": 0,
+    "backbone_sha_exactly_unchanged": true,
+    "best_checkpoint_sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510",
+    "best_optimizer_update": 150,
+    "best_validation_metrics": {
+      "BCE": 0.018092965155991316,
+      "PR_AUC": 0.9733906820710254,
+      "PR_AUC_definition": "average_precision_step_integral",
+      "ROC_AUC": 0.99912379218868,
+      "balanced_accuracy": 0.9976408548431862,
+      "confusion_matrix": {
+        "false_negative": 0,
+        "false_positive": 17,
+        "true_negative": 3586,
+        "true_positive": 172
+      },
+      "detector_threshold_approved": false,
+      "diagnostic_probability_threshold": 0.5,
+      "evaluated_frame_count": 3775,
+      "hard_negative_false_positive_rate": 0.02096177558569667,
+      "ordinary_negative_false_positive_rate": 0.0,
+      "overall_false_positive_rate": 0.004718290313627533,
+      "positive_recall": 1.0
+    },
+    "final_backbone_parameter_sha256": "bed19b855a3605f9cbbc18b0e7d160374f628f26de8f3cdf698f5e0498592b69",
+    "final_trainable_parameter_sha256": "a0641b0d0248e4859ae175582d26e0cd4974ab7fc2713d395e1eb8ee7e8a882b",
+    "full_validation_frames_per_evaluation": 3775,
+    "initial_backbone_parameter_sha256": "bed19b855a3605f9cbbc18b0e7d160374f628f26de8f3cdf698f5e0498592b69",
+    "initial_trainable_parameter_sha256": "3eb22d6bd45a3ec919064c5392dd0454315a1bd7cdf273f219c5075d9ef5bb93",
+    "last_checkpoint_sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510",
+    "optimizer_updates": 150,
+    "optimizer_updates_are_epochs": false,
+    "resume_state_sha256": "2a6382eb5660c3233ca9f4abde8c5709e64614a53a59e9b0444d7f4d8a04d238",
+    "run_name": "seed0_primary",
+    "seed": 0,
+    "selection_rule": "minimum_BCE_then_maximum_PR_AUC_on_exact_BCE_tie",
+    "test_evaluated": false,
+    "train_loss_by_update": [
+      0.6730474233627319,
+      0.3827674388885498,
+      0.21494051814079285,
+      0.11981287598609924,
+      0.08773118257522583,
+      0.10345426201820374,
+      0.053200967609882355,
+      0.03771115839481354,
+      0.05616186559200287,
+      0.06527233123779297,
+      0.04747556149959564,
+      0.057423610240221024,
+      0.012820282950997353,
+      0.052322253584861755,
+      0.028309347108006477,
+      0.041467197239398956,
+      0.0384860560297966,
+      0.04822476953268051,
+      0.030509017407894135,
+      0.028133099898695946,
+      0.02956458553671837,
+      0.059317007660865784,
+      0.02947131171822548,
+      0.019005566835403442,
+      0.009547892957925797,
+      0.027227964252233505,
+      0.054227136075496674,
+      0.042340170592069626,
+      0.007129335775971413,
+      0.006629690527915955,
+      0.03209996223449707,
+      0.0186782144010067,
+      0.016507776454091072,
+      0.008846893906593323,
+      0.005885576829314232,
+      0.032170798629522324,
+      0.010071227326989174,
+      0.04647171497344971,
+      0.005718566942960024,
+      0.006812719628214836,
+      0.004701791796833277,
+      0.007229323964565992,
+      0.004029657691717148,
+      0.05446361005306244,
+      0.023398559540510178,
+      0.010294826701283455,
+      0.023041648790240288,
+      0.03092551976442337,
+      0.028342481702566147,
+      0.012641161680221558,
+      0.004877300001680851,
+      0.04149638116359711,
+      0.02916046231985092,
+      0.03720054402947426,
+      0.054723501205444336,
+      0.029813475906848907,
+      0.01294700987637043,
+      0.03485387563705444,
+      0.037701547145843506,
+      0.05661667138338089,
+      0.04128444939851761,
+      0.020061271265149117,
+      0.016854986548423767,
+      0.019297422841191292,
+      0.03978024050593376,
+      0.031171634793281555,
+      0.025150513276457787,
+      0.03495839238166809,
+      0.008582353591918945,
+      0.021145910024642944,
+      0.006937296129763126,
+      0.024194926023483276,
+      0.05797455459833145,
+      0.009879626333713531,
+      0.004558062180876732,
+      0.021537700667977333,
+      0.024884125217795372,
+      0.012815525755286217,
+      0.004624297842383385,
+      0.003873232752084732,
+      0.04266875982284546,
+      0.02987392246723175,
+      0.015011576935648918,
+      0.018270544707775116,
+      0.03090101294219494,
+      0.02615533024072647,
+      0.01069023460149765,
+      0.011120975017547607,
+      0.012143697589635849,
+      0.005169149022549391,
+      0.03647139295935631,
+      0.0186169371008873,
+      0.007024737074971199,
+      0.017844047397375107,
+      0.001918984460644424,
+      0.02749616838991642,
+      0.02140253596007824,
+      0.002993947360664606,
+      0.002030730713158846,
+      0.04358978196978569,
+      0.0033063367009162903,
+      0.01084291934967041,
+      0.005197351798415184,
+      0.06909605860710144,
+      0.02734207920730114,
+      0.024456366896629333,
+      0.06480304896831512,
+      0.03536127507686615,
+      0.019782602787017822,
+      0.018533721566200256,
+      0.005371372681111097,
+      0.004513189662247896,
+      0.02380668930709362,
+      0.06627115607261658,
+      0.02531297877430916,
+      0.027092207223176956,
+      0.047184620052576065,
+      0.03776077553629875,
+      0.027394887059926987,
+      0.03034108877182007,
+      0.006055383011698723,
+      0.01281463447958231,
+      0.02616591937839985,
+      0.031233223155140877,
+      0.013559108600020409,
+      0.0124002480879426,
+      0.03867879882454872,
+      0.006390622816979885,
+      0.004584783688187599,
+      0.01423607487231493,
+      0.0119974659755826,
+      0.046033166348934174,
+      0.0023800998460501432,
+      0.002707588952034712,
+      0.002150746528059244,
+      0.009515509940683842,
+      0.0030159989837557077,
+      0.0019111490109935403,
+      0.0017943751299753785,
+      0.0022360114380717278,
+      0.017225468531250954,
+      0.04275920242071152,
+      0.0021243104711174965,
+      0.022298600524663925,
+      0.003883902681991458,
+      0.012862291187047958,
+      0.017462074756622314,
+      0.017415957525372505,
+      0.011818521656095982,
+      0.018612664192914963
+    ],
+    "trainable_parameter_sha_changed": true,
+    "validation_evaluation_updates": [
+      10,
+      20,
+      30,
+      40,
+      50,
+      60,
+      70,
+      80,
+      90,
+      100,
+      110,
+      120,
+      130,
+      140,
+      150
+    ],
+    "validation_trace": [
+      {
+        "BCE": 0.04636649645199597,
+        "PR_AUC": 0.9309251358200212,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9977651053063016,
+        "balanced_accuracy": 0.9940327504857063,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 43,
+          "true_negative": 3560,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.0530209617755857,
+        "optimizer_update": 10,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.011934499028587288,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.0361017474215017,
+        "PR_AUC": 0.8887588696411888,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9979651969611887,
+        "balanced_accuracy": 0.9945878434637803,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 39,
+          "true_negative": 3564,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.04808877928483354,
+        "optimizer_update": 20,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.010824313072439634,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.042500896170485754,
+        "PR_AUC": 0.9255426907679535,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9981410839804039,
+        "balanced_accuracy": 0.9945878434637803,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 39,
+          "true_negative": 3564,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.04808877928483354,
+        "optimizer_update": 30,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.010824313072439634,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.037416775038279865,
+        "PR_AUC": 0.942224765624889,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9984041076880378,
+        "balanced_accuracy": 0.995142936441854,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 35,
+          "true_negative": 3568,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.04315659679408138,
+        "optimizer_update": 40,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.009714127116291979,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.03507610952193054,
+        "PR_AUC": 0.9477370490999119,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9985525627868249,
+        "balanced_accuracy": 0.9956980294199278,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 31,
+          "true_negative": 3572,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.03822441430332922,
+        "optimizer_update": 50,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.008603941160144324,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.02627668235646815,
+        "PR_AUC": 0.9583537897783021,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9987881545740307,
+        "balanced_accuracy": 0.9962531223980017,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 27,
+          "true_negative": 3576,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.03329223181257707,
+        "optimizer_update": 60,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.00749375520399667,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.024185408773903027,
+        "PR_AUC": 0.9394571730049994,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9987574953688464,
+        "balanced_accuracy": 0.9965306688870386,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 25,
+          "true_negative": 3578,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.030826140567200986,
+        "optimizer_update": 70,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.006938662225922842,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.031113287580093518,
+        "PR_AUC": 0.9360115717706962,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9987607226536026,
+        "balanced_accuracy": 0.9962531223980017,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 27,
+          "true_negative": 3576,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.03329223181257707,
+        "optimizer_update": 80,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.00749375520399667,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.030949776310395277,
+        "PR_AUC": 0.9586145285409308,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9988543139115337,
+        "balanced_accuracy": 0.9963918956425202,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 26,
+          "true_negative": 3577,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.032059186189889025,
+        "optimizer_update": 90,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.0072162087149597555,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.03350369033792728,
+        "PR_AUC": 0.9627958736422698,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9988688366929368,
+        "balanced_accuracy": 0.9963918956425202,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 26,
+          "true_negative": 3577,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.032059186189889025,
+        "optimizer_update": 100,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.0072162087149597555,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.029155761624470488,
+        "PR_AUC": 0.9675705867671189,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9989801780170272,
+        "balanced_accuracy": 0.9965306688870386,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 25,
+          "true_negative": 3578,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.030826140567200986,
+        "optimizer_update": 110,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.006938662225922842,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.02931521070808811,
+        "PR_AUC": 0.9626097919464264,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9989156323219023,
+        "balanced_accuracy": 0.9962531223980017,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 27,
+          "true_negative": 3576,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.03329223181257707,
+        "optimizer_update": 120,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.00749375520399667,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.02938572123122049,
+        "PR_AUC": 0.9651789254996754,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9989608143084897,
+        "balanced_accuracy": 0.9965306688870386,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 25,
+          "true_negative": 3578,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.030826140567200986,
+        "optimizer_update": 130,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.006938662225922842,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.030732939150202806,
+        "PR_AUC": 0.9702631670579563,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.9990269736459927,
+        "balanced_accuracy": 0.9965306688870386,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 25,
+          "true_negative": 3578,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.030826140567200986,
+        "optimizer_update": 140,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.006938662225922842,
+        "positive_recall": 1.0
+      },
+      {
+        "BCE": 0.018092965155991316,
+        "PR_AUC": 0.9733906820710254,
+        "PR_AUC_definition": "average_precision_step_integral",
+        "ROC_AUC": 0.99912379218868,
+        "balanced_accuracy": 0.9976408548431862,
+        "confusion_matrix": {
+          "false_negative": 0,
+          "false_positive": 17,
+          "true_negative": 3586,
+          "true_positive": 172
+        },
+        "detector_threshold_approved": false,
+        "diagnostic_probability_threshold": 0.5,
+        "evaluated_frame_count": 3775,
+        "hard_negative_false_positive_rate": 0.02096177558569667,
+        "optimizer_update": 150,
+        "ordinary_negative_false_positive_rate": 0.0,
+        "overall_false_positive_rate": 0.004718290313627533,
+        "positive_recall": 1.0
+      }
+    ]
+  },
+  "resolved_training_config": {
+    "file_size": 3373,
+    "path": "configs/stage2_r0_reward_classifier_training.development.json",
+    "sha256": "72213d6d211e89a574c29bd55a4928607d2191b51917af374594fc74356c1616"
+  },
+  "runtime": {
+    "backend": "gpu",
+    "determinism_environment": {
+      "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+      "TF_CUDNN_DETERMINISTIC": "1"
+    },
+    "device": "cuda:0",
+    "environment": "conrft_reward",
+    "flax": "0.8.0",
+    "jax": "0.4.20",
+    "jaxlib": "0.4.20",
+    "numpy": "1.24.3",
+    "optax": "0.1.5",
+    "python": "3.10.20"
+  },
+  "schema_version": "forcesmolvla_r0_reward_classifier_training_report.v1",
+  "split_access_audit": {
+    "episode_leakage": "none",
+    "row_leakage": "none",
+    "source_image_rows_loaded_for_ephemeral_cache": {
+      "test": 0,
+      "train": 15506,
+      "validation": 3775
+    },
+    "source_parquet_files_opened": {
+      "test": [],
+      "train": [
+        "data/chunk-000/file-000.parquet",
+        "data/chunk-000/file-001.parquet",
+        "data/chunk-000/file-002.parquet",
+        "data/chunk-000/file-003.parquet",
+        "data/chunk-000/file-004.parquet",
+        "data/chunk-000/file-006.parquet",
+        "data/chunk-000/file-008.parquet",
+        "data/chunk-000/file-009.parquet",
+        "data/chunk-000/file-010.parquet",
+        "data/chunk-000/file-011.parquet",
+        "data/chunk-000/file-013.parquet",
+        "data/chunk-000/file-014.parquet",
+        "data/chunk-000/file-015.parquet",
+        "data/chunk-000/file-016.parquet",
+        "data/chunk-000/file-018.parquet",
+        "data/chunk-000/file-019.parquet",
+        "data/chunk-000/file-020.parquet",
+        "data/chunk-000/file-022.parquet",
+        "data/chunk-000/file-023.parquet",
+        "data/chunk-000/file-024.parquet",
+        "data/chunk-000/file-026.parquet",
+        "data/chunk-000/file-027.parquet",
+        "data/chunk-000/file-028.parquet",
+        "data/chunk-000/file-029.parquet",
+        "data/chunk-000/file-030.parquet",
+        "data/chunk-000/file-031.parquet",
+        "data/chunk-000/file-032.parquet",
+        "data/chunk-000/file-034.parquet",
+        "data/chunk-000/file-035.parquet",
+        "data/chunk-000/file-036.parquet",
+        "data/chunk-000/file-038.parquet",
+        "data/chunk-000/file-040.parquet",
+        "data/chunk-000/file-041.parquet",
+        "data/chunk-000/file-042.parquet",
+        "data/chunk-000/file-043.parquet",
+        "data/chunk-000/file-044.parquet",
+        "data/chunk-000/file-045.parquet",
+        "data/chunk-000/file-046.parquet"
+      ],
+      "validation": [
+        "data/chunk-000/file-007.parquet",
+        "data/chunk-000/file-012.parquet",
+        "data/chunk-000/file-017.parquet",
+        "data/chunk-000/file-037.parquet",
+        "data/chunk-000/file-039.parquet"
+      ]
+    },
+    "test_checkpoint_selection_participation": false,
+    "test_image_rows_loaded": 0,
+    "test_images_decoded": 0,
+    "test_inference_row_occurrences": 0,
+    "test_inventory_counts_read_as_metadata_only": {
+      "classes": {
+        "ambiguous": {
+          "episode_count": 0,
+          "frame_count": 0
+        },
+        "hard_negative": {
+          "episode_count": 4,
+          "frame_count": 729
+        },
+        "ordinary_negative": {
+          "episode_count": 4,
+          "frame_count": 2167
+        },
+        "positive": {
+          "episode_count": 4,
+          "frame_count": 144
+        }
+      },
+      "episode_count": 4,
+      "frame_count": 3040,
+      "ignored_frame_count": 0,
+      "required_trainable_classes_present": true,
+      "trainable_frame_count": 3040
+    },
+    "test_parquet_rows_or_schemas_loaded": 0,
+    "test_storage_files_read_only_as_opaque_bytes_for_required_P8_tree_SHA_verification": true,
+    "train_gradient_row_occurrences": {
+      "fixed_minibatch_overfit": 7680,
+      "fixed_seed_repeat": 38400,
+      "primary_baseline": 38400,
+      "smoke": 256
+    },
+    "validation_gradient_row_occurrences": 0,
+    "validation_inference_row_occurrences": {
+      "fixed_seed_repeat": 56625,
+      "primary_baseline": 56625
+    }
+  },
+  "terminal_status": {
+    "BEST_CLASSIFIER_SELECTED": "yes",
+    "DETECTOR_THRESHOLD_APPROVED": "no",
+    "G1_CREATED": "no",
+    "G2_CREATED": "no",
+    "NEXT_ALLOWED_ACTION": "request_validation_only_detector_calibration",
+    "R0_CLASSIFIER_TRAINING": "complete",
+    "TASK2_REWARD_TERMINAL_CREATED": "no",
+    "TEST_EVALUATED": "no"
+  },
+  "validation_threshold_disposition": {
+    "calibration_executed": false,
+    "detector_threshold_approved": false,
+    "threshold_0_5_metrics_are_training_diagnostics_only": true
+  }
+}

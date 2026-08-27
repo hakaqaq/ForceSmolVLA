@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.1",
+  "artifact_status": "unapproved_placeholder",
+  "approval_status": "unapproved",
+  "generation_permitted": false,
+  "required_label_contract": "external_frozen_episode_frame_reward_sidecar",
+  "terminal_inference": "forbidden",
+  "forbidden_terminal_rules": [
+    "last_valid_converted_frame",
+    "saved_true",
+    "episode_end_heuristic",
+    "image_or_action_heuristic"
+  ],
+  "episodes": []
+}

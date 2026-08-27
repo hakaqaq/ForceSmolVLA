@@ -1,0 +1,7 @@
+{
+  "actor_batch_size": 4,
+  "candidate_id": "critic_a4_c32_repeat2",
+  "critic_batch_size": 32,
+  "mode": "critic",
+  "repeat": 2
+}

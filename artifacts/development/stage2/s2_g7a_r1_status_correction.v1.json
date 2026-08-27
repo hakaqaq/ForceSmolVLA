@@ -1,0 +1,28 @@
+{
+  "schema_version": "forcesmolvla_s2_g7a_r1_status_correction.v1",
+  "artifact_role": "append_only_semantic_correction",
+  "original_artifact_modified": false,
+  "original_report_modified": false,
+  "G7A_R1_FAIL": "preserved",
+  "optimizer_updates": 0,
+  "polyak_updates": 0,
+  "actor_updates": 0,
+  "checkpoint_created": false,
+  "authoritative_interpretation": {
+    "CRITIC_NUMERICAL_STABILITY": "not_measured",
+    "nan_detected": false,
+    "inf_detected": false,
+    "loss_divergence_detected": false,
+    "reason": "r1 stopped during update-0 diagnostics before the first Critic optimizer update"
+  },
+  "bound_r1_evidence": {
+    "artifact": {
+      "path": "artifacts/development/stage2/s2_g7a_critic_warmup_preflight.json",
+      "sha256": "1a9b6aa20c88df7cacddfaf29bbfb6e7a18270461ccd18cb074101a3ee371001"
+    },
+    "report": {
+      "path": "docs/s2_g7a_critic_warmup_report.md",
+      "sha256": "bba3075124a0773bec31f2161ed2e513c52c3834e043a71489c76a46a1277cef"
+    }
+  }
+}

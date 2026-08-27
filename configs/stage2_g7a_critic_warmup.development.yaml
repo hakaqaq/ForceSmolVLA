@@ -1,0 +1,125 @@
+schema_version: forcesmolvla_stage2_g7a_critic_warmup.development.v1
+authorization: G7A_critic_only_warmup_and_q_gradient_measurement
+claim_scope: development_measurement_only
+
+initialization:
+  actor: frozen_stage1_r5
+  critic: g2_seed0_fresh
+  targets: exact_deepcopy_from_online
+  target_actor: null
+  g5_or_g6_checkpoint_parent: false
+
+warmup:
+  critic_updates: 256
+  critic_batch_size: 16
+  calql_batch_size: 16
+  actor_optimizer_updates: 0
+  actor_scheduler_steps: 0
+  critic_optimizer: Adam
+  critic_lr: 3.0e-4
+  critic_betas: [0.9, 0.999]
+  critic_eps: 1.0e-8
+  critic_weight_decay: 0.0
+  critic_grad_clip_norm: 10.0
+  critic_scheduler: constant
+  polyak_tau: 0.005
+  polyak_updates_per_target: 256
+  calql_alpha: 0.1
+  calql_candidates_per_source: 2
+  calql_temperature: 1.0
+  calql_clipping_enabled: false
+
+transition_contract:
+  policy_rate_hz: 10
+  anchor_stride: 3
+  critic_action_shape: [3, 7]
+  behavior_mask: executed_action_mask
+  policy_mask: [true, true, true]
+  td_target: reward_plus_stored_discount_times_min_target_twin_q
+  repeated_gamma_done_or_bootstrap_multiplier: false
+
+data:
+  source: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  train_transition_count: 10075
+  validation_transition_count: 1205
+  test_reads_allowed: false
+  manual_g1_allowed: false
+  manual_labels_allowed: false
+  reward_classifier_inference_allowed: false
+  warmup_sampling: recoverable_uniform_g5_samplers
+  balancing_or_prioritization: false
+
+diagnostics:
+  evaluation_updates: [0, 256]
+  train_critic_probe_size: 128
+  validation_scope: complete_validation_transition_split
+  evaluation_batch_size: 16
+  actor_gradient_probe_batches: 32
+  actor_gradient_probe_batch_size: 1
+  beta: 1.0
+  eta_candidates: [0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0]
+  reference_weighted_ratio_band: [0.01, 0.10]
+  prior_g5_weighted_ratio_measurement: 1.46801e-4
+  fixed_seed:
+    train_probe_rows: 7301
+    actor_probe_rows: 7302
+    train_td_noise: 7311
+    train_current_policy_noise: 7312
+    train_next_policy_noise: 7313
+    train_random_proposals: 7314
+    validation_td_noise: 7321
+    validation_current_policy_noise: 7322
+    validation_next_policy_noise: 7323
+    validation_random_proposals: 7324
+    actor_probe_q_noise: 7331
+    actor_probe_fm_noise: 7332
+    actor_probe_fm_timestep: 7333
+
+rng:
+  base_seed: 42
+  pythonhashseed: 42
+  cublas_workspace_config: ':4096:8'
+  deterministic_algorithms: true
+  named_stream_seeds:
+    td_sampler: 4201
+    calql_sampler: 4202
+    empirical_random_proposal: 4204
+    td_next_action_flow_noise: 4205
+    calql_current_policy_flow_noise: 4206
+    calql_next_policy_flow_noise: 4207
+
+checkpoint:
+  path: artifacts/development/stage2/g7a_critic_warmup_checkpoint.development
+  atomic: true
+  strict_fresh_process_load_required: true
+  markers:
+    artifact_status: DEVELOPMENT_G7A_CRITIC_WARMUP_ONLY
+    deployment_status: NOT_FOR_DEPLOYMENT
+    policy_evaluation_status: NOT_FOR_POLICY_EVALUATION
+    long_train_parent_status: NOT_AN_APPROVED_LONG_TRAIN_PARENT
+    g7b_use_status: APPROVED_ONLY_FOR_G7B_IF_EXPLICITLY_AUTHORIZED
+    robot_execution_authorized: false
+
+research_limits:
+  all_success_demos: true
+  reward_model_training_overlap: true
+  unbiased_policy_evaluation: false
+  policy_improvement_claim_allowed: false
+  failure_recovery_claim_allowed: false
+  ood_conservatism_claim_allowed: false
+  reward_model_generalization_claim_allowed: false
+
+forbidden:
+  - actor_optimizer
+  - actor_scheduler
+  - actor_update
+  - target_actor
+  - G7B
+  - long_run
+  - policy_evaluation
+  - actor_export
+  - deployment
+  - robot_execution
+  - test_transition_or_image_read
+  - manual_g1_or_label_read
+  - reward_classifier_inference_or_update

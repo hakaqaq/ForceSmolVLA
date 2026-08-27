@@ -1,0 +1,102 @@
+schema_version: forcesmolvla_stage2_g2_force_aware_twin_q.development.v1
+authorization: yes_development_topology_only
+claim_scope: development
+
+training_data:
+  only_authorized_root: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  manifest_sha256: 96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5
+  transition_index_sha256: f61dbd6d7e396aca8dc60794be0a16d314553d081dd659b1928bc8c5118bd474
+  frame_scores_sha256: 98df6007d8b75328335abef8b15016de90cb6893f55b5310e466502b2333208d
+  allowed_split: train
+  expected_train_transition_count: 10075
+  manual_g1_allowed: false
+  manual_labels_allowed: false
+
+critic_interface:
+  name: mask_aware_3_step_macro_action_critic
+  f_policy_hz: 10
+  action_slots: 3
+  action_features: 7
+  action_shape: [3, 7]
+  mask_shape: [3]
+  full_horizon_input_allowed: false
+  padded_32d_action_allowed: false
+  absolute_action_allowed: false
+  unnormalized_delta_action_allowed: false
+
+observation:
+  camera_order: [observation.images.camera1, observation.images.camera2]
+  camera_shape_chw: [3, 480, 640]
+  normalized_state_features: 7
+  normalized_wrench_features: 6
+  canonical_task: Pick up the purple ring and place it onto the red peg.
+  canonical_task_sha256: f85a8ba9fe524b42220c85e71737bdcf3ffd441b772981b92a87d6a89e324219
+  frozen_task_feature_dim: 256
+
+topology:
+  critics: 2
+  independent_module_instances: true
+  camera_backbone: ConRFT_resnetv1_10_frozen_pre_pooling
+  camera_backbone_native_normalization: GroupNorm_4_groups
+  camera_backbone_output_shape: [512, 4, 4]
+  spatial_projection: ConRFT_style_spatial_learned_embeddings_8_to_256
+  camera_feature_dim_each: 256
+  task_projection_dim: 128
+  state_mlp: [7, 128, 128]
+  wrench_mlp: [6, 128, 128]
+  shared_per_critic_action_slot_mlp: [7, 128, 128]
+  slot_position_embedding_dim: 128
+  ordered_action_flat_dim: 384
+  explicit_mask_dim: 3
+  concat_dim: 1283
+  fusion_mlp: [1283, 1024, 512, 256, 1]
+  trainable_normalization: LayerNorm
+  trainable_activation: SiLU
+  dropout: 0
+  batch_norm_allowed: false
+  output_dtype: float32
+  final_layer_initialization: uniform_nonzero_scale_1e-3
+
+resnet_asset:
+  safe_npz_path: artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz
+  safe_npz_sha256: 16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5
+  manifest_path: artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json
+  manifest_sha256: 2e54ec70420ebd9cd73c12689937fca2597cf74d8ea608526b805999647e22e8
+  expected_backbone_key_count: 36
+  allowed_unused_output_head_key_count: 2
+  random_backbone_allowed: false
+
+targets:
+  names: [q1_target, q2_target]
+  initialization: exact_deep_copy
+  permanent_eval: true
+  requires_grad: false
+  optimizer_membership: forbidden
+  polyak_function_only: true
+  tested_synthetic_tau: [0.0, 0.005, 1.0]
+  approved_training_tau: null
+
+actor_q_contract:
+  critic_receives_full_action7: true
+  actor_q_guided_action_dims: [0, 1, 2, 3, 4, 5]
+  gripper_objective: flow_matching_only
+  gripper_q_gradient: false
+  gripper_stop_gradient_owner: future_actor_q_action_construction
+  public_gripper_binary_decode_unchanged: true
+
+frozen_development_limits:
+  STRICT_ZERO_FRAME_ALIGNMENT_ACCEPTANCE: FAIL_preserved
+  DEVELOPMENT_DETECTOR_OPERATIONAL: true
+  FORMAL_DETECTOR_APPROVED: false
+  REWARD_MODEL_TRAINING_OVERLAP: true
+  UNBIASED_REWARD_MODEL_EVALUATION: false
+
+forbidden_this_run:
+  - optimizer_creation
+  - optimizer_step
+  - TD_loss
+  - Cal_QL_loss
+  - Actor_Q_joint_loss
+  - Actor_update
+  - Critic_update
+  - G4_through_G7

@@ -1,0 +1,11 @@
+{
+  "branch_pid": 3033458,
+  "checkpoint": {
+    "file_count": 26,
+    "total_file_size": 4177758204,
+    "tree_sha256": "d0f0fd0ce9125c3f3a0783903fc5167aa17f22f553021caa577aceb38cc05347"
+  },
+  "continuous_in_memory_from_cycle1": true,
+  "state_digest": "f529fc44fec16af9fcb857c51d59e05484ca9ee545ed8c9e55e825f23ef16812",
+  "trace_digest": "ed3f2cc2ae321a10bdf097aa15110cf8889199f425fdbf8baaa4e7afd62c85bf"
+}

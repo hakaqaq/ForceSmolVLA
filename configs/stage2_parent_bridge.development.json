@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0",
+  "gate": "S2-G0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "parent_checkpoint": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000",
+  "parent_source_binding": {
+    "path": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000/manifests/source_binding.json",
+    "sha256": "74587f4dbf1e52c3cac7c472ebc2a04f51e65ef2b55875f276e71f75aaf95254"
+  },
+  "parent_resolved_training_config": {
+    "path": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000/manifests/resolved_training_config.json",
+    "sha256": "bbf466043f5db6387f24ee03dec0e45213bac9b977d1ddb92bd95adbe38ae605"
+  },
+  "parent_checkpoint_artifact_manifest_sha256": "46a82acff03414fbd03a3c874433e332b153d78712b27313f78332e6650492fe",
+  "stage2_source_manifest": "artifacts/development/stage2/stage2_source_manifest.v4.json",
+  "parent_p4_to_p8_qualification_artifacts": [
+    {"path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_fp32.json", "sha256": "42dff9b52f3a86a93255784efd597281a230c4bca689fdf32fab107430d29c1d"},
+    {"path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_bf16.json", "sha256": "3681061b9b0974cdd03159d6987433ccd1666df5817685d77efb74b2fb59854f"},
+    {"path": "artifacts/development/p5_v4_2_r7_gpu_preflight.json", "sha256": "cadfb8e399182f6c981fe57e943fed6d755648144cb37139568b3e7bc4a1b3ba"},
+    {"path": "artifacts/development/p5_v4_2_r7_source_binding.json", "sha256": "4a2d2ab0c515cc5b45687f46f736ac9cad05b88b6df5a15256cea3f7207c46f9"},
+    {"path": "artifacts/development/p6_v4_2_r7_gpu_preflight.json", "sha256": "e7adfa8968c9bbf11aee3377e7d54f8645f5166daa13e3ead73ce905de92be7a"},
+    {"path": "artifacts/development/p6_v4_2_r7_source_binding.json", "sha256": "291983591fce875b04b3632b1c503243b1881c3f92021c18765c494a27a24395"},
+    {"path": "artifacts/development/p7_v4_2_r7_gpu_preflight.json", "sha256": "120745433fd8e73b0e6427b0b8940daec5a365a900005978fc42c8d02cbbea5e"},
+    {"path": "artifacts/development/p7_v4_2_r7_source_binding.json", "sha256": "c276405aaed1f3a3f70dff344ac3cbd988037dc87ebf3d9d2db302834223760b"},
+    {"path": "artifacts/development/p8_v4_2_r7_gpu_preflight.json", "sha256": "cb258ec178fbf881ab5e1b7a7020121ac8d32222f581418920c620b9433c7818"},
+    {"path": "artifacts/development/p8_v4_2_r7_source_binding.json", "sha256": "e402b489aa902272f61c7843b5595eeae22caa9ba358927d331020106c926756"}
+  ],
+  "current_git": {
+    "head": "8cd99bff895d46c3f5334acfc308a1571673c483",
+    "head_parent": "c50ea7876a47986955724f2117d548a4302a52eb"
+  },
+  "parent_snapshot_changed_file_allowlist": {
+    "configs/training_checkpoint_contract.development.json": {
+      "status": "modified",
+      "parent_sha256": "f3d8527a9e63758283f80ebd2775d5f208a808c0a4d87efcb725ee2b1678d096",
+      "current_path": "configs/training_checkpoint_contract.development.json",
+      "current_sha256": "e20c3109ecc6f3af6e3e5a7b1a662b102d3cbcb55d52e7bf7e36550758f6fbc5"
+    },
+    "src/forcesmolvla/inference.py": {
+      "status": "modified",
+      "parent_sha256": "b26166ea8fde078f6780f37d9a282bf0ef2fc4ca21e440191a536efa36c6c483",
+      "current_path": "src/forcesmolvla/inference.py",
+      "current_sha256": "f27fb012692c8dcbca0cd7892e9800693c46fe7a8c4fb71c5077445cd65ab73b"
+    },
+    "tools/train_task2_full_gpu.py": {
+      "status": "renamed_and_refactored",
+      "parent_sha256": "643698922968e63ae68eb29654831970e29db3ba67a49ac0de518d808437b859",
+      "current_path": "tools/train.py",
+      "current_sha256": "c91321e61d5a84b88e251f89611a7f64eeb5c9bb74c5c2d9d0d0d4c221db4316"
+    }
+  },
+  "current_head_change_allowlist": [
+    {"status": "M", "path": "README.md"},
+    {"status": "A", "path": "configs/train/task2.json"},
+    {"status": "M", "path": "configs/training_checkpoint_contract.development.json"},
+    {"status": "M", "path": "tests/test_p9_shadow.py"},
+    {"status": "A", "path": "tests/test_train_entry.py"},
+    {"status": "M", "path": "tools/build_p9_source_binding.py"},
+    {"status": "D", "path": "tools/run_task2_training_when_gpu_free.sh"},
+    {
+      "status": "R077",
+      "old_path": "tools/train_task2_full_gpu.py",
+      "new_path": "tools/train.py"
+    }
+  ],
+  "authorized_worktree_prefixes": [
+    "docs/ForceRFT_Stage2_Offline_TwinQ_Implementation_Spec_v3_v4_2_aligned.md",
+    "docs/ForceRFT_Stage2_Offline_TwinQ_Implementation_Spec_v4.md",
+    "src/forcesmolvla/rft/",
+    "configs/stage2_",
+    "labels/task2_episode_outcomes.v1.json",
+    "tools/build_stage2_source_manifest.py",
+    "tools/build_task2_offline_rl_transitions.py",
+    "tools/preflight_s2_",
+    "tests/test_s2_",
+    "tests/test_rft_",
+    "artifacts/development/stage2/",
+    "datasets/task2_forcerft_rl_v1/"
+  ],
+  "parity": {
+    "batch_size": 2,
+    "horizon": 50,
+    "euler_steps": 10,
+    "fixed_fixture": "parent_checkpoint/manifests/fixed_validation_fixture.json",
+    "normalized_action_exact": true,
+    "public_absolute_action_exact": true,
+    "state_dict_exact": true
+  },
+  "forbidden": [
+    "parent_checkpoint_mutation",
+    "historical_artifact_rewrite",
+    "optimizer_restore",
+    "optimizer_step",
+    "real_rft_training"
+  ]
+}

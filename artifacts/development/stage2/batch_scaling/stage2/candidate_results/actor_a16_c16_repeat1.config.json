@@ -1,0 +1,7 @@
+{
+  "actor_batch_size": 16,
+  "candidate_id": "actor_a16_c16_repeat1",
+  "critic_batch_size": 16,
+  "mode": "actor",
+  "repeat": 1
+}

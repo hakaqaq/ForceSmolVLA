@@ -1,0 +1,215 @@
+{
+  "artifact_status": "PASS_DEVELOPMENT_R0_TRAINING_DATA_READY",
+  "bindings": {
+    "conversion_manifest": {
+      "file_size": 44796,
+      "path": "datasets/task2_lerobotv3/conversion_manifest.json",
+      "sha256": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477"
+    },
+    "dataset_info": {
+      "file_size": 6342,
+      "path": "datasets/task2_lerobotv3/meta/info.json",
+      "sha256": "841a80224f4159fe4ee3bf308c99eecb4e8289faea3dac98eecab53cb6f4b5a8"
+    },
+    "frame_label_inventory": {
+      "file_size": 60041,
+      "path": "artifacts/development/stage2/reward_classifier/task2_frame_label_inventory.v2.json",
+      "sha256": "8839793f0e5d5c6d866b41e32bcb7fa576cd984a9faf5507719a1735be611a65"
+    },
+    "ingestion_validator": {
+      "file_size": 29518,
+      "path": "tools/reward_classifier/ingest_task2_frame_labels.py",
+      "sha256": "b1debdc65eea18c9c0d1078625e96140e20f7a10315bafc5314d1d049740a421"
+    },
+    "p8_dataset_hash_implementation": {
+      "file_size": 30779,
+      "path": "tools/preflight_p6_variants_gpu.py",
+      "sha256": "d4d07ab20021d5721192483151d76730857113a635991d315616d61360e27d4d"
+    },
+    "p8_dataset_storage": {
+      "dataset_root": "datasets/task2_lerobotv3",
+      "file_count": 51,
+      "hash_algorithm": "sha256(concat(sorted(relative_path + NUL + file_sha256 + LF)))",
+      "included_roots": [
+        "data",
+        "videos",
+        "meta"
+      ],
+      "tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+    },
+    "p8_source_binding": {
+      "file_size": 19362,
+      "path": "artifacts/development/p8_v4_2_r7_source_binding.json",
+      "sha256": "e402b489aa902272f61c7843b5595eeae22caa9ba358927d331020106c926756"
+    },
+    "review_bundle_manifest": {
+      "file_size": 14265,
+      "path": "artifacts/development/stage2/task2_reward_review_bundle_v1/bundle_manifest.json",
+      "sha256": "13d5748091c2255054d94f09a233ceeaf7d096d61c7161598e701a5fddfc3442"
+    },
+    "review_index": {
+      "file_size": 2303582,
+      "path": "artifacts/development/stage2/task2_reward_review_bundle_v1/review_index.json",
+      "sha256": "dc3b5c1f605814ffe4accde9baedd5eee05839f7689de6496ec6e1a201aa002f"
+    },
+    "reviewed_labels": {
+      "file_size": 40100,
+      "path": "labels/task2_reward_frame_labels.v2.reviewed.json",
+      "sha256": "ecda7d480f6a4c49dbe63a31b7e3172b30a5470437510522b1da2217eae77a9c"
+    },
+    "split_manifest": {
+      "file_size": 1224,
+      "path": "datasets/task2_lerobotv3/split_manifest.json",
+      "sha256": "5e63e21d1daf47cfe51fe169497cc77f69bc42e7c919cce708cb2bb0de3dc8d7"
+    },
+    "task_semantics_audit": {
+      "file_size": 3057,
+      "path": "artifacts/development/stage2/task_semantics_audit.v4.json",
+      "sha256": "3051b27112de1e5f8f5608df713c6a2d00f9a7aa5ff7c3b1a0380d84332953c6"
+    },
+    "v2_protocol": {
+      "file_size": 4922,
+      "path": "docs/task2_reward_labeling_protocol.v2.md",
+      "sha256": "1df11221d8c5072abdffa0a3cf3446ec5381fb8df0d84e715c6c50ee1942cdd6"
+    },
+    "v2_template": {
+      "file_size": 36063,
+      "path": "labels/task2_reward_frame_labels.v2.template.json",
+      "sha256": "9af3d5a391d0b3fc3afdf5d01351a2e2982a86cfeab1b6cba5028c79ff6658f7"
+    }
+  },
+  "class_statistics": {
+    "test": {
+      "classes": {
+        "ambiguous": {
+          "episode_count": 0,
+          "frame_count": 0
+        },
+        "hard_negative": {
+          "episode_count": 4,
+          "frame_count": 729
+        },
+        "ordinary_negative": {
+          "episode_count": 4,
+          "frame_count": 2167
+        },
+        "positive": {
+          "episode_count": 4,
+          "frame_count": 144
+        }
+      },
+      "episode_count": 4,
+      "frame_count": 3040,
+      "ignored_frame_count": 0,
+      "required_trainable_classes_present": true,
+      "trainable_frame_count": 3040
+    },
+    "train": {
+      "classes": {
+        "ambiguous": {
+          "episode_count": 1,
+          "frame_count": 197
+        },
+        "hard_negative": {
+          "episode_count": 38,
+          "frame_count": 10025
+        },
+        "ordinary_negative": {
+          "episode_count": 37,
+          "frame_count": 19890
+        },
+        "positive": {
+          "episode_count": 38,
+          "frame_count": 1712
+        }
+      },
+      "episode_count": 38,
+      "frame_count": 31824,
+      "ignored_frame_count": 197,
+      "required_trainable_classes_present": true,
+      "trainable_frame_count": 31627
+    },
+    "validation": {
+      "classes": {
+        "ambiguous": {
+          "episode_count": 0,
+          "frame_count": 0
+        },
+        "hard_negative": {
+          "episode_count": 5,
+          "frame_count": 811
+        },
+        "ordinary_negative": {
+          "episode_count": 5,
+          "frame_count": 2792
+        },
+        "positive": {
+          "episode_count": 5,
+          "frame_count": 172
+        }
+      },
+      "episode_count": 5,
+      "frame_count": 3775,
+      "ignored_frame_count": 0,
+      "required_trainable_classes_present": true,
+      "trainable_frame_count": 3775
+    }
+  },
+  "leakage_checks": {
+    "episode_intersection_counts": {
+      "train_test": 0,
+      "train_validation": 0,
+      "validation_test": 0
+    },
+    "episode_leakage": false,
+    "global_index_intersection_counts": {
+      "train_test": 0,
+      "train_validation": 0,
+      "validation_test": 0
+    },
+    "row_identity_intersection_counts": {
+      "train_test": 0,
+      "train_validation": 0,
+      "validation_test": 0
+    },
+    "row_leakage": false,
+    "unique_global_index_count": 38639,
+    "unique_row_identity_count": 38639
+  },
+  "operation": "R0_LABEL_INGESTION_AND_READINESS_ARTIFACT",
+  "readiness": {
+    "DEVELOPMENT_R0_TRAINING_DATA_READY": "yes",
+    "FORMAL_INDEPENDENT_HELDOUT_READY": "no",
+    "NEXT_ALLOWED_ACTION": "request_R0_classifier_training_approval",
+    "R0_TRAINING_AUTHORIZED": "no",
+    "development_heldout": "episode_disjoint_within_task2",
+    "formal_heldout": "independent_collection_run_not_available"
+  },
+  "schema_version": "force_rft_s2_r0_label_ingestion_readiness.v4",
+  "scope_boundaries": {
+    "g1_or_g2_created": false,
+    "human_labels_modified": false,
+    "optimizer_or_checkpoint_created": false,
+    "reward_classifier_training_performed": false,
+    "reward_or_terminal_created": false,
+    "twin_q_cal_ql_or_actor_training_performed": false
+  },
+  "validation": {
+    "episode_leakage": false,
+    "human_reviewed_episode_count": 47,
+    "intervals_valid": true,
+    "manual_audit_complete": true,
+    "overlapping_frame_count": 0,
+    "p8_dataset_storage_exact_match": true,
+    "positive_continuous_to_episode_end": true,
+    "review_timestamp_absent_or_null_count": 47,
+    "review_timestamp_autofilled": false,
+    "review_timestamp_optional": true,
+    "review_timestamp_present_and_valid_count": 0,
+    "row_leakage": false,
+    "schema_valid": true,
+    "source_top_level_artifact_status": "BLANK_MANUAL_LABEL_TEMPLATE_V2",
+    "source_top_level_manual_audit_complete": false,
+    "unlabeled_frame_count": 0
+  }
+}

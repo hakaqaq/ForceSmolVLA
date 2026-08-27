@@ -1,0 +1,189 @@
+{
+  "all_gradients_none": true,
+  "artifact_status": "DEVELOPMENT_SINGLE_CYCLE_ONLY",
+  "counters": {
+    "actor_optimizer_updates": 1,
+    "actor_scheduler_steps": 1,
+    "actor_target_updates": 0,
+    "critic_optimizer_updates": 2,
+    "critic_scheduler_steps": 2,
+    "q1_target_polyak_updates": 2,
+    "q2_target_polyak_updates": 2,
+    "training_cycles": 1
+  },
+  "cycle_boundary_complete": true,
+  "deployment_status": "NOT_FOR_DEPLOYMENT",
+  "files": [
+    {
+      "file_size": 793,
+      "relative_path": "manifests/parameter_ownership.json",
+      "sha256": "0cbebd1155d24326eb604c52e6610120f5223d672b8394172bbdce58c7034cdb"
+    },
+    {
+      "file_size": 1151,
+      "relative_path": "manifests/proposal_population.json",
+      "sha256": "bd5c64a0ce8946759af41ab08b3494b4343a2e4f65e34010065263cc97929eea"
+    },
+    {
+      "file_size": 500,
+      "relative_path": "manifests/trainability.json",
+      "sha256": "415573966eb2e560b81055339ecb44c26bb8ecc813978cd46a01498ea6e9578c"
+    },
+    {
+      "file_size": 1420277139,
+      "relative_path": "models/actor_state.pt",
+      "sha256": "b56b963be47090c352652cdb07c188ba05151ebb1bb501df907706ed23b83aff"
+    },
+    {
+      "file_size": 56463747,
+      "relative_path": "models/q1_state.pt",
+      "sha256": "85f67dd6b72dc9b5707c48829b1b9d0556fd991dea909e35f6a0066df87ceeaa"
+    },
+    {
+      "file_size": 56464699,
+      "relative_path": "models/q1_target_state.pt",
+      "sha256": "0015608623d7930ea70ed4ed3befe8efb0a819307b9e8caeccb60de5c14186fa"
+    },
+    {
+      "file_size": 56463747,
+      "relative_path": "models/q2_state.pt",
+      "sha256": "aaa2f623722a349b85bca428922d1829fd0837b57b11625f4bb722a511271715"
+    },
+    {
+      "file_size": 56464699,
+      "relative_path": "models/q2_target_state.pt",
+      "sha256": "c004837cf7dfcf53f263d752130b9408b7026cdda450dbecc67e8e001a90a606"
+    },
+    {
+      "file_size": 2462058038,
+      "relative_path": "optimizers/actor_optimizer_state.pt",
+      "sha256": "238bb4c8f913775e49ac4076f0b8bffda91d7d41f0652042ff45e2b772b60077"
+    },
+    {
+      "file_size": 68766655,
+      "relative_path": "optimizers/critic_optimizer_state.pt",
+      "sha256": "557dff76e3727ea10ac6e8122b65fc99fb8fcd15dacb04cd49a03cd2d92e8670"
+    },
+    {
+      "file_size": 1537,
+      "relative_path": "schedulers/actor_scheduler_state.pt",
+      "sha256": "8161ae6354fa92df74c8179d0b11568bd6d5cea0c323463d42667148491ced05"
+    },
+    {
+      "file_size": 1607,
+      "relative_path": "schedulers/critic_scheduler_state.pt",
+      "sha256": "c9442d1fb2690dc19398c03410dc7e6eade3fbbf3da2d9984dfb4678f6c6d68a"
+    },
+    {
+      "file_size": 41960,
+      "relative_path": "startup_snapshot/automatic_g1/g1_manifest.json",
+      "sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
+    },
+    {
+      "file_size": 9105,
+      "relative_path": "startup_snapshot/bindings/frozen_inputs_startup.json",
+      "sha256": "f74ca60db039397e310b4851364a10e3f9deccfeba624e15abbf238de5bea1d3"
+    },
+    {
+      "file_size": 405907,
+      "relative_path": "startup_snapshot/detector/r0_one_shot_test_evaluation.v1.json",
+      "sha256": "ec02e805c84a80778be9e16525d751da058a28bd1ebde85f394b33875b6a3988"
+    },
+    {
+      "file_size": 1862311,
+      "relative_path": "startup_snapshot/detector/r0_validation_detector_calibration.v1.json",
+      "sha256": "5d52475ce518eef2315bbf6908140d318d89d025311efdb3f7e8c8204d6bdb47"
+    },
+    {
+      "file_size": 4503,
+      "relative_path": "startup_snapshot/detector/stage2_g1_frozen_detector_transition_view.development.json",
+      "sha256": "12799e30e0e93deda63b08ba9e38208d217c0d90868267c0f32a9eecbdcff22c"
+    },
+    {
+      "file_size": 45781,
+      "relative_path": "startup_snapshot/g2/s2_g2_twin_q_topology.json",
+      "sha256": "9a0b006bd13a2fca844e3f4b118b1347dce4d1022f03671ca3293728588a90a2"
+    },
+    {
+      "file_size": 3565,
+      "relative_path": "startup_snapshot/g2/stage2_g2_force_aware_twin_q.development.yaml",
+      "sha256": "ab23300edc478cff53a82215702fd659cc838933426f611042c9c6a3a88b7dcc"
+    },
+    {
+      "file_size": 10856,
+      "relative_path": "startup_snapshot/g3/s2_g3_differentiable_flow.v4.json",
+      "sha256": "30020b624a4243b08248b1ae90144a88be0e87cc43e733477475fa78acd54acc"
+    },
+    {
+      "file_size": 100696,
+      "relative_path": "startup_snapshot/g3/s2_g3_gradient_precision_matrix.v4.json",
+      "sha256": "bd66830b149189cd4785ead8444ea286a92d7116267db113b4d3b9cd5f340ec0"
+    },
+    {
+      "file_size": 50594,
+      "relative_path": "startup_snapshot/g4/s2_g4_loss_preflight.json",
+      "sha256": "2fd063497ec9b803610c384d13149360a77531ac5dd6a784d83f5b3d2678cf3a"
+    },
+    {
+      "file_size": 3261,
+      "relative_path": "startup_snapshot/g4/stage2_g4_losses.development.yaml",
+      "sha256": "519845ffce0a7db404abd85fb2b8502a4905412d1c8eeb2624a247ddf67e3949"
+    },
+    {
+      "file_size": 14299,
+      "relative_path": "startup_snapshot/parent_r5/artifact_manifest.json",
+      "sha256": "46a82acff03414fbd03a3c874433e332b153d78712b27313f78332e6650492fe"
+    },
+    {
+      "file_size": 176701,
+      "relative_path": "startup_snapshot/parent_r5/trainability_manifest.json",
+      "sha256": "6397c5c8d7903e1387a0ec174a6206624ff947ece0d57d61f061801d5c2d62f6"
+    },
+    {
+      "file_size": 4279,
+      "relative_path": "startup_snapshot/resolved_config/stage2_g5_single_cycle.development.yaml",
+      "sha256": "877499afc58a2af546be8dee7ce1144b8ea38b5fe486a450e07da989ea4e5ed7"
+    },
+    {
+      "file_size": 36923,
+      "relative_path": "startup_snapshot/reward_classifier/r0_training_validation_report.v1.json",
+      "sha256": "c48d845f77b3b7b46b5788998c412c280d93e0e8a863d5edeb488fcea8cb2aac"
+    },
+    {
+      "file_size": 4477,
+      "relative_path": "startup_snapshot/reward_classifier/source_artifact_manifest.v1.json",
+      "sha256": "b3ea8b9b855145babffaa0f046b0769f37336927a888f1c6222b461a9edd566a"
+    },
+    {
+      "file_size": 4529,
+      "relative_path": "startup_snapshot/source/stage2_source_manifest.v7_g5.json",
+      "sha256": "9da745a4295a431c5fecb6e54f8d0d56aab18daaff6480804810d742aea4bf10"
+    },
+    {
+      "file_size": 248,
+      "relative_path": "state/counters.json",
+      "sha256": "77bd4296589a6bfc30f023ca9c68791aa43d344b87d28eb945db8963ee8d8e43"
+    },
+    {
+      "file_size": 38005,
+      "relative_path": "state/rng_states.pt",
+      "sha256": "4eca83255d3ac7546c36540a702d52e5468695c35e9f8e1f7924f985faa379cb"
+    },
+    {
+      "file_size": 112611,
+      "relative_path": "state/sampler_states.pt",
+      "sha256": "80ae333aa9ea5c913dbfb8169c772c48aa1f73236d663ebcff0cff7f3c502df0"
+    }
+  ],
+  "files_sha256": "77cad1cb77bec631fbcbd800eff4db9d2c0768dd278fedd61555643a59bb21b8",
+  "fresh_process_exact_resume_tested": false,
+  "long_train_parent_status": "NOT_AN_APPROVED_LONG_TRAIN_PARENT",
+  "manifest_payload_sha256": "b256cf562829aa6da42bb11aac2c2380899ccf588662d76138a8fecd7c5d6819",
+  "pending_accumulation_microbatches": 0,
+  "pending_graphs": 0,
+  "pending_optimizer_steps": 0,
+  "policy_evaluation_status": "NOT_FOR_POLICY_EVALUATION",
+  "resume_exactness_tested": false,
+  "robot_execution_authorized": false,
+  "schema_version": "forcesmolvla_g5_single_cycle_checkpoint.v1"
+}

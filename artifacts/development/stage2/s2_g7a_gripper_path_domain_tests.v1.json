@@ -1,0 +1,35 @@
+{
+  "schema_version": "forcesmolvla_s2_g7a_gripper_path_domain_tests.v1",
+  "command": "python -m pytest -q tests/test_rft_gripper_path_domain_audit.py tests/test_rft_flow_sampling.py tests/test_rft_losses.py tests/test_rft_critic.py",
+  "passed": 25,
+  "failed": 0,
+  "warnings": 2,
+  "coverage": {
+    "public_execution_api_calls_from_critic_loss_source_zero": true,
+    "critic_action_shape_b_k3_7": true,
+    "executed_action_mask_contract": true,
+    "normalized_discrete_gripper_endpoints": true,
+    "tcp6_actor_q_gradient_nonzero": true,
+    "gripper_actor_q_gradient_exact_zero": true,
+    "flow_matching_gripper_gradient_nonzero": true,
+    "invalid_slot_and_padding_invariance": true,
+    "detached_public_diagnostic_reproducible": true,
+    "detached_public_invalid_recorded_not_replaced": true,
+    "detached_public_diagnostic_rng_unchanged": true,
+    "direct_public_api_remains_fail_closed": true,
+    "r1_offending_fixture_permanent": true
+  },
+  "offending_fixture": {
+    "episode_id": "episode_000017",
+    "row_id": "4480|episode_000017|222|225",
+    "action_slot": 2,
+    "candidate_index": 0,
+    "g_flow_normalized": 1.71746826171875,
+    "g_unnormalized_continuous_width_m": 0.09740415960550308,
+    "expected_failure_code": "PUBLIC_GRIPPER_CANDIDATE_OUTSIDE_FROZEN_TOLERANCE"
+  },
+  "source_manifest": {
+    "path": "artifacts/development/stage2/stage2_source_manifest.v10_g7a_domain_audit.json",
+    "sha256": "0f02b7f3e28a5e929a0d1ddfbc2b6bfced6a8da86b224ce7180373eb22572866"
+  }
+}

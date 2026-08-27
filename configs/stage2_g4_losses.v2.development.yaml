@@ -1,0 +1,64 @@
+schema_version: forcesmolvla_stage2_g4_losses.development.v2
+authorization: G4_loss_implementation_only
+claim_scope: development_only
+
+action_contract_v2:
+  path: configs/stage2_action_contract.v2.development.json
+  internal_gripper_projection: total_binary
+  public_execution_authorization: false
+
+frozen_inputs:
+  actor_checkpoint: outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000
+  actor_flow_horizon: 50
+  actor_flow_euler_steps: 10
+  actor_flow_precision: bf16_outer_with_v4_2_fp32_islands
+  only_rl_transition_root: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  only_rl_transition_manifest_sha256: 96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5
+  only_rl_split: train
+  manual_g1_allowed: false
+  manual_labels_allowed: false
+  validation_test_transition_allowed: false
+
+td_target:
+  target_actor_exists: false
+  target_formula: reward_plus_stored_discount_times_min_target_q
+  terminal_rows_call_next_actor_or_target_critics: false
+
+calql:
+  description: Cal-QL-style finite-candidate conservative objective
+  candidate_sets: [random, policy_current, policy_next]
+  duplicate_candidates_allowed: true
+  resampling_to_remove_duplicates: false
+
+unapproved_training_parameters:
+  beta: null
+  eta: null
+  calql_alpha: null
+  candidate_count_M: null
+  temperature_T: null
+  clip_min: null
+  clip_max: null
+  polyak_tau: null
+  random_proposal_distribution: null
+
+synthetic_zero_update_preflight_only:
+  batch_size: 2
+  candidate_count_M: 2
+  temperature_T: 0.7
+  clip_min: -2.0
+  clip_max: 3.0
+  calql_alpha: 0.2
+  beta: 0.4
+  eta: 0.2
+  fixed_repeats: 3
+  seed: 42
+
+forbidden_this_run:
+  - optimizer_creation
+  - optimizer_step
+  - parameter_update
+  - polyak_update
+  - target_actor_creation
+  - public_action_validation
+  - clipping
+  - candidate_resampling

@@ -1,0 +1,145 @@
+{
+  "acceptance_status": "development_only",
+  "all_parameters_trainable": true,
+  "checkpoint": "/home/rlc123/ForceSmolVLA/outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000",
+  "checkpoint_artifact_manifest_sha256": "46a82acff03414fbd03a3c874433e332b153d78712b27313f78332e6650492fe",
+  "fixed_noise_normalized_action": {
+    "after": {
+      "dtype": "torch.float32",
+      "sha256": "e90022094b593d8404c12929b4f52c3a3479531e54adf29c6397f7e6a1519395",
+      "shape": [
+        2,
+        50,
+        7
+      ]
+    },
+    "before": {
+      "dtype": "torch.float32",
+      "sha256": "e90022094b593d8404c12929b4f52c3a3479531e54adf29c6397f7e6a1519395",
+      "shape": [
+        2,
+        50,
+        7
+      ]
+    },
+    "exact": true,
+    "max_abs_error": 0.0
+  },
+  "formal_eligible": false,
+  "gate": "S2-G0",
+  "gate_status": "pass",
+  "optimizer_state_restored": false,
+  "optimizer_steps": 0,
+  "public_absolute_action": {
+    "after": {
+      "dtype": "torch.float32",
+      "sha256": "2d894b3692c5409f57945f325a44b753436e30c44ebd4463cf0ec5c8da75bafc",
+      "shape": [
+        2,
+        50,
+        7
+      ]
+    },
+    "before": {
+      "dtype": "torch.float32",
+      "sha256": "2d894b3692c5409f57945f325a44b753436e30c44ebd4463cf0ec5c8da75bafc",
+      "shape": [
+        2,
+        50,
+        7
+      ]
+    },
+    "exact": true,
+    "max_abs_error": 0.0
+  },
+  "real_rft_training_started": false,
+  "robot_actions_sent": 0,
+  "schema_version": "1.0",
+  "source_bridge": {
+    "current_git_head": "8cd99bff895d46c3f5334acfc308a1571673c483",
+    "current_head_changes": [
+      {
+        "path": "README.md",
+        "status": "M"
+      },
+      {
+        "path": "configs/train/task2.json",
+        "status": "A"
+      },
+      {
+        "path": "configs/training_checkpoint_contract.development.json",
+        "status": "M"
+      },
+      {
+        "path": "tests/test_p9_shadow.py",
+        "status": "M"
+      },
+      {
+        "path": "tests/test_train_entry.py",
+        "status": "A"
+      },
+      {
+        "path": "tools/build_p9_source_binding.py",
+        "status": "M"
+      },
+      {
+        "path": "tools/run_task2_training_when_gpu_free.sh",
+        "status": "D"
+      },
+      {
+        "new_path": "tools/train.py",
+        "old_path": "tools/train_task2_full_gpu.py",
+        "status": "R077"
+      }
+    ],
+    "parent_optimizer_updates": 10000,
+    "parent_resolved_training_config_sha256": "bbf466043f5db6387f24ee03dec0e45213bac9b977d1ddb92bd95adbe38ae605",
+    "parent_snapshot_changed_files": [
+      "configs/training_checkpoint_contract.development.json",
+      "src/forcesmolvla/inference.py",
+      "tools/train_task2_full_gpu.py"
+    ],
+    "parent_source_binding_sha256": "74587f4dbf1e52c3cac7c472ebc2a04f51e65ef2b55875f276e71f75aaf95254",
+    "parent_training_samples": 40000,
+    "worktree_changes": [
+      "?? artifacts/development/stage2/s2_g0_parent_bridge.json",
+      "?? artifacts/development/stage2/s2_g3_differentiable_flow.json",
+      "?? artifacts/development/stage2/s2_g3_gradient_precision_matrix.json",
+      "?? artifacts/development/stage2/stage2_source_manifest.json",
+      "?? artifacts/development/stage2/stage2_source_manifest.provisional.json",
+      "?? artifacts/development/stage2/stage2_source_manifest.provisional.v2.json",
+      "?? configs/stage2_action_contract.development.json",
+      "?? configs/stage2_g3_differentiable_flow.development.json",
+      "?? configs/stage2_g3_gradient_matrix.development.json",
+      "?? configs/stage2_parent_bridge.development.json",
+      "?? configs/stage2_reward_spec.development.yaml",
+      "?? docs/ForceRFT_Stage2_Offline_TwinQ_Implementation_Spec_v3_v4_2_aligned.md",
+      "?? labels/task2_episode_outcomes.v1.json",
+      "?? src/forcesmolvla/rft/__init__.py",
+      "?? src/forcesmolvla/rft/flow_sampling.py",
+      "?? src/forcesmolvla/rft/offline_transitions.py",
+      "?? src/forcesmolvla/rft/source_manifest.py",
+      "?? tests/test_rft_flow_sampling.py",
+      "?? tests/test_rft_offline_transitions.py",
+      "?? tests/test_s2_parent_bridge.py",
+      "?? tools/build_stage2_source_manifest.py",
+      "?? tools/build_task2_offline_rl_transitions.py",
+      "?? tools/preflight_s2_common.py",
+      "?? tools/preflight_s2_differentiable_flow_gpu.py",
+      "?? tools/preflight_s2_g3_gradient_matrix_gpu.py",
+      "?? tools/preflight_s2_parent_bridge.py"
+    ]
+  },
+  "stage2_source_manifest": {
+    "file_count": 20,
+    "file_size": 5610,
+    "files_sha256": "a4d2534b3ba7f965e2fd4eb1228f6723d865451331fbc661d9af7958c936af9f",
+    "relative_path": "artifacts/development/stage2/stage2_source_manifest.json",
+    "sha256": "6f7e5cc5d825f15cb179b93f3d6bf085d40f2e58d3f4cef8ca64a7c051a40733"
+  },
+  "state_dict": {
+    "after_sha256": "8b97dc1d15d13afb3c4fb28ebfaadc82ae43c19aee9460d95ada6f93a4d6cb1a",
+    "before_sha256": "8b97dc1d15d13afb3c4fb28ebfaadc82ae43c19aee9460d95ada6f93a4d6cb1a",
+    "exact": true
+  }
+}

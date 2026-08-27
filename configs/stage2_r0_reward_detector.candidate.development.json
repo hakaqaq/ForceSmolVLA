@@ -1,0 +1,137 @@
+{
+  "approval_status": "not_approved",
+  "artifact_status": "PROPOSED_UNAPPROVED_VALIDATION_ONLY_CANDIDATE",
+  "bindings": {
+    "best_checkpoint": {
+      "file_size": 87217825,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+      "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+    },
+    "calibration_source": {
+      "file_size": 48261,
+      "path": "tools/reward_classifier/calibrate_task2_reward_detector.py",
+      "sha256": "f6a7f5f411423bd6a09a94e39516f92bbe5edb6dd0d6d7d399d364ec84c684a5"
+    },
+    "inventory": {
+      "file_size": 60041,
+      "path": "artifacts/development/stage2/reward_classifier/task2_frame_label_inventory.v2.json",
+      "sha256": "8839793f0e5d5c6d866b41e32bcb7fa576cd984a9faf5507719a1735be611a65"
+    },
+    "reviewed_labels": {
+      "file_size": 40100,
+      "path": "labels/task2_reward_frame_labels.v2.reviewed.json",
+      "sha256": "ecda7d480f6a4c49dbe63a31b7e3172b30a5470437510522b1da2217eae77a9c"
+    },
+    "training_report": {
+      "file_size": 36923,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/r0_training_validation_report.v1.json",
+      "sha256": "c48d845f77b3b7b46b5788998c412c280d93e0e8a863d5edeb488fcea8cb2aac"
+    }
+  },
+  "candidate": {
+    "consecutive_positive_frames": 5,
+    "probability_threshold": 0.83
+  },
+  "causal_semantics": {
+    "backfill_to_streak_start": false,
+    "input_rate_hz": 30,
+    "latched_after_trigger_within_episode": true,
+    "positive_t": "sigmoid(logit_t) >= probability_threshold",
+    "reset_on": [
+      "episode_start_or_end",
+      "non_consecutive_frame_index",
+      "invalid_or_missing_image",
+      "classifier_inference_failure",
+      "any_input_validity_failure"
+    ],
+    "trigger": "current frame at which the consecutive-positive streak first reaches M"
+  },
+  "created_at": "2026-08-25T12:28:31.279881+00:00",
+  "prohibitions": {
+    "G1_created": false,
+    "G2_created": false,
+    "detector_threshold_approved": false,
+    "reward_or_terminal_created": false,
+    "test_evaluated": false
+  },
+  "schema_version": "forcesmolvla_r0_reward_detector_candidate.v1",
+  "selection": {
+    "feasibility": {
+      "early_trigger_episode_count": 0,
+      "missed_success_episode_count": 0
+    },
+    "lexicographic_order": [
+      "minimum_max_detection_delay",
+      "minimum_median_detection_delay",
+      "minimum_hard_negative_frame_FPR",
+      "higher_tau",
+      "larger_M"
+    ],
+    "selected_metrics": {
+      "M": 5,
+      "completion_positive_frame_recall": 1.0,
+      "detected_success_episode_count": 5,
+      "early_trigger_episode_count": 0,
+      "episodes": [
+        {
+          "detection_delay_frames": 0,
+          "detection_delay_ms": 0.0,
+          "episode_id": "episode_000007",
+          "first_confident_complete_frame": 708,
+          "longest_post_completion_consecutive_positive_length": 42,
+          "longest_pre_completion_consecutive_positive_length": 4,
+          "trigger_frame": 708
+        },
+        {
+          "detection_delay_frames": 0,
+          "detection_delay_ms": 0.0,
+          "episode_id": "episode_000012",
+          "first_confident_complete_frame": 606,
+          "longest_post_completion_consecutive_positive_length": 42,
+          "longest_pre_completion_consecutive_positive_length": 4,
+          "trigger_frame": 606
+        },
+        {
+          "detection_delay_frames": 3,
+          "detection_delay_ms": 100.0,
+          "episode_id": "episode_000017",
+          "first_confident_complete_frame": 706,
+          "longest_post_completion_consecutive_positive_length": 32,
+          "longest_pre_completion_consecutive_positive_length": 1,
+          "trigger_frame": 709
+        },
+        {
+          "detection_delay_frames": 0,
+          "detection_delay_ms": 0.0,
+          "episode_id": "episode_000037",
+          "first_confident_complete_frame": 836,
+          "longest_post_completion_consecutive_positive_length": 26,
+          "longest_pre_completion_consecutive_positive_length": 4,
+          "trigger_frame": 836
+        },
+        {
+          "detection_delay_frames": 4,
+          "detection_delay_ms": 133.33333333333334,
+          "episode_id": "episode_000039",
+          "first_confident_complete_frame": 747,
+          "longest_post_completion_consecutive_positive_length": 30,
+          "longest_pre_completion_consecutive_positive_length": 0,
+          "trigger_frame": 751
+        }
+      ],
+      "feasible": true,
+      "hard_negative_frame_FPR": 0.01726263871763255,
+      "longest_pre_completion_consecutive_positive_length": 4,
+      "max_detection_delay_frames": 4,
+      "max_detection_delay_ms": 133.33333333333334,
+      "median_detection_delay_frames": 0.0,
+      "median_detection_delay_ms": 0.0,
+      "missed_success_episode_count": 0,
+      "ordinary_negative_frame_FPR": 0.0,
+      "pareto_optimal": true,
+      "shortest_post_completion_consecutive_positive_length": 26,
+      "tau": 0.83
+    }
+  },
+  "validation_probability_timeline_sha256": "667f881dcb1435637f519efb9925897ee6c61aea519892f99601bb6a50be52a4"
+}

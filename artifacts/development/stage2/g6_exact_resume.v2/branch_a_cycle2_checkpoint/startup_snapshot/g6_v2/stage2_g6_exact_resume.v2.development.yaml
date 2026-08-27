@@ -1,0 +1,87 @@
+schema_version: forcesmolvla_stage2_g6_exact_resume.development.v2
+authorization: G6_fresh_process_exact_resume_only
+claim_scope: development_same_hardware_software_exact_resume_only
+
+action_contract_v2:
+  path: configs/stage2_action_contract.v2.development.json
+  internal_gripper_projection: total_binary
+  public_execution_authorization: false
+
+parent:
+  g5_config: configs/stage2_g5_single_cycle.v2.development.yaml
+  g5_config_sha256: a728c4544c11f3ff15ba2b3b7ceca9cea7a068169ddc3913fa5707127f0f0fd0
+  g5_checkpoint: artifacts/development/stage2/g5_single_cycle_checkpoint.v2.development
+  g5_checkpoint_tree_sha256: e33dde34072d2c3fff36d28480c8cb1ee590673e360061e26cf44435dfcc46ce
+  g5_checkpoint_manifest_sha256: 12dd0087ac6e1abee527901283fa79219f0a7b4cf1109b244be7bfa52b862c95
+  g5_source_manifest: artifacts/development/stage2/stage2_source_manifest.v13_g5_v2.json
+  g5_source_manifest_sha256: 7a4565d1896b93ffad69eda8fff89c548c8e80aa328c498bf62de090a50b5ccf
+
+inherited_training_contract:
+  critic_updates_per_cycle: 2
+  actor_updates_per_cycle: 1
+  action_slots_K: 3
+  candidates_per_source_M: 2
+  beta_flow: 1.0
+  eta_actor_q: 0.01
+  alpha_calql: 0.1
+  cql_temperature: 1.0
+  cql_clipping_enabled: false
+  polyak_tau: 0.005
+  actor_lr: 1.0e-5
+  critic_lr: 3.0e-4
+  actor_effective_batch_size: 4
+  critic_batch_size: 16
+  actor_precision: bf16_with_v4_2_fp32_islands
+  critic_precision: fp32
+  proposal: empirical_normalized_Kx7_behavior_macro
+  hyperparameter_changes_allowed: false
+
+branches:
+  execution: serial_fresh_spawn_processes
+  branch_a:
+    initial_state: deterministic_r5_actor_and_g2_twin_q_S0
+    load_g5_training_state: false
+    cycles_executed: [1, 2]
+  branch_b:
+    initial_state: strict_G5_v2_S1_checkpoint_restore
+    cycles_executed: [2]
+  cycle_2_global_updates:
+    critic: [3, 4]
+    actor: [2]
+    polyak_per_target: [3, 4]
+
+exact_parity:
+  rtol: 0.0
+  atol: 0.0
+  equal_nan: false
+  tensor_comparison: original_dtype_contiguous_bytes_sha256
+  optimizer_keying: stable_parameter_name
+
+determinism:
+  pythonhashseed: 42
+  cublas_workspace_config: ':4096:8'
+  deterministic_algorithms: true
+  torch_compile: false
+  data_augmentation: false
+  num_workers: 0
+
+checkpoint_markers:
+  artifact_status: DEVELOPMENT_EXACT_RESUME_TEST_ONLY
+  deployment_status: NOT_FOR_DEPLOYMENT
+  policy_evaluation_status: NOT_FOR_POLICY_EVALUATION
+  long_train_parent_status: NOT_AN_APPROVED_LONG_TRAIN_PARENT
+  robot_execution_authorized: false
+
+forbidden:
+  - G7B
+  - cycle_3
+  - long_training
+  - hyperparameter_adjustment
+  - policy_evaluation
+  - actor_export
+  - deployment
+  - robot_execution
+  - public_execution_path
+  - validation_or_test_transition_read
+  - manual_g1_or_label_read
+  - reward_classifier_inference_or_update

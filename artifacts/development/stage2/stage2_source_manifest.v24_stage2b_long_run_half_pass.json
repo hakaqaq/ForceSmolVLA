@@ -1,0 +1,360 @@
+{
+  "artifact_status": "development_only",
+  "files": [
+    {
+      "artifact_role": "accepted_batch_evidence",
+      "file_size": 65732,
+      "relative_path": "artifacts/development/stage2/batch_scaling_report.json",
+      "runtime_imported": true,
+      "sha256": "9d5060c3f296759400a99fefe200a01da6eb3bb7587371961d8d803d98e1acfe"
+    },
+    {
+      "artifact_role": "automatic_detector_g1_binding",
+      "file_size": 41960,
+      "relative_path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/g1_manifest.json",
+      "runtime_imported": true,
+      "sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
+    },
+    {
+      "artifact_role": "parent_checkpoint_manifest",
+      "file_size": 4159,
+      "relative_path": "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/checkpoint_manifest.json",
+      "runtime_imported": true,
+      "sha256": "2e0902076cb12a1391613230679730d035155528c9be01bd17dce960d5e707f7"
+    },
+    {
+      "artifact_role": "parent_actor_r5_binding",
+      "file_size": 1261,
+      "relative_path": "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/manifests/actor_binding.json",
+      "runtime_imported": true,
+      "sha256": "4d4c654a65e51b03dba40b7f5cbce4aec905d68eca85aefa5ac7029a257368c2"
+    },
+    {
+      "artifact_role": "fixed_diagnostic_binding",
+      "file_size": 1200894,
+      "relative_path": "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/manifests/fixed_diagnostics.json",
+      "runtime_imported": true,
+      "sha256": "d27e0746a9633e5e9fd9ee22ed02248b1e8948c962da22e6d65b714f3599c47c"
+    },
+    {
+      "artifact_role": "historical_zero_update_failed_artifact",
+      "file_size": 350,
+      "relative_path": "artifacts/development/stage2/s2_stage2b_long_run_half_pass.json",
+      "runtime_imported": false,
+      "sha256": "16d32f3d9b94d98e034b1c019773ed4029e9a5463310402bd5d20fd8f4ff883e"
+    },
+    {
+      "artifact_role": "historical_zero_update_failed_artifact_v3",
+      "file_size": 350,
+      "relative_path": "artifacts/development/stage2/s2_stage2b_long_run_half_pass.v3.json",
+      "runtime_imported": false,
+      "sha256": "16d32f3d9b94d98e034b1c019773ed4029e9a5463310402bd5d20fd8f4ff883e"
+    },
+    {
+      "artifact_role": "accepted_batch_source_closure",
+      "file_size": 6796,
+      "relative_path": "artifacts/development/stage2/stage2_source_manifest.v20_trainability_batch_scaling.json",
+      "runtime_imported": true,
+      "sha256": "b1e866c0b09cf9dc9c979f952dc2ecba6ce5fcef951fbf710a921a7fa2b4ed16"
+    },
+    {
+      "artifact_role": "historical_zero_update_failed_source_closure",
+      "file_size": 11286,
+      "relative_path": "artifacts/development/stage2/stage2_source_manifest.v21_stage2b_long_run_half_pass.json",
+      "runtime_imported": false,
+      "sha256": "c2873c36c0cf392c855e4e6560852267c9fff9894a6135f5560cf757d07aeb64"
+    },
+    {
+      "artifact_role": "historical_zero_update_failed_source_closure_v3",
+      "file_size": 13635,
+      "relative_path": "artifacts/development/stage2/stage2_source_manifest.v23_stage2b_long_run_half_pass.json",
+      "runtime_imported": false,
+      "sha256": "7fe23647b772a965910b4d6142248d0f08913c3c02319130cbe9d1f34cb635aa"
+    },
+    {
+      "artifact_role": "public_safety_contract",
+      "file_size": 6326,
+      "relative_path": "configs/live_action_safety.task2.development.yaml",
+      "runtime_imported": true,
+      "sha256": "2619b9fe93af11cc021e193790e84261b0f0ae9524714c40a12ca97f5b28fcba"
+    },
+    {
+      "artifact_role": "active_action_contract",
+      "file_size": 2020,
+      "relative_path": "configs/stage2_action_contract.v2.development.json",
+      "runtime_imported": true,
+      "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6"
+    },
+    {
+      "artifact_role": "frozen_loss_optimizer_rng_base",
+      "file_size": 4622,
+      "relative_path": "configs/stage2_g5_single_cycle.v2.development.yaml",
+      "runtime_imported": true,
+      "sha256": "a728c4544c11f3ff15ba2b3b7ceca9cea7a068169ddc3913fa5707127f0f0fd0"
+    },
+    {
+      "artifact_role": "active_trainability_contract",
+      "file_size": 1956,
+      "relative_path": "configs/stage2_trainability_contract.v2.development.json",
+      "runtime_imported": true,
+      "sha256": "360cee1b50f2a520922c4b05ddcb22ef31d38f01cc4c220403d4c29e3637bad4"
+    },
+    {
+      "artifact_role": "resolved_training_config",
+      "file_size": 3831,
+      "relative_path": "configs/stage2b_long_run_half_pass.development.yaml",
+      "runtime_imported": true,
+      "sha256": "d05043232a76618aa8dfb78187fa795ecc38c24165eb57af1ba30a45e7f6d922"
+    },
+    {
+      "artifact_role": "public_rules_schema",
+      "file_size": 5494,
+      "relative_path": "schemas/rulespec.schema.json",
+      "runtime_imported": true,
+      "sha256": "3a726dea8509c91fe5e77e4ae89cc2b9a7cf40bc2c018a75650af950cce795ef"
+    },
+    {
+      "artifact_role": "public_action_contract",
+      "file_size": 15234,
+      "relative_path": "src/forcesmolvla/action_delta.py",
+      "runtime_imported": true,
+      "sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1"
+    },
+    {
+      "artifact_role": "public_chunk_context",
+      "file_size": 3910,
+      "relative_path": "src/forcesmolvla/context.py",
+      "runtime_imported": true,
+      "sha256": "d5a729808b0dd1b8fa9b662a44a2d27d005a52bbcab63dee96ab255f1c4fd027"
+    },
+    {
+      "artifact_role": "force_router_types",
+      "file_size": 26935,
+      "relative_path": "src/forcesmolvla/force_token.py",
+      "runtime_imported": true,
+      "sha256": "afe246fd1eed83d3fdf48eff67d9456c614cd9ae775d226cf5119aa2ca974d35"
+    },
+    {
+      "artifact_role": "actor_core",
+      "file_size": 40356,
+      "relative_path": "src/forcesmolvla/modeling_forcesmolvla.py",
+      "runtime_imported": true,
+      "sha256": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610"
+    },
+    {
+      "artifact_role": "resume_state_digest",
+      "file_size": 8972,
+      "relative_path": "src/forcesmolvla/rft/canonical_state.py",
+      "runtime_imported": true,
+      "sha256": "aa6cd7d6125c150ba1fccc8a6b51f7602d1c07cdce6707176c423d3bc59011bc"
+    },
+    {
+      "artifact_role": "twin_q_topology",
+      "file_size": 20231,
+      "relative_path": "src/forcesmolvla/rft/critic.py",
+      "runtime_imported": true,
+      "sha256": "f0b0ff41d2ea772f649f57c1d3b043ab6d8c8625d1316a86e9bbc227175feeca"
+    },
+    {
+      "artifact_role": "action_contract_v2_adapter",
+      "file_size": 3589,
+      "relative_path": "src/forcesmolvla/rft/critic_action_adapter_v2.py",
+      "runtime_imported": true,
+      "sha256": "92b0861057f11c246da0eb9dfed3eac48af87491cf3f1b14e063834b891144f6"
+    },
+    {
+      "artifact_role": "checkpoint_tree_hash",
+      "file_size": 23118,
+      "relative_path": "src/forcesmolvla/rft/exact_resume.py",
+      "runtime_imported": true,
+      "sha256": "31561aeb3904349a5685ec44bd371995e4883ebda2b5232e19d55841f4ed5d2c"
+    },
+    {
+      "artifact_role": "differentiable_flow",
+      "file_size": 6744,
+      "relative_path": "src/forcesmolvla/rft/flow_sampling.py",
+      "runtime_imported": true,
+      "sha256": "2a82085432647c4907257e41f0bd6ebfd7e9d4c7c98c5eba05331783320dc689"
+    },
+    {
+      "artifact_role": "frozen_vlm_actor_path",
+      "file_size": 10950,
+      "relative_path": "src/forcesmolvla/rft/frozen_vlm_trainability.py",
+      "runtime_imported": true,
+      "sha256": "703655f029cdde0835455f500f2424fd44f6f5671d4d8e74437aa7444e230d6b"
+    },
+    {
+      "artifact_role": "atomic_cycle_checkpoint",
+      "file_size": 8379,
+      "relative_path": "src/forcesmolvla/rft/g7_long_run.py",
+      "runtime_imported": true,
+      "sha256": "290fe46400fed8ce8c39289572ae6f7a45ac73c4642566ff1a7f3409e9a1662c"
+    },
+    {
+      "artifact_role": "g7a_checkpoint_contract",
+      "file_size": 16757,
+      "relative_path": "src/forcesmolvla/rft/g7a.py",
+      "runtime_imported": true,
+      "sha256": "16ef83737db8879cbf7c891f3dc1601aafc37e7a6cb2bef3488e82795f5b4948"
+    },
+    {
+      "artifact_role": "optimizer_and_parent_contract",
+      "file_size": 10791,
+      "relative_path": "src/forcesmolvla/rft/g7b.py",
+      "runtime_imported": true,
+      "sha256": "e7dcee5976acf2e02bd863198c864eb9f9f82d71d6dc2dc7b7c53a099faefc32"
+    },
+    {
+      "artifact_role": "g4_losses",
+      "file_size": 22246,
+      "relative_path": "src/forcesmolvla/rft/losses.py",
+      "runtime_imported": true,
+      "sha256": "bf3df4d34f3a202623bc75f0e55009fc9b1bbcc4d3126c96f86c0e3f7c4682d5"
+    },
+    {
+      "artifact_role": "source_manifest_validator",
+      "file_size": 7308,
+      "relative_path": "src/forcesmolvla/rft/source_manifest.py",
+      "runtime_imported": true,
+      "sha256": "c72dbf80e3c917e80c21777282c434c0a79d57efae4ad7d7be88ae82457a8a07"
+    },
+    {
+      "artifact_role": "checkpoint_primitives",
+      "file_size": 7479,
+      "relative_path": "src/forcesmolvla/rft/training_checkpoint.py",
+      "runtime_imported": true,
+      "sha256": "96f805345c3821c376291d07c9bd9cd82d2bde9eeee12f300a00182d26160153"
+    },
+    {
+      "artifact_role": "training_cycle_primitives",
+      "file_size": 13851,
+      "relative_path": "src/forcesmolvla/rft/training_cycle.py",
+      "runtime_imported": true,
+      "sha256": "314c8f841e5a2ae6511068117010ecb517cf1f177aa66ec3b27ad286b4a80501"
+    },
+    {
+      "artifact_role": "router_objective",
+      "file_size": 19894,
+      "relative_path": "src/forcesmolvla/router_training.py",
+      "runtime_imported": true,
+      "sha256": "f14ef41e8264992cd7d5990043bbcf32cc7ff4fc8126798c7063e02349b4a8cb"
+    },
+    {
+      "artifact_role": "public_rules",
+      "file_size": 1382,
+      "relative_path": "src/forcesmolvla/rules.py",
+      "runtime_imported": true,
+      "sha256": "1efae1bbc26a49e45e7a0773bf52260430e1c405fbf88c7d345253f1ab9fd9f5"
+    },
+    {
+      "artifact_role": "cpu_contract_test",
+      "file_size": 1611,
+      "relative_path": "tests/test_stage2b_long_run_half_pass.py",
+      "runtime_imported": false,
+      "sha256": "49adb2d853ee03e1ec9b4b510a1adf189c86f4712dd18af1a3f1c215dfc22d0d"
+    },
+    {
+      "artifact_role": "mask_audit_regression_test",
+      "file_size": 259,
+      "relative_path": "tests/test_stage2b_long_run_half_pass_v2.py",
+      "runtime_imported": false,
+      "sha256": "55b02eb44641de8a5f974c68661b171c4a7f7061aefb8a4e00bea3e7d73dcf9b"
+    },
+    {
+      "artifact_role": "frozen_vlm_update_primitives",
+      "file_size": 34104,
+      "relative_path": "tools/benchmark_stage2_batch_scaling_gpu.py",
+      "runtime_imported": true,
+      "sha256": "dfc7511885f89372c3c10b7de8d12aace98c03878369df55bb79f1a791f36e77"
+    },
+    {
+      "artifact_role": "critic_update_and_data_adapter",
+      "file_size": 88437,
+      "relative_path": "tools/preflight_s2_g5_single_cycle_gpu.py",
+      "runtime_imported": true,
+      "sha256": "27ba19f6312e8cd02b619d56f75cec7bce532c73b2f2d415585f7cc2609aa95b"
+    },
+    {
+      "artifact_role": "validated_mask_audit",
+      "file_size": 28128,
+      "relative_path": "tools/run_s2_g7_batch_candidate.py",
+      "runtime_imported": true,
+      "sha256": "5f9dcfa55c45b862f7aff6a291b61a13a5161338d27b6e7d1e5e9337f582009a"
+    },
+    {
+      "artifact_role": "action_contract_v2_install",
+      "file_size": 4420,
+      "relative_path": "tools/run_s2_g7a_r2_worker.py",
+      "runtime_imported": true,
+      "sha256": "2f3c6ed2b3efbcc65d701d28fd327941d6e022677ef060c00fb782891fbad707"
+    },
+    {
+      "artifact_role": "parent_initialization_and_validation",
+      "file_size": 58359,
+      "relative_path": "tools/run_s2_g7a_worker.py",
+      "runtime_imported": true,
+      "sha256": "c097215a76ffa2c9c7966e2763ac4e41e7a327bd48c30a80b43f685c23a5c882"
+    },
+    {
+      "artifact_role": "parent_loader_and_public_audit",
+      "file_size": 29755,
+      "relative_path": "tools/run_s2_g7b_worker.py",
+      "runtime_imported": true,
+      "sha256": "49e4c77f9cebee89a898e9153adb323395f123931e2abb772a3915eba88b1d99"
+    },
+    {
+      "artifact_role": "base_coordinator",
+      "file_size": 14775,
+      "relative_path": "tools/run_stage2b_long_run_half_pass.py",
+      "runtime_imported": true,
+      "sha256": "8921d75b00ce460cfcf26ce5b1bf63e8dd207d4a2e2d7f6cbc6f58ba683f27d2"
+    },
+    {
+      "artifact_role": "active_coordinator",
+      "file_size": 649,
+      "relative_path": "tools/run_stage2b_long_run_half_pass_v4.py",
+      "runtime_imported": true,
+      "sha256": "753a1d4291d562d232ecf720f6d481fcacbdd8c5836be07b8b568492fb9dd735"
+    },
+    {
+      "artifact_role": "base_training_and_resume_worker",
+      "file_size": 41999,
+      "relative_path": "tools/run_stage2b_long_run_half_pass_worker.py",
+      "runtime_imported": true,
+      "sha256": "4b9c1a76572a890393403addfd8ebfcb0b7b84a54ffd1e0dc9b1fb160ec3d41b"
+    },
+    {
+      "artifact_role": "mask_audit_correction",
+      "file_size": 546,
+      "relative_path": "tools/run_stage2b_long_run_half_pass_worker_v2.py",
+      "runtime_imported": true,
+      "sha256": "1efde148cc637fb6113792999a69112ec85a6da037a5ec1634de313f93abb126"
+    },
+    {
+      "artifact_role": "source_binding_correction",
+      "file_size": 476,
+      "relative_path": "tools/run_stage2b_long_run_half_pass_worker_v3.py",
+      "runtime_imported": true,
+      "sha256": "3363172e6a00eb14f62d04fe5f121b98df367198f697890ee61536ae4971e838"
+    },
+    {
+      "artifact_role": "active_diagnostic_binding",
+      "file_size": 872,
+      "relative_path": "tools/run_stage2b_long_run_half_pass_worker_v4.py",
+      "runtime_imported": true,
+      "sha256": "8780977784a1426698bba684798e89e09e259c520f621b43f6081083fea58742"
+    },
+    {
+      "artifact_role": "public_inference_binding",
+      "file_size": 24865,
+      "relative_path": "tools/serve_policy.py",
+      "runtime_imported": true,
+      "sha256": "9e1d15455c687c7f7087aae1a5d5e6aeebe64b7540a72b60c09e60bc921768fc"
+    }
+  ],
+  "files_sha256": "d1f62bdd8d3b9a4bb47c37d64aca3e8c426dd927c3953a149101ec81f098f626",
+  "schema_version": "1.0",
+  "scope": "Stage2B_frozen_VLM_half_actor_pass",
+  "self_exclusion_reason": "content-addressed manifest cannot include itself",
+  "self_included": false
+}

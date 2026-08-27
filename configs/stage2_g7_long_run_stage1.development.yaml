@@ -1,0 +1,83 @@
+schema_version: forcesmolvla_stage2_g7_long_run_stage1.development.v1
+authorization: development_long_run_stage1_only
+claim_scope: development_learning_dynamics_only
+
+parent:
+  path: artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint
+  tree_sha256: f8c08b9058d173211a7306d370a97a848bfc1f7569ac52e6cc88baacff0c0d40
+  checkpoint_manifest_sha256: 2e0902076cb12a1391613230679730d035155528c9be01bd17dce960d5e707f7
+  actor_source: frozen_stage1_r5
+  actor_optimizer_updates: 0
+  critic_optimizer_updates: 256
+  g7b_smoke_checkpoint_used_as_parent: false
+
+recipe:
+  joint_cycles: 256
+  critic_updates_per_cycle: 2
+  actor_updates_per_cycle: 1
+  expected_critic_updates: 512
+  expected_actor_updates: 256
+  expected_polyak_updates_per_target: 512
+  eta_q: 10.0
+  eta_status: development_only
+  beta_flow: 1.0
+  frozen_cycle_config: configs/stage2_g5_single_cycle.v2.development.yaml
+  frozen_cycle_config_sha256: a728c4544c11f3ff15ba2b3b7ceca9cea7a068169ddc3913fa5707127f0f0fd0
+
+gradient_dominance_fail_closed:
+  metric: weighted_eta_grad_q_over_beta_grad_fm
+  rolling_window_cycles: 32
+  rolling_median_maximum: 1.0
+  minimum_cycles_before_check: 32
+  runtime_eta_change_allowed: false
+
+diagnostics:
+  fixed_train_observation: true
+  fixed_flow_noise_and_timestep: true
+  validation_cycles: [0, 64, 128, 256]
+  validation_scope: complete_detector_g1_validation_transition_split
+  validation_gradient_enabled: false
+  validation_selection_or_early_stop: false
+  public_predict_each_cycle: true
+  q_statistics_domain: post_update_behavior_action_on_each_td_batch
+  q_statistics_fields: [mean, variance, minimum, maximum]
+  raw_gripper_out_of_public_tolerance_rate: measurement_only
+
+checkpoint:
+  root: artifacts/development/stage2/g7_long_run_stage1_checkpoints
+  rolling_name: recovery_latest
+  rolling_interval_cycles: 32
+  milestone_cycles: [0, 64, 128, 256]
+  complete_cycle_boundary_only: true
+  atomic_replace: true
+  milestone_hardlink_snapshot: true
+  final_fresh_process_strict_load: true
+  markers:
+    artifact_status: DEVELOPMENT_LONG_RUN_STAGE1
+    deployment_status: NOT_FOR_DEPLOYMENT
+    policy_evaluation_status: NOT_FOR_POLICY_EVALUATION
+    next_stage_parent_status: REVIEW_REQUIRED_BEFORE_USE
+    robot_execution_authorized: false
+
+data:
+  only_rl_gradient_source: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  train_transition_count: 10075
+  validation_transition_count: 1205
+  validation_read_only: true
+  test_reads_allowed: false
+  manual_g1_allowed: false
+  manual_labels_allowed: false
+  reward_classifier_inference_allowed: false
+
+research_limits:
+  all_success_demos: true
+  reward_model_training_overlap: true
+  unbiased_policy_evaluation: false
+  eta_paper_final: false
+  eta_online_deployment: false
+  long_run_stage2_authorized: false
+  robot_execution_authorized: false
+
+stop_after:
+  joint_cycles: 256
+  next_allowed_action: review_256_cycle_learning_dynamics_and_freeze_final_budget

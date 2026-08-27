@@ -1,0 +1,152 @@
+schema_version: forcesmolvla_stage2_g5_single_cycle.development.v1
+authorization: G5_development_single_cycle_only
+claim_scope: development_single_cycle_mechanics_only
+
+cycle:
+  training_cycles: 1
+  critic_updates_per_cycle: 2
+  actor_updates_per_cycle: 1
+  critic_warmup_bypassed_for_single_cycle_preflight: true
+  eta_warmup_bypassed_for_single_cycle_preflight: true
+  second_cycle_allowed: false
+
+transition_contract:
+  f_policy_hz: 10
+  anchor_stride: 3
+  critic_action_shape: [3, 7]
+  behavior_mask: executed_action_mask
+  policy_mask: [true, true, true]
+  td_target: reward_plus_stored_discount_times_min_target_twin_q
+  repeated_gamma_done_or_bootstrap_multiplier: false
+  target_actor_exists: false
+
+batching:
+  critic_batch_size: 16
+  calql_batch_size: 16
+  actor_microbatch_size: 1
+  actor_gradient_accumulation: 4
+  actor_effective_batch_size: 4
+  num_workers: 0
+  data_augmentation: false
+
+loss:
+  beta_flow: 1.0
+  eta_actor_q: 0.01
+  alpha_calql: 0.1
+  cql_candidates_per_source_M: 2
+  cql_total_candidates: 6
+  cql_temperature: 1.0
+  cql_clipping_enabled: false
+  cql_clip_min: -.inf
+  cql_clip_max: .inf
+  balance_weight: 0.01
+  z_weight: 0.001
+  objective_description: Cal-QL-style finite-candidate conservative objective
+
+optimizers:
+  actor:
+    type: AdamW
+    learning_rate: 1.0e-5
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-10
+    grad_clip_norm: 10.0
+    scheduler: constant
+    stage1_decay_no_decay_grouping_reused: true
+  critic:
+    type: Adam
+    learning_rate: 3.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 0.0
+    grad_clip_norm: 10.0
+    scheduler: constant
+
+targets:
+  initialization: exact_deepcopy_from_online
+  polyak_tau: 0.005
+  updates_per_target: 2
+  actor_target_updates: 0
+  permanent_eval: true
+  requires_grad: false
+
+data:
+  only_rl_source: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  expected_train_transitions: 10075
+  allowed_split: train
+  validation_test_reads_allowed: false
+  manual_g1_allowed: false
+  manual_labels_allowed: false
+  reward_classifier_inference_allowed: false
+  td_population: all_train_transitions
+  calql_population: full_macro_valid_and_nonterminal_and_finite_mc_return
+  actor_population: full_macro_valid
+
+random_proposal:
+  status: G5_test_only_empirical_macro_bootstrap
+  source: automatic_detector_g1_train_full_macro_valid_behavior_actions
+  sampling: whole_k3x7_macro_with_replacement
+  per_dimension_or_slot_mixing: false
+  normalized: true
+  absolute_action: false
+  padded_32d: false
+  approved_for_long_training: false
+  approved_as_paper_algorithm: false
+
+precision:
+  actor: bf16_outer_with_v4_2_fp32_islands
+  critic: float32
+  grad_scaler_enabled: false
+  torch_compile: false
+
+rng:
+  base_seed: 42
+  pythonhashseed: 42
+  cublas_workspace_config: ":4096:8"
+  deterministic_algorithms: true
+  named_stream_seeds:
+    td_sampler: 4201
+    calql_sampler: 4202
+    actor_sampler: 4203
+    empirical_random_proposal: 4204
+    td_next_action_flow_noise: 4205
+    calql_current_policy_flow_noise: 4206
+    calql_next_policy_flow_noise: 4207
+    actor_q_flow_noise: 4208
+    flow_matching_noise: 4209
+    flow_matching_timestep: 4210
+    moe_router_stochastic_state: 4211
+
+checkpoint:
+  path: artifacts/development/stage2/g5_single_cycle_checkpoint.development
+  save_boundary: complete_2critic_1actor_cycle_only
+  atomic_temporary_directory_and_rename: true
+  resume_exactness_tested: false
+  markers:
+    artifact_status: DEVELOPMENT_SINGLE_CYCLE_ONLY
+    deployment_status: NOT_FOR_DEPLOYMENT
+    policy_evaluation_status: NOT_FOR_POLICY_EVALUATION
+    long_train_parent_status: NOT_AN_APPROVED_LONG_TRAIN_PARENT
+    robot_execution_authorized: false
+
+development_limits:
+  recipe_description: ConRFT-inspired development 2-Critic-to-1-Actor update ratio
+  update_ratio_proven_optimal: false
+  reward_model_training_overlap: true
+  unbiased_reward_model_evaluation: false
+  failure_experience_present: false
+  policy_improvement_claim_allowed: false
+
+forbidden:
+  - second_training_cycle
+  - G6
+  - G7
+  - long_running_offline_rft
+  - model_selection
+  - actor_export
+  - policy_evaluation
+  - robot_execution
+  - target_actor
+  - validation_or_test_transition_read
+  - manual_g1_or_label_read
+  - reward_classifier_inference_or_update

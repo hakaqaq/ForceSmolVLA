@@ -1,0 +1,124 @@
+{
+  "all_gradients_none": true,
+  "artifact_status": "DEVELOPMENT_G7B_JOINT_SMOKE_ONLY",
+  "complete_cycle_boundary": true,
+  "counters": {
+    "actor_optimizer_updates": 8,
+    "actor_scheduler_steps": 8,
+    "actor_target_updates": 0,
+    "critic_optimizer_updates": 16,
+    "critic_scheduler_steps": 16,
+    "joint_cycles": 8,
+    "q1_target_polyak_updates": 16,
+    "q2_target_polyak_updates": 16
+  },
+  "deployment_status": "NOT_FOR_DEPLOYMENT",
+  "files": [
+    {
+      "file_size": 600,
+      "relative_path": "manifests/parameter_ownership.json",
+      "sha256": "7dfc895a59048b1281ec1c94ec16900a450a972c30c534c05febac30b53f6f9a"
+    },
+    {
+      "file_size": 15411,
+      "relative_path": "manifests/protected_snapshot.json",
+      "sha256": "0bc4f1441f72dd52cb73d7b3422f8efc481dc5e7063966609a9c14d3192f48b3"
+    },
+    {
+      "file_size": 1420277139,
+      "relative_path": "models/actor_state.pt",
+      "sha256": "ca7ad3bdf9bf2bf3682d4f7398cbc116a753c58636d5c9455ac23ac25bcdad3d"
+    },
+    {
+      "file_size": 56463747,
+      "relative_path": "models/q1_state.pt",
+      "sha256": "b9960e21e0c1a43ee733f945552e5015399ea0f261ad8d51da3f7a24a47fe226"
+    },
+    {
+      "file_size": 56464699,
+      "relative_path": "models/q1_target_state.pt",
+      "sha256": "6101ad0bccd313e2998bdd3e079ab79176fe9499f9408c057ea25c9d68367929"
+    },
+    {
+      "file_size": 56463747,
+      "relative_path": "models/q2_state.pt",
+      "sha256": "ea482622adc3f7bff6aa3e7a98390b0dfac75028bf50d0d0af5d6e7c939e126c"
+    },
+    {
+      "file_size": 56464699,
+      "relative_path": "models/q2_target_state.pt",
+      "sha256": "2591e62eb07c50c469311832685cc3263781c142b11ce8ce81ad27fd3140d206"
+    },
+    {
+      "file_size": 2462058038,
+      "relative_path": "optimizers/actor_optimizer_state.pt",
+      "sha256": "a2306f5d0a6ee0c3e6248432230b5ea6b4f442e43be526ecdaff0a97cba878d2"
+    },
+    {
+      "file_size": 68766655,
+      "relative_path": "optimizers/critic_optimizer_state.pt",
+      "sha256": "f1d61a7d7af68d37f23a50a79b4e10dab0f83e6e2c82e56b5c7335dfdf72ffdf"
+    },
+    {
+      "file_size": 1537,
+      "relative_path": "schedulers/actor_scheduler_state.pt",
+      "sha256": "bb428d068e8a098384a8829a9f8425e916e0575516e7a89a312ad3f63478d336"
+    },
+    {
+      "file_size": 1607,
+      "relative_path": "schedulers/critic_scheduler_state.pt",
+      "sha256": "64c5c6e7f06cf8fcb53ab6d48daeebbd90299b5446a0e8281f128f79403ed8cf"
+    },
+    {
+      "file_size": 4622,
+      "relative_path": "startup_snapshot/config/stage2_g5_single_cycle.v2.development.yaml",
+      "sha256": "a728c4544c11f3ff15ba2b3b7ceca9cea7a068169ddc3913fa5707127f0f0fd0"
+    },
+    {
+      "file_size": 3668,
+      "relative_path": "startup_snapshot/config/stage2_g7b_joint_smoke.development.yaml",
+      "sha256": "c051846756636d677227322599d7287f252f037bd8f74531ac87017e658a0984"
+    },
+    {
+      "file_size": 249,
+      "relative_path": "state/counters.json",
+      "sha256": "e97a6235ac3a540a3969856233c49a514cd74ec05fa5eec194a3de71292b03c7"
+    },
+    {
+      "file_size": 232,
+      "relative_path": "state/parent_counters.json",
+      "sha256": "286db24fc3dd202420c6d309c04ce366a8ceaf8447cab6ecd75ae142ed0130e3"
+    },
+    {
+      "file_size": 38005,
+      "relative_path": "state/rng_states.pt",
+      "sha256": "a22d4f0ed0309e469dfe0b4e10078ef7d41e5afc6064a240ff0e435ce8ea37b2"
+    },
+    {
+      "file_size": 112611,
+      "relative_path": "state/sampler_states.pt",
+      "sha256": "0442f4802e041ae547bce849e84940be0bfdf65c94c7fe96a9cf16814eb6bc54"
+    }
+  ],
+  "files_sha256": "021945b4f70dfd8646e1d9e7a238b14878ef202f25a59c821f7dd65a89d9f832",
+  "long_train_parent_status": "NOT_AN_APPROVED_LONG_TRAIN_PARENT",
+  "manifest_payload_sha256": "3e16d7ac969f810c37af181cf81f5ad53fd84aa1854fb2258a628357cbd04be4",
+  "parent_checkpoint": "g7a_r2_critic_warmup_checkpoint",
+  "parent_counters": {
+    "actor_optimizer_updates": 0,
+    "actor_scheduler_steps": 0,
+    "actor_target_updates": 0,
+    "critic_optimizer_updates": 256,
+    "critic_scheduler_steps": 256,
+    "q1_target_polyak_updates": 256,
+    "q2_target_polyak_updates": 256
+  },
+  "pending_accumulation": false,
+  "pending_graph": false,
+  "pending_optimizer_step": false,
+  "pending_polyak_update": false,
+  "policy_evaluation_status": "NOT_FOR_POLICY_EVALUATION",
+  "robot_execution_authorized": false,
+  "schema_version": "forcesmolvla_g7b_joint_smoke_checkpoint.v1",
+  "total_critic_optimizer_step": 272
+}

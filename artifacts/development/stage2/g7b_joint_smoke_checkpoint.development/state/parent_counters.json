@@ -1,0 +1,9 @@
+{
+  "actor_optimizer_updates": 0,
+  "actor_scheduler_steps": 0,
+  "actor_target_updates": 0,
+  "critic_optimizer_updates": 256,
+  "critic_scheduler_steps": 256,
+  "q1_target_polyak_updates": 256,
+  "q2_target_polyak_updates": 256
+}

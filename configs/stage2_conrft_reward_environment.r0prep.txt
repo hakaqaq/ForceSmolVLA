@@ -1,0 +1,24 @@
+# ForceRFT Stage-2 R0-preparation environment lock inputs.
+# Source: /home/rlc123/conrft @ a779fde7fa5db5a469960a8490c100f35b41b49e
+# Python 3.10 and the JAX CUDA wheel are fixed by the ConRFT README.
+# Direct classifier dependencies are fixed to the lower bounds in
+# serl_launcher/requirements.txt; mutable task/runtime dependencies are excluded.
+python==3.10
+jax==0.4.20
+jaxlib==0.4.20+cuda11.cudnn86
+nvidia-cudnn-cu11==8.9.6.50
+numpy==1.24.3
+ml-dtypes==0.2.0
+flax==0.8.0
+optax==0.1.5
+chex==0.1.85
+scipy==1.11.4
+einops==0.6.1
+absl-py==0.12.0
+
+# Resolver guard for Flax checkpoint support compatible with JAX 0.4.20.
+orbax-checkpoint==0.4.4
+tensorstore==0.1.45
+
+# Runtime launcher owns LD_LIBRARY_PATH and points only at this environment's
+# nvidia/*/lib directories; inherited ROS and system CUDA paths are excluded.

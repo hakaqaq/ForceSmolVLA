@@ -1,0 +1,7 @@
+{
+  "actor_batch_size": 24,
+  "candidate_id": "joint_a24_c64_repeat2",
+  "critic_batch_size": 64,
+  "mode": "joint",
+  "repeat": 2
+}

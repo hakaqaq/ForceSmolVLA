@@ -1,0 +1,46 @@
+{
+  "schema_version": "forcesmolvla_stage2_action_contract.v2.development",
+  "artifact_status": "development_only",
+  "supersedes_for_current_stage2_training": "configs/stage2_action_contract.development.json",
+  "v1_sha256": "ce67becfb7008efb152fec5f944906d90b79072ea4eee2ded67c70560eeb105a",
+  "representation": "mixed_continuous_discrete_cartesian7d",
+  "critic_action_input_dim": 7,
+  "critic_action_slots": 3,
+  "critic_action_shape": [3, 7],
+  "critic_duration_mode": "fixed_k",
+  "partial_action_interface": false,
+  "critic_receives_terminal_derived_duration_or_mask": false,
+  "all_critic_action_slots_valid": true,
+  "actor_q_guided_action_dims": [0, 1, 2, 3, 4, 5],
+  "actor_q_gradient_mask_per_slot": [1, 1, 1, 1, 1, 1, 0],
+  "gripper_objective": "flow_matching_only",
+  "gripper_q_gradient": false,
+  "flow_matching_action_dims": [0, 1, 2, 3, 4, 5, 6],
+  "tcp6": "normalized_continuous_flow_action_with_actor_q_gradient",
+  "gripper": {
+    "input": "normalized_flow_gripper",
+    "inverse": "frozen_delta_action7_normalizer",
+    "finite_required": true,
+    "binary_threshold_m": 0.0425,
+    "closed_rule": "continuous_width_m < threshold",
+    "open_rule_and_tie": "continuous_width_m >= threshold",
+    "closed_endpoint_m": 0.0,
+    "open_endpoint_m": 0.085,
+    "renormalization": "frozen_delta_action7_normalizer",
+    "stop_gradient": true,
+    "binary_ste": false,
+    "public_tolerance_check": false
+  },
+  "frozen_normalizer_manifest": {
+    "path": "datasets/task2_lerobotv3/normalizer_manifest.json",
+    "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+  },
+  "public_inference": {
+    "behavior_changed": false,
+    "candidate_tolerance_m": [-0.01, 0.095],
+    "absolute_action_and_rulespec_validation": true
+  },
+  "public_inference_contract_unchanged": true,
+  "boundary": "internal critic canonicalization != public execution authorization",
+  "paper_description": "value-guided 6-DoF Cartesian refinement with imitation-regularized discrete gripper control"
+}

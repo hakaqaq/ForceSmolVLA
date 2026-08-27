@@ -1,0 +1,95 @@
+schema_version: forcesmolvla_stage2_g7_batch_throughput_benchmark.development.v1
+authorization: development_offline_batch_throughput_benchmark_only
+claim_scope: throughput_measurement_only
+
+parent:
+  path: artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint
+  tree_sha256: f8c08b9058d173211a7306d370a97a848bfc1f7569ac52e6cc88baacff0c0d40
+  g7b_checkpoint_allowed: false
+
+parsed_g7b_batching:
+  actor_microbatch_size: 1
+  actor_gradient_accumulation: 4
+  effective_actor_batch_size: 4
+  critic_batch_size: 16
+  calql_candidates_per_source: 2
+
+frozen_recipe:
+  action_contract: v2_total_binary_internal_projection
+  action_horizon: 50
+  differentiable_flow_steps: 10
+  eta_actor_q: 10.0
+  beta_flow: 1.0
+  critic_updates_per_actor_update: 2
+  calql_candidates_per_source: 2
+  calql_alpha: 0.1
+  calql_temperature: 1.0
+  polyak_tau: 0.005
+  actor_lr: 1.0e-5
+  critic_lr: 3.0e-4
+  actor_precision: bf16_outer_with_v4_2_fp32_islands
+  critic_precision: fp32
+  data_augmentation: false
+  num_workers: 0
+
+measurement:
+  warmup_joint_cycles: 1
+  measured_joint_cycles: 3
+  gpu_utilization_poll_seconds: 0.20
+  maximum_peak_reserved_gib: 21.0
+  train_transition_count: 10075
+  selection_metric: joint_training_sample_memberships_per_second
+  critic_sample_memberships_per_cycle: four_times_critic_batch
+  candidate_state_reuse: forbidden
+  candidate_checkpoint_output: forbidden
+
+stage_a:
+  fixed_effective_actor_batch: 4
+  fixed_critic_batch: 16
+  layouts:
+    - {actor_microbatch: 1, actor_accumulation: 4}
+    - {actor_microbatch: 2, actor_accumulation: 2}
+    - {actor_microbatch: 4, actor_accumulation: 1}
+
+stage_b_actor:
+  fixed_critic_batch: 16
+  effective_actor_batches: [8, 16, 32, 64]
+  physical_microbatch: stage_a_best
+
+stage_b_critic:
+  actor_layout: stage_b_actor_best
+  critic_batches: [16, 32, 64]
+
+selection:
+  require_no_oom: true
+  require_all_finite: true
+  require_action_contract_v2: true
+  require_peak_reserved_gib_at_most: 21.0
+  primary: maximum_joint_training_sample_memberships_per_second
+  tie_breakers:
+    - maximum_actor_samples_per_second
+    - maximum_critic_sample_memberships_per_second
+    - minimum_peak_reserved_bytes
+
+data_access:
+  source: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  split: train_only
+  validation_reads: 0
+  test_reads: 0
+  manual_g1_opens: 0
+  manual_label_opens: 0
+  reward_classifier_inference: 0
+  reward_classifier_updates: 0
+
+forbidden:
+  - long_run
+  - eta_sweep
+  - model_or_precision_change
+  - candidate_batch_fallback
+  - candidate_resampling_after_failure
+  - checkpoint_for_training_or_evaluation
+  - validation_or_test_access
+  - manual_reward_source_access
+  - reward_classifier_access
+  - robot_execution
+

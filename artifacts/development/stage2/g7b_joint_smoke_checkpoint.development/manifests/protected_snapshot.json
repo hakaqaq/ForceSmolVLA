@@ -1,0 +1,356 @@
+{
+  "files": {
+    "g7a_r2_artifact": {
+      "file_size": 10599338,
+      "path": "artifacts/development/stage2/s2_g7a_r2_critic_warmup_preflight.json",
+      "sha256": "01dd66e7a4aea162ecd69707cb28186f75e22f57fedbd7d32deb7fa09d8a1e1b"
+    },
+    "g7a_r2_report": {
+      "file_size": 2572,
+      "path": "docs/s2_g7a_r2_critic_warmup_report.md",
+      "sha256": "75652d685b5796f3047d25cf05b1a554f683441a6e86ef7e162032dc0e7b9bb7"
+    },
+    "g7b_config": {
+      "file_size": 3668,
+      "path": "configs/stage2_g7b_joint_smoke.development.yaml",
+      "sha256": "c051846756636d677227322599d7287f252f037bd8f74531ac87017e658a0984"
+    },
+    "g7b_source_manifest": {
+      "file_size": 12552,
+      "path": "artifacts/development/stage2/stage2_source_manifest.v17_g7b.json",
+      "sha256": "960844cd0ca75aeaefc592f232b4a5c84a530774c343c7df3232236b3f9c9caf"
+    },
+    "public_action_source": {
+      "file_size": 15234,
+      "path": "src/forcesmolvla/action_delta.py",
+      "sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1"
+    },
+    "public_model_source": {
+      "file_size": 40356,
+      "path": "src/forcesmolvla/modeling_forcesmolvla.py",
+      "sha256": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610"
+    },
+    "public_rules_source": {
+      "file_size": 1382,
+      "path": "src/forcesmolvla/rules.py",
+      "sha256": "1efae1bbc26a49e45e7a0773bf52260430e1c405fbf88c7d345253f1ab9fd9f5"
+    },
+    "public_rulespec": {
+      "file_size": 6326,
+      "path": "configs/live_action_safety.task2.development.yaml",
+      "sha256": "2619b9fe93af11cc021e193790e84261b0f0ae9524714c40a12ca97f5b28fcba"
+    }
+  },
+  "g7a_r2_protected": {
+    "files": {
+      "action_adapter_v2": {
+        "file_size": 3589,
+        "path": "src/forcesmolvla/rft/critic_action_adapter_v2.py",
+        "sha256": "92b0861057f11c246da0eb9dfed3eac48af87491cf3f1b14e063834b891144f6"
+      },
+      "action_contract_v2": {
+        "file_size": 2020,
+        "path": "configs/stage2_action_contract.v2.development.json",
+        "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6"
+      },
+      "action_contract_v2_artifact": {
+        "file_size": 5362,
+        "path": "artifacts/development/stage2/s2_action_contract_v2_preflight.v2.json",
+        "sha256": "0d5692be91f69a3743874a712d4940ea6c9d28e86a9f4ffe5593ee9180859045"
+      },
+      "g3_v2": {
+        "file_size": 10698,
+        "path": "artifacts/development/stage2/s2_g3_differentiable_flow.v2.json",
+        "sha256": "80ce137b07ca23f59aec67984658f9b5a6ba3cc6e0c7205bf30b909563f3483d"
+      },
+      "g4_v2": {
+        "file_size": 51965,
+        "path": "artifacts/development/stage2/s2_g4_loss_preflight.v2.json",
+        "sha256": "d9613ea25ce952e03f6c1c1271e09dc34f8ef03c4a10b40d3ba9dc283bfaf562"
+      },
+      "g5_v2": {
+        "file_size": 846269,
+        "path": "artifacts/development/stage2/s2_g5_single_cycle_preflight.v2.json",
+        "sha256": "1cb4cfc858e2d6731180779ffc879e13eecec2d04d2157b93fa57c88e9cd0ac1"
+      },
+      "g6_v2": {
+        "file_size": 879669,
+        "path": "artifacts/development/stage2/s2_g6_exact_resume_preflight.v2.json",
+        "sha256": "65a92b535eb416dfec2a5d5ac4966d781382727c7e8f904961f680edb269ca1c"
+      },
+      "g7a_r1_fail": {
+        "file_size": 5823,
+        "path": "artifacts/development/stage2/s2_g7a_critic_warmup_preflight.json",
+        "sha256": "1a9b6aa20c88df7cacddfaf29bbfb6e7a18270461ccd18cb074101a3ee371001"
+      },
+      "g7a_r1_report": {
+        "file_size": 2859,
+        "path": "docs/s2_g7a_critic_warmup_report.md",
+        "sha256": "bba3075124a0773bec31f2161ed2e513c52c3834e043a71489c76a46a1277cef"
+      },
+      "g7a_r2_config": {
+        "file_size": 4000,
+        "path": "configs/stage2_g7a_r2_critic_warmup.development.yaml",
+        "sha256": "42c2a5bbeebb35d699f57adf89287b2f80dca62cf937704896bcc62bc41a8e59"
+      },
+      "g7a_r2_source_manifest": {
+        "file_size": 7117,
+        "path": "artifacts/development/stage2/stage2_source_manifest.v10_g7a_r2.json",
+        "sha256": "9ad52d416277fb5a93f336b8a7287619f60e3a678b6bca4ff9e037e885c82390"
+      },
+      "gripper_domain_audit": {
+        "file_size": 9740,
+        "path": "artifacts/development/stage2/s2_g7a_gripper_path_domain_audit.v1.json",
+        "sha256": "ea82d53c13cbcce4392251cd8c0ad183e51edbb7edf0d72ab3821f91e7d8ab16"
+      }
+    },
+    "g5_protected": {
+      "files": {
+        "actor_core": {
+          "file_size": 40356,
+          "path": "src/forcesmolvla/modeling_forcesmolvla.py",
+          "sha256": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610"
+        },
+        "classifier_checkpoint": {
+          "file_size": 87217825,
+          "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+          "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+        },
+        "dataset_conversion": {
+          "file_size": 44796,
+          "path": "datasets/task2_lerobotv3/conversion_manifest.json",
+          "sha256": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477"
+        },
+        "dataset_normalizer": {
+          "file_size": 137827,
+          "path": "datasets/task2_lerobotv3/normalizer_manifest.json",
+          "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+        },
+        "dataset_split": {
+          "file_size": 1224,
+          "path": "datasets/task2_lerobotv3/split_manifest.json",
+          "sha256": "5e63e21d1daf47cfe51fe169497cc77f69bc42e7c919cce708cb2bb0de3dc8d7"
+        },
+        "g1_frame_scores": {
+          "file_size": 1464688,
+          "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/frame_scores.parquet",
+          "sha256": "98df6007d8b75328335abef8b15016de90cb6893f55b5310e466502b2333208d"
+        },
+        "g1_manifest": {
+          "file_size": 41960,
+          "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/g1_manifest.json",
+          "sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
+        },
+        "g1_transition_index": {
+          "file_size": 2404251,
+          "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/transition_index.parquet",
+          "sha256": "f61dbd6d7e396aca8dc60794be0a16d314553d081dd659b1928bc8c5118bd474"
+        },
+        "g2_artifact": {
+          "file_size": 45781,
+          "path": "artifacts/development/stage2/s2_g2_twin_q_topology.json",
+          "sha256": "9a0b006bd13a2fca844e3f4b118b1347dce4d1022f03671ca3293728588a90a2"
+        },
+        "g2_config": {
+          "file_size": 3565,
+          "path": "configs/stage2_g2_force_aware_twin_q.development.yaml",
+          "sha256": "ab23300edc478cff53a82215702fd659cc838933426f611042c9c6a3a88b7dcc"
+        },
+        "g2_critic_source": {
+          "file_size": 20231,
+          "path": "src/forcesmolvla/rft/critic.py",
+          "sha256": "f0b0ff41d2ea772f649f57c1d3b043ab6d8c8625d1316a86e9bbc227175feeca"
+        },
+        "g3_flow_artifact": {
+          "file_size": 10856,
+          "path": "artifacts/development/stage2/s2_g3_differentiable_flow.v4.json",
+          "sha256": "30020b624a4243b08248b1ae90144a88be0e87cc43e733477475fa78acd54acc"
+        },
+        "g3_flow_source": {
+          "file_size": 6744,
+          "path": "src/forcesmolvla/rft/flow_sampling.py",
+          "sha256": "2a82085432647c4907257e41f0bd6ebfd7e9d4c7c98c5eba05331783320dc689"
+        },
+        "g3_gradient_artifact": {
+          "file_size": 100696,
+          "path": "artifacts/development/stage2/s2_g3_gradient_precision_matrix.v4.json",
+          "sha256": "bd66830b149189cd4785ead8444ea286a92d7116267db113b4d3b9cd5f340ec0"
+        },
+        "g4_artifact": {
+          "file_size": 50594,
+          "path": "artifacts/development/stage2/s2_g4_loss_preflight.json",
+          "sha256": "2fd063497ec9b803610c384d13149360a77531ac5dd6a784d83f5b3d2678cf3a"
+        },
+        "g4_config": {
+          "file_size": 3261,
+          "path": "configs/stage2_g4_losses.development.yaml",
+          "sha256": "519845ffce0a7db404abd85fb2b8502a4905412d1c8eeb2624a247ddf67e3949"
+        },
+        "g4_losses_source": {
+          "file_size": 22246,
+          "path": "src/forcesmolvla/rft/losses.py",
+          "sha256": "bf3df4d34f3a202623bc75f0e55009fc9b1bbcc4d3126c96f86c0e3f7c4682d5"
+        },
+        "g5_config": {
+          "file_size": 4622,
+          "path": "configs/stage2_g5_single_cycle.v2.development.yaml",
+          "sha256": "a728c4544c11f3ff15ba2b3b7ceca9cea7a068169ddc3913fa5707127f0f0fd0"
+        },
+        "g5_preflight_source": {
+          "file_size": 88437,
+          "path": "tools/preflight_s2_g5_single_cycle_gpu.py",
+          "sha256": "27ba19f6312e8cd02b619d56f75cec7bce532c73b2f2d415585f7cc2609aa95b"
+        },
+        "g5_source_manifest": {
+          "file_size": 5154,
+          "path": "artifacts/development/stage2/stage2_source_manifest.v13_g5_v2.json",
+          "sha256": "7a4565d1896b93ffad69eda8fff89c548c8e80aa328c498bf62de090a50b5ccf"
+        },
+        "g5_tests": {
+          "file_size": 6024,
+          "path": "tests/test_rft_training_cycle.py",
+          "sha256": "2f46cc2bb70beb7dfcb6792403f18bbe71989001d7d621ad2dd259b0605dfdde"
+        },
+        "g5_training_checkpoint_source": {
+          "file_size": 7479,
+          "path": "src/forcesmolvla/rft/training_checkpoint.py",
+          "sha256": "96f805345c3821c376291d07c9bd9cd82d2bde9eeee12f300a00182d26160153"
+        },
+        "g5_training_cycle_source": {
+          "file_size": 13851,
+          "path": "src/forcesmolvla/rft/training_cycle.py",
+          "sha256": "314c8f841e5a2ae6511068117010ecb517cf1f177aa66ec3b27ad286b4a80501"
+        },
+        "public_inference": {
+          "file_size": 15671,
+          "path": "src/forcesmolvla/inference.py",
+          "sha256": "f27fb012692c8dcbca0cd7892e9800693c46fe7a8c4fb71c5077445cd65ab73b"
+        },
+        "stage1_p4_p8_00": {
+          "file_size": 4965,
+          "path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_fp32.json",
+          "sha256": "42dff9b52f3a86a93255784efd597281a230c4bca689fdf32fab107430d29c1d"
+        },
+        "stage1_p4_p8_01": {
+          "file_size": 4989,
+          "path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_bf16.json",
+          "sha256": "3681061b9b0974cdd03159d6987433ccd1666df5817685d77efb74b2fb59854f"
+        },
+        "stage1_p4_p8_02": {
+          "file_size": 26051,
+          "path": "artifacts/development/p5_v4_2_r7_gpu_preflight.json",
+          "sha256": "cadfb8e399182f6c981fe57e943fed6d755648144cb37139568b3e7bc4a1b3ba"
+        },
+        "stage1_p4_p8_03": {
+          "file_size": 7777,
+          "path": "artifacts/development/p5_v4_2_r7_source_binding.json",
+          "sha256": "4a2d2ab0c515cc5b45687f46f736ac9cad05b88b6df5a15256cea3f7207c46f9"
+        },
+        "stage1_p4_p8_04": {
+          "file_size": 41575,
+          "path": "artifacts/development/p6_v4_2_r7_gpu_preflight.json",
+          "sha256": "e7adfa8968c9bbf11aee3377e7d54f8645f5166daa13e3ead73ce905de92be7a"
+        },
+        "stage1_p4_p8_05": {
+          "file_size": 16732,
+          "path": "artifacts/development/p6_v4_2_r7_source_binding.json",
+          "sha256": "291983591fce875b04b3632b1c503243b1881c3f92021c18765c494a27a24395"
+        },
+        "stage1_p4_p8_06": {
+          "file_size": 21499,
+          "path": "artifacts/development/p7_v4_2_r7_gpu_preflight.json",
+          "sha256": "120745433fd8e73b0e6427b0b8940daec5a365a900005978fc42c8d02cbbea5e"
+        },
+        "stage1_p4_p8_07": {
+          "file_size": 17606,
+          "path": "artifacts/development/p7_v4_2_r7_source_binding.json",
+          "sha256": "c276405aaed1f3a3f70dff344ac3cbd988037dc87ebf3d9d2db302834223760b"
+        },
+        "stage1_p4_p8_08": {
+          "file_size": 7839,
+          "path": "artifacts/development/p8_v4_2_r7_gpu_preflight.json",
+          "sha256": "cb258ec178fbf881ab5e1b7a7020121ac8d32222f581418920c620b9433c7818"
+        },
+        "stage1_p4_p8_09": {
+          "file_size": 19362,
+          "path": "artifacts/development/p8_v4_2_r7_source_binding.json",
+          "sha256": "e402b489aa902272f61c7843b5595eeae22caa9ba358927d331020106c926756"
+        },
+        "stage1_p9_v4_2_r8_gpu_preflight": {
+          "file_size": 4253,
+          "path": "artifacts/development/p9_v4_2_r8_gpu_preflight.json",
+          "sha256": "26ab21f9641f31437ca2ea05afb4802d94cc63eee56d3ef176720684441f113a"
+        },
+        "stage1_p9_v4_2_r8_pytest": {
+          "file_size": 19445,
+          "path": "artifacts/development/p9_v4_2_r8_pytest.xml",
+          "sha256": "6c5be95e769d7081b819eaf6e16c21532de1a915a311037598dd69c510a84aae"
+        },
+        "stage1_p9_v4_2_r8_records": {
+          "file_size": 60008,
+          "path": "artifacts/development/p9_v4_2_r8_records.json",
+          "sha256": "61a25910cd8b6876298ce7b13029b13942f5abc7db3d711dc36188fe3581b475"
+        },
+        "stage1_p9_v4_2_r8_replay": {
+          "file_size": 493,
+          "path": "artifacts/development/p9_v4_2_r8_replay.json",
+          "sha256": "5ff47a617452e31213dd9ac503ebf6e2a024df0ec71f195a5b0436c68b1d9163"
+        },
+        "stage1_p9_v4_2_r8_resolved_config": {
+          "file_size": 4339,
+          "path": "artifacts/development/p9_v4_2_r8_resolved_config.json",
+          "sha256": "fcd034ad3d66b24d2469b5dc627b29cc709a4d3877de4b72d47e7aba8d35e54a"
+        },
+        "stage1_p9_v4_2_r8_source_binding": {
+          "file_size": 18946,
+          "path": "artifacts/development/p9_v4_2_r8_source_binding.json",
+          "sha256": "d75c09fa230248dc34e05e22f62b238f774891fdfab286720d4869074ccce729"
+        },
+        "vendor_smolvla": {
+          "file_size": 36682,
+          "path": "vendor/lerobot/src/lerobot/policies/smolvla/modeling_smolvla.py",
+          "sha256": "5daaa297954acf9ae89397b571322f07bf30798e72f566e61a09393342cb1f99"
+        }
+      },
+      "p8_storage_tree": {
+        "file_count": 51,
+        "total_file_size": 29806629735,
+        "tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+      },
+      "r5_checkpoint_tree": {
+        "file_count": 72,
+        "total_file_size": 3887526794,
+        "tree_sha256": "01665f899ad34e4ba048a46bcffe3a0f819fc0f7e42c6d0c9a2db662a3665379"
+      }
+    },
+    "trees": {
+      "g5_v2_checkpoint": {
+        "file_count": 37,
+        "total_file_size": 4179973545,
+        "tree_sha256": "e33dde34072d2c3fff36d28480c8cb1ee590673e360061e26cf44435dfcc46ce"
+      },
+      "g6_v2_output": {
+        "file_count": 88,
+        "total_file_size": 12539298489,
+        "tree_sha256": "8dbfcd788b21d613b4f4dca8b7c8881c331afb73aef501f502b7e26defcce06b"
+      },
+      "r5_checkpoint": {
+        "file_count": 72,
+        "total_file_size": 3887526794,
+        "tree_sha256": "01665f899ad34e4ba048a46bcffe3a0f819fc0f7e42c6d0c9a2db662a3665379"
+      },
+      "stage1_dataset": {
+        "file_count": 51,
+        "total_file_size": 29806629735,
+        "tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+      }
+    }
+  },
+  "trees": {
+    "g7a_r2_parent_checkpoint": {
+      "file_count": 18,
+      "total_file_size": 296019846,
+      "tree_sha256": "f8c08b9058d173211a7306d370a97a848bfc1f7569ac52e6cc88baacff0c0d40"
+    }
+  }
+}

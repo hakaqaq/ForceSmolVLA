@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-08-26T01:52:33.351211+00:00",
+  "files": {
+    "detector_g1_loader_source": {
+      "file_size": 14420,
+      "path": "src/forcesmolvla/rft/detector_reward_transitions.py",
+      "sha256": "b3151c7f5763282df1b58bf94e248203c657f2d1001603457f33b731b9039115"
+    },
+    "g2_critic_source": {
+      "file_size": 20231,
+      "path": "src/forcesmolvla/rft/critic.py",
+      "sha256": "f0b0ff41d2ea772f649f57c1d3b043ab6d8c8625d1316a86e9bbc227175feeca"
+    },
+    "g2_gpu_preflight_source": {
+      "file_size": 36344,
+      "path": "tools/preflight_s2_g2_twin_q_gpu.py",
+      "sha256": "c8d2fee657a28b4024aac126c0ed88033b0534977621d35ae35f13cd7a311273"
+    },
+    "g2_resolved_config": {
+      "file_size": 3565,
+      "path": "configs/stage2_g2_force_aware_twin_q.development.yaml",
+      "sha256": "ab23300edc478cff53a82215702fd659cc838933426f611042c9c6a3a88b7dcc"
+    },
+    "g2_unit_tests": {
+      "file_size": 4904,
+      "path": "tests/test_rft_critic.py",
+      "sha256": "34589012169fe97ebd7bee5dfa1b4b04c00366a29b4f7d0de3d400e920d98bee"
+    },
+    "previous_stage2_source_manifest": {
+      "file_size": 12693,
+      "path": "artifacts/development/stage2/stage2_source_manifest.v4.json",
+      "sha256": "defa5b1d1a975c465154ac62e009863163947065127c557b5600025ce77b29eb"
+    },
+    "safe_resnet10_asset_manifest": {
+      "file_size": 22053,
+      "path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json",
+      "sha256": "2e54ec70420ebd9cd73c12689937fca2597cf74d8ea608526b805999647e22e8"
+    },
+    "stage1_action_delta_source": {
+      "file_size": 15234,
+      "path": "src/forcesmolvla/action_delta.py",
+      "sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1"
+    },
+    "stage1_normalizer_source": {
+      "file_size": 13632,
+      "path": "src/forcesmolvla/normalizer.py",
+      "sha256": "df4faa89a6c580b30b12d1496df4b76be68d2b1329cbcaa63adc77fac0100525"
+    },
+    "stage1_training_data_source": {
+      "file_size": 14462,
+      "path": "src/forcesmolvla/training_data.py",
+      "sha256": "388ce254bfb3adb0fd80b1e7bfa9e2734e786fc56549bf1fc157ca15ada0c8d4"
+    }
+  },
+  "manual_g1_source_or_artifact_in_runtime_closure": false,
+  "manual_label_source_or_artifact_in_runtime_closure": false,
+  "runtime_imported_sources": [
+    "g2_critic_source",
+    "detector_g1_loader_source",
+    "stage1_training_data_source",
+    "stage1_normalizer_source",
+    "stage1_action_delta_source"
+  ],
+  "schema_version": "forcesmolvla_stage2_source_manifest.v5_g2",
+  "scope": "G2_development_topology_only",
+  "status": "PASS_APPEND_ONLY_G2_SOURCE_CLOSURE"
+}

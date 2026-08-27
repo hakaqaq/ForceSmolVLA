@@ -1,0 +1,22 @@
+{
+  "schema_version": "forcesmolvla_g1_training_disposition.v1",
+  "artifact_role": "historical_manual_audit_only",
+  "training_authorized": false,
+  "downstream_loader_authorized": false,
+  "superseded_by": "g1_frozen_detector_transition_view.v1",
+  "original_artifact_preserved": true,
+  "original_manifest": {
+    "path": "artifacts/development/stage2/g1_manual_reward_transition_view.v1/g1_manifest.json",
+    "sha256": "9cb8f910335e037f1989e8174835143186102039b2ba382744312567dc9eecec"
+  },
+  "original_transition_index": {
+    "path": "artifacts/development/stage2/g1_manual_reward_transition_view.v1/transition_index.parquet",
+    "sha256": "e6ada0d988fe7b556e4616d11e9fdd66b761f496bea5312402d2f4037c4df8a8"
+  },
+  "authorization": {
+    "G2_entry_revoked": true,
+    "TwinQ_training_input": false,
+    "CalQL_training_input": false,
+    "Actor_training_input": false
+  }
+}

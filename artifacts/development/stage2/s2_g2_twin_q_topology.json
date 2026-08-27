@@ -1,0 +1,1416 @@
+{
+  "acceptance": {
+    "all_observation_and_action_sensitivities": true,
+    "frozen_inputs_unchanged": true,
+    "gripper_affects_q": true,
+    "manual_g1_and_label_reads_zero": true,
+    "mask_contract_fail_closed": true,
+    "online_target_initialization_exact": true,
+    "optimizer_and_parameter_updates_zero": true,
+    "padding_perturbation_exact_invariance": true,
+    "polyak_formula_elementwise_exact": true,
+    "q1_q2_parameter_storage_independent": true,
+    "q_shape_dtype_finite": true,
+    "real_detector_g1_train_gpu_forward_backward": true,
+    "resnet_key_shape_tensor_parity_complete": true,
+    "targets_permanent_eval_no_grad": true,
+    "train_loader_exposes_only_k3_normalized_action": true,
+    "valid_action_input_gradients_nonzero": true,
+    "validation_test_transition_reads_zero": true
+  },
+  "actor_q_contract": {
+    "actor_q_guided_action_dims": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "critic_receives_full_action7": true,
+    "gripper_objective": "flow_matching_only",
+    "gripper_q_gradient": false,
+    "gripper_stop_gradient_owner": "future_actor_q_action_construction",
+    "public_gripper_binary_decode_unchanged": true
+  },
+  "artifact_payload_sha256": "57bd2aac5c25b4afd1f197c9d29f7de2dfa52415bb3db7819dfd0fac57b75561",
+  "artifact_status": "PASS_DEVELOPMENT_TOPOLOGY_ZERO_UPDATE_PREFLIGHT",
+  "authorization_consumed": "yes_development_topology_only",
+  "authorized_training_data": {
+    "allowed_split": "train",
+    "frame_scores": {
+      "file_size": 1464688,
+      "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/frame_scores.parquet",
+      "sha256": "98df6007d8b75328335abef8b15016de90cb6893f55b5310e466502b2333208d"
+    },
+    "g1_manifest": {
+      "file_size": 41960,
+      "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/g1_manifest.json",
+      "sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
+    },
+    "root": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1",
+    "transition_index": {
+      "file_size": 2404251,
+      "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/transition_index.parquet",
+      "sha256": "f61dbd6d7e396aca8dc60794be0a16d314553d081dd659b1928bc8c5118bd474"
+    }
+  },
+  "created_at": "2026-08-26T01:52:33.352462+00:00",
+  "critic_semantics": "mask-aware 3-step macro-action critic at 10 Hz",
+  "development_limits": {
+    "DEVELOPMENT_DETECTOR_OPERATIONAL": true,
+    "FORMAL_DETECTOR_APPROVED": false,
+    "REWARD_MODEL_TRAINING_OVERLAP": true,
+    "STRICT_ZERO_FRAME_ALIGNMENT_ACCEPTANCE": "FAIL_preserved",
+    "UNBIASED_REWARD_MODEL_EVALUATION": false
+  },
+  "forbidden_implementation_counts": {
+    "Actor_Q_joint_loss": 0,
+    "Actor_updates": 0,
+    "Cal_QL_loss": 0,
+    "Critic_updates": 0,
+    "G4_through_G7_created": 0,
+    "TD_loss": 0,
+    "optimizer_created": 0,
+    "optimizer_steps": 0
+  },
+  "forbidden_read_audit": {
+    "manual_g1_files_opened": 0,
+    "manual_g1_paths": [],
+    "manual_label_files_opened": 0,
+    "manual_label_paths": []
+  },
+  "gpu_zero_update_preflight": {
+    "actor_q_joint_loss_computed_count": 0,
+    "cal_ql_loss_computed_count": 0,
+    "environment": {
+      "cuda_device_index": 0,
+      "cuda_runtime": "12.8",
+      "cudnn": 91900,
+      "device": "NVIDIA GeForce RTX 4090 D",
+      "fp32_only": true,
+      "torch": "2.11.0+cu128"
+    },
+    "forward_sensitivity": {
+      "camera1": true,
+      "camera2": true,
+      "gripper_action_dim6": true,
+      "normalized_state7": true,
+      "normalized_wrench6": true,
+      "valid_action": true
+    },
+    "gradient_evidence": {
+      "all_valid_k7_input_gradients_nonzero": true,
+      "gripper_gradient_nonzero": true,
+      "invalid_slot_input_gradients_exact_zero": true,
+      "online_frozen_backbone_gradients_absent": true,
+      "q1_all_trainable_parameters_received_nonzero_gradient": true,
+      "q2_all_trainable_parameters_received_nonzero_gradient": true,
+      "target_gradients_absent": true,
+      "valid_gradient_max_abs": 0.0029824753291904926,
+      "valid_gradient_min_abs": 5.670952668879181e-05
+    },
+    "independence": {
+      "q1_q1_target_storage_independent": true,
+      "q1_q2_module_object_independent": true,
+      "q1_q2_parameter_and_buffer_storage_independent": true,
+      "q2_q2_target_storage_independent": true
+    },
+    "mask_acceptance": {
+      "all_false_rejected": true,
+      "nonprefix_rejected": true,
+      "padding_slot_perturbation_exact_invariance": true,
+      "post_action_mlp_and_position_embedding_masking": true,
+      "shape_errors_rejected": true,
+      "valid_prefix_masks_run": {
+        "1": {
+          "finite": true,
+          "shape": [
+            1
+          ]
+        },
+        "2": {
+          "finite": true,
+          "shape": [
+            1
+          ]
+        },
+        "3": {
+          "finite": true,
+          "shape": [
+            1
+          ]
+        }
+      }
+    },
+    "measurements": {
+      "1": {
+        "backward_latency_ms_all": [
+          1.5730559825897217,
+          1.5272959470748901,
+          1.4321279525756836,
+          1.4069759845733643,
+          1.5544960498809814
+        ],
+        "backward_latency_ms_median": 1.5272959470748901,
+        "baseline_allocated_bytes": 307081728,
+        "batch_size": 1,
+        "forward_latency_ms_all": [
+          3.5585598945617676,
+          3.4624640941619873,
+          3.296704053878784,
+          3.2872960567474365,
+          3.30131196975708
+        ],
+        "forward_latency_ms_median": 3.30131196975708,
+        "measurement_iterations": 5,
+        "peak_allocated_bytes": 307346432,
+        "peak_incremental_allocated_bytes": 264704,
+        "peak_reserved_bytes": 337641472,
+        "warmup_iterations": 2
+      },
+      "16": {
+        "backward_latency_ms_all": [
+          1.58406400680542,
+          1.7003840208053589,
+          1.526304006576538,
+          1.6013120412826538,
+          1.619871973991394
+        ],
+        "backward_latency_ms_median": 1.6013120412826538,
+        "baseline_allocated_bytes": 333709824,
+        "batch_size": 16,
+        "forward_latency_ms_all": [
+          5.164063930511475,
+          5.284319877624512,
+          5.462687969207764,
+          5.612768173217773,
+          5.1375041007995605
+        ],
+        "forward_latency_ms_median": 5.284319877624512,
+        "measurement_iterations": 5,
+        "peak_allocated_bytes": 463516672,
+        "peak_incremental_allocated_bytes": 129806848,
+        "peak_reserved_bytes": 494927872,
+        "warmup_iterations": 2
+      },
+      "4": {
+        "backward_latency_ms_all": [
+          1.5039680004119873,
+          1.4255679845809937,
+          1.4766080379486084,
+          1.4628479480743408,
+          1.491711974143982
+        ],
+        "backward_latency_ms_median": 1.4766080379486084,
+        "baseline_allocated_bytes": 312614400,
+        "batch_size": 4,
+        "forward_latency_ms_all": [
+          3.710239887237549,
+          3.591360092163086,
+          3.447808027267456,
+          3.7820799350738525,
+          3.4420158863067627
+        ],
+        "forward_latency_ms_median": 3.591360092163086,
+        "measurement_iterations": 5,
+        "peak_allocated_bytes": 317624320,
+        "peak_incremental_allocated_bytes": 5009920,
+        "peak_reserved_bytes": 337641472,
+        "warmup_iterations": 2
+      }
+    },
+    "module_state_sha256_after": {
+      "q1": "9d115e169e390b7b95f1b2bca773e9cc04ea9c131fac91a2cf8211e77aa27667",
+      "q1_target": "9d115e169e390b7b95f1b2bca773e9cc04ea9c131fac91a2cf8211e77aa27667",
+      "q2": "47fabdef20dc27eeb0850438d62c36ab68ade4e90e5c027f85d55260ae8b062f",
+      "q2_target": "47fabdef20dc27eeb0850438d62c36ab68ade4e90e5c027f85d55260ae8b062f"
+    },
+    "module_state_sha256_before": {
+      "q1": "9d115e169e390b7b95f1b2bca773e9cc04ea9c131fac91a2cf8211e77aa27667",
+      "q1_target": "9d115e169e390b7b95f1b2bca773e9cc04ea9c131fac91a2cf8211e77aa27667",
+      "q2": "47fabdef20dc27eeb0850438d62c36ab68ade4e90e5c027f85d55260ae8b062f",
+      "q2_target": "47fabdef20dc27eeb0850438d62c36ab68ade4e90e5c027f85d55260ae8b062f"
+    },
+    "optimizer_created_count": 0,
+    "optimizer_step_count": 0,
+    "parameter_inventory": {
+      "q1": {
+        "frozen": 9811584,
+        "total": 14103681,
+        "trainable": 4292097
+      },
+      "q1_target": {
+        "frozen": 14103681,
+        "total": 14103681,
+        "trainable": 0
+      },
+      "q2": {
+        "frozen": 9811584,
+        "total": 14103681,
+        "trainable": 4292097
+      },
+      "q2_target": {
+        "frozen": 14103681,
+        "total": 14103681,
+        "trainable": 0
+      }
+    },
+    "parameter_update_count": 0,
+    "polyak_pure_function": {
+      "formal_tau_approved": false,
+      "inputs_unchanged": true,
+      "tested_tau": {
+        "0.0": {
+          "actual": [
+            5.0,
+            7.0
+          ],
+          "elementwise_exact": true,
+          "expected": [
+            5.0,
+            7.0
+          ]
+        },
+        "0.005": {
+          "actual": [
+            4.980000019073486,
+            6.980000019073486
+          ],
+          "elementwise_exact": true,
+          "expected": [
+            4.980000019073486,
+            6.980000019073486
+          ]
+        },
+        "1.0": {
+          "actual": [
+            1.0,
+            3.0
+          ],
+          "elementwise_exact": true,
+          "expected": [
+            1.0,
+            3.0
+          ]
+        }
+      }
+    },
+    "resnet10_conversion": {
+      "all_tensor_roundtrip_parity": true,
+      "mapped_backbone_key_count": 36,
+      "mapped_shape_coverage": 1.0,
+      "mapping": [
+        {
+          "array_sha256": "bac795a44cb03a47e01a269fdf5a177f87b5b874c1fd754fa77390ce101e1c6f",
+          "safe_npz_key": "array_0000",
+          "source_parameter_path": [
+            "ResNetBlock_0",
+            "Conv_0",
+            "kernel"
+          ],
+          "source_shape": [
+            3,
+            3,
+            64,
+            64
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.0.conv1.weight",
+          "torch_shape": [
+            64,
+            64,
+            3,
+            3
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "838a36ec2e5877ef82f542fa74f846571514ea67fecff63ab6882ed3767dbc14",
+          "safe_npz_key": "array_0001",
+          "source_parameter_path": [
+            "ResNetBlock_0",
+            "Conv_1",
+            "kernel"
+          ],
+          "source_shape": [
+            3,
+            3,
+            64,
+            64
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.0.conv2.weight",
+          "torch_shape": [
+            64,
+            64,
+            3,
+            3
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "5395b5a48004f7e3bcc62718fdcfc958e1eb9cf60ae7449038b1f84b7df4a69a",
+          "safe_npz_key": "array_0002",
+          "source_parameter_path": [
+            "ResNetBlock_0",
+            "MyGroupNorm_0",
+            "bias"
+          ],
+          "source_shape": [
+            64
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.0.norm1.bias",
+          "torch_shape": [
+            64
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "fee2605fe2f9a278bb24a93517c7711833608309a4f3313ffc97c4c79cf158e8",
+          "safe_npz_key": "array_0003",
+          "source_parameter_path": [
+            "ResNetBlock_0",
+            "MyGroupNorm_0",
+            "scale"
+          ],
+          "source_shape": [
+            64
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.0.norm1.weight",
+          "torch_shape": [
+            64
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "6851b160f4b4447cb951cd5d4b9d71fd543e063f99135962c08e196e45e26609",
+          "safe_npz_key": "array_0004",
+          "source_parameter_path": [
+            "ResNetBlock_0",
+            "MyGroupNorm_1",
+            "bias"
+          ],
+          "source_shape": [
+            64
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.0.norm2.bias",
+          "torch_shape": [
+            64
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "9f468d49260120d5c1938e163e091a85e1f9e8c4bca496cd9e4d1da7134522b5",
+          "safe_npz_key": "array_0005",
+          "source_parameter_path": [
+            "ResNetBlock_0",
+            "MyGroupNorm_1",
+            "scale"
+          ],
+          "source_shape": [
+            64
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.0.norm2.weight",
+          "torch_shape": [
+            64
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "1cf920b78b181cf9efd5c237f335713e817dc9d762a71abc3af05b55cd8ef9ee",
+          "safe_npz_key": "array_0006",
+          "source_parameter_path": [
+            "ResNetBlock_1",
+            "Conv_0",
+            "kernel"
+          ],
+          "source_shape": [
+            3,
+            3,
+            64,
+            128
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.1.conv1.weight",
+          "torch_shape": [
+            128,
+            64,
+            3,
+            3
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "77c71e1cf4ad88545ddc62eaa827dad23404b84d8340b26bed4c6b4d0ca45758",
+          "safe_npz_key": "array_0007",
+          "source_parameter_path": [
+            "ResNetBlock_1",
+            "Conv_1",
+            "kernel"
+          ],
+          "source_shape": [
+            3,
+            3,
+            128,
+            128
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.1.conv2.weight",
+          "torch_shape": [
+            128,
+            128,
+            3,
+            3
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "7251bf5716bd4041b6fb7fe1464cfde85956e842e87fb9e39df55689f1c505b6",
+          "safe_npz_key": "array_0008",
+          "source_parameter_path": [
+            "ResNetBlock_1",
+            "MyGroupNorm_0",
+            "bias"
+          ],
+          "source_shape": [
+            128
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.1.norm1.bias",
+          "torch_shape": [
+            128
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "9db2df026e30ca6e86f6c9da6dc8b56e26efecac91ea9090743f2dae57dd0feb",
+          "safe_npz_key": "array_0009",
+          "source_parameter_path": [
+            "ResNetBlock_1",
+            "MyGroupNorm_0",
+            "scale"
+          ],
+          "source_shape": [
+            128
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.1.norm1.weight",
+          "torch_shape": [
+            128
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "5e6a841cb1862221163488f5f443f660804aa411cf2546c80aa05940987e0e08",
+          "safe_npz_key": "array_0010",
+          "source_parameter_path": [
+            "ResNetBlock_1",
+            "MyGroupNorm_1",
+            "bias"
+          ],
+          "source_shape": [
+            128
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.1.norm2.bias",
+          "torch_shape": [
+            128
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "89cf6bdd5edecac4ea97257a3a0d3eae70c1369b02381cdc61aa20aa1a68825c",
+          "safe_npz_key": "array_0011",
+          "source_parameter_path": [
+            "ResNetBlock_1",
+            "MyGroupNorm_1",
+            "scale"
+          ],
+          "source_shape": [
+            128
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.1.norm2.weight",
+          "torch_shape": [
+            128
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "c8f947dba053b49821e61cee722cd83156a0c002a31127e326ffdf8c73d9d49b",
+          "safe_npz_key": "array_0012",
+          "source_parameter_path": [
+            "ResNetBlock_1",
+            "conv_proj",
+            "kernel"
+          ],
+          "source_shape": [
+            1,
+            1,
+            64,
+            128
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.1.proj_conv.weight",
+          "torch_shape": [
+            128,
+            64,
+            1,
+            1
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "5e6a841cb1862221163488f5f443f660804aa411cf2546c80aa05940987e0e08",
+          "safe_npz_key": "array_0013",
+          "source_parameter_path": [
+            "ResNetBlock_1",
+            "norm_proj",
+            "bias"
+          ],
+          "source_shape": [
+            128
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.1.proj_norm.bias",
+          "torch_shape": [
+            128
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "ad8a69a0e4ea352b7bd160357daa51176f86e32c7ead9340c67d3b258ab46096",
+          "safe_npz_key": "array_0014",
+          "source_parameter_path": [
+            "ResNetBlock_1",
+            "norm_proj",
+            "scale"
+          ],
+          "source_shape": [
+            128
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.1.proj_norm.weight",
+          "torch_shape": [
+            128
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "2eb76bff484253da38dd0a7396c6394bf25a3cc8a6768387d7a403652372fa28",
+          "safe_npz_key": "array_0015",
+          "source_parameter_path": [
+            "ResNetBlock_2",
+            "Conv_0",
+            "kernel"
+          ],
+          "source_shape": [
+            3,
+            3,
+            128,
+            256
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.2.conv1.weight",
+          "torch_shape": [
+            256,
+            128,
+            3,
+            3
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "aece10e8f18078090241c6346ef8a6a6dbc8710a905c57d240b0e3558eeb961a",
+          "safe_npz_key": "array_0016",
+          "source_parameter_path": [
+            "ResNetBlock_2",
+            "Conv_1",
+            "kernel"
+          ],
+          "source_shape": [
+            3,
+            3,
+            256,
+            256
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.2.conv2.weight",
+          "torch_shape": [
+            256,
+            256,
+            3,
+            3
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "1abe3d838f25425849b8322cbb3ea26829e2090c3ec07f702d671ef4d4563cba",
+          "safe_npz_key": "array_0017",
+          "source_parameter_path": [
+            "ResNetBlock_2",
+            "MyGroupNorm_0",
+            "bias"
+          ],
+          "source_shape": [
+            256
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.2.norm1.bias",
+          "torch_shape": [
+            256
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "b8c8dc7ddee568dd5e62514f3d4def236d205d371f8cf0cc2ec2523dd19b9940",
+          "safe_npz_key": "array_0018",
+          "source_parameter_path": [
+            "ResNetBlock_2",
+            "MyGroupNorm_0",
+            "scale"
+          ],
+          "source_shape": [
+            256
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.2.norm1.weight",
+          "torch_shape": [
+            256
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "6e16d9f892e83e159b825eadd06a3935262f9447ef4ee042c42d841ca7ba5783",
+          "safe_npz_key": "array_0019",
+          "source_parameter_path": [
+            "ResNetBlock_2",
+            "MyGroupNorm_1",
+            "bias"
+          ],
+          "source_shape": [
+            256
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.2.norm2.bias",
+          "torch_shape": [
+            256
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "17bb9f9b40cfe8233dd0dff13e7f125faea316666488489fd41de905d91d10b1",
+          "safe_npz_key": "array_0020",
+          "source_parameter_path": [
+            "ResNetBlock_2",
+            "MyGroupNorm_1",
+            "scale"
+          ],
+          "source_shape": [
+            256
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.2.norm2.weight",
+          "torch_shape": [
+            256
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "9cd2083720dff16a2822660ecdf0c943db20f5f56c29baefc7ac32ad9e92acbe",
+          "safe_npz_key": "array_0021",
+          "source_parameter_path": [
+            "ResNetBlock_2",
+            "conv_proj",
+            "kernel"
+          ],
+          "source_shape": [
+            1,
+            1,
+            128,
+            256
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.2.proj_conv.weight",
+          "torch_shape": [
+            256,
+            128,
+            1,
+            1
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "6e16d9f892e83e159b825eadd06a3935262f9447ef4ee042c42d841ca7ba5783",
+          "safe_npz_key": "array_0022",
+          "source_parameter_path": [
+            "ResNetBlock_2",
+            "norm_proj",
+            "bias"
+          ],
+          "source_shape": [
+            256
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.2.proj_norm.bias",
+          "torch_shape": [
+            256
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "a4b7f0f633d57086472578db50520ccabded32818ba93b2345a9a74c63f84052",
+          "safe_npz_key": "array_0023",
+          "source_parameter_path": [
+            "ResNetBlock_2",
+            "norm_proj",
+            "scale"
+          ],
+          "source_shape": [
+            256
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.2.proj_norm.weight",
+          "torch_shape": [
+            256
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "9f393d961aff25e41c3ce6e09c9e8ab311d8746ee46e3ddc825a42158fdb625c",
+          "safe_npz_key": "array_0024",
+          "source_parameter_path": [
+            "ResNetBlock_3",
+            "Conv_0",
+            "kernel"
+          ],
+          "source_shape": [
+            3,
+            3,
+            256,
+            512
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.3.conv1.weight",
+          "torch_shape": [
+            512,
+            256,
+            3,
+            3
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "6d8c7fbf169bcec2ab5e7009fe85338dc0248ab39dbb23d44732dbf675003121",
+          "safe_npz_key": "array_0025",
+          "source_parameter_path": [
+            "ResNetBlock_3",
+            "Conv_1",
+            "kernel"
+          ],
+          "source_shape": [
+            3,
+            3,
+            512,
+            512
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.3.conv2.weight",
+          "torch_shape": [
+            512,
+            512,
+            3,
+            3
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "7b73edeb1c94fc9474c9d49f03d294828040e3c39ab36929d42baeffb699bc67",
+          "safe_npz_key": "array_0026",
+          "source_parameter_path": [
+            "ResNetBlock_3",
+            "MyGroupNorm_0",
+            "bias"
+          ],
+          "source_shape": [
+            512
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.3.norm1.bias",
+          "torch_shape": [
+            512
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "81f0fcc4f2c0b1770233f592e83e599d890a09420d71c73515c16ff159258b3f",
+          "safe_npz_key": "array_0027",
+          "source_parameter_path": [
+            "ResNetBlock_3",
+            "MyGroupNorm_0",
+            "scale"
+          ],
+          "source_shape": [
+            512
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.3.norm1.weight",
+          "torch_shape": [
+            512
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "7a8d5ff8a24e8b2647d443bf73b1bcd58e16430acd80f8dea66f3e5fdd108a9a",
+          "safe_npz_key": "array_0028",
+          "source_parameter_path": [
+            "ResNetBlock_3",
+            "MyGroupNorm_1",
+            "bias"
+          ],
+          "source_shape": [
+            512
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.3.norm2.bias",
+          "torch_shape": [
+            512
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "3fa4c569f252f9b7ff5561c7c4260198573b05e63e31cdd4aad57be407e2d080",
+          "safe_npz_key": "array_0029",
+          "source_parameter_path": [
+            "ResNetBlock_3",
+            "MyGroupNorm_1",
+            "scale"
+          ],
+          "source_shape": [
+            512
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.3.norm2.weight",
+          "torch_shape": [
+            512
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "2aefa943acd328eab9a1518798031350c8de2702ec6faaaccc8541dc3d5c09dc",
+          "safe_npz_key": "array_0030",
+          "source_parameter_path": [
+            "ResNetBlock_3",
+            "conv_proj",
+            "kernel"
+          ],
+          "source_shape": [
+            1,
+            1,
+            256,
+            512
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.3.proj_conv.weight",
+          "torch_shape": [
+            512,
+            256,
+            1,
+            1
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "7a8d5ff8a24e8b2647d443bf73b1bcd58e16430acd80f8dea66f3e5fdd108a9a",
+          "safe_npz_key": "array_0031",
+          "source_parameter_path": [
+            "ResNetBlock_3",
+            "norm_proj",
+            "bias"
+          ],
+          "source_shape": [
+            512
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.3.proj_norm.bias",
+          "torch_shape": [
+            512
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "2b196a8cb08339c7eeaeb49de500f6bf99c05daeda0de37cfe1038c39219253e",
+          "safe_npz_key": "array_0032",
+          "source_parameter_path": [
+            "ResNetBlock_3",
+            "norm_proj",
+            "scale"
+          ],
+          "source_shape": [
+            512
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "blocks.3.proj_norm.weight",
+          "torch_shape": [
+            512
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "916f526c28084db16d6bc6b4448ab29d417f029c24653c387421e91e7bc161cf",
+          "safe_npz_key": "array_0033",
+          "source_parameter_path": [
+            "conv_init",
+            "kernel"
+          ],
+          "source_shape": [
+            7,
+            7,
+            3,
+            64
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "conv_init.weight",
+          "torch_shape": [
+            64,
+            3,
+            7,
+            7
+          ],
+          "transform": "HWIO_to_OIHW"
+        },
+        {
+          "array_sha256": "2720dce1058ce53d263cd12285fe6fe363721c3b101e454c4f6977ffb304d97d",
+          "safe_npz_key": "array_0034",
+          "source_parameter_path": [
+            "norm_init",
+            "bias"
+          ],
+          "source_shape": [
+            64
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "norm_init.bias",
+          "torch_shape": [
+            64
+          ],
+          "transform": "identity"
+        },
+        {
+          "array_sha256": "858216ad30fb2ad9a8ae5576a5cdd1dc535c78fece5a2ae8fadeeb5cbe211f5b",
+          "safe_npz_key": "array_0035",
+          "source_parameter_path": [
+            "norm_init",
+            "scale"
+          ],
+          "source_shape": [
+            64
+          ],
+          "tensor_roundtrip_parity": true,
+          "torch_parameter_name": "norm_init.weight",
+          "torch_shape": [
+            64
+          ],
+          "transform": "identity"
+        }
+      ],
+      "model": "ConRFT resnetv1-10-frozen pre-pooling",
+      "native_backbone_activation": "ReLU",
+      "native_backbone_normalization": "GroupNorm(num_groups=4)",
+      "new_trainable_layers_activation": "SiLU",
+      "new_trainable_layers_normalization": "LayerNorm",
+      "random_backbone_parameter_count": 0,
+      "safe_npz_sha256": "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5",
+      "source_key_count": 38,
+      "unused_imagenet_output_head_keys": [
+        "array_0036",
+        "array_0037"
+      ]
+    },
+    "target_initialization": {
+      "q1_online_target_max_abs_error": 0.0,
+      "q1_target_exact_deep_copy": true,
+      "q2_online_target_max_abs_error": 0.0,
+      "q2_target_exact_deep_copy": true,
+      "targets_eval": true,
+      "targets_optimizer_membership": false,
+      "targets_require_grad_false": true
+    },
+    "task_condition": {
+      "canonical_task": "Pick up the purple ring and place it onto the red peg.",
+      "canonical_task_sha256": "f85a8ba9fe524b42220c85e71737bdcf3ffd441b772981b92a87d6a89e324219",
+      "frozen_task_feature_dim": 256,
+      "frozen_task_feature_sha256": "b40aa90369c4c355405ed7234dfb1a5935ee3dd05df73c7847132e2b34d44103"
+    },
+    "td_loss_computed_count": 0
+  },
+  "protected_inputs_after": {
+    "files": {
+      "classifier_checkpoint": {
+        "file_size": 87217825,
+        "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+        "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+      },
+      "dataset_conversion_manifest": {
+        "file_size": 44796,
+        "path": "datasets/task2_lerobotv3/conversion_manifest.json",
+        "sha256": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477"
+      },
+      "dataset_normalizer_manifest": {
+        "file_size": 137827,
+        "path": "datasets/task2_lerobotv3/normalizer_manifest.json",
+        "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+      },
+      "dataset_split_manifest": {
+        "file_size": 1224,
+        "path": "datasets/task2_lerobotv3/split_manifest.json",
+        "sha256": "5e63e21d1daf47cfe51fe169497cc77f69bc42e7c919cce708cb2bb0de3dc8d7"
+      },
+      "g0_parent_bridge": {
+        "file_size": 4971,
+        "path": "artifacts/development/stage2/s2_g0_parent_bridge_source_closed.json",
+        "sha256": "fbc0286b60cbe008c3f053ad90a2bff05ae11d0d0bfe351e50fcf7f96cbc610f"
+      },
+      "g1_frame_scores": {
+        "file_size": 1464688,
+        "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/frame_scores.parquet",
+        "sha256": "98df6007d8b75328335abef8b15016de90cb6893f55b5310e466502b2333208d"
+      },
+      "g1_manifest": {
+        "file_size": 41960,
+        "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/g1_manifest.json",
+        "sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
+      },
+      "g1_transition_index": {
+        "file_size": 2404251,
+        "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/transition_index.parquet",
+        "sha256": "f61dbd6d7e396aca8dc60794be0a16d314553d081dd659b1928bc8c5118bd474"
+      },
+      "g3_flow": {
+        "file_size": 10856,
+        "path": "artifacts/development/stage2/s2_g3_differentiable_flow.v4.json",
+        "sha256": "30020b624a4243b08248b1ae90144a88be0e87cc43e733477475fa78acd54acc"
+      },
+      "historical_one_shot": {
+        "file_size": 405907,
+        "path": "artifacts/development/stage2/reward_classifier/r0_one_shot_test_evaluation.v1.json",
+        "sha256": "ec02e805c84a80778be9e16525d751da058a28bd1ebde85f394b33875b6a3988"
+      },
+      "prior_stage2_source_manifest": {
+        "file_size": 12693,
+        "path": "artifacts/development/stage2/stage2_source_manifest.v4.json",
+        "sha256": "defa5b1d1a975c465154ac62e009863163947065127c557b5600025ce77b29eb"
+      },
+      "public_inference_source": {
+        "file_size": 15671,
+        "path": "src/forcesmolvla/inference.py",
+        "sha256": "f27fb012692c8dcbca0cd7892e9800693c46fe7a8c4fb71c5077445cd65ab73b"
+      },
+      "public_modeling_source": {
+        "file_size": 40356,
+        "path": "src/forcesmolvla/modeling_forcesmolvla.py",
+        "sha256": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610"
+      },
+      "safe_resnet10": {
+        "file_size": 21684766,
+        "path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz",
+        "sha256": "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5"
+      },
+      "stage1_p4_p8_00": {
+        "file_size": 4965,
+        "path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_fp32.json",
+        "sha256": "42dff9b52f3a86a93255784efd597281a230c4bca689fdf32fab107430d29c1d"
+      },
+      "stage1_p4_p8_01": {
+        "file_size": 4989,
+        "path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_bf16.json",
+        "sha256": "3681061b9b0974cdd03159d6987433ccd1666df5817685d77efb74b2fb59854f"
+      },
+      "stage1_p4_p8_02": {
+        "file_size": 26051,
+        "path": "artifacts/development/p5_v4_2_r7_gpu_preflight.json",
+        "sha256": "cadfb8e399182f6c981fe57e943fed6d755648144cb37139568b3e7bc4a1b3ba"
+      },
+      "stage1_p4_p8_03": {
+        "file_size": 7777,
+        "path": "artifacts/development/p5_v4_2_r7_source_binding.json",
+        "sha256": "4a2d2ab0c515cc5b45687f46f736ac9cad05b88b6df5a15256cea3f7207c46f9"
+      },
+      "stage1_p4_p8_04": {
+        "file_size": 41575,
+        "path": "artifacts/development/p6_v4_2_r7_gpu_preflight.json",
+        "sha256": "e7adfa8968c9bbf11aee3377e7d54f8645f5166daa13e3ead73ce905de92be7a"
+      },
+      "stage1_p4_p8_05": {
+        "file_size": 16732,
+        "path": "artifacts/development/p6_v4_2_r7_source_binding.json",
+        "sha256": "291983591fce875b04b3632b1c503243b1881c3f92021c18765c494a27a24395"
+      },
+      "stage1_p4_p8_06": {
+        "file_size": 21499,
+        "path": "artifacts/development/p7_v4_2_r7_gpu_preflight.json",
+        "sha256": "120745433fd8e73b0e6427b0b8940daec5a365a900005978fc42c8d02cbbea5e"
+      },
+      "stage1_p4_p8_07": {
+        "file_size": 17606,
+        "path": "artifacts/development/p7_v4_2_r7_source_binding.json",
+        "sha256": "c276405aaed1f3a3f70dff344ac3cbd988037dc87ebf3d9d2db302834223760b"
+      },
+      "stage1_p4_p8_08": {
+        "file_size": 7839,
+        "path": "artifacts/development/p8_v4_2_r7_gpu_preflight.json",
+        "sha256": "cb258ec178fbf881ab5e1b7a7020121ac8d32222f581418920c620b9433c7818"
+      },
+      "stage1_p4_p8_09": {
+        "file_size": 19362,
+        "path": "artifacts/development/p8_v4_2_r7_source_binding.json",
+        "sha256": "e402b489aa902272f61c7843b5595eeae22caa9ba358927d331020106c926756"
+      }
+    },
+    "p8_storage_tree": {
+      "file_count": 51,
+      "total_file_size": 29806629735,
+      "tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+    },
+    "r5_checkpoint_tree": {
+      "algorithm": "sha256(canonical_json(sorted(relative_path,file_size,sha256)))",
+      "file_count": 72,
+      "sha256": "9c8748bd62ed8ba76d7d25a22a02cfacb7d9e5889ef5c4ed0c8770f007a4dd42",
+      "total_file_size": 3887526794
+    }
+  },
+  "protected_inputs_before": {
+    "files": {
+      "classifier_checkpoint": {
+        "file_size": 87217825,
+        "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+        "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+      },
+      "dataset_conversion_manifest": {
+        "file_size": 44796,
+        "path": "datasets/task2_lerobotv3/conversion_manifest.json",
+        "sha256": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477"
+      },
+      "dataset_normalizer_manifest": {
+        "file_size": 137827,
+        "path": "datasets/task2_lerobotv3/normalizer_manifest.json",
+        "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+      },
+      "dataset_split_manifest": {
+        "file_size": 1224,
+        "path": "datasets/task2_lerobotv3/split_manifest.json",
+        "sha256": "5e63e21d1daf47cfe51fe169497cc77f69bc42e7c919cce708cb2bb0de3dc8d7"
+      },
+      "g0_parent_bridge": {
+        "file_size": 4971,
+        "path": "artifacts/development/stage2/s2_g0_parent_bridge_source_closed.json",
+        "sha256": "fbc0286b60cbe008c3f053ad90a2bff05ae11d0d0bfe351e50fcf7f96cbc610f"
+      },
+      "g1_frame_scores": {
+        "file_size": 1464688,
+        "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/frame_scores.parquet",
+        "sha256": "98df6007d8b75328335abef8b15016de90cb6893f55b5310e466502b2333208d"
+      },
+      "g1_manifest": {
+        "file_size": 41960,
+        "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/g1_manifest.json",
+        "sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
+      },
+      "g1_transition_index": {
+        "file_size": 2404251,
+        "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/transition_index.parquet",
+        "sha256": "f61dbd6d7e396aca8dc60794be0a16d314553d081dd659b1928bc8c5118bd474"
+      },
+      "g3_flow": {
+        "file_size": 10856,
+        "path": "artifacts/development/stage2/s2_g3_differentiable_flow.v4.json",
+        "sha256": "30020b624a4243b08248b1ae90144a88be0e87cc43e733477475fa78acd54acc"
+      },
+      "historical_one_shot": {
+        "file_size": 405907,
+        "path": "artifacts/development/stage2/reward_classifier/r0_one_shot_test_evaluation.v1.json",
+        "sha256": "ec02e805c84a80778be9e16525d751da058a28bd1ebde85f394b33875b6a3988"
+      },
+      "prior_stage2_source_manifest": {
+        "file_size": 12693,
+        "path": "artifacts/development/stage2/stage2_source_manifest.v4.json",
+        "sha256": "defa5b1d1a975c465154ac62e009863163947065127c557b5600025ce77b29eb"
+      },
+      "public_inference_source": {
+        "file_size": 15671,
+        "path": "src/forcesmolvla/inference.py",
+        "sha256": "f27fb012692c8dcbca0cd7892e9800693c46fe7a8c4fb71c5077445cd65ab73b"
+      },
+      "public_modeling_source": {
+        "file_size": 40356,
+        "path": "src/forcesmolvla/modeling_forcesmolvla.py",
+        "sha256": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610"
+      },
+      "safe_resnet10": {
+        "file_size": 21684766,
+        "path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz",
+        "sha256": "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5"
+      },
+      "stage1_p4_p8_00": {
+        "file_size": 4965,
+        "path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_fp32.json",
+        "sha256": "42dff9b52f3a86a93255784efd597281a230c4bca689fdf32fab107430d29c1d"
+      },
+      "stage1_p4_p8_01": {
+        "file_size": 4989,
+        "path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_bf16.json",
+        "sha256": "3681061b9b0974cdd03159d6987433ccd1666df5817685d77efb74b2fb59854f"
+      },
+      "stage1_p4_p8_02": {
+        "file_size": 26051,
+        "path": "artifacts/development/p5_v4_2_r7_gpu_preflight.json",
+        "sha256": "cadfb8e399182f6c981fe57e943fed6d755648144cb37139568b3e7bc4a1b3ba"
+      },
+      "stage1_p4_p8_03": {
+        "file_size": 7777,
+        "path": "artifacts/development/p5_v4_2_r7_source_binding.json",
+        "sha256": "4a2d2ab0c515cc5b45687f46f736ac9cad05b88b6df5a15256cea3f7207c46f9"
+      },
+      "stage1_p4_p8_04": {
+        "file_size": 41575,
+        "path": "artifacts/development/p6_v4_2_r7_gpu_preflight.json",
+        "sha256": "e7adfa8968c9bbf11aee3377e7d54f8645f5166daa13e3ead73ce905de92be7a"
+      },
+      "stage1_p4_p8_05": {
+        "file_size": 16732,
+        "path": "artifacts/development/p6_v4_2_r7_source_binding.json",
+        "sha256": "291983591fce875b04b3632b1c503243b1881c3f92021c18765c494a27a24395"
+      },
+      "stage1_p4_p8_06": {
+        "file_size": 21499,
+        "path": "artifacts/development/p7_v4_2_r7_gpu_preflight.json",
+        "sha256": "120745433fd8e73b0e6427b0b8940daec5a365a900005978fc42c8d02cbbea5e"
+      },
+      "stage1_p4_p8_07": {
+        "file_size": 17606,
+        "path": "artifacts/development/p7_v4_2_r7_source_binding.json",
+        "sha256": "c276405aaed1f3a3f70dff344ac3cbd988037dc87ebf3d9d2db302834223760b"
+      },
+      "stage1_p4_p8_08": {
+        "file_size": 7839,
+        "path": "artifacts/development/p8_v4_2_r7_gpu_preflight.json",
+        "sha256": "cb258ec178fbf881ab5e1b7a7020121ac8d32222f581418920c620b9433c7818"
+      },
+      "stage1_p4_p8_09": {
+        "file_size": 19362,
+        "path": "artifacts/development/p8_v4_2_r7_source_binding.json",
+        "sha256": "e402b489aa902272f61c7843b5595eeae22caa9ba358927d331020106c926756"
+      }
+    },
+    "p8_storage_tree": {
+      "file_count": 51,
+      "total_file_size": 29806629735,
+      "tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+    },
+    "r5_checkpoint_tree": {
+      "algorithm": "sha256(canonical_json(sorted(relative_path,file_size,sha256)))",
+      "file_count": 72,
+      "sha256": "9c8748bd62ed8ba76d7d25a22a02cfacb7d9e5889ef5c4ed0c8770f007a4dd42",
+      "total_file_size": 3887526794
+    }
+  },
+  "real_batch_access_audit": {
+    "absolute_action_columns_returned_by_g2_loader": 0,
+    "authorized_g1_train_transition_count": 10075,
+    "full_h50_action_columns_returned_by_g2_loader": 0,
+    "input_action_shape": [
+      16,
+      3,
+      7
+    ],
+    "manual_g1_rows_returned": 0,
+    "manual_label_rows_returned": 0,
+    "selected_episode_ids": [
+      "episode_000000",
+      "episode_000002",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000",
+      "episode_000000"
+    ],
+    "selected_executed_steps_distribution": {
+      "1": 1,
+      "2": 1,
+      "3": 14
+    },
+    "selected_real_transition_count": 16,
+    "selected_transition_indices": [
+      0,
+      933,
+      265,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "source_parquet_files_opened": [
+      "data/chunk-000/file-000.parquet",
+      "data/chunk-000/file-002.parquet"
+    ],
+    "test_transition_rows_returned": 0,
+    "train_transition_rows_returned": 10075,
+    "validation_transition_rows_returned": 0
+  },
+  "report": {
+    "file_size": 2159,
+    "path": "docs/s2_g2_twin_q_topology_report.md",
+    "sha256": "3f9103ff90e4d757b31bdbd04edfb2c935f9aca9dd3b2450514844a8d3be8cd0"
+  },
+  "resolved_config": {
+    "file_size": 3565,
+    "path": "configs/stage2_g2_force_aware_twin_q.development.yaml",
+    "sha256": "ab23300edc478cff53a82215702fd659cc838933426f611042c9c6a3a88b7dcc"
+  },
+  "schema_version": "forcesmolvla_s2_g2_twin_q_topology.v1",
+  "source_manifest": {
+    "file_size": 2652,
+    "path": "artifacts/development/stage2/stage2_source_manifest.v5_g2.json",
+    "sha256": "8765bf21ee43a8ea8a4fc363e91468574e204978018acb2212eb6c93ebd7203f"
+  },
+  "terminal_status": {
+    "ACTOR_UPDATED": "no",
+    "CAL_QL_IMPLEMENTED": "no",
+    "CRITIC_OPTIMIZER_CREATED": "no",
+    "CRITIC_UPDATED": "no",
+    "G2_AUTHORIZED": "yes_development_topology_only_consumed",
+    "G2_TOPOLOGY": "complete",
+    "G2_ZERO_UPDATE_GPU_PREFLIGHT": "pass",
+    "G4_G7_CREATED": "no",
+    "NEXT_ALLOWED_ACTION": "request_G4_loss_implementation_approval",
+    "TD_LOSS_IMPLEMENTED": "no"
+  },
+  "unit_tests": {
+    "command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/test_rft_critic.py",
+    "exit_code": 0,
+    "result": "5 passed"
+  }
+}

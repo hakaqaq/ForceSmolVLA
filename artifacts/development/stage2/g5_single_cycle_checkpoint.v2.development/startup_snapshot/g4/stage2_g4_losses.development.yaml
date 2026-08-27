@@ -1,0 +1,108 @@
+schema_version: forcesmolvla_stage2_g4_losses.development.v1
+authorization: G4_loss_implementation_only
+claim_scope: development_only
+
+frozen_inputs:
+  actor_checkpoint: outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000
+  actor_flow_horizon: 50
+  actor_flow_euler_steps: 10
+  actor_flow_precision: bf16_outer_with_v4_2_fp32_islands
+  only_rl_transition_root: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  only_rl_transition_manifest_sha256: 96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5
+  only_rl_split: train
+  manual_g1_allowed: false
+  manual_labels_allowed: false
+  validation_test_transition_allowed: false
+
+td_target:
+  target_actor_exists: false
+  next_action_owner: current_actor_eval_no_grad
+  next_action_observation: o_next
+  target_value: min_q1_target_q2_target
+  target_formula: reward_plus_stored_discount_times_target_value
+  stored_discount_is_complete_multiplier: true
+  repeat_gamma_done_or_bootstrap_multiplication_allowed: false
+  terminal_rows_call_next_actor_or_target_critics: false
+  behavior_mask_owner: g1_executed_action_mask
+  policy_mask: [true, true, true]
+
+loss_masks:
+  full_macro_valid: executed_action_mask_all
+  calql_valid: full_macro_valid_and_not_terminated
+  actor_q_valid: full_macro_valid
+  partial_tail_td: true
+  partial_tail_full_h50_flow_matching: true
+  partial_tail_calql: false
+  partial_tail_actor_q: false
+
+calql:
+  description: Cal-QL-style finite-candidate conservative objective
+  exact_importance_corrected_cql_claimed: false
+  candidate_sets: [random, policy_current, policy_next]
+  candidate_evaluation_observation: o_t
+  policy_current_generation_observation: o_t
+  policy_next_generation_observation: o_next
+  explicit_candidates_only: true
+  proposal_density_correction: false
+  dataset_q_in_normalized_lse_count: 1
+  mc_lower_bound_scope: candidate_q_only
+  candidate_mask: [true, true, true]
+
+actor_q:
+  online_critic_aggregation: mean_q1_q2
+  target_critics_used: false
+  target_actor_used: false
+  action_shape: [3, 7]
+  actor_q_guided_action_dims: [0, 1, 2, 3, 4, 5]
+  gripper_objective: flow_matching_only
+  gripper_q_gradient: false
+  actor_q_loss_sign: negative_mean_q
+  critic_parameter_gradients: disabled_temporarily
+  critic_action_gradient: enabled
+  router_auxiliary_terms_per_actor_objective: 1
+
+dtypes:
+  actor_outer_autocast: bfloat16
+  critic: float32
+  action_into_critic: float32_graph_connected_tcp6
+  reward_discount_mc_target_and_all_losses: float32
+  action_mask: bool
+  calql_logsumexp: float32
+
+unapproved_training_parameters:
+  beta: null
+  eta: null
+  calql_alpha: null
+  candidate_count_M: null
+  temperature_T: null
+  clip_min: null
+  clip_max: null
+  polyak_tau: null
+  random_proposal_distribution: null
+
+synthetic_zero_update_preflight_only:
+  batch_size: 2
+  candidate_count_M: 2
+  temperature_T: 0.7
+  clip_min: -2.0
+  clip_max: 3.0
+  calql_alpha: 0.2
+  beta: 0.4
+  eta: 0.2
+  fixed_repeats: 3
+  seed: 42
+
+forbidden_this_run:
+  - optimizer_creation
+  - optimizer_step
+  - parameter_update
+  - polyak_update
+  - target_actor_creation
+  - training_checkpoint
+  - G5
+  - G6
+  - G7
+  - validation_or_test_transition_read
+  - manual_g1_read
+  - manual_label_read
+  - actor_or_critic_source_modification

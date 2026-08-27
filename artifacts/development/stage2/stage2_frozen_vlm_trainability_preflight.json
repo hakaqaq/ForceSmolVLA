@@ -1,0 +1,128 @@
+{
+  "FROZEN_PARAMETER_HASH_UNCHANGED": "yes",
+  "FROZEN_VLM_FORWARD_PARITY": "pass",
+  "LONG_RUN_AUTHORIZED": "no",
+  "LONG_RUN_STARTED": "no",
+  "ROBOT_EXECUTION_AUTHORIZED": false,
+  "STAGE2_TRAINABILITY_CONTRACT": "frozen_vlm_force_action_trainable",
+  "access_audit": {
+    "manual_g1_opens": 0,
+    "manual_label_opens": 0,
+    "reward_classifier_inference": 0,
+    "reward_classifier_updates": 0,
+    "test_reads": 0,
+    "train_transition_reads": 40,
+    "validation_reads": 0
+  },
+  "all_finite": true,
+  "checkpoint_created": false,
+  "contract": "configs/stage2_trainability_contract.v2.development.json",
+  "contract_sha256": "360cee1b50f2a520922c4b05ddcb22ef31d38f01cc4c220403d4c29e3637bad4",
+  "forward_parity": {
+    "exact": true,
+    "force_kv_projection_per_chunk": 1,
+    "maximum_abs_error": 0.0,
+    "public_inference_semantics_changed": false,
+    "public_predict_action_chunk_implementation_modified": false
+  },
+  "historical_status": {
+    "G7B_CHECKPOINT_ALLOWED_AS_LONG_RUN_PARENT": false,
+    "G7B_FULL_ACTOR_JOINT_SMOKE": "historical_valid_development_mechanics",
+    "STAGE2_FROZEN_VLM_TRAINABILITY": "current_candidate",
+    "STAGE2_FULL_ACTOR_TRAINABILITY": "historical_superseded_for_long_run"
+  },
+  "parameter_counts": {
+    "frozen_parameter_count": 350196864,
+    "trainable_actor_parameter_count": 155423477,
+    "trainable_critic_parameter_count": 8584194
+  },
+  "schema_version": "forcesmolvla_stage2_frozen_vlm_trainability_preflight.v1",
+  "status": "pass",
+  "temporary_actor_update": {
+    "actor_state_after": "8dd5ca1486ef26dff5ab51fe5e2ff2da762099f5e2110514707a28e93df29534",
+    "critic_action_shape": [
+      4,
+      3,
+      7
+    ],
+    "flow_audit": {
+      "euler_velocity_evaluations": 10,
+      "flow_chunks_sampled": 1,
+      "policy_action_chunks": 4,
+      "policy_action_chunks_by_purpose": {
+        "actor_guidance": 4
+      },
+      "prefix_prefill_count": 1
+    },
+    "gradient": {
+      "action_expert_gradient_norm": 1.1993613243103027,
+      "action_io_gradient_norm": 2.8609282970428467,
+      "actor_preclip_global_norm": 3.102550983428955,
+      "force_gradient_norm": 0.04944620281457901,
+      "gripper_fm_gradient_norm": 0.0038615441881120205,
+      "gripper_q_gradient_max_abs": 0.0,
+      "router_gradient_norm": 0.022968962788581848,
+      "smolvlm_gradient_norm": 0.0,
+      "state_prefix_projection_gradient_norm": 0.0,
+      "tcp6_q_gradient_norm": 0.01409489568322897,
+      "vision_gradient_norm": 0.0
+    },
+    "loss": {
+      "actor_q_min_twin": -0.05755615234375,
+      "balance": 0.9999284148216248,
+      "flow_matching": 0.20884211361408234,
+      "total": -0.35672008991241455,
+      "z": 3.963437120546587e-05
+    },
+    "optimizer_updates": 1,
+    "prefix_audit": {
+      "force_kv_projection_count": 1,
+      "prefix_cache_detached": true,
+      "prefix_grad_enabled": false,
+      "prefix_prefill_count": 1,
+      "prefix_representation_detached": true
+    },
+    "q": {
+      "q1_mean": 0.063232421875,
+      "q2_mean": 0.05755615234375
+    }
+  },
+  "temporary_critic_update": {
+    "actor_changed": false,
+    "loss": {
+      "L_CalQL_Q1": 0.35929638147354126,
+      "L_CalQL_Q2": 0.35561251640319824,
+      "L_TD_Q1": 1.6637112594253267e-06,
+      "L_TD_Q2": 4.8260200856020674e-05,
+      "L_critic": 0.03577040880918503
+    },
+    "optimizer_updates": 1,
+    "polyak_updates_per_target": 1
+  },
+  "temporary_updates_discarded": true,
+  "trainability": {
+    "actor_optimizer": {
+      "decay_tensor_count": 146,
+      "frozen_parameter_in_optimizer": 0,
+      "no_decay_tensor_count": 81,
+      "parameter_count": 155423477,
+      "parameter_tensor_count": 227,
+      "type": "AdamW"
+    },
+    "frozen_modules_always_eval": true,
+    "frozen_parameter_tensors": 347,
+    "frozen_state_after": {
+      "buffer_tensor_count": 2,
+      "buffers_sha256": "e01397a0cfe738f05b5b1590e6d76d4641f34614a66017f1424fe69030ba56ed",
+      "parameter_tensor_count": 347,
+      "parameters_sha256": "b84eefb9793820b584501ccf031d3a7e1517e8c089c70b7be5ffaf142987b72c"
+    },
+    "frozen_state_before": {
+      "buffer_tensor_count": 2,
+      "buffers_sha256": "e01397a0cfe738f05b5b1590e6d76d4641f34614a66017f1424fe69030ba56ed",
+      "parameter_tensor_count": 347,
+      "parameters_sha256": "b84eefb9793820b584501ccf031d3a7e1517e8c089c70b7be5ffaf142987b72c"
+    },
+    "trainable_actor_parameter_tensors": 227
+  }
+}

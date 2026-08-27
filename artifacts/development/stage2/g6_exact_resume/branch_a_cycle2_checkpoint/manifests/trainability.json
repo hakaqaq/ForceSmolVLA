@@ -1,0 +1,16 @@
+{
+  "actor_all_checkpoint_trainable_parameters_owned": true,
+  "actor_trainable_parameter_count": 505620341,
+  "actor_trainable_tensor_count": 574,
+  "camera_count": 2,
+  "flow_euler_steps": 10,
+  "flow_horizon": 50,
+  "frozen_resnet_in_critic_optimizer": false,
+  "lm_head_gradient_required": false,
+  "lora_used": false,
+  "q1_trainable_parameter_count": 4292097,
+  "q2_trainable_parameter_count": 4292097,
+  "target_trainable_parameter_count": 0,
+  "torch_compile": false,
+  "vlm_frozen": false
+}

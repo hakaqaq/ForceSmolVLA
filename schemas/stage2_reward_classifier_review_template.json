@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_status": "empty_human_review_template",
+  "generation_permitted": false,
+  "schema_path": "schemas/stage2_reward_classifier_example.schema.json",
+  "label_definitions": {
+    "positive": "current observation clearly satisfies the task completion condition",
+    "ordinary_negative": "task is clearly not complete",
+    "hard_negative": "aligned, contacting, or partially inserted, but completion condition is not satisfied"
+  },
+  "forbidden_inference_rules": [
+    "saved_true",
+    "episode_end",
+    "last_valid_frame",
+    "filename",
+    "gripper_state",
+    "image_or_action_heuristic"
+  ],
+  "records": []
+}

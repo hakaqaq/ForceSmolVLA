@@ -1,0 +1,98 @@
+{
+  "ConRFT_git_commit": "a779fde7fa5db5a469960a8490c100f35b41b49e",
+  "artifact_status": "PASS_BOUND_SOURCE_AND_TRAINING_ARTIFACTS",
+  "artifacts": {
+    "checkpoint_best_checkpoint": {
+      "file_size": 87217825,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+      "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+    },
+    "checkpoint_last_checkpoint": {
+      "file_size": 87217825,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/last_checkpoint.msgpack",
+      "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+    },
+    "checkpoint_resume_state": {
+      "file_size": 87218118,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/resume_state.msgpack",
+      "sha256": "2a6382eb5660c3233ca9f4abde8c5709e64614a53a59e9b0444d7f4d8a04d238"
+    },
+    "training_report": {
+      "file_size": 36923,
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/r0_training_validation_report.v1.json",
+      "sha256": "c48d845f77b3b7b46b5788998c412c280d93e0e8a863d5edeb488fcea8cb2aac"
+    }
+  },
+  "created_at": "2026-08-25T12:12:55.649501+00:00",
+  "dataset_storage_tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d",
+  "prohibited_artifacts_created": [],
+  "schema_version": "forcesmolvla_r0_reward_classifier_source_artifact_manifest.v1",
+  "self_included": false,
+  "sources": {
+    "adapter": {
+      "file_size": 5627,
+      "path": "tools/reward_classifier/conrft_lerobot_v3_adapter.py",
+      "sha256": "ba44cbbadbb36925b7ad3d6cc846db3c21fa6ae299915401296383106c7a45df"
+    },
+    "conrft_data_augmentations": {
+      "file_size": 11737,
+      "path": "/home/rlc123/conrft/serl_launcher/serl_launcher/vision/data_augmentations.py",
+      "sha256": "f99fa8eae7e95d0ee2a39850f2ce5056a7cd13a070425adc67829d76747149a4"
+    },
+    "conrft_encoding": {
+      "file_size": 6184,
+      "path": "/home/rlc123/conrft/serl_launcher/serl_launcher/common/encoding.py",
+      "sha256": "8ce2742e627d6455aa40138a2921e08bbc452885ae9b47164561f4673884f407"
+    },
+    "conrft_resnet_v1": {
+      "file_size": 13544,
+      "path": "/home/rlc123/conrft/serl_launcher/serl_launcher/vision/resnet_v1.py",
+      "sha256": "5582fb42145da35eceaaaf058758f9a6f850bfb1ea1c278a1b14526d4608c7bd"
+    },
+    "conrft_reward_classifier": {
+      "file_size": 3850,
+      "path": "/home/rlc123/conrft/serl_launcher/serl_launcher/networks/reward_classifier.py",
+      "sha256": "917e182cf0ca366dc80e2453ad722a21847209c500394ad8254e9dac0d84dde3"
+    },
+    "inventory": {
+      "file_size": 60041,
+      "path": "artifacts/development/stage2/reward_classifier/task2_frame_label_inventory.v2.json",
+      "sha256": "8839793f0e5d5c6d866b41e32bcb7fa576cd984a9faf5507719a1735be611a65"
+    },
+    "readiness": {
+      "file_size": 7086,
+      "path": "artifacts/development/stage2/s2_r0_label_ingestion_readiness.v4.json",
+      "sha256": "64ae61e7d83c7be49451f4716c0e95921c2e9dbd062a553cec8f7fccdcc690aa"
+    },
+    "resolved_training_config": {
+      "file_size": 3373,
+      "path": "configs/stage2_r0_reward_classifier_training.development.json",
+      "sha256": "72213d6d211e89a574c29bd55a4928607d2191b51917af374594fc74356c1616"
+    },
+    "reviewed_labels": {
+      "file_size": 40100,
+      "path": "labels/task2_reward_frame_labels.v2.reviewed.json",
+      "sha256": "ecda7d480f6a4c49dbe63a31b7e3172b30a5470437510522b1da2217eae77a9c"
+    },
+    "safe_resnet10_manifest": {
+      "file_size": 22053,
+      "path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json",
+      "sha256": "2e54ec70420ebd9cd73c12689937fca2597cf74d8ea608526b805999647e22e8"
+    },
+    "safe_resnet10_npz": {
+      "file_size": 21684766,
+      "path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz",
+      "sha256": "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5"
+    },
+    "split_manifest": {
+      "file_size": 1224,
+      "path": "datasets/task2_lerobotv3/split_manifest.json",
+      "sha256": "5e63e21d1daf47cfe51fe169497cc77f69bc42e7c919cce708cb2bb0de3dc8d7"
+    },
+    "training_source": {
+      "file_size": 62562,
+      "path": "tools/reward_classifier/train_task2_reward_classifier.py",
+      "sha256": "faf96c0ac7d8dd9e6893265c47af0ef15d5ac48c47e72164de200d839e9738a6"
+    }
+  }
+}

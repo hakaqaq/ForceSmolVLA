@@ -1,0 +1,5 @@
+{
+  "candidate_id": "stage1_b16_repeat1",
+  "physical_batch_size": 16,
+  "repeat": 1
+}

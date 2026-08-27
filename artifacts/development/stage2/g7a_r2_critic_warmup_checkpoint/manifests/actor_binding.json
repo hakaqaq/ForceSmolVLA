@@ -1,0 +1,30 @@
+{
+  "bitwise_unchanged": true,
+  "optimizer_created": false,
+  "optimizer_updates": 0,
+  "r5_path": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000",
+  "r5_tree": {
+    "file_count": 72,
+    "total_file_size": 3887526794,
+    "tree_sha256": "01665f899ad34e4ba048a46bcffe3a0f819fc0f7e42c6d0c9a2db662a3665379"
+  },
+  "scheduler_created": false,
+  "scheduler_steps": 0,
+  "state_final": {
+    "floating_buffer_count": 4,
+    "floating_buffers_sha256": "7dc0a276eddb24a5b48804f5795b433172538a91ccb114a549c06448aaef30cb",
+    "nonfloating_buffer_count": 0,
+    "nonfloating_buffers_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "parameter_tensor_count": 574,
+    "parameters_sha256": "ba425f642ac5bd4a2fd199262d43d71c5a337763af76e785b3e08ad41da326d5"
+  },
+  "state_initial": {
+    "floating_buffer_count": 4,
+    "floating_buffers_sha256": "7dc0a276eddb24a5b48804f5795b433172538a91ccb114a549c06448aaef30cb",
+    "nonfloating_buffer_count": 0,
+    "nonfloating_buffers_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "parameter_tensor_count": 574,
+    "parameters_sha256": "ba425f642ac5bd4a2fd199262d43d71c5a337763af76e785b3e08ad41da326d5"
+  },
+  "target_actor": null
+}

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>task2 Reward Frame Manual Review</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #11151a; color: #e9eef5; }
+    header, .controls, .metadata, .form { padding: 10px 16px; }
+    header { display: flex; gap: 16px; align-items: center; background: #202832; position: sticky; top: 0; z-index: 2; }
+    select, input, textarea, button { background: #111820; color: #eef; border: 1px solid #536274; border-radius: 4px; padding: 6px; }
+    button { cursor: pointer; } button:hover { background: #273342; }
+    .cameras { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; }
+    figure { margin: 0; background: #080a0d; border: 1px solid #394451; }
+    figcaption { padding: 6px; font-weight: 600; }
+    img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; }
+    .controls { display: grid; grid-template-columns: auto auto 1fr auto; gap: 8px; align-items: center; }
+    #frameSlider { width: 100%; }
+    .metadata { font-family: ui-monospace, monospace; font-size: 13px; background: #171d24; white-space: pre-wrap; }
+    .warning { color: #ffd37a; border-left: 4px solid #d99b22; padding-left: 10px; }
+    .form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    label { display: grid; gap: 4px; font-size: 13px; }
+    label.wide { grid-column: 1 / -1; }
+    textarea { min-height: 70px; resize: vertical; }
+    .footer-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+    @media (max-width: 900px) { .cameras, .form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>task2 双相机人工完成边界审核</strong>
+    <label>Episode <select id="episodeSelect"></select></label>
+    <span id="reviewProgress"></span>
+  </header>
+
+  <div class="warning controls" style="display:block">
+    仅凭当前双相机画面人工判断。禁止用 saved=true、episode 末帧、last_valid_frame、文件名或 episode 成功标签推断完成帧。
+    原 conversion task text 与本轮“完整物理插装”判定措辞会同时显示，发现语义不一致时请暂停该 episode 并记录 notes。
+  </div>
+
+  <div class="cameras">
+    <figure><figcaption>D435 third-person · observation.images.camera1</figcaption><img id="camera1" alt="D435"></figure>
+    <figure><figcaption>D405 wrist · observation.images.camera2</figcaption><img id="camera2" alt="D405"></figure>
+  </div>
+
+  <div class="controls">
+    <button id="previous">◀ 前一帧</button>
+    <button id="play">▶ 30 Hz 播放</button>
+    <input id="frameSlider" type="range" min="0" value="0" step="1">
+    <span id="frameDisplay"></span>
+  </div>
+  <div id="metadata" class="metadata"></div>
+
+  <section class="form">
+    <label>last_confident_incomplete_frame<input id="lastIncomplete" type="number" min="0"></label>
+    <label>first_confident_complete_frame<input id="firstComplete" type="number" min="0"></label>
+    <label>positive_available<select id="positiveAvailable"><option value="">未填写</option><option value="true">true</option><option value="false">false</option></select></label>
+    <label>completion_visible<select id="completionVisible"><option value="">未填写</option><option value="true">true</option><option value="false">false</option></select></label>
+    <label>completion_stable<select id="completionStable"><option value="">未填写</option><option value="true">true</option><option value="false">false</option></select></label>
+    <label>confidence<input id="confidence" placeholder="例如 high / medium / low"></label>
+    <label class="wide">ordinary_negative_intervals（JSON，例如 [[0,120]]）<textarea id="ordinaryIntervals">[]</textarea></label>
+    <label class="wide">hard_negative_intervals（JSON，例如 [[121,200]]）<textarea id="hardIntervals">[]</textarea></label>
+    <label class="wide">ambiguous_intervals / ignore（JSON，例如 [[201,210]]）<textarea id="ambiguousIntervals">[]</textarea></label>
+    <label>reviewer_id<input id="reviewerId"></label>
+    <label>review_timestamp（ISO-8601，人工填写）<input id="reviewTimestamp"></label>
+    <label class="wide">notes<textarea id="notes"></textarea></label>
+    <div class="footer-actions">
+      <button id="saveEpisode">保存本集人工记录（仅浏览器内存）</button>
+      <button id="exportLabels">导出 JSON</button>
+    </div>
+  </section>
+
+  <script>
+    "use strict";
+    let reviewIndex, labelDocument, episode, frame = 0, timer = null;
+    const $ = id => document.getElementById(id);
+    const boolOrNull = value => value === "" ? null : value === "true";
+    const nullableInt = value => value === "" ? null : Number(value);
+    const parseIntervals = (id) => {
+      const value = JSON.parse($(id).value || "[]");
+      if (!Array.isArray(value) || value.some(x => !Array.isArray(x) || x.length !== 2 || !x.every(Number.isInteger))) {
+        throw new Error(id + " 必须是 [[start,end], ...] 整数数组");
+      }
+      return value;
+    };
+    const labelFor = id => labelDocument.episodes.find(x => x.episode_id === id);
+
+    function saveForm(markReviewed=false) {
+      if (!episode) return;
+      const value = labelFor(episode.episode_id);
+      value.last_confident_incomplete_frame = nullableInt($("lastIncomplete").value);
+      value.first_confident_complete_frame = nullableInt($("firstComplete").value);
+      value.positive_available = boolOrNull($("positiveAvailable").value);
+      value.completion_visible = boolOrNull($("completionVisible").value);
+      value.completion_stable = boolOrNull($("completionStable").value);
+      value.confidence = $("confidence").value || null;
+      value.ordinary_negative_intervals = parseIntervals("ordinaryIntervals");
+      value.hard_negative_intervals = parseIntervals("hardIntervals");
+      value.ambiguous_intervals = parseIntervals("ambiguousIntervals");
+      value.reviewer_id = $("reviewerId").value || null;
+      value.review_timestamp = $("reviewTimestamp").value || null;
+      value.notes = $("notes").value || null;
+      if (markReviewed) value.manual_review_status = "human_reviewed";
+      updateProgress();
+    }
+
+    function loadForm() {
+      const v = labelFor(episode.episode_id);
+      $("lastIncomplete").value = v.last_confident_incomplete_frame ?? "";
+      $("firstComplete").value = v.first_confident_complete_frame ?? "";
+      $("positiveAvailable").value = v.positive_available === null ? "" : String(v.positive_available);
+      $("completionVisible").value = v.completion_visible === null ? "" : String(v.completion_visible);
+      $("completionStable").value = v.completion_stable === null ? "" : String(v.completion_stable);
+      $("confidence").value = v.confidence ?? "";
+      $("ordinaryIntervals").value = JSON.stringify(v.ordinary_negative_intervals);
+      $("hardIntervals").value = JSON.stringify(v.hard_negative_intervals);
+      $("ambiguousIntervals").value = JSON.stringify(v.ambiguous_intervals);
+      $("reviewerId").value = v.reviewer_id ?? "";
+      $("reviewTimestamp").value = v.review_timestamp ?? "";
+      $("notes").value = v.notes ?? "";
+    }
+
+    function updateProgress() {
+      const reviewed = labelDocument.episodes.filter(x => x.manual_review_status === "human_reviewed").length;
+      $("reviewProgress").textContent = `人工保存 ${reviewed}/${labelDocument.episodes.length}`;
+    }
+
+    function showFrame(next) {
+      frame = Math.max(0, Math.min(next, episode.frame_count - 1));
+      $("frameSlider").value = frame;
+      $("frameDisplay").textContent = `${frame}/${episode.frame_count - 1}`;
+      const base = `/api/frame?episode_id=${encodeURIComponent(episode.episode_id)}&frame_index=${frame}`;
+      $("camera1").src = base + "&camera=camera1";
+      $("camera2").src = base + "&camera=camera2";
+      const row = episode.source_row_reference_format.replace("{frame_index}", frame);
+      $("metadata").textContent = [
+        `episode_id: ${episode.episode_id}`,
+        `output_episode_index: ${episode.output_episode_index}`,
+        `split: ${episode.split}`,
+        `frame_index: ${frame}`,
+        `timestamp: ${episode.timestamps_seconds[frame].toFixed(6)} s`,
+        `LeRobot v3 row reference: ${row}`,
+        `camera row identity: camera1/camera2 @ same parquet row`,
+        `conversion task text: ${episode.task_text_from_conversion_manifest}`,
+        `10 Hz training candidate: ${frame % 3 === 0}; detector calibration: full 30 Hz`
+      ].join("\n");
+    }
+
+    function chooseEpisode(id) {
+      if (episode) saveForm(false);
+      episode = reviewIndex.episodes.find(x => x.episode_id === id);
+      frame = 0;
+      $("frameSlider").max = episode.frame_count - 1;
+      loadForm();
+      showFrame(0);
+    }
+
+    function stop() { if (timer) clearInterval(timer); timer = null; $("play").textContent = "▶ 30 Hz 播放"; }
+    function togglePlay() {
+      if (timer) return stop();
+      $("play").textContent = "⏸ 暂停";
+      timer = setInterval(() => frame + 1 < episode.frame_count ? showFrame(frame + 1) : stop(), 1000 / 30);
+    }
+
+    async function init() {
+      [reviewIndex, labelDocument] = await Promise.all([
+        fetch("/review_index.json").then(r => r.json()),
+        fetch("/label_template.json").then(r => r.json())
+      ]);
+      for (const item of reviewIndex.episodes) {
+        const option = document.createElement("option");
+        option.value = item.episode_id;
+        option.textContent = `${item.episode_id} · ${item.split} · ${item.frame_count} frames`;
+        $("episodeSelect").appendChild(option);
+      }
+      chooseEpisode(reviewIndex.episodes[0].episode_id);
+      updateProgress();
+    }
+
+    $("episodeSelect").addEventListener("change", e => chooseEpisode(e.target.value));
+    $("frameSlider").addEventListener("input", e => showFrame(Number(e.target.value)));
+    $("previous").addEventListener("click", () => showFrame(frame - 1));
+    $("play").addEventListener("click", togglePlay);
+    $("saveEpisode").addEventListener("click", () => { try { saveForm(true); alert("已保存到浏览器内存；请定期导出 JSON。") } catch (e) { alert(e.message) } });
+    $("exportLabels").addEventListener("click", () => {
+      try { saveForm(false); } catch (e) { alert(e.message); return; }
+      const blob = new Blob([JSON.stringify(labelDocument, null, 2) + "\n"], {type: "application/json"});
+      const link = document.createElement("a"); link.href = URL.createObjectURL(blob);
+      link.download = "task2_reward_frame_labels.v1.reviewed.json"; link.click(); URL.revokeObjectURL(link.href);
+    });
+    document.addEventListener("keydown", e => { if (e.key === "ArrowLeft") showFrame(frame - 1); if (e.key === "ArrowRight") showFrame(frame + 1); });
+    init().catch(e => { document.body.textContent = "UI 初始化失败: " + e; });
+  </script>
+</body>
+</html>

@@ -16,3 +16,19 @@ __pycache__/
 test/
 releases/
 configs/trust/
+
+# Stage-2 evidence keeps lightweight manifests in Git; model/data binaries stay
+# in the content-addressed local artifact store referenced by those manifests.
+artifacts/development/stage2/**/*.pt
+artifacts/development/stage2/**/*.msgpack
+artifacts/development/stage2/**/*.parquet
+artifacts/development/stage2/**/*.npz
+artifacts/development/stage2/**/*.pkl
+artifacts/development/stage2/**/*.npy
+artifacts/development/stage2/**/*.safetensors
+artifacts/development/stage2/.g7a_work.*/
+
+# This directory is mutated by the currently running 0.5-pass job. Its final
+# lightweight report and manifest are added only after the cycle-210 boundary.
+artifacts/development/stage2/stage2b_long_run_half_pass/
+artifacts/development/stage2/stage2b_long_run_half_pass_checkpoints/

@@ -1,0 +1,136 @@
+{
+  "artifact_status": "development_only",
+  "files": [
+    {
+      "artifact_role": "g3_v2_gate",
+      "file_size": 10698,
+      "relative_path": "artifacts/development/stage2/s2_g3_differentiable_flow.v2.json",
+      "runtime_imported": false,
+      "sha256": "80ce137b07ca23f59aec67984658f9b5a6ba3cc6e0c7205bf30b909563f3483d"
+    },
+    {
+      "artifact_role": "g4_v2_gate",
+      "file_size": 51965,
+      "relative_path": "artifacts/development/stage2/s2_g4_loss_preflight.v2.json",
+      "runtime_imported": false,
+      "sha256": "d9613ea25ce952e03f6c1c1271e09dc34f8ef03c4a10b40d3ba9dc283bfaf562"
+    },
+    {
+      "artifact_role": "g4_v2_source_closure",
+      "file_size": 5299,
+      "relative_path": "artifacts/development/stage2/stage2_source_manifest.v12_g4_v2.json",
+      "runtime_imported": false,
+      "sha256": "6f60c17d56727f88769dc3fdeb66e3f46f996d30d97dbd315ed64c73645dc982"
+    },
+    {
+      "artifact_role": "active_action_contract",
+      "file_size": 2020,
+      "relative_path": "configs/stage2_action_contract.v2.development.json",
+      "runtime_imported": true,
+      "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6"
+    },
+    {
+      "artifact_role": "g5_v2_config",
+      "file_size": 4622,
+      "relative_path": "configs/stage2_g5_single_cycle.v2.development.yaml",
+      "runtime_imported": true,
+      "sha256": "a728c4544c11f3ff15ba2b3b7ceca9cea7a068169ddc3913fa5707127f0f0fd0"
+    },
+    {
+      "artifact_role": "frozen_public_action_source",
+      "file_size": 15234,
+      "relative_path": "src/forcesmolvla/action_delta.py",
+      "runtime_imported": true,
+      "sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1"
+    },
+    {
+      "artifact_role": "frozen_critic_runtime",
+      "file_size": 20231,
+      "relative_path": "src/forcesmolvla/rft/critic.py",
+      "runtime_imported": true,
+      "sha256": "f0b0ff41d2ea772f649f57c1d3b043ab6d8c8625d1316a86e9bbc227175feeca"
+    },
+    {
+      "artifact_role": "active_v2_runtime",
+      "file_size": 3589,
+      "relative_path": "src/forcesmolvla/rft/critic_action_adapter_v2.py",
+      "runtime_imported": true,
+      "sha256": "92b0861057f11c246da0eb9dfed3eac48af87491cf3f1b14e063834b891144f6"
+    },
+    {
+      "artifact_role": "frozen_flow_runtime",
+      "file_size": 6744,
+      "relative_path": "src/forcesmolvla/rft/flow_sampling.py",
+      "runtime_imported": true,
+      "sha256": "2a82085432647c4907257e41f0bd6ebfd7e9d4c7c98c5eba05331783320dc689"
+    },
+    {
+      "artifact_role": "frozen_loss_runtime",
+      "file_size": 22246,
+      "relative_path": "src/forcesmolvla/rft/losses.py",
+      "runtime_imported": true,
+      "sha256": "bf3df4d34f3a202623bc75f0e55009fc9b1bbcc4d3126c96f86c0e3f7c4682d5"
+    },
+    {
+      "artifact_role": "frozen_checkpoint_runtime",
+      "file_size": 7479,
+      "relative_path": "src/forcesmolvla/rft/training_checkpoint.py",
+      "runtime_imported": true,
+      "sha256": "96f805345c3821c376291d07c9bd9cd82d2bde9eeee12f300a00182d26160153"
+    },
+    {
+      "artifact_role": "frozen_training_runtime",
+      "file_size": 13851,
+      "relative_path": "src/forcesmolvla/rft/training_cycle.py",
+      "runtime_imported": true,
+      "sha256": "314c8f841e5a2ae6511068117010ecb517cf1f177aa66ec3b27ad286b4a80501"
+    },
+    {
+      "artifact_role": "v2_regression_tests",
+      "file_size": 4236,
+      "relative_path": "tests/test_rft_critic_action_contract_v2.py",
+      "runtime_imported": false,
+      "sha256": "e7eaaf7e18ad0d7cf5c78e8fa932d8b4eed035456a6a6c4d76d6a3bc0ec12067"
+    },
+    {
+      "artifact_role": "frozen_loss_tests",
+      "file_size": 11460,
+      "relative_path": "tests/test_rft_losses.py",
+      "runtime_imported": false,
+      "sha256": "c401b2c1145d9d051a392e20166aaba4153660841f1448320a6bf9e1fbec4bf3"
+    },
+    {
+      "artifact_role": "frozen_cycle_tests",
+      "file_size": 6024,
+      "relative_path": "tests/test_rft_training_cycle.py",
+      "runtime_imported": false,
+      "sha256": "2f46cc2bb70beb7dfcb6792403f18bbe71989001d7d621ad2dd259b0605dfdde"
+    },
+    {
+      "artifact_role": "manifest_builder",
+      "file_size": 3146,
+      "relative_path": "tools/build_stage2_append_only_source_manifest.py",
+      "runtime_imported": false,
+      "sha256": "d76f9166e00dca21040be66050dc96999e9e006e62df25354245bd9c4ea8e66f"
+    },
+    {
+      "artifact_role": "frozen_g5_runtime",
+      "file_size": 88437,
+      "relative_path": "tools/preflight_s2_g5_single_cycle_gpu.py",
+      "runtime_imported": true,
+      "sha256": "27ba19f6312e8cd02b619d56f75cec7bce532c73b2f2d415585f7cc2609aa95b"
+    },
+    {
+      "artifact_role": "g5_v2_wrapper",
+      "file_size": 8078,
+      "relative_path": "tools/preflight_s2_g5_single_cycle_v2_gpu.py",
+      "runtime_imported": true,
+      "sha256": "c1a61356030b061e4c6bd11cac0a3793f7be3d4dd4279bc03967f5835f9c86bb"
+    }
+  ],
+  "files_sha256": "ff5babc50dc4bfa0220bf20db678039db6eac1d9acf4d651ad7db73e0f91278d",
+  "schema_version": "1.0",
+  "scope": "G5-v2_single_cycle",
+  "self_exclusion_reason": "content-addressed manifest cannot include itself",
+  "self_included": false
+}

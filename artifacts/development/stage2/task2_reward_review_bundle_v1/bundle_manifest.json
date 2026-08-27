@@ -1,0 +1,191 @@
+{
+  "artifact_status": "REVIEW_MATERIALS_READY_MANUAL_AUDIT_INCOMPLETE",
+  "bundle_files_before_manifest": {
+    "label_template.json": {
+      "file_size": 34124,
+      "sha256": "bb4df9b118e138894b8c2bd0d9d6d128fa1c35f6240ffc74b03be8fceaf765fa"
+    },
+    "review_app.html": {
+      "file_size": 11037,
+      "sha256": "e179c20e2d64baf79443199d2656b6c33a4655ea9405229b1a325275b64ebdd0"
+    },
+    "review_index.json": {
+      "file_size": 2303582,
+      "sha256": "dc3b5c1f605814ffe4accde9baedd5eee05839f7689de6496ec6e1a201aa002f"
+    }
+  },
+  "classifier_data_readiness": {
+    "existing_task2_classifier_data_ready": false,
+    "hard_negative_episode_count": null,
+    "ignored_frame_count": null,
+    "ordinary_negative_episode_count": null,
+    "positive_episode_count": null,
+    "reason": "manual frame-level audit not complete"
+  },
+  "dataset_hash_bridge": {
+    "path": "artifacts/development/stage2/dataset_hash_bridge.v4.json",
+    "sha256": "516a5025fae23109d4669df3930e4e48dcc56e311d46027e60bfcf7351347036"
+  },
+  "dataset_storage_after": {
+    "file_count": 51,
+    "files": {
+      "data/chunk-000/file-000.parquet": "e6b9272218cbb729082fd56830413bce4b55e3fad18dd0aeee94552d0b7bb847",
+      "data/chunk-000/file-001.parquet": "dfa308047b85ba4621dea8097ee34298a8acc0a82a2b623cc750b6fea2ea8023",
+      "data/chunk-000/file-002.parquet": "703c3200a21ec2cf8f6166a49f44c3f026ffee63ae52f2fb8ec4451a70d04164",
+      "data/chunk-000/file-003.parquet": "fdc30e3a264f9ff297f658a0952ed2d11e2f6ec790ad9201961e6d3d329513ee",
+      "data/chunk-000/file-004.parquet": "e6443af22950348a4d83fe691fb0ad3e55f1e606a80efe5da7db0f24d90ba654",
+      "data/chunk-000/file-005.parquet": "4f76de8176686570d888e71671898779ee7dc270c70262a22604f02a9c079bd6",
+      "data/chunk-000/file-006.parquet": "9b0bdeefb78fdc2e412b82cb472d82bc8f39a85b34cc00dbaa1b9eac92f7707a",
+      "data/chunk-000/file-007.parquet": "673239ae0b9cd0a91d9f73e27cfe5a0bd09119e96e19a8a57758c3c53f5795a0",
+      "data/chunk-000/file-008.parquet": "b15d0dde8524ec2378f7954b8a2faebbcf84229fc81ebcf0f442d89a9df1673b",
+      "data/chunk-000/file-009.parquet": "9a79e673604832e5097ee23ca1947774410c290f187a429ad3c27c9a1b3474b6",
+      "data/chunk-000/file-010.parquet": "c4c9ef9f5a4aae3572c187c6288bbed73448fc4e408449d2679c0b0dc95f4ec5",
+      "data/chunk-000/file-011.parquet": "871020a156665be00b8d9dd0f3a691dfe13639d4e603ece8a173df94af703975",
+      "data/chunk-000/file-012.parquet": "bf20a9939edbae9602875f58ba0f9ea4f3d19b9ddbc101a284155b1fcd0407ed",
+      "data/chunk-000/file-013.parquet": "0db152d35ef3189c5fa556e309bb36998c1d6d94fc9926e652007510e9a8a7b0",
+      "data/chunk-000/file-014.parquet": "3b355c082d91307c8e1c6874d5dff52f26c93f9c1ffcc2350753e08b8636daaa",
+      "data/chunk-000/file-015.parquet": "1678c4b3efffd433ccf5c42a00d043339267c6d19b2fd7717c6b774f4a672732",
+      "data/chunk-000/file-016.parquet": "1f1d072019ab0a369610ad73ce6b5d14e49502982cca85c6f0fec64142f3f6b3",
+      "data/chunk-000/file-017.parquet": "38b9ce1df454d9be4a153710239d78257adb1035fa88f44ed8737fa9068d1ce5",
+      "data/chunk-000/file-018.parquet": "90d73fc7b98cb2e099cf7c3b8642a9805318d91162995259c32ad0c7f9b018fd",
+      "data/chunk-000/file-019.parquet": "adfddc7cddf9510567e345dd23a406d4d7bfab25bbeae3cacb4650053ef55719",
+      "data/chunk-000/file-020.parquet": "498be0451962e5772e2ba0a1dd0b56ae7a5a08f5e7e0d1044cc71be78919313e",
+      "data/chunk-000/file-021.parquet": "41f6a8df0480fd299e14a6fd2c28b904d2f245e9f740f36623cb399877f0be60",
+      "data/chunk-000/file-022.parquet": "378953a9422b128eabbffbae9e0774c324d7c83a4e2689c3194c52ae45ab5331",
+      "data/chunk-000/file-023.parquet": "e5ceb89ec51b83ba89febe97c1fa5d1433ebbaabe036a9e234b9fc30dddb14c0",
+      "data/chunk-000/file-024.parquet": "e0920d4a90cbf8eab8cd46e32f60f77352167e4bda94146d1e86625339ac2dde",
+      "data/chunk-000/file-025.parquet": "8be1ab6e13d1c697674f964d517e60f66563463725108294aa55a2796d7a49d2",
+      "data/chunk-000/file-026.parquet": "c534fba0f5b0936dd29cffd594c27bd8583270864aed9edfa235ab717e2b5671",
+      "data/chunk-000/file-027.parquet": "f26a16920709a3fc5b547d77fdeafaf1988c33f3e5fc421616414bd287beabbf",
+      "data/chunk-000/file-028.parquet": "c5632f22e168f73b8398fe4426ee13022f68b5f0d987cecf0b1e08b07918607b",
+      "data/chunk-000/file-029.parquet": "f112fb9329bc53cf233704d46c1dac659a725f324ca7721f6c665e831f7e873e",
+      "data/chunk-000/file-030.parquet": "c3fb7d5a08da06fcdd6f90f2ac44c0d6f801431eb613e82d4534647752f8467c",
+      "data/chunk-000/file-031.parquet": "785c1e65ab3bf57e28b6f74698de62943aa9c6033e00361d15ed51c79b9b2ee6",
+      "data/chunk-000/file-032.parquet": "9785ad87b07fdde9e47ca25a5cdd0821d937582eddf7f4057050bcf8b654002a",
+      "data/chunk-000/file-033.parquet": "d590287c839af91ad5a7e99ae3bf8d2471c617e148f8e383153ea168961a3e43",
+      "data/chunk-000/file-034.parquet": "ebf912fd36079326de0a5d8a047983a1dd2d59e6812bbae86e89a78df631978b",
+      "data/chunk-000/file-035.parquet": "b03a57dcfa9d553800ec55a0d9452286e4a822f83cd62dcb9797defe5c384b7e",
+      "data/chunk-000/file-036.parquet": "0102f9c732d0357e93a138906de122d539018045404c2a271be4b1ad1005ffb9",
+      "data/chunk-000/file-037.parquet": "2989491b4a454af0def8640d0c8d63c99a3ee137c1176bb3b4b4803f01c5ec2c",
+      "data/chunk-000/file-038.parquet": "2f55e166342dfa8f60e545f0e95242c87d3cf35a93d9b58eeba9b9e2ffaeabe9",
+      "data/chunk-000/file-039.parquet": "07311991f3f1837abaad96e73e1013833b4665652745cf6136afd5f047ada5b1",
+      "data/chunk-000/file-040.parquet": "50dfca3ac50fbe02bd38cd1e863c1ec75e4ef2425b0382bd16f1f3af47a4c605",
+      "data/chunk-000/file-041.parquet": "bdcb1b78b5d38d823ebed41c859d8ad66a5f5f21cdd9f3fdfc492cab5a68d3f0",
+      "data/chunk-000/file-042.parquet": "471e9210ab9bab3bd594e58777eee5c70882c36094bf22526d7dfb2fce04dc38",
+      "data/chunk-000/file-043.parquet": "33476197260c2049de3f72906bb51bbac66aa98eef28876fc1e9ec684edf5cce",
+      "data/chunk-000/file-044.parquet": "686e470898c221423a43ab81388d51f3a88c110711228da593080831dd03354c",
+      "data/chunk-000/file-045.parquet": "3086334315c606630fbedb01dac8dab9a8bdd57a4f8c35ea333c78d1e948436d",
+      "data/chunk-000/file-046.parquet": "414dcbac8e8c5e1ca2e05c8cf65a3beb064dcf96551dc50687fac032d913ce42",
+      "meta/episodes/chunk-000/file-000.parquet": "2544f704f84ba5ea0e5b471c5c69fa10e4b1706c3861a5a45d6e87bed038cf5f",
+      "meta/info.json": "841a80224f4159fe4ee3bf308c99eecb4e8289faea3dac98eecab53cb6f4b5a8",
+      "meta/stats.json": "4229b29f0579a624f84516fe8d97bdd91de4ddec9bbf72e2cab50fbe494e7caa",
+      "meta/tasks.parquet": "5e021778313e3ba358b5558e5f0f4f38350801fd65df03713ac452bc9ac9562a"
+    },
+    "roots": [
+      "data",
+      "videos",
+      "meta"
+    ],
+    "tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+  },
+  "dataset_storage_before": {
+    "file_count": 51,
+    "files": {
+      "data/chunk-000/file-000.parquet": "e6b9272218cbb729082fd56830413bce4b55e3fad18dd0aeee94552d0b7bb847",
+      "data/chunk-000/file-001.parquet": "dfa308047b85ba4621dea8097ee34298a8acc0a82a2b623cc750b6fea2ea8023",
+      "data/chunk-000/file-002.parquet": "703c3200a21ec2cf8f6166a49f44c3f026ffee63ae52f2fb8ec4451a70d04164",
+      "data/chunk-000/file-003.parquet": "fdc30e3a264f9ff297f658a0952ed2d11e2f6ec790ad9201961e6d3d329513ee",
+      "data/chunk-000/file-004.parquet": "e6443af22950348a4d83fe691fb0ad3e55f1e606a80efe5da7db0f24d90ba654",
+      "data/chunk-000/file-005.parquet": "4f76de8176686570d888e71671898779ee7dc270c70262a22604f02a9c079bd6",
+      "data/chunk-000/file-006.parquet": "9b0bdeefb78fdc2e412b82cb472d82bc8f39a85b34cc00dbaa1b9eac92f7707a",
+      "data/chunk-000/file-007.parquet": "673239ae0b9cd0a91d9f73e27cfe5a0bd09119e96e19a8a57758c3c53f5795a0",
+      "data/chunk-000/file-008.parquet": "b15d0dde8524ec2378f7954b8a2faebbcf84229fc81ebcf0f442d89a9df1673b",
+      "data/chunk-000/file-009.parquet": "9a79e673604832e5097ee23ca1947774410c290f187a429ad3c27c9a1b3474b6",
+      "data/chunk-000/file-010.parquet": "c4c9ef9f5a4aae3572c187c6288bbed73448fc4e408449d2679c0b0dc95f4ec5",
+      "data/chunk-000/file-011.parquet": "871020a156665be00b8d9dd0f3a691dfe13639d4e603ece8a173df94af703975",
+      "data/chunk-000/file-012.parquet": "bf20a9939edbae9602875f58ba0f9ea4f3d19b9ddbc101a284155b1fcd0407ed",
+      "data/chunk-000/file-013.parquet": "0db152d35ef3189c5fa556e309bb36998c1d6d94fc9926e652007510e9a8a7b0",
+      "data/chunk-000/file-014.parquet": "3b355c082d91307c8e1c6874d5dff52f26c93f9c1ffcc2350753e08b8636daaa",
+      "data/chunk-000/file-015.parquet": "1678c4b3efffd433ccf5c42a00d043339267c6d19b2fd7717c6b774f4a672732",
+      "data/chunk-000/file-016.parquet": "1f1d072019ab0a369610ad73ce6b5d14e49502982cca85c6f0fec64142f3f6b3",
+      "data/chunk-000/file-017.parquet": "38b9ce1df454d9be4a153710239d78257adb1035fa88f44ed8737fa9068d1ce5",
+      "data/chunk-000/file-018.parquet": "90d73fc7b98cb2e099cf7c3b8642a9805318d91162995259c32ad0c7f9b018fd",
+      "data/chunk-000/file-019.parquet": "adfddc7cddf9510567e345dd23a406d4d7bfab25bbeae3cacb4650053ef55719",
+      "data/chunk-000/file-020.parquet": "498be0451962e5772e2ba0a1dd0b56ae7a5a08f5e7e0d1044cc71be78919313e",
+      "data/chunk-000/file-021.parquet": "41f6a8df0480fd299e14a6fd2c28b904d2f245e9f740f36623cb399877f0be60",
+      "data/chunk-000/file-022.parquet": "378953a9422b128eabbffbae9e0774c324d7c83a4e2689c3194c52ae45ab5331",
+      "data/chunk-000/file-023.parquet": "e5ceb89ec51b83ba89febe97c1fa5d1433ebbaabe036a9e234b9fc30dddb14c0",
+      "data/chunk-000/file-024.parquet": "e0920d4a90cbf8eab8cd46e32f60f77352167e4bda94146d1e86625339ac2dde",
+      "data/chunk-000/file-025.parquet": "8be1ab6e13d1c697674f964d517e60f66563463725108294aa55a2796d7a49d2",
+      "data/chunk-000/file-026.parquet": "c534fba0f5b0936dd29cffd594c27bd8583270864aed9edfa235ab717e2b5671",
+      "data/chunk-000/file-027.parquet": "f26a16920709a3fc5b547d77fdeafaf1988c33f3e5fc421616414bd287beabbf",
+      "data/chunk-000/file-028.parquet": "c5632f22e168f73b8398fe4426ee13022f68b5f0d987cecf0b1e08b07918607b",
+      "data/chunk-000/file-029.parquet": "f112fb9329bc53cf233704d46c1dac659a725f324ca7721f6c665e831f7e873e",
+      "data/chunk-000/file-030.parquet": "c3fb7d5a08da06fcdd6f90f2ac44c0d6f801431eb613e82d4534647752f8467c",
+      "data/chunk-000/file-031.parquet": "785c1e65ab3bf57e28b6f74698de62943aa9c6033e00361d15ed51c79b9b2ee6",
+      "data/chunk-000/file-032.parquet": "9785ad87b07fdde9e47ca25a5cdd0821d937582eddf7f4057050bcf8b654002a",
+      "data/chunk-000/file-033.parquet": "d590287c839af91ad5a7e99ae3bf8d2471c617e148f8e383153ea168961a3e43",
+      "data/chunk-000/file-034.parquet": "ebf912fd36079326de0a5d8a047983a1dd2d59e6812bbae86e89a78df631978b",
+      "data/chunk-000/file-035.parquet": "b03a57dcfa9d553800ec55a0d9452286e4a822f83cd62dcb9797defe5c384b7e",
+      "data/chunk-000/file-036.parquet": "0102f9c732d0357e93a138906de122d539018045404c2a271be4b1ad1005ffb9",
+      "data/chunk-000/file-037.parquet": "2989491b4a454af0def8640d0c8d63c99a3ee137c1176bb3b4b4803f01c5ec2c",
+      "data/chunk-000/file-038.parquet": "2f55e166342dfa8f60e545f0e95242c87d3cf35a93d9b58eeba9b9e2ffaeabe9",
+      "data/chunk-000/file-039.parquet": "07311991f3f1837abaad96e73e1013833b4665652745cf6136afd5f047ada5b1",
+      "data/chunk-000/file-040.parquet": "50dfca3ac50fbe02bd38cd1e863c1ec75e4ef2425b0382bd16f1f3af47a4c605",
+      "data/chunk-000/file-041.parquet": "bdcb1b78b5d38d823ebed41c859d8ad66a5f5f21cdd9f3fdfc492cab5a68d3f0",
+      "data/chunk-000/file-042.parquet": "471e9210ab9bab3bd594e58777eee5c70882c36094bf22526d7dfb2fce04dc38",
+      "data/chunk-000/file-043.parquet": "33476197260c2049de3f72906bb51bbac66aa98eef28876fc1e9ec684edf5cce",
+      "data/chunk-000/file-044.parquet": "686e470898c221423a43ab81388d51f3a88c110711228da593080831dd03354c",
+      "data/chunk-000/file-045.parquet": "3086334315c606630fbedb01dac8dab9a8bdd57a4f8c35ea333c78d1e948436d",
+      "data/chunk-000/file-046.parquet": "414dcbac8e8c5e1ca2e05c8cf65a3beb064dcf96551dc50687fac032d913ce42",
+      "meta/episodes/chunk-000/file-000.parquet": "2544f704f84ba5ea0e5b471c5c69fa10e4b1706c3861a5a45d6e87bed038cf5f",
+      "meta/info.json": "841a80224f4159fe4ee3bf308c99eecb4e8289faea3dac98eecab53cb6f4b5a8",
+      "meta/stats.json": "4229b29f0579a624f84516fe8d97bdd91de4ddec9bbf72e2cab50fbe494e7caa",
+      "meta/tasks.parquet": "5e021778313e3ba358b5558e5f0f4f38350801fd65df03713ac452bc9ac9562a"
+    },
+    "roots": [
+      "data",
+      "videos",
+      "meta"
+    ],
+    "tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+  },
+  "dataset_unchanged": true,
+  "development_heldout": "episode_disjoint_within_task2",
+  "episode_count": 47,
+  "formal_heldout": "independent_collection_run",
+  "frame_count": 38639,
+  "images_copied": false,
+  "manual_audit_complete": false,
+  "programmatic_labels_generated": false,
+  "resnet_asset_manifest": {
+    "path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json",
+    "sha256": "2e54ec70420ebd9cd73c12689937fca2597cf74d8ea608526b805999647e22e8"
+  },
+  "reward_or_terminal_created": false,
+  "reward_predictions_created": false,
+  "schema_version": "force_rft_task2_reward_review_bundle.v1",
+  "source_files": {
+    "docs/task2_reward_labeling_protocol.md": "31213136e922fd827a364a232fcddd631db2d141c26cdb02231376f4aa004d79",
+    "tests/test_s2_r0_data_audit.py": "2160d6aa6425a0861dd0aa09720c9fa40653030936216b7810f000f58e95107e",
+    "tools/reward_classifier/build_task2_review_bundle.py": "a05f023bc51cb29ef33774a0911fedae431b0c64da637086c2096a7cbbda32c4",
+    "tools/reward_classifier/serve_task2_label_ui.py": "ede7fe62673fe3773d783cf6a9a8933760e3d31b93664cb15629a2e3480f254e",
+    "tools/reward_classifier/task2_label_ui.html": "e179c20e2d64baf79443199d2656b6c33a4655ea9405229b1a325275b64ebdd0"
+  },
+  "split_episode_counts": {
+    "test": 4,
+    "train": 38,
+    "val": 5
+  },
+  "upstream_manifests": {
+    "conversion_manifest.json": {
+      "sha256": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477"
+    },
+    "normalizer_manifest.json": {
+      "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+    },
+    "split_manifest.json": {
+      "sha256": "5e63e21d1daf47cfe51fe169497cc77f69bc42e7c919cce708cb2bb0de3dc8d7"
+    }
+  }
+}

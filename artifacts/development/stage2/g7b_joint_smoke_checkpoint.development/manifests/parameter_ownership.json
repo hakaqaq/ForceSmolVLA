@@ -1,0 +1,22 @@
+{
+  "actor": {
+    "decay_tensor_count": 333,
+    "no_decay_tensor_count": 241,
+    "parameter_count": 505620341,
+    "trainable_tensor_count": 574,
+    "type": "AdamW"
+  },
+  "actor_critic_parameter_intersection": 0,
+  "critic": {
+    "actor_critic_parameter_intersection": 0,
+    "actor_optimizer_created": 0,
+    "actor_scheduler_created": 0,
+    "critic_optimizer_type": "Adam",
+    "critic_trainable_tensor_count": 106,
+    "frozen_backbone_in_optimizer": 0,
+    "q1_q2_storage_independent": true,
+    "target_parameter_in_optimizer": 0
+  },
+  "target_actor": null,
+  "target_in_optimizer": 0
+}

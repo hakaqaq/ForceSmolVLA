@@ -1,0 +1,139 @@
+{
+  "created_at": "2026-08-26T06:15:15.072431+00:00",
+  "files": {
+    "action_adapter_v2": {
+      "file_size": 3589,
+      "path": "src/forcesmolvla/rft/critic_action_adapter_v2.py",
+      "sha256": "92b0861057f11c246da0eb9dfed3eac48af87491cf3f1b14e063834b891144f6"
+    },
+    "action_contract_v2": {
+      "file_size": 2020,
+      "path": "configs/stage2_action_contract.v2.development.json",
+      "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6"
+    },
+    "action_contract_v2_tests": {
+      "file_size": 4236,
+      "path": "tests/test_rft_critic_action_contract_v2.py",
+      "sha256": "e7eaaf7e18ad0d7cf5c78e8fa932d8b4eed035456a6a6c4d76d6a3bc0ec12067"
+    },
+    "actor_force_token_source": {
+      "file_size": 26935,
+      "path": "src/forcesmolvla/force_token.py",
+      "sha256": "afe246fd1eed83d3fdf48eff67d9456c614cd9ae775d226cf5119aa2ca974d35"
+    },
+    "actor_modeling_source": {
+      "file_size": 40356,
+      "path": "src/forcesmolvla/modeling_forcesmolvla.py",
+      "sha256": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610"
+    },
+    "actor_router_loss_source": {
+      "file_size": 19894,
+      "path": "src/forcesmolvla/router_training.py",
+      "sha256": "f14ef41e8264992cd7d5990043bbcf32cc7ff4fc8126798c7063e02349b4a8cb"
+    },
+    "detector_g1_source": {
+      "file_size": 14420,
+      "path": "src/forcesmolvla/rft/detector_reward_transitions.py",
+      "sha256": "b3151c7f5763282df1b58bf94e248203c657f2d1001603457f33b731b9039115"
+    },
+    "g2_critic_source": {
+      "file_size": 20231,
+      "path": "src/forcesmolvla/rft/critic.py",
+      "sha256": "f0b0ff41d2ea772f649f57c1d3b043ab6d8c8625d1316a86e9bbc227175feeca"
+    },
+    "g3_flow_sampling_source": {
+      "file_size": 6744,
+      "path": "src/forcesmolvla/rft/flow_sampling.py",
+      "sha256": "2a82085432647c4907257e41f0bd6ebfd7e9d4c7c98c5eba05331783320dc689"
+    },
+    "g3_v2_artifact": {
+      "file_size": 10698,
+      "path": "artifacts/development/stage2/s2_g3_differentiable_flow.v2.json",
+      "sha256": "80ce137b07ca23f59aec67984658f9b5a6ba3cc6e0c7205bf30b909563f3483d"
+    },
+    "g3_v2_source_manifest": {
+      "file_size": 4339,
+      "path": "artifacts/development/stage2/stage2_source_manifest.v11_action_contract_v2_g3.json",
+      "sha256": "2abf3738e9da7a3888675d0a3e4d9c153606180cf24df3653e3f5650bad0d988"
+    },
+    "g4_config": {
+      "file_size": 1832,
+      "path": "configs/stage2_g4_losses.v2.development.yaml",
+      "sha256": "e3e1aba807df7dccc0a1941293a10315ab00f41c8ccad645aad5077359bf6ec0"
+    },
+    "g4_gpu_preflight_source": {
+      "file_size": 53809,
+      "path": "tools/preflight_s2_g4_losses_gpu.py",
+      "sha256": "4e7e948a23e30209dfe7da7d605663d276511d0bad942e8cc8ac71b5efb146ad"
+    },
+    "g4_losses_source": {
+      "file_size": 22246,
+      "path": "src/forcesmolvla/rft/losses.py",
+      "sha256": "bf3df4d34f3a202623bc75f0e55009fc9b1bbcc4d3126c96f86c0e3f7c4682d5"
+    },
+    "g4_numpy_oracle": {
+      "file_size": 2708,
+      "path": "tests/rft_losses_numpy_oracle.py",
+      "sha256": "e4431e093954373522ae862334fb8c3480c1ec032ddaedc16307472d7512cc26"
+    },
+    "g4_unit_tests": {
+      "file_size": 11460,
+      "path": "tests/test_rft_losses.py",
+      "sha256": "c401b2c1145d9d051a392e20166aaba4153660841f1448320a6bf9e1fbec4bf3"
+    },
+    "g4_v2_wrapper": {
+      "file_size": 5008,
+      "path": "tools/preflight_s2_g4_losses_v2_gpu.py",
+      "sha256": "2d687a97d600daf60959b82585baab1297246b6b9eb28db2ef82f67f44868e52"
+    },
+    "prior_g2_source_manifest": {
+      "file_size": 2652,
+      "path": "artifacts/development/stage2/stage2_source_manifest.v5_g2.json",
+      "sha256": "8765bf21ee43a8ea8a4fc363e91468574e204978018acb2212eb6c93ebd7203f"
+    },
+    "stage1_action_delta_source": {
+      "file_size": 15234,
+      "path": "src/forcesmolvla/action_delta.py",
+      "sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1"
+    },
+    "stage1_normalizer_source": {
+      "file_size": 13632,
+      "path": "src/forcesmolvla/normalizer.py",
+      "sha256": "df4faa89a6c580b30b12d1496df4b76be68d2b1329cbcaa63adc77fac0100525"
+    },
+    "stage1_training_data_source": {
+      "file_size": 14462,
+      "path": "src/forcesmolvla/training_data.py",
+      "sha256": "388ce254bfb3adb0fd80b1e7bfa9e2734e786fc56549bf1fc157ca15ada0c8d4"
+    }
+  },
+  "manual_g1_or_manual_label_in_runtime_closure": false,
+  "optimizer_source_or_artifact": null,
+  "runtime_imported_files": [
+    "action_adapter_v2",
+    "action_contract_v2",
+    "action_contract_v2_tests",
+    "actor_force_token_source",
+    "actor_modeling_source",
+    "actor_router_loss_source",
+    "detector_g1_source",
+    "g2_critic_source",
+    "g3_flow_sampling_source",
+    "g3_v2_artifact",
+    "g3_v2_source_manifest",
+    "g4_config",
+    "g4_gpu_preflight_source",
+    "g4_losses_source",
+    "g4_numpy_oracle",
+    "g4_unit_tests",
+    "g4_v2_wrapper",
+    "prior_g2_source_manifest",
+    "stage1_action_delta_source",
+    "stage1_normalizer_source",
+    "stage1_training_data_source"
+  ],
+  "schema_version": "forcesmolvla_stage2_source_manifest.v12_g4_v2",
+  "scope": "G4_v2_losses_and_zero_update_preflight_only",
+  "status": "PASS_APPEND_ONLY_G4_V2_SOURCE_CLOSURE",
+  "target_actor_source_or_artifact": null
+}

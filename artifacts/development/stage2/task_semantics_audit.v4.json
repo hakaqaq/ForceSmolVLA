@@ -1,0 +1,51 @@
+{
+  "active_v2": {
+    "protocol_path": "docs/task2_reward_labeling_protocol.v2.md",
+    "protocol_sha256": "1df11221d8c5072abdffa0a3cf3446ec5381fb8df0d84e715c6c50ee1942cdd6",
+    "template_path": "labels/task2_reward_frame_labels.v2.template.json",
+    "template_sha256": "9af3d5a391d0b3fc3afdf5d01351a2e2982a86cfeab1b6cba5028c79ff6658f7",
+    "ui_uses_v2": true
+  },
+  "artifact_status": "PASS_APPEND_ONLY_LABELING_PROTOCOL_REPAIR",
+  "canonical_task_prompt": "Pick up the purple ring and place it onto the red peg.",
+  "conversion_manifest_task_texts": [
+    "Pick up the purple ring and place it onto the red peg."
+  ],
+  "example_video_evidence_scope": "task_semantics_only_not_frame_alignment",
+  "frozen_stage1_evidence": {
+    "conversion_manifest_sha256": "b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477",
+    "dataset_hash_algorithm": "P8 original _dataset_storage_binding",
+    "dataset_tree_sha256": "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d",
+    "r5_model_path": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000/model.safetensors",
+    "r5_model_sha256": "49248561be7043b38bfce60f200d8bf265e1b16b4b9553ccc6aa4c87241b762e",
+    "stage1_data_changed": false
+  },
+  "g1_created": false,
+  "g2_created": false,
+  "historical_v1": {
+    "bytes_modified": false,
+    "disposition": "HISTORICAL_INVALID_FOR_LABELING",
+    "protocol_path": "docs/task2_reward_labeling_protocol.md",
+    "protocol_sha256": "31213136e922fd827a364a232fcddd631db2d141c26cdb02231376f4aa004d79",
+    "review_bundle_manifest_path": "artifacts/development/stage2/task2_reward_review_bundle_v1/bundle_manifest.json",
+    "review_bundle_manifest_sha256": "13d5748091c2255054d94f09a233ceeaf7d096d61c7161598e701a5fddfc3442",
+    "template_path": "labels/task2_reward_frame_labels.v1.template.json",
+    "template_sha256": "bb4df9b118e138894b8c2bd0d9d6d128fa1c35f6240ffc74b03be8fceaf765fa"
+  },
+  "physical_task_description": "Pick up the purple ring, align its center hole with the red peg, lower the ring over the peg, release it, and leave it stably supported by the red peg/base assembly.",
+  "r5_retraining_required": false,
+  "reward_classifier_training_authorized": false,
+  "reward_or_terminal_created": false,
+  "schema_version": "force_rft_task_semantics_audit.v4",
+  "scope_of_repair": "Reward Classifier labeling protocol/template/UI only",
+  "semantic_equivalence": true,
+  "source_files": {
+    "tests/test_s2_task_semantics_v2.py": "f1cdf4128a2fc532da7d60496e743f7cad60b96fd5222e38fc7e77635329442f",
+    "tools/reward_classifier/build_task2_label_contract_v2.py": "b1deb13abbea095bd69058350bc78ca1d0a18ec76447afe9a1b510e460f7d1d1",
+    "tools/reward_classifier/serve_task2_label_ui.py": "c34ed9a2e9692bf57a659acc661ccbbc4a63680a649296aaf4757357b0dc6e31",
+    "tools/reward_classifier/task2_label_ui.html": "067e8ae9c20624f8dbff0c737780d2b7baf4cdf7fc87e791a94905e44b746e54"
+  },
+  "stage1_data_reconversion_required": false,
+  "stage1_task_text_invalid": false,
+  "task_semantics_audit": "pass"
+}

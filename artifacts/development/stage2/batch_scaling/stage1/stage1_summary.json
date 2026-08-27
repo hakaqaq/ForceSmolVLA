@@ -1,0 +1,174 @@
+{
+  "candidate_aggregates": [
+    {
+      "all_contract_valid": true,
+      "all_finite": true,
+      "all_pass": true,
+      "gpu_power_watts": {
+        "count": 3,
+        "maximum": 117.03239436619717,
+        "mean": 114.65146924280725,
+        "median": 115.95957746478872,
+        "minimum": 110.9624358974359,
+        "p95": 116.92511267605632,
+        "range": 6.069958468761271
+      },
+      "gpu_utilization_percent": {
+        "count": 3,
+        "maximum": 20.985915492957748,
+        "mean": 20.895810762007944,
+        "median": 20.884615384615383,
+        "minimum": 20.816901408450704,
+        "p95": 20.975785482123513,
+        "range": 0.1690140845070438
+      },
+      "oom_count": 0,
+      "pass_count": 3,
+      "peak_allocated_bytes": 8593928704,
+      "peak_reserved_bytes": 9256828928,
+      "physical_batch_size": 4,
+      "repeat_count": 3,
+      "repeat_result_paths": [
+        "artifacts/development/stage2/batch_scaling/stage1/candidate_results/stage1_b4_repeat1.json",
+        "artifacts/development/stage2/batch_scaling/stage1/candidate_results/stage1_b4_repeat2.json",
+        "artifacts/development/stage2/batch_scaling/stage1/candidate_results/stage1_b4_repeat3.json"
+      ],
+      "samples_per_second": {
+        "count": 3,
+        "maximum": 5.059544995777879,
+        "mean": 4.8927587208267935,
+        "median": 5.047228078719622,
+        "minimum": 4.5715030879828795,
+        "p95": 5.058313304072053,
+        "range": 0.4880419077949991
+      },
+      "seconds_per_update": {
+        "count": 3,
+        "maximum": 0.8895962644892279,
+        "mean": 0.8336114348300422,
+        "median": 0.8056563809950603,
+        "minimum": 0.8055816590058384,
+        "p95": 0.8812022761398112,
+        "range": 0.08401460548338946
+      }
+    },
+    {
+      "all_contract_valid": true,
+      "all_finite": true,
+      "all_pass": true,
+      "gpu_power_watts": {
+        "count": 3,
+        "maximum": 126.54833333333332,
+        "mean": 124.99779426146044,
+        "median": 124.747572815534,
+        "minimum": 123.69747663551402,
+        "p95": 126.36825728155338,
+        "range": 2.850856697819296
+      },
+      "gpu_utilization_percent": {
+        "count": 3,
+        "maximum": 24.254901960784313,
+        "mean": 21.31253287692599,
+        "median": 21.262135922330096,
+        "minimum": 18.42056074766355,
+        "p95": 23.955625356938892,
+        "range": 5.834341213120762
+      },
+      "incremental_gain_over_previous": 0.38270528619140753,
+      "oom_count": 0,
+      "pass_count": 3,
+      "peak_allocated_bytes": 12767946752,
+      "peak_reserved_bytes": 13323206656,
+      "physical_batch_size": 8,
+      "repeat_count": 3,
+      "repeat_result_paths": [
+        "artifacts/development/stage2/batch_scaling/stage1/candidate_results/stage1_b8_repeat1.json",
+        "artifacts/development/stage2/batch_scaling/stage1/candidate_results/stage1_b8_repeat2.json",
+        "artifacts/development/stage2/batch_scaling/stage1/candidate_results/stage1_b8_repeat3.json"
+      ],
+      "samples_per_second": {
+        "count": 3,
+        "maximum": 6.99103690104223,
+        "mean": 6.841442550036644,
+        "median": 6.978828945059323,
+        "minimum": 6.554461804008376,
+        "p95": 6.98981610544394,
+        "range": 0.4365750970338542
+      },
+      "seconds_per_update": {
+        "count": 3,
+        "maximum": 1.2571324674936477,
+        "mean": 1.1964683896658244,
+        "median": 1.172383955999976,
+        "minimum": 1.1598887455038493,
+        "p95": 1.2486576163442806,
+        "range": 0.09724372198979836
+      }
+    },
+    {
+      "all_contract_valid": true,
+      "all_finite": true,
+      "all_pass": true,
+      "gpu_power_watts": {
+        "count": 3,
+        "maximum": 123.54309644670052,
+        "mean": 121.46191643031078,
+        "median": 122.36858585858587,
+        "minimum": 118.47406698564595,
+        "p95": 123.42564538788905,
+        "range": 5.069029461054569
+      },
+      "gpu_utilization_percent": {
+        "count": 3,
+        "maximum": 20.656565656565657,
+        "mean": 19.642482353142253,
+        "median": 19.634517766497463,
+        "minimum": 18.636363636363637,
+        "p95": 20.554360867558838,
+        "range": 2.0202020202020208
+      },
+      "incremental_gain_over_previous": 0.00909104000679406,
+      "oom_count": 0,
+      "pass_count": 3,
+      "peak_allocated_bytes": 21035492352,
+      "peak_reserved_bytes": 21632122880,
+      "physical_batch_size": 16,
+      "repeat_count": 3,
+      "repeat_result_paths": [
+        "artifacts/development/stage2/batch_scaling/stage1/candidate_results/stage1_b16_repeat1.json",
+        "artifacts/development/stage2/batch_scaling/stage1/candidate_results/stage1_b16_repeat2.json",
+        "artifacts/development/stage2/batch_scaling/stage1/candidate_results/stage1_b16_repeat3.json"
+      ],
+      "samples_per_second": {
+        "count": 3,
+        "maximum": 7.056365105919175,
+        "mean": 6.89119340148063,
+        "median": 7.04227375819943,
+        "minimum": 6.574941340323282,
+        "p95": 7.0549559711472005,
+        "range": 0.48142376559589284
+      },
+      "seconds_per_update": {
+        "count": 3,
+        "maximum": 2.4504615835030563,
+        "mean": 2.35683797300832,
+        "median": 2.323492001014529,
+        "minimum": 2.296560334507376,
+        "p95": 2.4377646252542036,
+        "range": 0.15390124899568036
+      }
+    }
+  ],
+  "checkpoint_count": 0,
+  "conditional_batches_executed": false,
+  "config": "configs/stage1_batch_scaling.development.yaml",
+  "parent_checkpoint": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000",
+  "projected_40000_sample_runtime_seconds": 5731.620636484877,
+  "recommended_physical_batch": 8,
+  "recommended_samples_per_second": 6.978828945059323,
+  "schema_version": "forcesmolvla_stage1_batch_scaling_summary.v1",
+  "selection_rule": "valid_samples_per_second_with_5pct_incremental_gain_and_85pct_vram_limit",
+  "stage1_retraining_performed": false,
+  "status": "pass",
+  "total_gpu_memory_bytes": 25757220864
+}

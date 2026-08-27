@@ -1,0 +1,17 @@
+{
+  "artifact_status": "frozen_external_asset",
+  "conrft_local_repository_copy": {
+    "file_size": 1835008,
+    "load_status": "invalid_truncated_pickle",
+    "modified": false,
+    "path": "/home/rlc123/conrft/examples/experiments/resnet10_params.pkl",
+    "sha256": "cddfa2e40a29ab87cd4353d29febea4526b1c3a88a2a50408e752103b47d9f48"
+  },
+  "file_size": 21677915,
+  "pickle_last_opcode": "STOP",
+  "relative_path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.pkl",
+  "schema_version": "1.0.0",
+  "sha256": "175745d43d30233eb01b5369465d1c24c11b8ee71ccb734cc1c1bca13e07f57b",
+  "source_authority": "ConRFT fixed commit train_utils.py public release URL",
+  "source_url": "https://github.com/rail-berkeley/serl/releases/download/resnet10/resnet10_params.pkl"
+}

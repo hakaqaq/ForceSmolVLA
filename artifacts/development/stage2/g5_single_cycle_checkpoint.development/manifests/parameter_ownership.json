@@ -1,0 +1,25 @@
+{
+  "actor_critic_parameter_id_intersection": 0,
+  "actor_optimizer": {
+    "decay_parameter_count": 456491776,
+    "decay_tensor_count": 333,
+    "group_name_sha256": "fe2d0636f084c7432e4a25425c9f7b0359b18c803b7f8a4bf781db01ccc8ea6b",
+    "no_decay_parameter_count": 49128565,
+    "no_decay_tensor_count": 241,
+    "parameter_count": 505620341,
+    "trainable_tensor_count": 574,
+    "type": "AdamW"
+  },
+  "critic_optimizer": {
+    "parameter_count": 8584194,
+    "q1_tensor_count": 53,
+    "q2_tensor_count": 53,
+    "trainable_tensor_count": 106,
+    "type": "Adam"
+  },
+  "each_approved_trainable_parameter_exactly_once": true,
+  "frozen_backbone_in_critic_optimizer": 0,
+  "q1_q2_parameter_id_intersection": 0,
+  "target_parameter_ids_in_optimizer": 0,
+  "targets_in_any_optimizer": 0
+}
