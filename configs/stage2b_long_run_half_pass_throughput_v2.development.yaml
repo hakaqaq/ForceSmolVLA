@@ -1,0 +1,80 @@
+schema_version: forcesmolvla_stage2b_throughput_v2_long_run_integration.v1
+authorization: integration_preflight_only_no_long_run
+claim_scope: development_throughput_v2_candidate_b_integration
+
+parent:
+  path: artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint
+  tree_sha256: f8c08b9058d173211a7306d370a97a848bfc1f7569ac52e6cc88baacff0c0d40
+  checkpoint_manifest_sha256: 2e0902076cb12a1391613230679730d035155528c9be01bd17dce960d5e707f7
+  old_cycle105_checkpoint_allowed_as_parent: false
+  g7b_smoke_checkpoint_allowed_as_parent: false
+
+candidate:
+  id: candidate_B_prefix_cache
+  status: fastest_currently_measured_semantically_valid_candidate
+  globally_optimal_claimed: false
+  rejected_optimizations: [flow_subbatch_8, flow_subbatch_16, grouped_flow]
+
+fixed_semantics:
+  actor_batch: 24
+  actor_gradient_accumulation: 1
+  critic_batch_default: 128
+  critic_updates_per_actor_update: 2
+  horizon: 50
+  flow_euler_steps: 10
+  flow_inference_subbatch: 4
+  calql_candidates_per_source: 2
+  eta: 3.0
+  beta: 1.0
+  calql_alpha: 0.1
+  polyak_tau: 0.005
+  action_contract: v2
+  deterministic_algorithms: true
+  fixed_sampler_order: true
+  fixed_flow_noise: true
+
+cache:
+  parquet_materialization: once_per_process
+  decoded_image_cache: bounded_lru
+  decoded_cache_max_bytes: 8589934592
+  decode_workers: 8
+  prefetch_window: current_build_batch_only
+  prefetch_window_upper_bound_images: 512
+  cache_reconstruction_on_resume: true
+  cache_state_in_checkpoint: false
+  prefetch_consumes_sampler_or_training_rng: false
+  cache_trainable_force_or_action_representation: false
+
+hot_loop:
+  full_model_sha_cycles: [0, 105, 210]
+  lightweight_parameter_version_checks: true
+  finite_and_gradient_ownership_checks: true
+  fast_fp32_no_grad_polyak: true
+  per_update_gc_collect: false
+  per_update_cuda_empty_cache: false
+
+cache_preflight:
+  draw_plan_cycles: 210
+  actor_batch: 24
+  critic_batches: [64, 96, 128]
+  selected_simulation_critic_batch: 128
+
+exact_resume_preflight:
+  branch_a_continuous_cycles: 2
+  branch_b_pre_checkpoint_cycles: 1
+  branch_b_post_resume_cycles: 1
+  comparison: bitwise_canonical_training_state
+
+benchmark:
+  critic_batches: [64, 96, 128]
+  repeats_per_configuration: 3
+  warmup_cycles_per_process: 1
+  measured_cycles_per_process: 3
+  selection_objective: minimum_fixed_actor_pass_wall_clock_under_contract
+  initialization_and_cache_build_excluded_from_steady_state: true
+
+stop_boundary:
+  long_run_authorized: false
+  long_run_started: false
+  deployment_checkpoint_authorized: false
+  robot_execution_authorized: false

@@ -1,0 +1,157 @@
+{
+  "artifact_status": "development_only",
+  "deployment_release": false,
+  "evaluation_binding_sha256": "6f15f33aedbf4327388012dc7a0418de09f05ba070833ac95c092b95104471d5",
+  "export_tree_sha256": "0945ab6d984663b82c2546f2b70eb190e59907bbc87a44fa806fda0f729682b7",
+  "external_client_files": [
+    {
+      "artifact_role": "unchanged_deploy_client_source",
+      "file_size": 84825,
+      "path": "/home/rlc123/fr3_client_ws/scripts/deploy_forcesmolvla.py",
+      "sha256": "c64acde5cc3eb8c531f58cc376d2b7e0d1d26e97f1adff9cfbfa8fc1118a94f2"
+    },
+    {
+      "artifact_role": "unchanged_deploy_client_source",
+      "file_size": 44521,
+      "path": "/home/rlc123/fr3_client_ws/scripts/deploy_forcevla.py",
+      "sha256": "186db624ca1bce4a0a8b29ee085edcb545ba1f92d01f752e8f785710650fb4e0"
+    },
+    {
+      "artifact_role": "unchanged_deploy_client_source",
+      "file_size": 98074,
+      "path": "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py",
+      "sha256": "eba43dcc5d22d8ab06f7b7e64b474d0c63b4fa425bcfc85faba8829f65c6798c"
+    },
+    {
+      "artifact_role": "unchanged_deploy_client_source",
+      "file_size": 24393,
+      "path": "/home/rlc123/fr3_client_ws/scripts/hilserl_impedance_protocol.py",
+      "sha256": "449402b49092c678dafbe690738c8e7f571a2e77f4e0384b4bb2a6f314b38c9b"
+    },
+    {
+      "artifact_role": "unchanged_deploy_client_source",
+      "file_size": 119088,
+      "path": "/home/rlc123/fr3_client_ws/scripts/record_franka_forcevla.py",
+      "sha256": "c9519d82bcbb953b85e73f37f07abc0c3c19642050703af4536ac6e164088db3"
+    },
+    {
+      "artifact_role": "unchanged_deploy_client_source",
+      "file_size": 71711,
+      "path": "/home/rlc123/fr3_client_ws/scripts/record_franka_forcevla_raw.py",
+      "sha256": "4ec308a5d3aad9f1b1a214a545f60c8ce533ec12065da1fba776514c395ef382"
+    },
+    {
+      "artifact_role": "unchanged_deploy_client_source",
+      "file_size": 37486,
+      "path": "/home/rlc123/fr3_client_ws/scripts/record_franka_spacemouse_publisher.py",
+      "sha256": "5d0a6ab0538a67f6cc21e87f546d6ff3cac7039fbe4cbd2d9e3c3b7f365f491f"
+    },
+    {
+      "artifact_role": "unchanged_deploy_client_source",
+      "file_size": 69687,
+      "path": "/home/rlc123/fr3_client_ws/scripts/convert_franka_forcevla_raw_to_lerobot_v21.py",
+      "sha256": "f8dc57b0a69b29be36b8fb62820d4284c37b4687def4cc27bad4075040f96b1a"
+    }
+  ],
+  "external_client_files_sha256": "e5e9db5675a1e7ae9a3bac6cd20f7663e2644b46d1c86a5e6e3d7df6da5b3e1e",
+  "files": [
+    {
+      "artifact_role": "evaluation_smoke_binding",
+      "file_size": 868,
+      "relative_path": "artifacts/development/live/task2_cycle210_evaluation_smoke_binding.v1.json",
+      "sha256": "6f15f33aedbf4327388012dc7a0418de09f05ba070833ac95c092b95104471d5"
+    },
+    {
+      "artifact_role": "offline_parity_result",
+      "file_size": 25803,
+      "relative_path": "artifacts/development/stage2/s2_stage2b_cycle210_evaluation_smoke.v1.json",
+      "sha256": "59980b3286e74f025f4cf93e87286c7137fd722da6e15636f81c3df4078c0cf5"
+    },
+    {
+      "artifact_role": "export_artifact_manifest",
+      "file_size": 11761,
+      "relative_path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/artifact_manifest.json",
+      "sha256": "fb6fa6aceb9892ba2d39d136936c7e28f4a701bf7dd994169aae60c69894e395"
+    },
+    {
+      "artifact_role": "exported_cycle210_actor",
+      "file_size": 1420094908,
+      "relative_path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/model.safetensors",
+      "sha256": "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
+    },
+    {
+      "artifact_role": "unchanged_live_rulespec",
+      "file_size": 6326,
+      "relative_path": "configs/live_action_safety.task2.development.yaml",
+      "sha256": "2619b9fe93af11cc021e193790e84261b0f0ae9524714c40a12ca97f5b28fcba"
+    },
+    {
+      "artifact_role": "action_contract_v2",
+      "file_size": 2020,
+      "relative_path": "configs/stage2_action_contract.v2.development.json",
+      "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6"
+    },
+    {
+      "artifact_role": "resolved_export_config",
+      "file_size": 2690,
+      "relative_path": "configs/stage2b_cycle210_evaluation_smoke.development.json",
+      "sha256": "7513404443d6cf266b82e224892307fc8cb4d6a6d6e7dd6c9acdf23717981baf"
+    },
+    {
+      "artifact_role": "offline_parity_report",
+      "file_size": 2562,
+      "relative_path": "docs/stage2b_cycle210_evaluation_smoke_report.v1.md",
+      "sha256": "decf2870fd9673ee2ac516f4f26c653c6929800e1115c7228a162997d3004677"
+    },
+    {
+      "artifact_role": "public_action_contract_runtime",
+      "file_size": 15234,
+      "relative_path": "src/forcesmolvla/action_delta.py",
+      "sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1"
+    },
+    {
+      "artifact_role": "unchanged_strict_checkpoint_loader",
+      "file_size": 23291,
+      "relative_path": "src/forcesmolvla/checkpoint.py",
+      "sha256": "234576b00aa157a1de57295ddcd87d9dfe3b5f490a66ed9ebb5809713acce6e2"
+    },
+    {
+      "artifact_role": "public_input_runtime",
+      "file_size": 15671,
+      "relative_path": "src/forcesmolvla/inference.py",
+      "sha256": "f27fb012692c8dcbca0cd7892e9800693c46fe7a8c4fb71c5077445cd65ab73b"
+    },
+    {
+      "artifact_role": "public_actor_runtime",
+      "file_size": 40356,
+      "relative_path": "src/forcesmolvla/modeling_forcesmolvla.py",
+      "sha256": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610"
+    },
+    {
+      "artifact_role": "evaluation_checkpoint_regression",
+      "file_size": 3253,
+      "relative_path": "tests/test_stage2b_cycle210_evaluation_checkpoint.py",
+      "sha256": "61a41685c9cc2b61604637f1b23294f2e6a1644ce38befd84f7b22f39757d806"
+    },
+    {
+      "artifact_role": "evaluation_export_and_parity",
+      "file_size": 50837,
+      "relative_path": "tools/export_stage2b_cycle210_evaluation_smoke.py",
+      "sha256": "3c592f5e2befe50b0d4ea8531a4354a2dd165be83f23e0a234105938a82b48fa"
+    },
+    {
+      "artifact_role": "unchanged_http_inference_server",
+      "file_size": 24865,
+      "relative_path": "tools/serve_policy.py",
+      "sha256": "9e1d15455c687c7f7087aae1a5d5e6aeebe64b7540a72b60c09e60bc921768fc"
+    }
+  ],
+  "files_sha256": "77eaca3b620c255ebf3118e504e277f1535930e086afc5e156382962bdb470d2",
+  "robot_execution_authorized": "false_pending_physical_confirmation",
+  "schema_version": "forcesmolvla_stage2_source_manifest.v31.cycle210_evaluation_smoke",
+  "scope": "cycle210_evaluation_smoke_export_and_offline_three_path_parity",
+  "source_code": {
+    "commit": "485dff5cb43d201ed82039b16bd890f18d6966b4",
+    "worktree_dirty": true
+  }
+}

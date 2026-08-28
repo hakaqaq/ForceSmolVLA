@@ -32,3 +32,16 @@ artifacts/development/stage2/.g7a_work.*/
 # lightweight report and manifest are added only after the cycle-210 boundary.
 artifacts/development/stage2/stage2b_long_run_half_pass/
 artifacts/development/stage2/stage2b_long_run_half_pass_checkpoints/
+artifacts/development/stage2/stage2b_interrupted_pilot_cycle136/
+artifacts/development/stage2/stage2b_interrupted_pilot_cycle136_checkpoints/
+
+# v2.1.0 keeps source, configs, reports, and SHA-bound summaries in Git. Large
+# local training/evaluation payloads and disposable throughput traces stay local.
+artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/
+artifacts/development/stage2/stage2b_throughput_v2_half_pass_run.v1/
+artifacts/development/stage2/stage2b_throughput_v2_one_pass_continuation.v1/
+artifacts/development/stage2/throughput_v2/
+artifacts/development/stage2/throughput_v2_aborted_for_shorter_screen_20260827_01/
+artifacts/development/stage2/throughput_v2_aborted_for_trainability_clarification_20260827_01/
+artifacts/development/stage2/throughput_v2_failed_attempt_20260827_01/
+artifacts/development/stage2/throughput_v2_long_run/

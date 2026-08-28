@@ -1,8 +1,10 @@
 # ForceSmolVLA
 
-**Release status: Phase 1 (`phase1-v0.1.0`) — offline full-parameter
-Force-conditioned Actor.** See [`PHASE1_RELEASE.md`](PHASE1_RELEASE.md) for the included
-scope, pinned dependencies, and GitHub exclusions.
+**Release status: `v2.1.0` — development Stage-2 frozen-backbone,
+value-guided force-action refinement.** Stage-1 remains the full-model
+force-conditioned behavior adaptation parent. See
+[`PHASE2_RELEASE.md`](PHASE2_RELEASE.md) for the exact development scope,
+limitations, evidence, and GitHub exclusions.
 
 独立工程根目录：`/home/rlc123/ForceSmolVLA`  
 独立 Conda 环境：`/home/rlc123/anaconda3/envs/forcesmolvla`
@@ -21,8 +23,10 @@ post-VLM force fusion 与 MoE 思想，并新增 Action-Query Force Residual Ada
 flow timestep，在原生 prefix K/V cache 之外查询固定的 Force Context。Force 分支
 不接收、不拼接或修改 `past_key_values`。
 
-v4.2 当前证明范围仅为离线全参数 Force-conditioned Actor。未来冻结 VLM 的在线
-Actor–Critic 只是后续能力；当前工程不声称已实现或验收在线训练。
+v4.2 的 Stage-1 证明范围是离线全参数 Force-conditioned Actor。Stage-2 已实现并
+验收 development-only 的 frozen-VLM Twin-Q、Flow-Matching + Q-guidance、
+ActionContract-v2、exact resume 和 throughput-v2 路径；当前仍不声称 formal
+Detector validation、无偏策略评估、部署发布或在线/真机训练已经完成。
 
 ## 环境
 

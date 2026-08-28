@@ -1,0 +1,71 @@
+schema_version: forcesmolvla_stage2b_throughput_v2_long_run_authorization.v2
+authorization: yes_for_420_total_cycles
+claim_scope: development_stage2b_one_actor_pass
+
+initial_parent:
+  path: artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint
+  tree_sha256: f8c08b9058d173211a7306d370a97a848bfc1f7569ac52e6cc88baacff0c0d40
+
+half_pass_run:
+  root: artifacts/development/stage2/stage2b_throughput_v2_half_pass_run.v1
+  checkpoint: artifacts/development/stage2/stage2b_throughput_v2_half_pass_run.v1/checkpoint_cycle_000210
+  boundary_audit: artifacts/development/stage2/stage2b_throughput_v2_half_pass_run.v1/authorized_boundary_cycle_210.json
+  completion_summary: artifacts/development/stage2/stage2b_throughput_v2_half_pass_run.v1/training_complete_raw_summary.json
+  launcher: tools/run_stage2b_throughput_v2_authorized_half_pass.py
+  launcher_sha256: 9e8d21510e9fb2ea74b3886f240a748c801ea5315b9f1354ba21159ec741f89a
+  authorization_config: configs/stage2b_long_run_half_pass_throughput_v2.authorized.yaml
+  authorization_config_sha256: 512155477f8984be92b5c617857da8330e50453ae27f405fd20354bfd644ba85
+
+recorded_interpretation:
+  C128_EQUIVALENT_INFRA_SPEEDUP: 2.20x
+  C64_TOTAL_WALL_CLOCK_SPEEDUP: 4.28x
+  C64_SEMANTICALLY_IDENTICAL_TO_C128: false
+  C64_STATUS: approved_long_run_hyperparameter
+
+recipe:
+  target_cycles: 420
+  continuation_start_cycle: 210
+  continuation_cycles: 210
+  actor_batch: 24
+  critic_batch: 64
+  flow_inference_subbatch: 4
+  critic_updates_per_actor_update: 2
+  horizon: 50
+  flow_euler_steps: 10
+  calql_candidates_per_source: 2
+  eta: 3.0
+  beta: 1.0
+  calql_alpha: 0.1
+  polyak_tau: 0.005
+  actor_transition_exposure: 10080
+  td_row_membership: 53760
+  calql_row_membership: 53760
+  actor_coverage: 1.0_pass
+
+runtime:
+  verified_worker: tools/run_stage2b_long_run_half_pass_worker_throughput_v2.py
+  verified_worker_sha256: 5f7886c4c418b85c78667aaf3f6ff6172b5c5022b1af31fc5dc4492041c6e258
+  deterministic_algorithms: true
+  fixed_sampler_order: true
+  fixed_flow_noise: true
+  decoded_cache_max_bytes: 8589934592
+  action_contract: v2
+  trainability_contract: frozen_vlm_v2
+  forbidden_optimizations: [flow_subbatch_8, flow_subbatch_16, grouped_flow, tf32, torch_compile, nondeterministic_algorithms]
+
+memory_gate:
+  measured_peak_process_rss_gib: 36.55
+  required_safety_margin_gib: 8.0
+  minimum_mem_available_gib: 44.55
+  hard_minimum_mem_available_during_run_gib: 8.0
+  hard_process_rss_limit_gib: 44.0
+
+boundaries:
+  cycle210: retained_half_pass_checkpoint_and_safety_gate
+  cycle420: one_pass_candidate_checkpoint_final_audit_and_stop
+  auto_continue_after_cycle210_safety_gate: true
+  auto_continue_beyond_cycle420: false
+  validation_reads: 0
+  test_reads: 0
+  rollout_authorized: false
+  robot_execution_authorized: false

@@ -1,0 +1,100 @@
+{
+  "schema_version": "forcesmolvla_stage2_throughput_v2_timing_audit.v1",
+  "status": "pass",
+  "scope": "read_only_source_and_existing_benchmark_audit",
+  "training_semantics_error": false,
+  "gpu_hardware_error": false,
+  "timing_method": {
+    "clock": "time.perf_counter",
+    "cuda_events_used": false,
+    "cuda_synchronize_at_cycle_boundaries": true,
+    "cuda_synchronize_around_flow_sampling": true,
+    "cuda_synchronize_around_actor_forward_backward": true,
+    "cuda_synchronize_around_critic_forward_backward": true,
+    "data_timer_predecessor_gpu_work_synchronized": true,
+    "host_to_device_non_blocking": false,
+    "pinned_memory": false,
+    "data_loading_async_cuda_misattribution": false
+  },
+  "measured_selected_b24_c128_cycle_seconds_mean": 126.60177899367085,
+  "measured_components_seconds_mean": {
+    "data_pipeline_total": 60.84066455177445,
+    "frozen_prefix_prefill": "embedded_in_flow_components_not_separately_timed",
+    "critic_update_1": {
+      "TD_policy_flow_sampling": 5.772578944106095,
+      "CalQL_current_policy_sampling": 11.538125209672014,
+      "CalQL_next_policy_sampling": 11.534245850330787,
+      "critic_forward_backward_excluding_optimizer_polyak": 0.4525777739019961,
+      "optimizer": 0.0010489907775384684,
+      "polyak": 0.3355882131048323
+    },
+    "critic_update_2": {
+      "TD_policy_flow_sampling": 5.764818113103199,
+      "CalQL_current_policy_sampling": 11.502903235216056,
+      "CalQL_next_policy_sampling": 11.53141326877974,
+      "critic_forward_backward_excluding_optimizer_polyak": 0.4525914398998591,
+      "optimizer": 0.001045530108967796,
+      "polyak": 0.3363222148780349
+    },
+    "actor_update": {
+      "FM_forward_backward": 0.23989996977616102,
+      "differentiable_10_step_flow_TwinQ_ActorQ_backward": 0.5425790976668294,
+      "optimizer": 0.013174600889518237
+    },
+    "GPU_to_CPU_diagnostics": "not_individually_instrumented",
+    "checkpoint_and_logging": 0.0
+  },
+  "data_pipeline_subcomponents": {
+    "dataset_indexing": "not_individually_instrumented",
+    "image_file_reading": "not_individually_instrumented",
+    "image_decoding": "not_individually_instrumented",
+    "image_transforms": "not_individually_instrumented",
+    "normalization": "not_individually_instrumented",
+    "collate": "not_individually_instrumented",
+    "host_to_device": "not_individually_instrumented",
+    "frozen_prefix_prefill": "not_part_of_data_loading_timer"
+  },
+  "cycle_static_counts": {
+    "build_batch_calls": 5,
+    "current_next_observation_instances": 1072,
+    "two_camera_PIL_decode_calls": 2144,
+    "actor_future_action_rows_requested_per_transition_max": 50,
+    "actor_future_rows_currently_read_with_unused_camera_columns": true,
+    "calql_candidates_total": 1536,
+    "calql_random_candidates_no_flow": 512,
+    "calql_current_policy_action_chunks": 512,
+    "calql_next_policy_action_chunks": 512,
+    "td_policy_action_chunks_range": [254, 256],
+    "actor_guidance_action_chunks": 24,
+    "policy_action_chunks_total_range": [1302, 1304],
+    "flow_subbatch_size": 4,
+    "flow_subbatches_typical": 321,
+    "euler_velocity_evaluations_typical": 3210,
+    "prefix_prefill_calls_in_N10_flow_typical": 321,
+    "FM_prefix_prefill_calls": 1,
+    "total_prefix_prefill_calls_typical": 322,
+    "prefix_observation_instances_encoded_range": [1326, 1328],
+    "unavoidable_duplicate_prefix_instances_from_M2": 512,
+    "duplicate_actor_current_prefix_instances_FM_vs_Q": 24,
+    "prefix_recomputed_per_euler_step": false
+  },
+  "pipeline_findings": {
+    "torch_DataLoader_used": false,
+    "num_workers_config_currently_controls_runtime_pipeline": false,
+    "persistent_workers_used": false,
+    "prefetch_factor_used": false,
+    "parquet_table_cache_used": false,
+    "decoded_image_cache_used": false,
+    "prefix_cache_used_across_flow_calls": false,
+    "same_transition_can_repeat_across_independent_sampler_streams": true,
+    "exact_cross_sampler_overlap_requires_completed_detailed_trace": true
+  },
+  "source_bindings": [
+    "tools/run_stage2b_long_run_half_pass_worker.py",
+    "tools/benchmark_stage2_batch_scaling_gpu.py",
+    "tools/preflight_s2_g5_single_cycle_gpu.py",
+    "src/forcesmolvla/rft/frozen_vlm_trainability.py",
+    "src/forcesmolvla/rft/flow_sampling.py",
+    "src/forcesmolvla/modeling_forcesmolvla.py"
+  ]
+}
