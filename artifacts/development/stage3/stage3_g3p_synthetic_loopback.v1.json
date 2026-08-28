@@ -1,0 +1,137 @@
+{
+  "blocked_reason": null,
+  "canonical_report_sha256": "63cb791dfb9f12ed461283772bbba80c8254fa04b6ad13405f197c8b999e9b8e",
+  "collection": {
+    "accepted_slots_per_decision": 3,
+    "action_horizon": 50,
+    "data_grid_hz": 30,
+    "episode_sealed_before_commit": true,
+    "fake_actor_interface": true,
+    "gripper_command_ack_identity": true,
+    "normalizer_application_count": 101,
+    "policy_anchor_hz": 10,
+    "positive_ack_count": 303,
+    "smolvla_forward_validated": false,
+    "successful_macro_count": 101
+  },
+  "deferred": {
+    "CROSS_STAGE_OPTIMIZER_REBUILT": "NOT_RUN",
+    "G0_FINAL_PARENT_BINDING": "PENDING",
+    "G3_RECORDED_FIXTURE_LOOPBACK": "BLOCKED",
+    "G4_AND_LATER": "NOT_RUN",
+    "actor_q_guidance_enabled": false,
+    "critic_ready": false,
+    "online_HIL": "NOT_IMPLEMENTED",
+    "real_durable_production_WAL": "NOT_IMPLEMENTED",
+    "real_publisher_server": "NOT_IMPLEMENTED"
+  },
+  "evidence_freeze": {
+    "actor_gradient_steps": 1,
+    "calql_online_call_count": 0,
+    "canonical_report_digest": "63cb791dfb9f12ed461283772bbba80c8254fa04b6ad13405f197c8b999e9b8e",
+    "critic_gradient_steps": 2,
+    "fixture_kind": "synthetic_tool_test",
+    "formal_gate_passed": false,
+    "mixed_replay_R_D_ratio": "50_50",
+    "policy_revision_activated": false,
+    "policy_revision_staged": true,
+    "recorded_live_fixture_available": false,
+    "robot_execution_authorized": false,
+    "source_head_before_commit": "53a0fcfbffaed0c7f042367cf5ad4b7fe39dcf6f",
+    "target_polyak_updates": 2,
+    "training_starts_unique_R": 100
+  },
+  "fault_injection": {
+    "conflicting_digest_fail_closed": true,
+    "duplicate_same_uid_same_digest_noop": true,
+    "human_takeover_invalidated_stale_policy": true,
+    "missing_ack_quarantined": true,
+    "partial_macro_quarantined": true,
+    "quarantined_fault_replay_commit_count": 0,
+    "rejected_ack_quarantined": true,
+    "stale_ack_quarantined": true
+  },
+  "fixture_kind": "synthetic_tool_test",
+  "fixture_path": null,
+  "formal_gate_passed": false,
+  "learner": {
+    "actor_gradient_steps": 1,
+    "actor_guidance_uses_current_min_twin_q": true,
+    "actor_optimizer_critics_unchanged": true,
+    "actor_optimizer_parameter_names": [
+      "normalized_chunk"
+    ],
+    "autonomous_fm_contribution": 0.0,
+    "batch_D_count": 2,
+    "batch_R_count": 2,
+    "calql_online_call_count": 0,
+    "cql_penalty_call_count": 0,
+    "critic_action_shape": [
+      4,
+      3,
+      7
+    ],
+    "critic_gradient_steps": 2,
+    "critic_only_actor_unchanged": true,
+    "expert_feature_count": 700,
+    "gripper_q_gradient_exact_zero": true,
+    "mc_return_read_count": 0,
+    "online_critic_is_pure_td": true,
+    "optimizer_excludes_vision_smolvlm_state_prefix": true,
+    "optimizer_kind": "test_only_sgd",
+    "post_K_q_gradient_exact_zero": true,
+    "random_candidate_call_count": 0,
+    "target_polyak_updates": 2,
+    "tcp6_q_gradient_nonzero": true,
+    "td_target_uses_target_twin_q_min": true,
+    "zero_expert_graph_connected_finite": true
+  },
+  "policy_revision": {
+    "activated": false,
+    "active_revision_id": "fake-active-r0",
+    "config_sha256": "c1bc7845362fe0a982f8e224c48d70b5680e3e2f86404e25a5ad49239db0091a",
+    "deployment_directory_written": false,
+    "episode_activation_blocked": true,
+    "inflight_activation_blocked": true,
+    "publisher_connected": false,
+    "revision_digest_sha256": "b83839eb82274a1b39a2f216e9f794febfa3f7feb2c87f548cdd0666c05d89ad",
+    "source_state_sha256": "f986650e9ca90d100524b38589c1a586053059c568368d4d89215a46c68573ad",
+    "staged": true,
+    "staged_revision_id": "fake-policy-b83839eb82274a1b"
+  },
+  "replay": {
+    "D_expert_membership_count": 2,
+    "R_online_membership_count": 100,
+    "canonical_payload_copies_per_uid": 1,
+    "canonical_payload_count": 101,
+    "dual_membership_count": 1,
+    "independent_offline_demonstration": true,
+    "intervention_dual_membership": true,
+    "mixed_replay_ratio": "50_50"
+  },
+  "robot_execution_authorized": false,
+  "schema_version": "forcesmolvla_stage3_recorded_loopback_report.v1",
+  "seed": 20260828,
+  "source_bindings": {
+    "action_contract_sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6",
+    "loss_source_sha256": "6ed53d47f3b0f1cdea75622c176f0d3d213fe9c52b2aac5482eb758d623b58e5",
+    "normalizer_manifest_path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/normalizer_manifest.json",
+    "normalizer_manifest_sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
+    "publication_source_sha256": "3f512700e8042749b147fa8c853681fa561a1f694513b959d423415b3bf07095",
+    "replay_source_sha256": "8cc1029d389ccc7e29db04a5f0958ffc4a6fe00aeb89935827bcd0ac733a4c26",
+    "transition_source_sha256": "22359fa285c939f58ddf8f44594b556fe56d40dadf7a4687f34b5308576a1c91"
+  },
+  "tool_status": "PASS",
+  "training_gate": {
+    "blocked_at_99": true,
+    "credits_after_cycle": 0,
+    "test_only_credit_configuration": {
+      "credits_per_joint_cycle": 100,
+      "credits_per_transition": 1,
+      "production_policy": false
+    },
+    "training_starts_unique_R": 100,
+    "unlocked_at_100": true,
+    "zero_credit_backpressure": true
+  }
+}

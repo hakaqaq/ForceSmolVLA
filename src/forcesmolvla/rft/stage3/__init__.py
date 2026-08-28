@@ -10,6 +10,15 @@ from .losses import (
     compute_stage3_actor_objective,
     compute_stage3_min_twin_q_actor_loss,
 )
+from .learner import ProvisionalStage3Learner, Stage3LossAPI, TrainingStartsBlocked
+from .loopback import (
+    FakeActor,
+    FakeGateway,
+    canonical_report_sha256,
+    recorded_fixture_blocked_report,
+    run_synthetic_loopback,
+    validate_loopback_report,
+)
 from .protocol import InferenceDisposition, PolicyEpochGate, TransportEnvelope
 from .publication import (
     InMemoryRevisionStateMachine,
@@ -34,18 +43,24 @@ __all__ = [
     "D_EXPERT",
     "InferenceDisposition",
     "InMemoryRevisionStateMachine",
+    "FakeActor",
+    "FakeGateway",
     "MixedReplaySampler",
     "PolicyEpochGate",
+    "ProvisionalStage3Learner",
     "QuiescentBoundary",
     "R_ONLINE",
     "RevisionRecord",
     "RevisionState",
     "Stage3Replay",
+    "Stage3LossAPI",
+    "TrainingStartsBlocked",
     "TransportEnvelope",
     "UpdateCreditLedger",
     "apply_stage3_trainability",
     "build_expert_feature_mask",
     "causal_zoh_ack_macro",
+    "canonical_report_sha256",
     "compute_expert_only_flow_matching_loss",
     "compute_min_twin_q_guidance_from_values",
     "compute_online_twin_q_td_loss",
@@ -54,8 +69,11 @@ __all__ = [
     "cpu_round_trip_online_checkpoint",
     "finalize_ack_transition",
     "load_stage3_contracts",
+    "recorded_fixture_blocked_report",
+    "run_synthetic_loopback",
     "validate_ack_transition",
     "validate_online_checkpoint_metadata",
     "validate_reward_terminal",
+    "validate_loopback_report",
     "validate_stage3_contracts",
 ]

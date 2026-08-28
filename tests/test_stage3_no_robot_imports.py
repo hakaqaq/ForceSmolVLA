@@ -36,7 +36,7 @@ def test_importing_stage3_stays_cpu_only_and_does_not_connect_or_command() -> No
     before = set(sys.modules)
     for name in (
         "contracts", "transition", "replay", "batch", "losses", "update_credit",
-        "protocol", "publication", "checkpoint", "temporal_parity",
+        "protocol", "publication", "checkpoint", "temporal_parity", "learner", "loopback",
     ):
         importlib.import_module(f"forcesmolvla.rft.stage3.{name}")
     added = set(sys.modules) - before
