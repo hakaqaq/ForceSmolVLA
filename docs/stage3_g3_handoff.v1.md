@@ -103,9 +103,9 @@ the recorded-live temporal gate remains blocked and no final parent is bound.
 | `src/forcesmolvla/rft/stage3/replay.py` | `memberships_for_transition`, `Stage3Replay.commit` | Intervention can belong to R and D while one canonical payload is stored; same UID/digest is idempotent and digest collision is fatal. |
 | `src/forcesmolvla/rft/stage3/batch.py` | `MixedReplaySampler.sample`, `build_expert_feature_mask` | In-memory 50:50 R/D sampling and expert-only feature mask. |
 | `src/forcesmolvla/rft/stage3/losses.py` | `compute_online_twin_q_td_loss`, `compute_expert_only_flow_matching_loss`, `compute_min_twin_q_guidance_from_values`, `compute_stage3_actor_objective`, `compute_stage3_min_twin_q_actor_loss` | Pure online TD has no Cal-QL/random/MC path; Actor FM is expert-only; Q guidance is `min(Q1,Q2)`; zero-expert batches are graph-connected exact zero. |
-| `src/forcesmolvla/rft/stage3/update_credit.py` | `UpdateCreditLedger.mint_for_unique_R_commit`, `consume_one`, `snapshot`, `restore` | Only new unique R commits mint credits; zero credits block the learner. |
-| `src/forcesmolvla/rft/stage3/protocol.py` | `TransportEnvelope`, `PolicyEpochGate.classify` | CPU protocol envelope and normal stale-revision drop. |
-| `src/forcesmolvla/rft/stage3/publication.py` | `InMemoryRevisionStateMachine.stage`, `activate`, `rollback` | In-memory-only revision state machine with quiescent-boundary activation. |
+| `src/forcesmolvla/rft/stage3/update_credit.py` | `UpdateCreditLedger.mint_for_unique_online_transition`, `consume_joint_cycle`, `snapshot`, `from_state_dict` | Only new unique R commits mint credits; zero credits block the learner. |
+| `src/forcesmolvla/rft/stage3/protocol.py` | `TransportEnvelope`, `PolicyEpochGate.classify_result` | CPU protocol envelope and normal stale-revision drop. |
+| `src/forcesmolvla/rft/stage3/publication.py` | `InMemoryRevisionStateMachine.stage`, `activate_pending`, `rollback` | In-memory-only revision state machine with quiescent-boundary activation. |
 | `src/forcesmolvla/rft/stage3/checkpoint.py` | `validate_online_checkpoint_metadata`, `cpu_round_trip_online_checkpoint` | JSON schema validation and CPU round-trip only; no exact-resume implementation. |
 | `src/forcesmolvla/rft/stage3/__init__.py` | explicit exports | Stage-3 CPU API surface; no ROS, robot, server or publisher import. |
 
@@ -139,7 +139,7 @@ The compatibility closure uses production symbols rather than Stage-3 mirrors:
 | Frozen prefix `no_grad`/detach path and Force K/V once | real model path exercised by a CPU-small fixture | `tests/test_stage3_recorded_ack_parity.py::test_real_phase2_frozen_prefix_path_is_no_grad_detached_and_force_kv_once` |
 | `src/forcesmolvla/rft/critic_action_adapter_v2.py::critic_action_for_q_guidance_v2` | used for TCP6 differentiability and gripper stop-gradient | `tests/test_stage3_losses.py::test_actor_objective_uses_min_q_and_actioncontract_v2_stops_gripper_q_gradient` |
 | `src/forcesmolvla/rft/critic.py::ForceAwareMacroCritic.forward` | called with real image/state/wrench/task/action/mask interface | `tests/test_stage3_recorded_ack_parity.py::test_online_td_calls_real_force_aware_macro_critic_interface` |
-| `src/forcesmolvla/rft/losses.py::compute_min_twin_q_actor_loss` | compatibility checked against Stage-3 min-Q wrapper | Actor-objective and real-interface tests above |
+| `src/forcesmolvla/rft/frozen_vlm_trainability.py::compute_min_twin_q_actor_loss` | compatibility checked against Stage-3 min-Q wrapper | Actor-objective and real-interface tests above |
 | `src/forcesmolvla/action_delta.py::ActionDeltaProcessor.to_delta` | called by ACK action normalization and parity | transition/parity tests |
 | `src/forcesmolvla/raw_to_lerobot_v3.py::prepare_episode` | canonical full per-episode Phase-2 converter called exactly once | `tests/test_stage3_recorded_ack_parity.py::test_stage2_parity_path_calls_production_prepare_episode_once` |
 | Frozen normalizer exactly once | both Stage-2 and Stage-3 parity branches instrument the same frozen normalizer | synthetic parity tests |
