@@ -76,6 +76,54 @@ class AckMacro:
     workspace_clip_flags: tuple[bool, bool, bool]
 
 
+REVISION_BOUND_EVENTS = {
+    "request",
+    "result",
+    "chunk",
+    "proposal",
+    "ack_ledger",
+    "current_observation",
+    "next_observation",
+    "transition",
+}
+
+
+def validate_episode_revision_bindings(
+    event_bindings: Mapping[str, Mapping],
+    *,
+    policy_revision_id: str,
+    model_sha256: str,
+    policy_epoch: int,
+) -> dict[str, dict]:
+    """Fail closed so a caller can quarantine any cross-revision episode row."""
+
+    if set(event_bindings) != REVISION_BOUND_EVENTS:
+        raise TransitionContractError("STAGE3_REVISION_EVENT_BINDING_SET_INVALID")
+    expected = {
+        "policy_revision_id": policy_revision_id,
+        "model_sha256": model_sha256,
+        "policy_epoch": policy_epoch,
+    }
+    if (
+        not policy_revision_id
+        or len(model_sha256) != 64
+        or any(char not in "0123456789abcdef" for char in model_sha256)
+        or not isinstance(policy_epoch, int)
+        or isinstance(policy_epoch, bool)
+        or policy_epoch < 0
+    ):
+        raise TransitionContractError("STAGE3_EPISODE_REVISION_PIN_INVALID")
+    value = {
+        name: deepcopy(dict(event_bindings[name])) for name in sorted(event_bindings)
+    }
+    for name, binding in value.items():
+        if set(binding) != set(expected) or binding != expected:
+            raise TransitionContractError(
+                f"STAGE3_CROSS_REVISION_{name.upper()}_QUARANTINE"
+            )
+    return value
+
+
 def canonical_json_bytes(value: Mapping) -> bytes:
     try:
         return json.dumps(

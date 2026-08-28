@@ -28,10 +28,16 @@ from .parent import (
 )
 from .protocol import InferenceDisposition, PolicyEpochGate, TransportEnvelope
 from .publication import (
+    EpisodeRevisionPin,
     InMemoryRevisionStateMachine,
     QuiescentBoundary,
+    RevisionArtifact,
     RevisionRecord,
     RevisionState,
+    export_immutable_revision,
+    load_revision_registry,
+    save_revision_registry,
+    validate_immutable_revision,
 )
 from .replay import D_EXPERT, R_ONLINE, Stage3Replay
 from .transition import (
@@ -39,6 +45,7 @@ from .transition import (
     causal_zoh_ack_macro,
     finalize_ack_transition,
     validate_ack_transition,
+    validate_episode_revision_bindings,
     validate_reward_terminal,
 )
 from .update_credit import CreditsUnavailable, UpdateCreditLedger
@@ -48,6 +55,7 @@ __all__ = [
     "AcceptedAck",
     "CreditsUnavailable",
     "D_EXPERT",
+    "EpisodeRevisionPin",
     "InferenceDisposition",
     "InMemoryRevisionStateMachine",
     "FakeActor",
@@ -59,6 +67,7 @@ __all__ = [
     "QuiescentBoundary",
     "R_ONLINE",
     "RevisionRecord",
+    "RevisionArtifact",
     "RevisionState",
     "Stage3Replay",
     "Stage3LossAPI",
@@ -75,13 +84,18 @@ __all__ = [
     "compute_stage3_actor_objective",
     "compute_stage3_min_twin_q_actor_loss",
     "cpu_round_trip_online_checkpoint",
+    "export_immutable_revision",
     "finalize_ack_transition",
     "load_stage3_contracts",
+    "load_revision_registry",
     "load_parent_binding",
     "preflight_parent_binding",
     "recorded_fixture_blocked_report",
     "run_synthetic_loopback",
+    "save_revision_registry",
     "validate_ack_transition",
+    "validate_episode_revision_bindings",
+    "validate_immutable_revision",
     "validate_online_checkpoint_metadata",
     "validate_reward_terminal",
     "validate_loopback_report",
