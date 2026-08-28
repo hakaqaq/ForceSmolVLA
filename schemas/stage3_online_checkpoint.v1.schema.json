@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forcesmolvla.local/schemas/stage3_online_checkpoint.v1.schema.json",
+  "title": "ForceSmolVLA Stage-3 online learner checkpoint metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "checkpoint_id", "boundary", "parent", "models", "optimizers",
+    "schedulers", "rng", "samplers", "replay", "credits", "publication", "counters",
+    "bindings", "authorization"
+  ],
+  "properties": {
+    "schema_version": {"const": "forcesmolvla_stage3_online_checkpoint.v1"},
+    "checkpoint_id": {"$ref": "#/$defs/nonempty"},
+    "boundary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["episode_sealed", "learner_update_committed", "pending_graphs", "pending_optimizer_steps"],
+      "properties": {
+        "episode_sealed": {"const": true},
+        "learner_update_committed": {"const": true},
+        "pending_graphs": {"const": 0},
+        "pending_optimizer_steps": {"const": 0}
+      }
+    },
+    "parent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["binding_status", "cross_stage_optimizer_rebuilt"],
+      "properties": {
+        "binding_status": {"enum": ["exact_cycle210", "deterministic_rebuild", "approved_hybrid"]},
+        "cross_stage_optimizer_rebuilt": {"const": true}
+      }
+    },
+    "models": {
+      "type": "object", "additionalProperties": false,
+      "required": ["actor", "q1", "q2", "q1_target", "q2_target"],
+      "properties": {
+        "actor": {"$ref": "#/$defs/state_ref"},
+        "q1": {"$ref": "#/$defs/state_ref"},
+        "q2": {"$ref": "#/$defs/state_ref"},
+        "q1_target": {"$ref": "#/$defs/state_ref"},
+        "q2_target": {"$ref": "#/$defs/state_ref"}
+      }
+    },
+    "optimizers": {
+      "type": "object", "additionalProperties": false,
+      "required": ["actor", "critic"],
+      "properties": {"actor": {"$ref": "#/$defs/state_ref"}, "critic": {"$ref": "#/$defs/state_ref"}}
+    },
+    "schedulers": {
+      "type": "object", "additionalProperties": false,
+      "required": ["actor", "critic"],
+      "properties": {"actor": {"$ref": "#/$defs/state_ref"}, "critic": {"$ref": "#/$defs/state_ref"}}
+    },
+    "rng": {"$ref": "#/$defs/state_ref"},
+    "samplers": {"$ref": "#/$defs/state_ref"},
+    "replay": {
+      "type": "object", "additionalProperties": false,
+      "required": ["canonical_index_sha256", "R_watermark", "D_watermark", "wal_committed_offset", "episode_finalization_state", "outbox_cursor"],
+      "properties": {
+        "canonical_index_sha256": {"$ref": "#/$defs/sha256"},
+        "R_watermark": {"type": "integer", "minimum": 0},
+        "D_watermark": {"type": "integer", "minimum": 0},
+        "wal_committed_offset": {"type": "integer", "minimum": 0},
+        "episode_finalization_state": {"enum": ["sealed", "none_pending"]},
+        "outbox_cursor": {"type": "integer", "minimum": 0}
+      }
+    },
+    "credits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["minted", "consumed", "available"],
+      "properties": {
+        "minted": {"type": "integer", "minimum": 0},
+        "consumed": {"type": "integer", "minimum": 0},
+        "available": {"type": "integer", "minimum": 0}
+      }
+    },
+    "publication": {
+      "type": "object", "additionalProperties": false,
+      "required": ["active_revision", "pending_revision", "previous_revision", "policy_epoch"],
+      "properties": {
+        "active_revision": {"type": ["string", "null"]},
+        "pending_revision": {"type": ["string", "null"]},
+        "previous_revision": {"type": ["string", "null"]},
+        "policy_epoch": {"type": "integer", "minimum": 0}
+      }
+    },
+    "counters": {
+      "type": "object", "additionalProperties": false,
+      "required": ["learner_cycles", "critic_updates", "actor_updates", "polyak_updates_per_target", "publication_count"],
+      "properties": {
+        "learner_cycles": {"type": "integer", "minimum": 0},
+        "critic_updates": {"type": "integer", "minimum": 0},
+        "actor_updates": {"type": "integer", "minimum": 0},
+        "polyak_updates_per_target": {"type": "integer", "minimum": 0},
+        "publication_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "bindings": {
+      "type": "object", "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/sha256"}
+    },
+    "authorization": {
+      "type": "object", "additionalProperties": false,
+      "required": ["deployment_release", "robot_execution"],
+      "properties": {
+        "deployment_release": {"const": false},
+        "robot_execution": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "state_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["relative_path", "sha256"],
+      "properties": {
+        "relative_path": {"$ref": "#/$defs/nonempty"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

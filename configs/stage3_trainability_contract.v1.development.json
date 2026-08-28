@@ -1,0 +1,68 @@
+{
+  "schema_version": "forcesmolvla_stage3_trainability_contract.v1.development",
+  "status": "frozen_for_g1_g2_cpu",
+  "scope": "development_only",
+  "parent_binding": "PENDING",
+  "cross_stage_optimizer_rebuilt": "NOT_RUN",
+  "implementation": {
+    "owner": "forcesmolvla.rft.stage3.contracts.apply_stage3_trainability",
+    "required_delegate": "forcesmolvla.rft.frozen_vlm_trainability.apply_frozen_vlm_trainability"
+  },
+  "frozen_actor_prefixes": [
+    "model.vlm_with_expert.vlm.",
+    "model.state_proj."
+  ],
+  "frozen_requirements": {
+    "requires_grad": false,
+    "excluded_from_actor_optimizer": true,
+    "always_eval": true,
+    "prefix_prefill_under_no_grad": true,
+    "prefix_representation_detached": true,
+    "prefix_cache_detached": true,
+    "parameter_and_buffer_hash_unchanged": true
+  },
+  "trainable_actor_prefixes": [
+    "model.force_branch.",
+    "model.force_adapter.",
+    "model.vlm_with_expert.lm_expert.",
+    "model.action_in_proj.",
+    "model.action_out_proj.",
+    "model.action_time_mlp_in.",
+    "model.action_time_mlp_out."
+  ],
+  "trainable_critics": ["online_q1", "online_q2"],
+  "target_critic_requirements": {
+    "requires_grad": false,
+    "always_eval": true,
+    "update_owner": "fp32_no_grad_polyak_only"
+  },
+  "actor_objective": {
+    "flow_matching_scope": "expert_only",
+    "q_reduction": "min_q1_q2",
+    "q_gradient_action_dims": [0, 1, 2, 3, 4, 5],
+    "gripper_q_gradient": false,
+    "gripper_flow_matching_gradient": true
+  },
+  "critic_readiness": {
+    "critic_ready": false,
+    "actor_q_guidance_enabled": false,
+    "unlock_requires_explicit_approval": true
+  },
+  "bindings": {
+    "stage2_trainability_contract": {
+      "path": "configs/stage2_trainability_contract.v2.development.json",
+      "sha256": "360cee1b50f2a520922c4b05ddcb22ef31d38f01cc4c220403d4c29e3637bad4"
+    },
+    "frozen_vlm_source": {
+      "path": "src/forcesmolvla/rft/frozen_vlm_trainability.py",
+      "sha256": "703655f029cdde0835455f500f2424fd44f6f5671d4d8e74437aa7444e230d6b"
+    }
+  },
+  "authorization": {
+    "optimizer_creation": false,
+    "gpu_preflight": false,
+    "online_update": false,
+    "policy_activation": false,
+    "robot_execution": false
+  }
+}

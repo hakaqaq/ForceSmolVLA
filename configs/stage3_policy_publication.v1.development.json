@@ -1,0 +1,28 @@
+{
+  "schema_version": "forcesmolvla_stage3_policy_publication.v1.development",
+  "status": "g2_in_memory_state_machine_only",
+  "immutable_revision": true,
+  "one_episode_one_revision": true,
+  "states": ["candidate", "pending", "active", "previous", "rejected"],
+  "activation": {
+    "mid_episode_allowed": false,
+    "boundary": "reset_home_quiescent",
+    "requires_no_active_episode": true,
+    "requires_no_inflight_inference": true,
+    "requires_empty_action_queue": true,
+    "requires_no_unconsumed_ack": true,
+    "requires_robot_home": true,
+    "requires_wal_sealed": true
+  },
+  "rollback": {
+    "boundary": "reset_home_quiescent",
+    "increments_policy_epoch": true,
+    "clears_old_chunks": true
+  },
+  "g2_limits": {
+    "filesystem_export": false,
+    "network_publication": false,
+    "policy_activation": false,
+    "robot_execution": false
+  }
+}

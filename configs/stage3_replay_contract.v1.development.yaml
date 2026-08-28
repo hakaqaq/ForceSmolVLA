@@ -1,0 +1,51 @@
+schema_version: forcesmolvla_stage3_replay_contract.v1.development
+status: frozen_for_g1_g2_cpu
+scope: development_only
+
+pools:
+  R_online:
+    membership: all_unique_ack_committed_trainable_online_transitions
+    critic_td: true
+    actor_q: true
+    actor_fm: false
+    bounded_capacity: true
+  D_expert:
+    membership: fixed_offline_demonstrations_and_ack_confirmed_human_interventions
+    critic_td: true
+    actor_q: true
+    actor_fm: expert_mask_only
+    online_eviction_allowed: false
+
+intervention:
+  dual_membership: [R_online, D_expert]
+  canonical_payload_copies: 1
+  accepted_ack_source_required: human
+  intervention_flag_required: true
+
+sampling:
+  within_pool: uniform_with_replacement
+  critic_batch_candidate: 64
+  critic_R_rows: 32
+  critic_D_rows: 32
+  actor_batch_candidate: 24
+  actor_R_rows: 12
+  actor_D_rows: 12
+  sampler_rng_persisted: true
+
+training_start:
+  unique_committed_trainable_R_transitions: 100
+
+credits:
+  mint_source: new_committed_unique_R_transition_only
+  duplicate_retransmit_mints_credit: false
+  zero_credit_behavior: block_learner
+  credits_per_transition: approval_pending
+  credits_per_joint_cycle: approval_pending
+  max_pending_learner_cycles: 1
+  replay_sample_ratio_cap: approval_pending
+
+authorization:
+  live_replay_open: false
+  learner_updates: false
+  online_collection: false
+  robot_execution: false

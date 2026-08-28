@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forcesmolvla.local/schemas/stage3_recorded_ack_fixture.v1.schema.json",
+  "title": "Recorded-live ACK fixture for Stage-2/Stage-3 temporal parity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "fixture_id", "fixture_kind", "provenance", "bindings",
+    "temporal", "accepted_references", "reference_acks", "anchor_states"
+  ],
+  "properties": {
+    "schema_version": {"const": "forcesmolvla_stage3_recorded_ack_fixture.v1"},
+    "fixture_id": {"$ref": "#/$defs/nonempty"},
+    "fixture_kind": {"enum": ["recorded_live", "synthetic_unit_test"]},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recorded_live_evidence", "raw_session_path", "raw_episode_path",
+        "raw_session_tree_sha256",
+        "capture_manifest_path", "capture_manifest_sha256"
+      ],
+      "properties": {
+        "recorded_live_evidence": {"type": "boolean"},
+        "raw_session_path": {"$ref": "#/$defs/nonempty"},
+        "raw_episode_path": {"$ref": "#/$defs/nonempty"},
+        "raw_session_tree_sha256": {"$ref": "#/$defs/sha256"},
+        "capture_manifest_path": {"$ref": "#/$defs/nonempty"},
+        "capture_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage2_ack_converter", "stage2_temporal", "action_delta",
+        "normalizer_source", "normalizer_manifest", "action_contract_v2",
+        "stage2_runtime_contract", "calibration_bundle"
+      ],
+      "properties": {
+        "stage2_ack_converter": {"$ref": "#/$defs/file_binding"},
+        "stage2_temporal": {"$ref": "#/$defs/file_binding"},
+        "action_delta": {"$ref": "#/$defs/file_binding"},
+        "normalizer_source": {"$ref": "#/$defs/file_binding"},
+        "normalizer_manifest": {"$ref": "#/$defs/file_binding"},
+        "action_contract_v2": {"$ref": "#/$defs/file_binding"},
+        "stage2_runtime_contract": {"$ref": "#/$defs/file_binding"},
+        "calibration_bundle": {"$ref": "#/$defs/file_binding"}
+      }
+    },
+    "temporal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_start_ack_ns", "episode_end_ns", "terminal_boundary_ns",
+        "data_grid_hz", "policy_hz", "K", "macro_duration_ms",
+        "policy_anchor_phase_on_30hz_grid", "max_ack_age_ms"
+      ],
+      "properties": {
+        "session_start_ack_ns": {"type": "integer", "minimum": 1},
+        "episode_end_ns": {"type": "integer", "minimum": 1},
+        "terminal_boundary_ns": {"type": "integer", "minimum": 1},
+        "data_grid_hz": {"const": 30},
+        "policy_hz": {"const": 10},
+        "K": {"const": 3},
+        "macro_duration_ms": {"const": 100},
+        "policy_anchor_phase_on_30hz_grid": {"type": "integer", "minimum": 0, "maximum": 2},
+        "max_ack_age_ms": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "accepted_references": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"$ref": "#/$defs/reference"}
+    },
+    "reference_acks": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"$ref": "#/$defs/ack"}
+    },
+    "anchor_states": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["grid_index", "state7"],
+        "properties": {
+          "grid_index": {"type": "integer", "minimum": 0},
+          "state7": {"$ref": "#/$defs/vector7"}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"fixture_kind": {"const": "recorded_live"}}},
+      "then": {"properties": {"provenance": {"properties": {"recorded_live_evidence": {"const": true}}}}}
+    },
+    {
+      "if": {"properties": {"fixture_kind": {"const": "synthetic_unit_test"}}},
+      "then": {"properties": {"provenance": {"properties": {"recorded_live_evidence": {"const": false}}}}}
+    }
+  ],
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "file_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/nonempty"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "vector3": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "vector4": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "items": {"type": "number"}
+    },
+    "vector7": {
+      "type": "array", "minItems": 7, "maxItems": 7,
+      "items": {"type": "number"}
+    },
+    "pose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position_m", "quaternion_xyzw"],
+      "properties": {
+        "position_m": {"$ref": "#/$defs/vector3"},
+        "quaternion_xyzw": {"$ref": "#/$defs/vector4"}
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted_receive_monotonic_ns", "pose", "target_gripper_width_m",
+        "gripper_command_id"
+      ],
+      "properties": {
+        "accepted_receive_monotonic_ns": {"type": "integer", "minimum": 1},
+        "pose": {"$ref": "#/$defs/pose"},
+        "target_gripper_width_m": {"type": "number", "minimum": 0, "maximum": 0.1},
+        "gripper_command_id": {"$ref": "#/$defs/nonempty"}
+      }
+    },
+    "ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ack_id", "receive_monotonic_ns", "gripper_command_id",
+        "gripper_ack_command_id", "slot_owner", "accepted_action_source",
+        "intervention", "workspace_clipped", "payload"
+      ],
+      "properties": {
+        "ack_id": {"$ref": "#/$defs/nonempty"},
+        "receive_monotonic_ns": {"type": "integer", "minimum": 1},
+        "gripper_command_id": {"$ref": "#/$defs/nonempty"},
+        "gripper_ack_command_id": {"$ref": "#/$defs/nonempty"},
+        "slot_owner": {"enum": ["policy", "human_intervention", "human_release_hold", "safety_hold", "offline_demonstration"]},
+        "accepted_action_source": {"enum": ["policy", "human", "safety", "offline"]},
+        "intervention": {"type": "boolean"},
+        "workspace_clipped": {"type": "boolean"},
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accepted", "accepted_pose"],
+          "properties": {
+            "accepted": {"const": true},
+            "accepted_pose": {"$ref": "#/$defs/pose"}
+          }
+        }
+      }
+    }
+  }
+}

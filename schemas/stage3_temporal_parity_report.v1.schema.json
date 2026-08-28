@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forcesmolvla.local/schemas/stage3_temporal_parity_report.v1.schema.json",
+  "title": "Stage-2/Stage-3 recorded ACK temporal parity report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "fixture_path", "fixture_kind", "fixture_id",
+    "tool_status", "bindings", "comparisons", "missing_required_fields",
+    "stage2", "stage3", "G1_TEMPORAL_PARITY_GATE",
+    "RECORDED_FIXTURE_CAPTURE_REQUIRED", "G1_GATE_PASSED",
+    "G2_FORMAL_GATE", "ROBOT_COMMAND_COUNT", "ROBOT_EXECUTION_AUTHORIZED"
+  ],
+  "properties": {
+    "schema_version": {"const": "forcesmolvla_stage3_temporal_parity_report.v1"},
+    "fixture_path": {"type": ["string", "null"]},
+    "fixture_kind": {"enum": ["recorded_live", "synthetic_unit_test", "not_available"]},
+    "fixture_id": {"type": ["string", "null"]},
+    "tool_status": {"enum": ["pass", "fail", "blocked", "synthetic_tool_test_pass"]},
+    "bindings": {
+      "type": "object",
+      "additionalProperties": {"type": "boolean"}
+    },
+    "comparisons": {
+      "type": "object",
+      "additionalProperties": {"type": "boolean"}
+    },
+    "missing_required_fields": {
+      "type": "array", "items": {"type": "string"}, "uniqueItems": true
+    },
+    "stage2": {"type": ["object", "null"]},
+    "stage3": {"type": ["object", "null"]},
+    "G1_TEMPORAL_PARITY_GATE": {"enum": ["PASS", "FAIL", "BLOCKED"]},
+    "RECORDED_FIXTURE_CAPTURE_REQUIRED": {"type": "boolean"},
+    "G1_GATE_PASSED": {"type": "boolean"},
+    "G2_FORMAL_GATE": {"enum": ["PASS", "BLOCKED_ON_G1"]},
+    "ROBOT_COMMAND_COUNT": {"const": 0},
+    "ROBOT_EXECUTION_AUTHORIZED": {"const": false}
+  }
+}

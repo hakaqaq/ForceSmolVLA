@@ -1,0 +1,43 @@
+schema_version: forcesmolvla_stage3_online_hil.v1.development
+status: g1_g2_cpu_only
+scope: development_only
+
+parent:
+  G0_FINAL_PARENT_BINDING: PENDING
+  CROSS_STAGE_OPTIMIZER_REBUILT: NOT_RUN
+  incomplete_retraining_checkpoint_allowed: false
+
+runtime_modes:
+  collect_only:
+    authorized: false
+  shadow_learner:
+    authorized: false
+    publication: hard_disabled
+  online_update:
+    authorized: false
+  robot_execution:
+    authorized: false
+
+critic_readiness:
+  critic_ready: false
+  actor_q_guidance_enabled: false
+  unlock_requires_explicit_approval: true
+
+learner_candidate_not_authorized:
+  critic_updates_per_actor_update: 2
+  actor_batch: 24
+  critic_batch: 64
+  flow_inference_subbatch: 4
+  H: 50
+  flow_euler_steps: 10
+  calql_online: disabled
+  actor_q_reduction: min_q1_q2
+  actor_fm_scope: expert_only
+
+phase_gates:
+  G1_contracts: implemented_this_round
+  G2_cpu_core: implemented_this_round
+  G3_recorded_loopback: NOT_RUN
+  G4_gpu_preflight: NOT_RUN
+  exact_resume: NOT_RUN
+  policy_publication_io: NOT_IMPLEMENTED

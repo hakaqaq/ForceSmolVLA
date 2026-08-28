@@ -1,0 +1,30 @@
+{
+  "schema_version": "forcesmolvla_stage3_reward_terminal_contract.v1.development",
+  "status": "frozen_for_g1_g2_cpu",
+  "scope": "development_only",
+  "gamma_decision": 0.99,
+  "decision_interval_ms": 100,
+  "reward_gate": {
+    "formal_detector_approved": false,
+    "reward_model_training_overlap": true,
+    "unbiased_policy_evaluation": false,
+    "reward_bearing_online_update_authorized": false,
+    "reward_pending_logging_allowed": true
+  },
+  "outcomes": {
+    "approved_success": {"terminated": true, "truncated": false, "bootstrap": false},
+    "approved_absorbing_failure": {"terminated": true, "truncated": false, "bootstrap": false},
+    "time_limit_with_next_observation": {"terminated": false, "truncated": true, "bootstrap": true},
+    "normal": {"terminated": false, "truncated": false, "bootstrap": true},
+    "emergency_stop": {"terminated": null, "truncated": true, "bootstrap": null, "quarantine": true},
+    "sensor_or_ack_fault": {"terminated": null, "truncated": true, "bootstrap": null, "quarantine": true}
+  },
+  "assertions": [
+    "terminated_and_truncated_are_mutually_exclusive",
+    "terminated_implies_bootstrap_false",
+    "discount_equals_gamma_decision_times_bootstrap",
+    "trainable_nonterminal_requires_valid_next_observation",
+    "reset_observation_cannot_cross_episode"
+  ],
+  "negative_failure_reward_requires_separate_approval": true
+}

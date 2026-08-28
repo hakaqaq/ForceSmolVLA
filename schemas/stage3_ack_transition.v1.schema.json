@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forcesmolvla.local/schemas/stage3_ack_transition.v1.schema.json",
+  "title": "ForceSmolVLA Stage-3 ACK-authoritative transition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "bindings",
+    "observation",
+    "next_observation",
+    "policy_proposal",
+    "behavior_ack",
+    "fm_target",
+    "outcome",
+    "eligibility",
+    "commit",
+    "integrity"
+  ],
+  "properties": {
+    "schema_version": {"const": "forcesmolvla_stage3_ack_transition.v1"},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transition_uid", "run_id", "session_id", "episode_id", "macro_index", "task"],
+      "properties": {
+        "transition_uid": {"$ref": "#/$defs/sha256"},
+        "run_id": {"$ref": "#/$defs/nonempty"},
+        "session_id": {"$ref": "#/$defs/nonempty"},
+        "episode_id": {"$ref": "#/$defs/nonempty"},
+        "macro_index": {"type": "integer", "minimum": 0},
+        "task": {"$ref": "#/$defs/nonempty"}
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action_contract_sha256", "normalizer_sha256", "calibration_sha256",
+        "wrench_contract_sha256", "rulespec_sha256", "reward_contract_sha256",
+        "deployment_binding_sha256", "source_tree_sha256"
+      ],
+      "properties": {
+        "action_contract_sha256": {"$ref": "#/$defs/sha256"},
+        "normalizer_sha256": {"$ref": "#/$defs/sha256"},
+        "calibration_sha256": {"$ref": "#/$defs/sha256"},
+        "wrench_contract_sha256": {"$ref": "#/$defs/sha256"},
+        "rulespec_sha256": {"$ref": "#/$defs/sha256"},
+        "reward_contract_sha256": {"$ref": "#/$defs/sha256"},
+        "deployment_binding_sha256": {"$ref": "#/$defs/sha256"},
+        "source_tree_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "observation": {"$ref": "#/$defs/observation"},
+    "next_observation": {
+      "oneOf": [{"$ref": "#/$defs/observation"}, {"type": "null"}]
+    },
+    "policy_proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision_id", "model_sha256", "policy_epoch", "request_id", "chunk_id",
+        "action_h50_sha256", "flow_noise_sha256"
+      ],
+      "properties": {
+        "revision_id": {"$ref": "#/$defs/nonempty"},
+        "model_sha256": {"$ref": "#/$defs/sha256"},
+        "policy_epoch": {"type": "integer", "minimum": 0},
+        "request_id": {"$ref": "#/$defs/nonempty"},
+        "chunk_id": {"$ref": "#/$defs/nonempty"},
+        "action_h50_sha256": {"$ref": "#/$defs/sha256"},
+        "flow_noise_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "behavior_ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "K", "ack_ids", "gripper_command_ids", "gripper_ack_command_ids",
+        "accepted_absolute_action_k7", "normalized_delta_action_k7", "slot_owner",
+        "accepted_action_source", "intervention_flags", "workspace_clip_flags"
+      ],
+      "properties": {
+        "K": {"const": 3},
+        "ack_ids": {"$ref": "#/$defs/three_strings"},
+        "gripper_command_ids": {"$ref": "#/$defs/three_strings"},
+        "gripper_ack_command_ids": {"$ref": "#/$defs/three_strings"},
+        "accepted_absolute_action_k7": {"$ref": "#/$defs/k7"},
+        "normalized_delta_action_k7": {"$ref": "#/$defs/k7"},
+        "slot_owner": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"enum": ["policy", "human_intervention", "human_release_hold", "safety_hold", "offline_demonstration"]}
+        },
+        "accepted_action_source": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"enum": ["policy", "human", "safety", "offline"]}
+        },
+        "intervention_flags": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"type": "boolean"}
+        },
+        "workspace_clip_flags": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"type": "boolean"}
+        }
+      }
+    },
+    "fm_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_action_h50", "action_valid_mask_h50", "expert_slot_mask_h50", "expert_feature_mask_h50x7"],
+      "properties": {
+        "target_action_h50": {"$ref": "#/$defs/h50x7"},
+        "action_valid_mask_h50": {"$ref": "#/$defs/h50_bool"},
+        "expert_slot_mask_h50": {"$ref": "#/$defs/h50_bool"},
+        "expert_feature_mask_h50x7": {
+          "type": "array", "minItems": 50, "maxItems": 50,
+          "items": {
+            "type": "array", "minItems": 7, "maxItems": 7,
+            "items": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reward", "reward_revision", "terminated", "truncated", "bootstrap", "discount"],
+      "properties": {
+        "reward": {"type": "number"},
+        "reward_revision": {"$ref": "#/$defs/nonempty"},
+        "terminated": {"type": ["boolean", "null"]},
+        "truncated": {"type": "boolean"},
+        "bootstrap": {"type": ["boolean", "null"]},
+        "discount": {"type": ["number", "null"], "minimum": 0.0, "maximum": 1.0}
+      }
+    },
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["critic_td_valid", "actor_q_valid", "expert_fm_available", "quarantined", "quarantine_reason"],
+      "properties": {
+        "critic_td_valid": {"type": "boolean"},
+        "actor_q_valid": {"type": "boolean"},
+        "expert_fm_available": {"type": "boolean"},
+        "quarantined": {"type": "boolean"},
+        "quarantine_reason": {"type": ["string", "null"]}
+      }
+    },
+    "commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["episode_sealed", "execution_event_sequence", "ack_watermark"],
+      "properties": {
+        "episode_sealed": {"const": true},
+        "execution_event_sequence": {"type": "integer", "minimum": 0},
+        "ack_watermark": {"type": "integer", "minimum": 0}
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_payload_sha256"],
+      "properties": {"canonical_payload_sha256": {"$ref": "#/$defs/sha256"}}
+    }
+  },
+  "$defs": {
+    "nonempty": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "vector7": {
+      "type": "array", "minItems": 7, "maxItems": 7,
+      "items": {"type": "number"}
+    },
+    "vector6": {
+      "type": "array", "minItems": 6, "maxItems": 6,
+      "items": {"type": "number"}
+    },
+    "three_strings": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"$ref": "#/$defs/nonempty"}
+    },
+    "k7": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"$ref": "#/$defs/vector7"}
+    },
+    "h50x7": {
+      "type": "array", "minItems": 50, "maxItems": 50,
+      "items": {"$ref": "#/$defs/vector7"}
+    },
+    "h50_bool": {
+      "type": "array", "minItems": 50, "maxItems": 50,
+      "items": {"type": "boolean"}
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blob_reference", "sha256", "timestamp_monotonic_ns", "age_ms", "valid"],
+      "properties": {
+        "blob_reference": {"$ref": "#/$defs/nonempty"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "timestamp_monotonic_ns": {"type": "integer", "minimum": 1},
+        "age_ms": {"type": "number", "minimum": 0.0},
+        "valid": {"type": "boolean"}
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation_id", "episode_id", "timestamp_monotonic_ns", "state7", "wrench6", "camera1", "camera2", "valid"],
+      "properties": {
+        "observation_id": {"$ref": "#/$defs/nonempty"},
+        "episode_id": {"$ref": "#/$defs/nonempty"},
+        "timestamp_monotonic_ns": {"type": "integer", "minimum": 1},
+        "state7": {"$ref": "#/$defs/vector7"},
+        "wrench6": {"$ref": "#/$defs/vector6"},
+        "camera1": {"$ref": "#/$defs/camera"},
+        "camera2": {"$ref": "#/$defs/camera"},
+        "valid": {"type": "boolean"}
+      }
+    }
+  }
+}
