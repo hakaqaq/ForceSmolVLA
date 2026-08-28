@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forcesmolvla.local/schemas/stage3_exact_resume_report.v1.schema.json",
+  "title": "ForceSmolVLA G5P isolated exact-resume preflight report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "tool_status", "scope", "source_branch", "source_head",
+    "config", "environment", "branches", "checkpoint", "parity",
+    "fault_injection", "performance", "safety", "canonical_report_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "forcesmolvla_stage3_exact_resume_report.v1"},
+    "tool_status": {"enum": ["PASS", "FAIL"]},
+    "scope": {"const": "G5P_isolated_learner_exact_resume_only"},
+    "source_branch": {"const": "stage3-online-hil"},
+    "source_head": {"const": "e204a75d73adcd8ac3f6965084b48ab730429cdf"},
+    "config": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "environment": {"type": "object", "minProperties": 1},
+    "branches": {
+      "type": "object", "additionalProperties": false,
+      "required": ["A", "B1", "B2"],
+      "properties": {
+        "A": {"$ref": "#/$defs/branch"},
+        "B1": {"$ref": "#/$defs/branch"},
+        "B2": {"$ref": "#/$defs/branch"}
+      }
+    },
+    "checkpoint": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "path", "size_bytes", "canonical_content_digest", "disposable",
+        "parent_checkpoint", "publishable_policy_revision", "completion_marker",
+        "atomic_same_filesystem_rename", "minimum_free_copies"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "size_bytes": {"type": "integer", "minimum": 1},
+        "canonical_content_digest": {"$ref": "#/$defs/sha256"},
+        "disposable": {"const": true},
+        "parent_checkpoint": {"const": false},
+        "publishable_policy_revision": {"const": false},
+        "completion_marker": {"const": "COMPLETED.json"},
+        "atomic_same_filesystem_rename": {"const": true},
+        "minimum_free_copies": {"type": "integer", "minimum": 3}
+      }
+    },
+    "parity": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "intermediate_state", "final_tensor_bitwise", "final_canonical_digest",
+        "sample_uid_order", "flow_noise", "optimizer_state", "rng_state",
+        "replay_credit_counter", "actor_tensors", "online_q_tensors",
+        "target_q_tensors", "loss_q_gradient_parameter_polyak_trace",
+        "scheduler_scaler", "revision_state", "first_mismatch"
+      ],
+      "properties": {
+        "intermediate_state": {"type": "boolean"},
+        "final_tensor_bitwise": {"type": "boolean"},
+        "final_canonical_digest": {"type": "boolean"},
+        "sample_uid_order": {"type": "boolean"},
+        "flow_noise": {"type": "boolean"},
+        "optimizer_state": {"type": "boolean"},
+        "rng_state": {"type": "boolean"},
+        "replay_credit_counter": {"type": "boolean"},
+        "actor_tensors": {"type": "boolean"},
+        "online_q_tensors": {"type": "boolean"},
+        "target_q_tensors": {"type": "boolean"},
+        "loss_q_gradient_parameter_polyak_trace": {"type": "boolean"},
+        "scheduler_scaler": {"type": "boolean"},
+        "revision_state": {"type": "boolean"},
+        "first_mismatch": {"type": ["object", "null"]}
+      }
+    },
+    "fault_injection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cpu_test_count", "all_passed", "cases"],
+      "properties": {
+        "cpu_test_count": {"type": "integer", "minimum": 12},
+        "all_passed": {"type": "boolean"},
+        "cases": {"type": "array", "minItems": 12, "items": {"type": "string"}}
+      }
+    },
+    "performance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["peak_vram_mib", "peak_cpu_rss_mib", "checkpoint_save_seconds", "checkpoint_load_seconds", "disk_free_before_bytes"],
+      "properties": {
+        "peak_vram_mib": {"type": "number", "minimum": 0},
+        "peak_cpu_rss_mib": {"type": "number", "minimum": 0},
+        "checkpoint_save_seconds": {"type": "number", "minimum": 0},
+        "checkpoint_load_seconds": {"type": "number", "minimum": 0},
+        "disk_free_before_bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "safety": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "REAL_ONLINE_R_USED", "PRODUCTION_WAL_OUTBOX_RESUME_VALIDATED",
+        "G5_PRODUCTION_DURABLE_RESUME", "G5_FORMAL_GATE_PASSED",
+        "CRITIC_WARMUP_STARTED", "CRITIC_READY", "ACTOR_Q_GUIDANCE_ENABLED",
+        "POLICY_REVISION_ACTIVATED", "G3_RECORDED_FIXTURE_LOOPBACK",
+        "G6_AND_LATER", "ROBOT_CONNECTION_COUNT", "ROBOT_COMMAND_COUNT",
+        "ROBOT_EXECUTION_AUTHORIZED", "PUSHED", "parent_checkpoint_sha_unchanged",
+        "production_actor_checkpoint_unchanged", "no_cuda_compute_process"
+      ],
+      "properties": {
+        "REAL_ONLINE_R_USED": {"const": false},
+        "PRODUCTION_WAL_OUTBOX_RESUME_VALIDATED": {"const": false},
+        "G5_PRODUCTION_DURABLE_RESUME": {"const": "UNVERIFIED"},
+        "G5_FORMAL_GATE_PASSED": {"const": false},
+        "CRITIC_WARMUP_STARTED": {"const": false},
+        "CRITIC_READY": {"const": false},
+        "ACTOR_Q_GUIDANCE_ENABLED": {"const": false},
+        "POLICY_REVISION_ACTIVATED": {"const": false},
+        "G3_RECORDED_FIXTURE_LOOPBACK": {"const": "BLOCKED"},
+        "G6_AND_LATER": {"const": "NOT_RUN"},
+        "ROBOT_CONNECTION_COUNT": {"const": 0},
+        "ROBOT_COMMAND_COUNT": {"const": 0},
+        "ROBOT_EXECUTION_AUTHORIZED": {"const": false},
+        "PUSHED": {"const": false},
+        "parent_checkpoint_sha_unchanged": {"type": "boolean"},
+        "production_actor_checkpoint_unchanged": {"type": "boolean"},
+        "no_cuda_compute_process": {"type": "boolean"}
+      }
+    },
+    "canonical_report_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "branch": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pid", "status", "cycles", "initial_state_digest", "intermediate_state_digest", "final_state_digest"],
+      "properties": {
+        "pid": {"type": "integer", "minimum": 1},
+        "status": {"const": "PASS"},
+        "cycles": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+        "initial_state_digest": {"$ref": "#/$defs/sha256"},
+        "intermediate_state_digest": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "final_state_digest": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}
