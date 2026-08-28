@@ -1,0 +1,277 @@
+{
+  "schema_version": "forcesmolvla_stage3_parent_inventory.v1",
+  "audit_timestamp": "2026-08-28T12:27:05+08:00",
+  "audit_mode": "read_only_parent_inventory",
+  "repository": {
+    "expected_head": "d00384330eed01ddd0dfe3bf435e4545fb679a71",
+    "local_head": "d00384330eed01ddd0dfe3bf435e4545fb679a71",
+    "origin_main": "d00384330eed01ddd0dfe3bf435e4545fb679a71",
+    "remote_origin_main": "d00384330eed01ddd0dfe3bf435e4545fb679a71",
+    "release": "v2.1.1",
+    "release_peeled_commit": "d00384330eed01ddd0dfe3bf435e4545fb679a71",
+    "release_tag_object": "0498e8fd84b65e267f27ec8c52514d15cac3b315",
+    "release_url": "https://github.com/hakaqaq/ForceSmolVLA/releases/tag/v2.1.1",
+    "release_prerelease": true,
+    "head_match": true
+  },
+  "cycle210_full_training_state": {
+    "available": false,
+    "classification": "not_available_after_phase2_artifact_retention_cleanup",
+    "expected_checkpoint_directory": "artifacts/development/stage2/stage2b_throughput_v2_half_pass_run.v1/checkpoint_cycle_000210",
+    "searched_roots": [
+      "/home/rlc123/ForceSmolVLA",
+      "/home/rlc123",
+      "/mnt",
+      "/media",
+      "/tmp",
+      "/home/rlc123/.local/share/Trash"
+    ],
+    "mounted_backup_storage_found": false,
+    "checkpoint_directory_found": false,
+    "actor_state_found": false,
+    "q1_state_found": false,
+    "q2_state_found": false,
+    "q1_target_state_found": false,
+    "q2_target_state_found": false,
+    "optimizer_states_found": false,
+    "scheduler_state_found": false,
+    "rng_state_found": false,
+    "sampler_state_found": false,
+    "cycle_cursor_found": false,
+    "training_manifest_payload_found": false,
+    "historical_expected_tree_sha256": "b514b50d118cb3edaa6e5e135e1a2cf7340062d11c16cb58bed437581c082e08",
+    "historical_expected_manifest_sha256": "1d1644ed6b51a1a61cb66e0b6a4ae6831bcced025530dbb5583b5d90ea4083fa",
+    "tree_sha_match": "not_available",
+    "strict_load": "not_executed",
+    "note": "A retained copy of the historical manifest is present inside the evaluation-only export, but the learner payload that it described is absent. The manifest copy is not a checkpoint."
+  },
+  "cycle210_evaluation_actor": {
+    "available": true,
+    "path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1",
+    "artifact_manifest_sha256": "fb6fa6aceb9892ba2d39d136936c7e28f4a701bf7dd994169aae60c69894e395",
+    "runtime_model_sha256": "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d",
+    "source_actor_state_sha256": "73b35435e943823bb88c54decf68ce4bf08f39100999c5770b071aa76c3cf4c3",
+    "retained_source_manifest_copy_sha256": "1d1644ed6b51a1a61cb66e0b6a4ae6831bcced025530dbb5583b5d90ea4083fa",
+    "artifact_manifest_validation": "pass",
+    "evaluation_scope_validation": "pass",
+    "strict_actor_export_coverage": {
+      "full_actor_state": true,
+      "source_tensor_count": 574,
+      "loaded_tensor_count": 574,
+      "missing_keys": 0,
+      "unexpected_keys": 0
+    },
+    "frozen_vlm_parent_parity": {
+      "exact": true,
+      "tensor_count": 347
+    },
+    "critic_exported": false,
+    "optimizer_exported": false,
+    "scheduler_exported": false,
+    "rng_exported": false,
+    "sampler_exported": false,
+    "training_parent_allowed": false,
+    "capability": "actor_inference_only",
+    "not_a_complete_learner_parent": true
+  },
+  "g7a_r2_payload": {
+    "available": true,
+    "path": "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint",
+    "tree_sha256": "f8c08b9058d173211a7306d370a97a848bfc1f7569ac52e6cc88baacff0c0d40",
+    "tree_file_count": 18,
+    "tree_total_bytes": 296019846,
+    "checkpoint_manifest_sha256": "2e0902076cb12a1391613230679730d035155528c9be01bd17dce960d5e707f7",
+    "checkpoint_manifest_payload_sha256": "a80228dd6a836176b6e2c3bd45dd23d311dced75ca9e909968eaa31ecd7fc823",
+    "checkpoint_manifest_validation": "pass",
+    "source_manifest_validation": "pass",
+    "source_manifest_sha256": "9ad52d416277fb5a93f336b8a7287619f60e3a678b6bca4ff9e037e885c82390",
+    "config_sha256": "42c2a5bbeebb35d699f57adf89287b2f80dca62cf937704896bcc62bc41a8e59",
+    "payloads": {
+      "models/q1_state.pt": "13f464ea2c07184dd6a564af6743872af2e2c06cbf21e23dfe29f20363bb4a66",
+      "models/q2_state.pt": "86022ddc6b78ea06919c0d02d7a7b7ee718d958df35f509d2a53ce9584ed53ec",
+      "models/q1_target_state.pt": "da3e80a552c65be49e5f9d7f911cd1c3b2e466e4c1402a71181a5de4d24e62ea",
+      "models/q2_target_state.pt": "a113fe238acbbf6921eb736a988c2dfd6b8074d01369786c860961ff6a1e6810",
+      "optimizers/critic_optimizer_state.pt": "019ea251b7e36240840aba2e95c5e9c5951da95661d43589d1a0a35e8b2e99ce",
+      "schedulers/critic_scheduler_state.pt": "d9054e582ab55c941c2ae5f0c386e0df4efe560d1b35bb1f358800b0cae75f45",
+      "state/rng_states.pt": "026c6f8b9ee72a1c5f6b3674b743d8e815552d15bd533fefedd8fe8338c2e56b",
+      "state/sampler_states.pt": "a77956ed073cdfcb367ea3f3e42c91435d1d7d8dd1ac9619b44e55257d0558e8"
+    },
+    "actor_state": {
+      "stored_in_checkpoint": false,
+      "bound_to_frozen_r5": true,
+      "r5_path": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000",
+      "r5_tree_sha256": "01665f899ad34e4ba048a46bcffe3a0f819fc0f7e42c6d0c9a2db662a3665379",
+      "r5_tree_file_count": 72,
+      "r5_tree_total_bytes": 3887526794,
+      "r5_actor_parameters_sha256": "ba425f642ac5bd4a2fd199262d43d71c5a337763af76e785b3e08ad41da326d5",
+      "r5_actor_floating_buffers_sha256": "7dc0a276eddb24a5b48804f5795b433172538a91ccb114a549c06448aaef30cb"
+    },
+    "bindings": {
+      "normalizer_sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
+      "action_contract_v2_sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6",
+      "detector_g1_manifest_sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5",
+      "detector_g1_frame_scores_sha256": "98df6007d8b75328335abef8b15016de90cb6893f55b5310e466502b2333208d",
+      "detector_g1_transition_index_sha256": "f61dbd6d7e396aca8dc60794be0a16d314553d081dd659b1928bc8c5118bd474"
+    },
+    "strict_fresh_process_load": {
+      "status": "pass",
+      "verification_result_sha256": "b3b9ffa5a87a22ef8d467cd339d3cb407cbc3abfd5266fc442e2b925d141fa85",
+      "strict_model_load": true,
+      "strict_optimizer_load": true,
+      "strict_scheduler_load": true,
+      "sampler_state_loaded": true,
+      "rng_restored_last": true,
+      "random_draws_after_restore": 0,
+      "optimizer_updates_during_audit": 0,
+      "parameter_updates_during_audit": 0,
+      "sampler_draws_during_audit": 0,
+      "data_reads_during_audit": 0,
+      "action_contract_v2": "pass"
+    },
+    "counters": {
+      "critic_optimizer_updates": 256,
+      "critic_scheduler_steps": 256,
+      "q1_target_polyak_updates": 256,
+      "q2_target_polyak_updates": 256,
+      "actor_optimizer_updates": 0,
+      "actor_scheduler_steps": 0,
+      "actor_target_updates": 0
+    },
+    "historical_authorization": {
+      "artifact_status": "DEVELOPMENT_G7A_CRITIC_WARMUP_ONLY",
+      "long_train_parent_status": "NOT_AN_APPROVED_LONG_TRAIN_PARENT",
+      "g7b_use_status": "APPROVED_ONLY_FOR_G7B_IF_EXPLICITLY_AUTHORIZED",
+      "policy_evaluation_status": "NOT_FOR_POLICY_EVALUATION",
+      "deployment_status": "NOT_FOR_DEPLOYMENT",
+      "robot_execution_authorized": false
+    },
+    "reconstruction_capability": "sufficient_only_as_a_proposed_deterministic_phase2_reconstruction_parent_pending_separate_approval"
+  },
+  "parent_classification": {
+    "selected_option": "B",
+    "reason": "The complete cycle210 learner checkpoint is absent, while G7A-r2 and its frozen r5 Actor binding, online/target critics, Critic optimizer, scheduler, RNG, sampler, normalizer, ActionContract-v2, detector-G1, and source bindings are present and strictly loadable.",
+    "stage3_parent_binding": "blocked",
+    "phase2_reconstruction_started": false,
+    "hybrid_parent_constructed": false,
+    "stage3_training_started": false
+  },
+  "proposed_phase2_reconstruction": {
+    "authorized": false,
+    "started": false,
+    "parent": "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint",
+    "recipe": {
+      "actor_batch": 24,
+      "critic_batch": 64,
+      "flow_inference_subbatch": 4,
+      "critic_updates_per_actor_update": 2,
+      "H": 50,
+      "flow_steps_N": 10,
+      "calql_candidates_per_source_M": 2,
+      "eta": 3.0,
+      "beta": 1.0,
+      "calql_alpha": 0.1,
+      "polyak_tau": 0.005,
+      "total_joint_cycles": 210
+    },
+    "reference_launcher": "tools/run_stage2b_throughput_v2_authorized_half_pass.py",
+    "reference_worker": "tools/run_stage2b_long_run_half_pass_worker_throughput_v2.py",
+    "reference_config": "configs/stage2b_long_run_half_pass_throughput_v2.authorized.yaml",
+    "reference_launcher_sha256": "9e8d21510e9fb2ea74b3886f240a748c801ea5315b9f1354ba21159ec741f89a",
+    "reference_worker_sha256": "5f7886c4c418b85c78667aaf3f6ff6172b5c5022b1af31fc5dc4492041c6e258",
+    "reference_config_sha256": "512155477f8984be92b5c617857da8330e50453ae27f405fd20354bfd644ba85",
+    "estimated_runtime_hours": 1.8,
+    "historical_peak_process_rss_gib": 36.55,
+    "decoded_cache_limit_gib": 8.0,
+    "current_mem_available_gib_at_audit": 44.57,
+    "required_verification": [
+      "reconstructed Actor state SHA256 equals 73b35435e943823bb88c54decf68ce4bf08f39100999c5770b071aa76c3cf4c3",
+      "reconstructed checkpoint tree SHA256 equals b514b50d118cb3edaa6e5e135e1a2cf7340062d11c16cb58bed437581c082e08",
+      "reconstructed manifest SHA256 equals 1d1644ed6b51a1a61cb66e0b6a4ae6831bcced025530dbb5583b5d90ea4083fa",
+      "sample identities and fixed draw plan are exact",
+      "Flow noise trajectory is exact",
+      "sampler and RNG trajectory are exact",
+      "Actor, online Q, target Q, optimizer and scheduler strict-load succeeds",
+      "all gradients and parameters are finite",
+      "ActionContract-v2 remains exact"
+    ],
+    "risks": [
+      "The historical per-cycle raw trace was pruned, so row/noise parity must be regenerated from the frozen deterministic parent, config, seeds and draw plan; it cannot be compared against a retained raw trace file.",
+      "Available host RAM was only marginally above the historical startup gate at audit time.",
+      "Recreating the historical output path could confuse reconstructed evidence with the deleted original; a separately approved append-only output identity is recommended."
+    ],
+    "reference_command_not_executed": "PYTHONHASHSEED=42 CUBLAS_WORKSPACE_CONFIG=:4096:8 PYTHONPATH=src:vendor/lerobot/src:tools:. HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_DATASETS_OFFLINE=1 /home/rlc123/anaconda3/envs/forcesmolvla/bin/python tools/run_stage2b_throughput_v2_authorized_half_pass.py"
+  },
+  "stage3_implementation_inventory": {
+    "overall_status": "not_implemented",
+    "items": {
+      "stage3_trainability_contract": {
+        "status": "not_implemented",
+        "note": "Low-level ONLINE_HIL_VLM_FROZEN parameter-freezing scaffolding exists, but no Stage-3 training contract, ownership manifest, optimizer construction, or acceptance artifact exists."
+      },
+      "ack_aligned_transition_contract": {
+        "status": "not_implemented",
+        "note": "Deployment-side controller ACK validation exists, but no ACK-aligned Stage-3 transition builder exists."
+      },
+      "intervention_expert_labeling": {
+        "status": "not_implemented",
+        "note": "The current policy deployment path emits policy actions with intervention=false; it does not ingest intervention/expert labels."
+      },
+      "online_demo_mixed_replay": {
+        "status": "not_implemented"
+      },
+      "pure_online_td_only_critic_loss": {
+        "status": "not_implemented",
+        "note": "compute_twin_q_critic_loss always constructs and evaluates Cal-QL candidate penalties; calql_alpha=0 only zeros the weighted contribution after candidate construction."
+      },
+      "expert_masked_flow_matching_loss": {
+        "status": "not_implemented"
+      },
+      "versioned_policy_publication": {
+        "status": "not_implemented",
+        "note": "Inference metadata may contain a policy_epoch field, but no learner-to-actor versioned publication protocol is implemented."
+      },
+      "sample_credit_backpressure": {
+        "status": "not_implemented"
+      },
+      "stage3_exact_resume": {
+        "status": "not_implemented",
+        "note": "Stage-2 exact-resume machinery exists; no Stage-3 online replay/credit/publication state closure exists."
+      },
+      "fake_actor_learner_loopback": {
+        "status": "not_implemented",
+        "note": "Generic vendored RL components are present but are not integrated into a ForceSmolVLA Stage-3 loopback."
+      },
+      "single_gpu_coexistence_preflight": {
+        "status": "not_implemented",
+        "note": "The repository documents this only as a future concurrent stress-test candidate."
+      }
+    },
+    "explicit_configuration_status": "online_hil_vlm_frozen.implementation_status=not_implemented"
+  },
+  "access_and_mutation_audit": {
+    "phase2_reconstruction_started": false,
+    "stage3_training_started": false,
+    "online_data_collection_started": false,
+    "robot_execution_started": false,
+    "model_parameter_updates": 0,
+    "optimizer_updates": 0,
+    "sampler_draws": 0,
+    "checkpoint_files_modified_or_moved": 0,
+    "robot_execution_authorized": false
+  },
+  "final_status": {
+    "REPOSITORY_HEAD": "d00384330eed01ddd0dfe3bf435e4545fb679a71",
+    "CYCLE210_EVALUATION_ACTOR_AVAILABLE": "yes",
+    "CYCLE210_FULL_TRAINING_STATE_AVAILABLE": "no",
+    "CYCLE210_FULL_TREE_SHA_MATCH": "not_available",
+    "G7A_R2_PAYLOAD_AVAILABLE": "yes",
+    "G7A_R2_STRICT_LOAD": "pass",
+    "STAGE3_PARENT_OPTION": "B",
+    "STAGE3_PARENT_BINDING": "blocked",
+    "STAGE3_IMPLEMENTATION_STATUS": "not_implemented",
+    "PHASE2_RECONSTRUCTION_STARTED": "no",
+    "STAGE3_TRAINING_STARTED": "no",
+    "ONLINE_DATA_COLLECTION_STARTED": "no",
+    "ROBOT_EXECUTION_AUTHORIZED": false
+  }
+}

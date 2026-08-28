@@ -1,0 +1,268 @@
+{
+  "ACTOR_METADATA_COMPATIBILITY": "PASS",
+  "CRITIC_CPU_STATE_COMPATIBILITY": "PASS",
+  "CROSS_COMPONENT_CONTRACT_COMPATIBILITY": "PASS",
+  "CUDA_INITIALIZED": false,
+  "G0A_HYBRID_PARENT_BINDING": "PASS",
+  "G0_FINAL_PARENT_BINDING": "BOUND_APPROVED_HYBRID",
+  "G0_FORMAL_GATE_PASSED": false,
+  "G4P_GPU_NUMERICAL_PREFLIGHT_READY": true,
+  "G4_AND_LATER": "NOT_RUN",
+  "PARENT_PAYLOAD_COMPLETE_FOR_HYBRID": true,
+  "REAL_MODEL_FORWARD": "NOT_RUN",
+  "ROBOT_COMMAND_COUNT": 0,
+  "ROBOT_CONNECTION_COUNT": 0,
+  "ROBOT_EXECUTION_AUTHORIZED": false,
+  "STRICT_PHASE2_CONTINUATION_AVAILABLE": false,
+  "TARGET_CRITIC_CPU_STATE_COMPATIBILITY": "PASS",
+  "actor_preflight": {
+    "config": {
+      "H": 50,
+      "N": 10,
+      "action": 7,
+      "cameras": 2,
+      "state": 7,
+      "wrench": 6
+    },
+    "full_learner_resume": false,
+    "prior_strict_export_coverage": "574/574",
+    "real_model_forward": "NOT_RUN",
+    "safetensors": {
+      "dtype_counts": {
+        "BF16": 275,
+        "F32": 299
+      },
+      "header_bytes": 82176,
+      "required_key_shape_dtype_count": 5,
+      "tensor_count": 574,
+      "tensor_payload_bytes": 1420012724
+    },
+    "status": "PASS",
+    "validation_level": "safetensors_header_key_shape_dtype_plus_prior_strict_export_coverage_no_tensor_load_no_forward"
+  },
+  "artifacts": {
+    "action_contract_binding": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/stage2_action_contract.v2.development.json",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/stage2_action_contract.v2.development.json",
+      "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6",
+      "size_bytes": 2020,
+      "status": "PASS"
+    },
+    "actor": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/model.safetensors",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/model.safetensors",
+      "sha256": "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d",
+      "size_bytes": 1420094908,
+      "status": "PASS"
+    },
+    "calibration_binding": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/calibration_bundle.development.json",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/calibration_bundle.development.json",
+      "sha256": "f041784b78e08f1359e27b8f841e6a61f687b59bce1b3db841ca4986937a53f6",
+      "size_bytes": 1267,
+      "status": "PASS"
+    },
+    "normalizer_binding": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/normalizer_manifest.json",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/normalizer_manifest.json",
+      "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
+      "size_bytes": 137827,
+      "status": "PASS"
+    },
+    "online_q1": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q1_state.pt",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q1_state.pt",
+      "sha256": "13f464ea2c07184dd6a564af6743872af2e2c06cbf21e23dfe29f20363bb4a66",
+      "size_bytes": 56463747,
+      "status": "PASS"
+    },
+    "online_q2": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q2_state.pt",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q2_state.pt",
+      "sha256": "86022ddc6b78ea06919c0d02d7a7b7ee718d958df35f509d2a53ce9584ed53ec",
+      "size_bytes": 56463747,
+      "status": "PASS"
+    },
+    "runtime_contract_binding": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/converter_runtime_spec.task2.development.json",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/converter_runtime_spec.task2.development.json",
+      "sha256": "f6312bc580311077a5eec56c53c3013ab6cebd9744463cf4354651cdc0d616ea",
+      "size_bytes": 2624,
+      "status": "PASS"
+    },
+    "target_q1": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q1_target_state.pt",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q1_target_state.pt",
+      "sha256": "da3e80a552c65be49e5f9d7f911cd1c3b2e466e4c1402a71181a5de4d24e62ea",
+      "size_bytes": 56464699,
+      "status": "PASS"
+    },
+    "target_q2": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q2_target_state.pt",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q2_target_state.pt",
+      "sha256": "a113fe238acbbf6921eb736a988c2dfd6b8074d01369786c860961ff6a1e6810",
+      "size_bytes": 56464699,
+      "status": "PASS"
+    },
+    "task_feature_binding": {
+      "path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/s2_g2_twin_q_topology.json",
+      "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/s2_g2_twin_q_topology.json",
+      "sha256": "9a0b006bd13a2fca844e3f4b118b1347dce4d1022f03671ca3293728588a90a2",
+      "size_bytes": 45781,
+      "status": "PASS"
+    }
+  },
+  "binding_config_path": "/home/rlc123/ForceSmolVLA/configs/stage3_parent_binding.v1.development.json",
+  "binding_config_sha256": "91a841b6de76221ff1a00898f8c792ba63ed4943a0a8b4a56385e23eba4aeb37",
+  "binding_id": "approved_hybrid_cycle210_actor_g7a_r2_twin_q.v1",
+  "binding_type": "new_hybrid_stage3_bootstrap",
+  "canonical_report_sha256": "ba31c7b55cedd275cc3fb9e4665e5dc58a193024366b195e7aef87e0fbd02a8d",
+  "container_trees": {
+    "actor": {
+      "file_count": 54,
+      "total_file_size": 1425391406,
+      "tree_sha256": "0945ab6d984663b82c2546f2b70eb190e59907bbc87a44fa806fda0f729682b7"
+    },
+    "g7a_r2": {
+      "file_count": 18,
+      "total_file_size": 296019846,
+      "tree_sha256": "f8c08b9058d173211a7306d370a97a848bfc1f7569ac52e6cc88baacff0c0d40"
+    }
+  },
+  "continuation_semantics": {
+    "actor_source_role": "cycle210_evaluation_checkpoint_stage3_initial_actor",
+    "critic_source_role": "g7a_r2_online_and_target_twin_q",
+    "cycle210_full_learner_checkpoint_available": false,
+    "cycle210_full_learner_checkpoint_expected_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_throughput_v2_half_pass_run.v1/checkpoint_cycle_000210",
+    "exact_phase2_continuation": false,
+    "full_learner_resume": false,
+    "not_exact_phase2_cycle210_continuation": true,
+    "parent_binding_decision": "APPROVED_HYBRID"
+  },
+  "critic_preflight": {
+    "artifacts": {
+      "online_q1": {
+        "dtype_mismatches": 0,
+        "key_count": 130,
+        "map_location": "cpu",
+        "missing_keys": 0,
+        "numel": 14103949,
+        "shape_mismatches": 0,
+        "status": "PASS",
+        "strict": true,
+        "unexpected_keys": 0,
+        "weights_only": true
+      },
+      "online_q2": {
+        "dtype_mismatches": 0,
+        "key_count": 130,
+        "map_location": "cpu",
+        "missing_keys": 0,
+        "numel": 14103949,
+        "shape_mismatches": 0,
+        "status": "PASS",
+        "strict": true,
+        "unexpected_keys": 0,
+        "weights_only": true
+      },
+      "target_q1": {
+        "dtype_mismatches": 0,
+        "key_count": 130,
+        "map_location": "cpu",
+        "missing_keys": 0,
+        "numel": 14103949,
+        "shape_mismatches": 0,
+        "status": "PASS",
+        "strict": true,
+        "unexpected_keys": 0,
+        "weights_only": true
+      },
+      "target_q2": {
+        "dtype_mismatches": 0,
+        "key_count": 130,
+        "map_location": "cpu",
+        "missing_keys": 0,
+        "numel": 14103949,
+        "shape_mismatches": 0,
+        "status": "PASS",
+        "strict": true,
+        "unexpected_keys": 0,
+        "weights_only": true
+      }
+    },
+    "cuda_initialized": false,
+    "expected_key_count": 130,
+    "expected_numel": 14103949,
+    "module": "forcesmolvla.rft.critic.ForceAwareMacroCritic",
+    "optimizer_instantiated": false,
+    "optimizer_steps": 0,
+    "polyak_updates": 0,
+    "real_model_forward": "NOT_RUN",
+    "status": "PASS",
+    "target_fallback_from_online": false
+  },
+  "cross_component_preflight": {
+    "actor_critic_features": {
+      "action": 7,
+      "cameras": 2,
+      "state": 7,
+      "task": 256,
+      "wrench": 6
+    },
+    "calibration_formal_ready": false,
+    "calibration_runtime_hashes": "PASS",
+    "gripper_q_gradient": false,
+    "image_contracts": {
+      "actor": "float32 [0,1] before Actor preprocessing",
+      "critic": "uint8 [0,255] accepted; internal float32 /255"
+    },
+    "normalizer_action_contract": "PASS",
+    "runtime_formal_ready": false,
+    "status": "PASS",
+    "task_feature": {
+      "dimension": 256,
+      "evidence_level": "container_plus_recomputed_logical_tensor_digest",
+      "sha256": "b40aa90369c4c355405ed7234dfb1a5935ee3dd05df73c7847132e2b34d44103"
+    },
+    "tcp6_q_gradient": true,
+    "temporal": {
+      "H": 50,
+      "K": 3,
+      "action_features": 7,
+      "data_grid_hz": 30,
+      "policy_hz": 10
+    }
+  },
+  "optimizer": {
+    "CROSS_STAGE_OPTIMIZER_REBUILD_SPEC": "FROZEN",
+    "CROSS_STAGE_OPTIMIZER_REBUILT": "NOT_RUN",
+    "instantiated": false,
+    "optimizer_steps": 0,
+    "polyak_updates": 0
+  },
+  "parent_binding_decision": "APPROVED_HYBRID",
+  "protected_paths": [
+    "artifacts/development/stage3/stage3_parent_inventory.v1.json",
+    "artifacts/development/stage3/stage3_parent_inventory_manifest.v1.json",
+    "docs/stage3_parent_inventory_report.v1.md"
+  ],
+  "safety": {
+    "ACTOR_Q_GUIDANCE_ENABLED": false,
+    "CRITIC_READY": false,
+    "CRITIC_WARMUP_REQUIRED": true,
+    "INITIAL_ACTOR_UPDATE_ENABLED": false
+  },
+  "schema_version": "forcesmolvla_stage3_parent_binding_preflight.v1",
+  "source_head": "2c4d701a8894b86a4d3c13746abe05d86ce7f133",
+  "tool_status": "PASS",
+  "unverified_items": [
+    "full Actor tensor load and real Actor forward on GPU",
+    "real Critic numerical forward on GPU",
+    "Stage-3 Actor optimizer instantiation and ownership audit",
+    "Stage-3 Critic optimizer instantiation and ownership audit",
+    "cross-stage optimizer rebuilt status remains NOT_RUN",
+    "independent Critic warmup and stability gate",
+    "recorded-live temporal parity and robot execution",
+    "formal calibration/runtime approval fields"
+  ]
+}

@@ -19,6 +19,13 @@ from .loopback import (
     run_synthetic_loopback,
     validate_loopback_report,
 )
+from .parent import (
+    ParentBindingError,
+    load_parent_binding,
+    preflight_parent_binding,
+    validate_parent_binding_schema,
+    validate_parent_binding_semantics,
+)
 from .protocol import InferenceDisposition, PolicyEpochGate, TransportEnvelope
 from .publication import (
     InMemoryRevisionStateMachine,
@@ -46,6 +53,7 @@ __all__ = [
     "FakeActor",
     "FakeGateway",
     "MixedReplaySampler",
+    "ParentBindingError",
     "PolicyEpochGate",
     "ProvisionalStage3Learner",
     "QuiescentBoundary",
@@ -69,11 +77,15 @@ __all__ = [
     "cpu_round_trip_online_checkpoint",
     "finalize_ack_transition",
     "load_stage3_contracts",
+    "load_parent_binding",
+    "preflight_parent_binding",
     "recorded_fixture_blocked_report",
     "run_synthetic_loopback",
     "validate_ack_transition",
     "validate_online_checkpoint_metadata",
     "validate_reward_terminal",
     "validate_loopback_report",
+    "validate_parent_binding_schema",
+    "validate_parent_binding_semantics",
     "validate_stage3_contracts",
 ]

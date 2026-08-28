@@ -1,0 +1,119 @@
+{
+  "schema_version": "forcesmolvla_stage3_parent_inventory_manifest.v1",
+  "created_at": "2026-08-28T12:27:05+08:00",
+  "artifact_role": "append_only_read_only_stage3_parent_audit",
+  "repository_head": "d00384330eed01ddd0dfe3bf435e4545fb679a71",
+  "release": "v2.1.1",
+  "generated_files": [
+    {
+      "path": "artifacts/development/stage3/stage3_parent_inventory.v1.json",
+      "size_bytes": 14030,
+      "sha256": "62fdbfc3c36f45767d983b65aaa55f269a59d83b14a5998f52c734696dfdc9f6"
+    },
+    {
+      "path": "docs/stage3_parent_inventory_report.v1.md",
+      "size_bytes": 10573,
+      "sha256": "d97e1d545b852ae2522d53fe86702944556ae5f986289cfe125b320221159bab"
+    }
+  ],
+  "evidence_bindings": {
+    "cycle210_historical_expected": {
+      "checkpoint_tree_sha256": "b514b50d118cb3edaa6e5e135e1a2cf7340062d11c16cb58bed437581c082e08",
+      "checkpoint_manifest_sha256": "1d1644ed6b51a1a61cb66e0b6a4ae6831bcced025530dbb5583b5d90ea4083fa",
+      "payload_available": false
+    },
+    "cycle210_evaluation_export": {
+      "path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1",
+      "artifact_manifest_sha256": "fb6fa6aceb9892ba2d39d136936c7e28f4a701bf7dd994169aae60c69894e395",
+      "model_sha256": "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d",
+      "source_actor_state_sha256": "73b35435e943823bb88c54decf68ce4bf08f39100999c5770b071aa76c3cf4c3",
+      "training_parent_allowed": false
+    },
+    "g7a_r2": {
+      "path": "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint",
+      "tree_sha256": "f8c08b9058d173211a7306d370a97a848bfc1f7569ac52e6cc88baacff0c0d40",
+      "tree_file_count": 18,
+      "tree_total_bytes": 296019846,
+      "checkpoint_manifest_sha256": "2e0902076cb12a1391613230679730d035155528c9be01bd17dce960d5e707f7",
+      "source_manifest_sha256": "9ad52d416277fb5a93f336b8a7287619f60e3a678b6bca4ff9e037e885c82390",
+      "config_sha256": "42c2a5bbeebb35d699f57adf89287b2f80dca62cf937704896bcc62bc41a8e59",
+      "strict_load_result_sha256": "b3b9ffa5a87a22ef8d467cd339d3cb407cbc3abfd5266fc442e2b925d141fa85",
+      "strict_load": "pass",
+      "long_train_parent_status": "NOT_AN_APPROVED_LONG_TRAIN_PARENT"
+    },
+    "r5_actor_parent": {
+      "path": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000",
+      "tree_sha256": "01665f899ad34e4ba048a46bcffe3a0f819fc0f7e42c6d0c9a2db662a3665379"
+    },
+    "normalizer": {
+      "path": "datasets/task2_lerobotv3/normalizer_manifest.json",
+      "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+    },
+    "action_contract_v2": {
+      "path": "configs/stage2_action_contract.v2.development.json",
+      "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6"
+    },
+    "detector_g1": {
+      "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/g1_manifest.json",
+      "manifest_sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5",
+      "frame_scores_sha256": "98df6007d8b75328335abef8b15016de90cb6893f55b5310e466502b2333208d",
+      "transition_index_sha256": "f61dbd6d7e396aca8dc60794be0a16d314553d081dd659b1928bc8c5118bd474"
+    }
+  },
+  "source_bindings": [
+    {
+      "path": "configs/training_stage.development.json",
+      "sha256": "5449bfe36634a9c32ba5b03a5dbf16847f9660085cb0cba2ed973daf55a1edc5"
+    },
+    {
+      "path": "src/forcesmolvla/configuration_forcesmolvla.py",
+      "sha256": "8cf600e1c4d508cd466c2ced9a59fca827ed3bf7d714b1694474bced20f9366b"
+    },
+    {
+      "path": "src/forcesmolvla/modeling_forcesmolvla.py",
+      "sha256": "f9af487878c8df9ae4bc14209e7ed980b19f9557992f3e571c1c69cbd7b18610"
+    },
+    {
+      "path": "src/forcesmolvla/rft/losses.py",
+      "sha256": "bf3df4d34f3a202623bc75f0e55009fc9b1bbcc4d3126c96f86c0e3f7c4682d5"
+    },
+    {
+      "path": "docs/ForceRFT_Stage2_Offline_TwinQ_Implementation_Spec_v3_v4_2_aligned.md",
+      "sha256": "14cb57537e7c30547ca7f220fdc232f4ca61b314ee8d2cd58dbcd75d4a1058d8"
+    },
+    {
+      "path": "docs/stage1_stage2_batch_scaling_report.md",
+      "sha256": "02c3b895b81764e1f08f70674274aa94539b6633e9f8bb3ad66a999f4872aae7"
+    },
+    {
+      "path": "configs/stage2b_long_run_half_pass_throughput_v2.authorized.yaml",
+      "sha256": "512155477f8984be92b5c617857da8330e50453ae27f405fd20354bfd644ba85"
+    },
+    {
+      "path": "tools/run_stage2b_throughput_v2_authorized_half_pass.py",
+      "sha256": "9e8d21510e9fb2ea74b3886f240a748c801ea5315b9f1354ba21159ec741f89a"
+    },
+    {
+      "path": "tools/run_stage2b_long_run_half_pass_worker_throughput_v2.py",
+      "sha256": "5f7886c4c418b85c78667aaf3f6ff6172b5c5022b1af31fc5dc4492041c6e258"
+    }
+  ],
+  "external_read_only_source_observation": {
+    "path": "/home/rlc123/fr3_client_ws/scripts/deploy_forcesmolvla.py",
+    "sha256": "c64acde5cc3eb8c531f58cc376d2b7e0d1d26e97f1adff9cfbfa8fc1118a94f2",
+    "scope": "deployment-side ACK and safety validation only; not a Stage-3 transition builder"
+  },
+  "mutation_boundary": {
+    "phase2_reconstruction_started": false,
+    "stage3_training_started": false,
+    "online_data_collection_started": false,
+    "robot_execution_started": false,
+    "frozen_checkpoint_files_modified": 0,
+    "training_updates": 0
+  },
+  "classification": {
+    "stage3_parent_option": "B",
+    "stage3_parent_binding": "blocked",
+    "stage3_implementation_status": "not_implemented"
+  }
+}
