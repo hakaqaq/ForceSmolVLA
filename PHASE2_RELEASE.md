@@ -1,7 +1,9 @@
-# ForceSmolVLA v2.1.0 — Phase-2 development release
+# ForceSmolVLA v2.1.1 — Phase-2 development release
 
-`v2.1.0` packages the tested Stage-2 development pipeline on top of the
-`v2.0.0` ForceRFT implementation. The released training boundary is:
+`v2.1.1` is an artifact-retention cleanup of the tested `v2.1.0` Stage-2
+development pipeline. It does not change model architecture, training math,
+ActionContract-v2, public inference, or safety behavior. The released training
+boundary remains:
 
 ```text
 Stage-1: full-model force-conditioned behavior adaptation
@@ -52,6 +54,23 @@ training/evaluation checkpoints remain outside Git. Lightweight reports and
 manifests retain their SHA-256 bindings to those local append-only artifacts.
 
 In particular, the cycle-210 evaluation checkpoint is an
-`evaluation_smoke_only` local artifact. Its original training checkpoint keeps
-`NOT_FOR_DEPLOYMENT` and `NOT_FOR_POLICY_EVALUATION`; neither is a public model
-release or an approved long-run training parent.
+`evaluation_smoke_only` local artifact. The retained provenance of its original
+training checkpoint records `NOT_FOR_DEPLOYMENT` and
+`NOT_FOR_POLICY_EVALUATION`; neither artifact is a public model release or an
+approved long-run training parent.
+
+## Local retention after Phase-2 completion
+
+The local cleanup removes heavyweight G5/G6/G7 smoke and exact-resume payloads,
+failed/interrupted run directories, throughput benchmark work checkpoints,
+Python test caches, and the superseded cycle-105 boundary. Git-tracked reports,
+tests, and manifests remain in the repository.
+
+The self-contained cycle-210 evaluation-smoke checkpoint and its dedicated live
+binding remain the deployment-smoke inputs. The original cycle-210 training
+checkpoint's retained provenance records its original `NOT_FOR_DEPLOYMENT` and
+`NOT_FOR_POLICY_EVALUATION` status. Its recovery payload has been pruned, so
+exact optimizer-state resume from that boundary is no longer available locally.
+See
+[`docs/phase2_pipeline_retention.md`](docs/phase2_pipeline_retention.md) and
+[`phase2_pipeline_retention.v1.json`](artifacts/development/stage2/phase2_pipeline_retention.v1.json).

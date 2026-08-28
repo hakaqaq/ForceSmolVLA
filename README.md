@@ -1,7 +1,7 @@
 # ForceSmolVLA
 
-**Release status: `v2.1.0` — development Stage-2 frozen-backbone,
-value-guided force-action refinement.** Stage-1 remains the full-model
+**Release status: `v2.1.1` — development Stage-2 frozen-backbone,
+value-guided force-action refinement plus local artifact-retention cleanup.** Stage-1 remains the full-model
 force-conditioned behavior adaptation parent. See
 [`PHASE2_RELEASE.md`](PHASE2_RELEASE.md) for the exact development scope,
 limitations, evidence, and GitHub exclusions.

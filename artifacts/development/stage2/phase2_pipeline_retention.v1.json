@@ -1,0 +1,53 @@
+{
+  "schema_version": "phase2_pipeline_retention.v1",
+  "release": "v2.1.1",
+  "change_scope": "local_artifact_retention_cleanup_only",
+  "algorithm_changed": false,
+  "public_inference_changed": false,
+  "action_contract_changed": false,
+  "safety_thresholds_changed": false,
+  "source_parent_commit": "b4b8cf9759d9ad293efe531419781d991c64fb16",
+  "space_reclaimed_approx_gib": 46,
+  "retained": {
+    "evaluation_checkpoint": {
+      "path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1",
+      "model_sha256": "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d",
+      "artifact_manifest_sha256": "fb6fa6aceb9892ba2d39d136936c7e28f4a701bf7dd994169aae60c69894e395"
+    },
+    "evaluation_binding": {
+      "path": "artifacts/development/live/task2_cycle210_evaluation_smoke_binding.v1.json",
+      "sha256": "6f15f33aedbf4327388012dc7a0418de09f05ba070833ac95c092b95104471d5"
+    },
+    "stage1_r5_model": {
+      "path": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000/model.safetensors",
+      "sha256": "49248561be7043b38bfce60f200d8bf265e1b16b4b9553ccc6aa4c87241b762e"
+    },
+    "reward_classifier": {
+      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+      "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
+    },
+    "automatic_detector_g1_manifest": {
+      "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/g1_manifest.json",
+      "sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
+    },
+    "action_contract_v2": {
+      "path": "configs/stage2_action_contract.v2.development.json",
+      "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6"
+    }
+  },
+  "removed_payload_classes": [
+    "g5_single_cycle_test_state",
+    "g6_exact_resume_branch_state",
+    "g7b_joint_smoke_state",
+    "throughput_v2_temporary_work",
+    "interrupted_and_superseded_long_run_work",
+    "cycle105_checkpoint",
+    "cycle210_training_recovery_state",
+    "python_and_test_caches"
+  ],
+  "cycle210_evaluation_and_serving": "available",
+  "cycle210_exact_training_resume": "unavailable_locally",
+  "deployment_release_authorized": false,
+  "online_update_authorized": false,
+  "robot_execution_authorized": false
+}
