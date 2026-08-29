@@ -1,0 +1,12 @@
+{
+  "schema_version": "forcesmolvla-deployment-profile-v1",
+  "artifact_status": "development_only",
+  "deployment_id": "task2-stage3-cycle210-shadow",
+  "checkpoint": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1",
+  "rulespec": "configs/live_action_safety.task2.development.yaml",
+  "deployment_binding": "artifacts/development/live/task2_cycle210_evaluation_smoke_binding.v1.json",
+  "deployment_binding_sha256": "6f15f33aedbf4327388012dc7a0418de09f05ba070833ac95c092b95104471d5",
+  "dataset_manifest": "datasets/task2_lerobotv3/conversion_manifest.json",
+  "raw_session": "/home/rlc123/fr3_client_ws/datasets/task2/session.json",
+  "tool_profile": "onrobot_robotiq"
+}
