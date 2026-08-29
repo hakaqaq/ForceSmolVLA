@@ -13,6 +13,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+DEFAULT_SHADOW_BACKEND = (
+    "forcesmolvla.rft.stage3.integrated_shadow_backend:IntegratedShadowBackend"
+)
 
 from forcesmolvla.rft.stage3.integrated_capture import (  # noqa: E402
     IntegratedCaptureError,
@@ -39,6 +42,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--reset-generation", type=int, default=0)
     parser.add_argument("--takeover-generation", type=int, default=0)
     parser.add_argument("--deployment-binding", type=Path)
+    parser.add_argument("--policy-host", default="127.0.0.1")
+    parser.add_argument("--policy-port", type=int, default=8000)
+    parser.add_argument(
+        "--deployment-profile",
+        type=Path,
+        default=ROOT / "configs/deployment.active.development.json",
+    )
+    parser.add_argument("--inference-timeout", type=float, default=30.0)
+    parser.add_argument("--shadow-inference-period", type=float, default=0.1)
+    parser.add_argument("--backend-start-timeout", type=float, default=180.0)
     parser.add_argument(
         "--launch",
         action="store_true",
@@ -72,6 +85,14 @@ def main(argv: list[str] | None = None) -> int:
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_ONE_EPISODE_PER_SEAL_REQUIRED")
         if args.episode_time <= 0:
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_EPISODE_TIME_INVALID")
+        if (
+            args.policy_host not in {"127.0.0.1", "localhost"}
+            or args.policy_port <= 0
+            or args.inference_timeout <= 0
+            or args.shadow_inference_period <= 0
+            or args.backend_start_timeout <= 0
+        ):
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_BACKEND_ARGUMENTS_INVALID")
         contract = build_capture_contract(
             mode=args.mode,
             session_id=args.session_id,
@@ -88,11 +109,17 @@ def main(argv: list[str] | None = None) -> int:
             "episodes": args.episodes,
             "episode_time": args.episode_time,
             "tool_profile": args.tool_profile,
+            "policy_host": args.policy_host,
+            "policy_port": args.policy_port,
+            "deployment_profile": str(args.deployment_profile.resolve()),
+            "inference_timeout": args.inference_timeout,
+            "shadow_inference_period": args.shadow_inference_period,
+            "backend_start_timeout": args.backend_start_timeout,
         }
         if args.launch:
             result = run_integrated_capture(
                 contract=contract,
-                backend=_backend(args.backend),
+                backend=_backend(args.backend or DEFAULT_SHADOW_BACKEND),
                 recorder_arguments=recorder_arguments,
             )
             payload = {
