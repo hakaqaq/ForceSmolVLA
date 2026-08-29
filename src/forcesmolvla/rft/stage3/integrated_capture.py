@@ -31,7 +31,7 @@ CYCLE210_EXECUTION_PROFILE = Path(
 )
 CYCLE210_DEPLOYMENT_BINDING = Path(
     "/home/rlc123/ForceSmolVLA/"
-    "artifacts/development/live/task2_cycle210_evaluation_smoke_binding.v1.json"
+    "artifacts/development/live/task2_cycle210_policy_execution_smoke_binding.v1.json"
 )
 CAPTURE_MODE_SEMANTICS: dict[str, dict[str, Any]] = {
     "shadow": {

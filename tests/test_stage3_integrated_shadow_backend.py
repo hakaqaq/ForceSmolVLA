@@ -391,6 +391,159 @@ def test_only_transient_camera_tuple_misses_are_retryable() -> None:
     )
 
 
+def test_policy_execution_waits_for_native_camera_first_frames(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = {"camera_ready": False, "sleeps": 0}
+    cameras = SimpleNamespace(ready=lambda: state["camera_ready"])
+    observation = SimpleNamespace(
+        cameras=cameras,
+        ready=lambda: True,
+        shadow_error=None,
+    )
+    process = SimpleNamespace(poll=lambda: None)
+
+    def make_camera_ready(_seconds: float) -> None:
+        state["sleeps"] += 1
+        state["camera_ready"] = True
+
+    monkeypatch.setattr(shadow_backend.time, "sleep", make_camera_ready)
+    shadow_backend._wait_for_policy_observation_ready(
+        observation,
+        process,
+        deadline=shadow_backend.time.monotonic() + 1.0,
+    )
+
+    assert state == {"camera_ready": True, "sleeps": 1}
+    state["camera_ready"] = False
+    with pytest.raises(IntegratedCaptureError, match="RECORDER_EXITED"):
+        shadow_backend._wait_for_policy_observation_ready(
+            observation,
+            SimpleNamespace(poll=lambda: 1),
+            deadline=shadow_backend.time.monotonic() + 1.0,
+        )
+
+
+def test_takeover_and_episode_end_supersede_pending_policy_decision() -> None:
+    class FakeObservation:
+        def _safe_action_callback(self, _message: object) -> None:
+            pass
+
+    observation_type = shadow_backend._shadow_observation_type(
+        SimpleNamespace(LiveForceSmolObservation=FakeObservation),
+        policy_execution=True,
+    )
+    observation = object.__new__(observation_type)
+    observation._shadow_lock = threading.Lock()
+    observation._shadow_safe_by_stamp = {}
+    observation._policy_decisions = {}
+    observation._observed_policy_epoch = 0
+    observation._episode_ending = False
+    observation._policy_decision_condition = threading.Condition(
+        observation._shadow_lock
+    )
+    observation.shadow_error = None
+    message = SimpleNamespace(
+        data=json.dumps(
+            {
+                "arbitration": {
+                    "policy_epoch": 1,
+                    "event": "intervention_start",
+                    "raw_action": {"source": "human", "sequence": 7},
+                },
+                "equilibrium_source_stamp_ns": 123,
+            }
+        )
+    )
+
+    observation._safe_action_callback(message)
+
+    assert observation.wait_policy_decision(139, 0, 0.01) is None
+    assert observation.shadow_error is None
+    audit = observation.policy_audit_snapshot()
+    assert audit[0]["payload"]["arbitration"]["event"] == "intervention_start"
+
+    message.data = json.dumps(
+        {
+            "arbitration": {
+                "policy_epoch": 1,
+                "event": "episode_end",
+                "raw_action": {
+                    "source": "human",
+                    "sequence": 8,
+                    "phase": "episode_end",
+                },
+            },
+            "equilibrium_source_stamp_ns": 124,
+        }
+    )
+    observation._safe_action_callback(message)
+
+    assert observation.episode_ending() is True
+    assert observation.wait_policy_decision(497, 1, 0.01) is None
+
+
+def test_policy_gripper_reuses_native_integer_episode_token() -> None:
+    targets = [
+        {
+            "token": 1,
+            "local_goal_sequence": 1,
+            "action_goal_id": "initial-open-goal",
+        }
+    ]
+
+    assert shadow_backend._native_gripper_episode_token(targets) == 1
+    with pytest.raises(IntegratedCaptureError, match="EPISODE_TOKEN_INVALID"):
+        shadow_backend._native_gripper_episode_token(
+            [{**targets[0], "token": "stage3-policy-execute"}]
+        )
+
+
+def test_human_gripper_goal_temporarily_owns_authority() -> None:
+    human = {"local_goal_sequence": 2, "action_goal_id": "human-close"}
+    policy = {
+        "local_goal_sequence": 1_000_000,
+        "action_goal_id": "policy-open",
+        "authority": "policy_execution_backend",
+    }
+
+    assert shadow_backend._human_gripper_goal_active([human, policy], []) is True
+    assert (
+        shadow_backend._human_gripper_goal_active(
+            [human, policy],
+            [{**human, "outcome": "stalled"}],
+        )
+        is False
+    )
+
+
+def test_stalled_close_is_an_accepted_closed_gripper_state() -> None:
+    close = {
+        "local_goal_sequence": 2,
+        "action_goal_id": "human-close",
+        "requested_closed": True,
+    }
+    stalled = {
+        **close,
+        "outcome": "stalled",
+        "finished_monotonic_ns": 20,
+    }
+    opened = {
+        "local_goal_sequence": 3,
+        "action_goal_id": "human-open",
+        "requested_closed": False,
+    }
+
+    assert shadow_backend._completed_gripper_closed_state([close], [stalled]) is True
+    assert (
+        shadow_backend._completed_gripper_closed_state(
+            [close, opened],
+            [stalled, {**opened, "outcome": "reached", "finished_monotonic_ns": 30}],
+        )
+        is False
+    )
+
+
 def test_integrated_cli_passes_shadow_runtime_binding_without_launch(
     tmp_path: Path,
 ) -> None:

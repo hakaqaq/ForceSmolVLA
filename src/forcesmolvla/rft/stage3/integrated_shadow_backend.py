@@ -35,7 +35,7 @@ POLICY_EXECUTION_BACKEND_SCHEMA = (
     "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
 )
 CYCLE210_DEPLOYMENT_BINDING_SHA256 = (
-    "6f15f33aedbf4327388012dc7a0418de09f05ba070833ac95c092b95104471d5"
+    "f80053505ea0434ef9f92be5edd0d24227b6914643e31314474fb6abfa9f085f"
 )
 CYCLE210_CHECKPOINT = Path(
     "/home/rlc123/ForceSmolVLA/"
@@ -289,6 +289,57 @@ def _parse_recorder_arguments(recorder: Any, command: list[str]) -> Any:
         sys.argv = original
 
 
+def _native_gripper_episode_token(targets: list[Mapping[str, Any]]) -> int:
+    tokens = {row.get("token") for row in targets}
+    if len(tokens) != 1:
+        raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_EPISODE_TOKEN_MISSING")
+    token = next(iter(tokens))
+    if isinstance(token, bool) or not isinstance(token, int) or token <= 0:
+        raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_EPISODE_TOKEN_INVALID")
+    return token
+
+
+def _human_gripper_goal_active(
+    targets: list[Mapping[str, Any]], statuses: list[Mapping[str, Any]]
+) -> bool:
+    completed = {
+        (int(row["local_goal_sequence"]), str(row["action_goal_id"]))
+        for row in statuses
+    }
+    return any(
+        row.get("authority") != "policy_execution_backend"
+        and (int(row["local_goal_sequence"]), str(row["action_goal_id"]))
+        not in completed
+        for row in targets
+    )
+
+
+def _completed_gripper_closed_state(
+    targets: list[Mapping[str, Any]], statuses: list[Mapping[str, Any]]
+) -> bool | None:
+    target_by_key = {
+        (int(row["local_goal_sequence"]), str(row["action_goal_id"])): row
+        for row in targets
+    }
+    completed = [
+        (int(status["finished_monotonic_ns"]), target)
+        for status in statuses
+        if status.get("outcome") in {"reached", "stalled"}
+        and (
+            target := target_by_key.get(
+                (
+                    int(status["local_goal_sequence"]),
+                    str(status["action_goal_id"]),
+                )
+            )
+        )
+        is not None
+    ]
+    if not completed:
+        return None
+    return bool(max(completed, key=lambda item: item[0])[1]["requested_closed"])
+
+
 def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> type:
     class ShadowObservation(deploy.LiveForceSmolObservation):
         def __init__(self, args: Any, cameras: Any, metadata: dict, task: str) -> None:
@@ -301,6 +352,8 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
             self._shadow_gripper_sources: deque[tuple[int, int]] = deque(maxlen=512)
             self._policy_sequence = 0
             self._policy_decisions: dict[int, dict[str, Any]] = {}
+            self._observed_policy_epoch = 0
+            self._episode_ending = False
             self._policy_decision_condition = threading.Condition(self._shadow_lock)
             self._reference_ack_condition = threading.Condition(self._shadow_lock)
             self._policy_gripper_condition = threading.Condition(self._shadow_lock)
@@ -356,9 +409,11 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
             super()._safe_action_callback(message)
             try:
                 payload = json.loads(message.data)
-                raw = payload["arbitration"]["raw_action"]
+                arbitration = payload["arbitration"]
+                raw = arbitration["raw_action"]
+                policy_epoch = int(arbitration["policy_epoch"])
                 source_stamp = payload.get("equilibrium_source_stamp_ns")
-                if not isinstance(raw, dict):
+                if not isinstance(raw, dict) or policy_epoch < 0:
                     raise ValueError("invalid safe-action identity")
                 record = {
                     "shadow_receive_monotonic_ns": time.monotonic_ns(),
@@ -366,9 +421,16 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
                     "payload": payload,
                 }
                 with self._shadow_lock:
+                    self._observed_policy_epoch = max(
+                        self._observed_policy_epoch, policy_epoch
+                    )
+                    if (
+                        raw.get("source") == "human"
+                        and raw.get("phase") == "episode_end"
+                    ):
+                        self._episode_ending = True
                     if raw.get("source") == "policy":
                         self._policy_decisions[int(raw["sequence"])] = record
-                        self._policy_decision_condition.notify_all()
                     if source_stamp is not None:
                         stamp = int(source_stamp)
                         if stamp <= 0:
@@ -376,6 +438,7 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
                         self._shadow_safe_by_stamp[stamp] = record
                         for old in list(self._shadow_safe_by_stamp)[:-512]:
                             self._shadow_safe_by_stamp.pop(old, None)
+                    self._policy_decision_condition.notify_all()
             except Exception as error:
                 self._fail_shadow("SHADOW_SAFE_ACTION_INVALID", error)
 
@@ -446,6 +509,8 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
         ) -> int:
             if not policy_execution:
                 raise IntegratedCaptureError("POLICY_EXECUTE_PUBLISH_NOT_AUTHORIZED")
+            if self.episode_ending():
+                raise IntegratedCaptureError("POLICY_EXECUTE_EPISODE_END")
             values = tuple(float(value) for value in normalized_action)
             if len(values) != 7 or not all(math.isfinite(value) for value in values):
                 raise IntegratedCaptureError("POLICY_EXECUTE_NORMALIZED_ACTION_INVALID")
@@ -466,12 +531,20 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
             self.action_publisher.publish(message)
             return sequence
 
-        def wait_policy_decision(self, sequence: int, timeout_s: float) -> dict[str, Any]:
+        def wait_policy_decision(
+            self, sequence: int, policy_epoch: int, timeout_s: float
+        ) -> dict[str, Any] | None:
             deadline = time.monotonic() + timeout_s
             with self._policy_decision_condition:
+                if self._episode_ending:
+                    return None
                 while sequence not in self._policy_decisions:
                     if self.shadow_error:
                         raise IntegratedCaptureError(self.shadow_error)
+                    if self._episode_ending:
+                        return None
+                    if self._observed_policy_epoch > policy_epoch:
+                        return None
                     remaining = deadline - time.monotonic()
                     if remaining <= 0.0:
                         raise IntegratedCaptureError(
@@ -480,10 +553,14 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
                     self._policy_decision_condition.wait(min(remaining, 0.02))
                 return self._policy_decisions.pop(sequence)["payload"]
 
-        def wait_reference_ack(self, request_stamp_ns: int, timeout_s: float) -> dict[str, Any]:
+        def wait_reference_ack(
+            self, request_stamp_ns: int, timeout_s: float
+        ) -> dict[str, Any] | None:
             deadline = time.monotonic() + timeout_s
             with self._reference_ack_condition:
                 while True:
+                    if self._episode_ending:
+                        return None
                     for row in self._shadow_acks:
                         if int(row["payload"]["request_stamp_ns"]) == request_stamp_ns:
                             payload = dict(row["payload"])
@@ -577,6 +654,8 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
         ) -> dict[str, Any]:
             if not policy_execution:
                 raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_NOT_AUTHORIZED")
+            if self.episode_ending():
+                raise IntegratedCaptureError("POLICY_EXECUTE_EPISODE_END")
             width = float(target_width_m)
             desired_closed = True if width <= 0.030 else False if width >= 0.055 else None
             if desired_closed is None:
@@ -586,7 +665,21 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
                 feedback_ns = int(self.gripper_receive_ns)
             if feedback_width is None or feedback_ns <= 0:
                 raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_FEEDBACK_MISSING")
-            feedback_closed = float(feedback_width) < 0.0425
+            with self._policy_gripper_condition:
+                if self._episode_ending:
+                    raise IntegratedCaptureError("POLICY_EXECUTE_EPISODE_END")
+                if self._policy_gripper_active or _human_gripper_goal_active(
+                    self._shadow_targets, self._shadow_statuses
+                ):
+                    raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_AUTHORITY_BUSY")
+                accepted_closed = _completed_gripper_closed_state(
+                    self._shadow_targets, self._shadow_statuses
+                )
+            feedback_closed = (
+                float(feedback_width) < 0.0425
+                if accepted_closed is None
+                else accepted_closed
+            )
             if feedback_closed == desired_closed:
                 return {
                     **dict(command_context),
@@ -600,15 +693,14 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
             if timeout_s <= 0.0 or not self._policy_gripper_client.server_is_ready():
                 raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_SERVER_UNAVAILABLE")
             with self._policy_gripper_condition:
-                active_human = {
-                    (int(row["local_goal_sequence"]), str(row["action_goal_id"]))
-                    for row in self._shadow_targets
-                } - {
-                    (int(row["local_goal_sequence"]), str(row["action_goal_id"]))
-                    for row in self._shadow_statuses
-                }
+                if self._episode_ending:
+                    raise IntegratedCaptureError("POLICY_EXECUTE_EPISODE_END")
+                active_human = _human_gripper_goal_active(
+                    self._shadow_targets, self._shadow_statuses
+                )
                 if self._policy_gripper_active or active_human:
                     raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_AUTHORITY_BUSY")
+                episode_token = _native_gripper_episode_token(self._shadow_targets)
                 sequence = self._policy_gripper_sequence
                 self._policy_gripper_sequence += 1
                 self._policy_gripper_active = True
@@ -621,7 +713,7 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
             metadata = {
                 **dict(command_context),
                 "command_id": command_id,
-                "token": "stage3-policy-execute",
+                "token": episode_token,
                 "local_goal_sequence": sequence,
                 "requested_state": "CLOSED" if desired_closed else "OPEN",
                 "requested_closed": desired_closed,
@@ -664,6 +756,16 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
                     f"POLICY_EXECUTE_GRIPPER_TERMINAL_INVALID:{result}"
                 )
             return result
+
+        def human_gripper_goal_active(self) -> bool:
+            with self._policy_gripper_condition:
+                return _human_gripper_goal_active(
+                    self._shadow_targets, self._shadow_statuses
+                )
+
+        def episode_ending(self) -> bool:
+            with self._shadow_lock:
+                return self._episode_ending
 
         def shadow_initial_gripper_origin(
             self, episode_started_ns: int
@@ -835,6 +937,22 @@ def _selected_chunk_action(
 
 def _retryable_camera_error(error: RuntimeError) -> bool:
     return str(error).startswith(RETRYABLE_CAMERA_ERRORS)
+
+
+def _wait_for_policy_observation_ready(
+    observation: Any, process: subprocess.Popen[Any], deadline: float
+) -> None:
+    while not (observation.ready() and observation.cameras.ready()):
+        if observation.shadow_error:
+            raise IntegratedCaptureError(observation.shadow_error)
+        return_code = process.poll()
+        if return_code is not None:
+            raise IntegratedCaptureError(
+                f"POLICY_EXECUTE_RECORDER_EXITED_BEFORE_OBSERVATION_READY:{return_code}"
+            )
+        if time.monotonic() >= deadline:
+            raise IntegratedCaptureError("POLICY_EXECUTE_OBSERVATION_READY_TIMEOUT")
+        time.sleep(0.005)
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -1352,6 +1470,9 @@ class IntegratedShadowBackend:
             while process.poll() is None and not final_episode.is_dir():
                 if observation.shadow_error:
                     raise IntegratedCaptureError(observation.shadow_error)
+                if observation.episode_ending():
+                    time.sleep(0.005)
+                    continue
                 if not work_episode.is_dir():
                     if native_episode_missing_since is None:
                         native_episode_missing_since = time.monotonic()
@@ -1559,6 +1680,7 @@ class IntegratedShadowBackend:
         chunk_count = 0
         submitted: set[str] = set()
         outstanding: dict[str, dict[str, Any]] = {}
+        gripper_invalidated_requests: set[str] = set()
         processed_decisions: set[int] = set()
         current_request: dict[str, Any] | None = None
         current_observation: dict[str, Any] | None = None
@@ -1631,12 +1753,26 @@ class IntegratedShadowBackend:
                 elif event == "intervention_end":
                     human_takeover_active = False
 
+        def yield_to_human_gripper() -> None:
+            nonlocal current_chunk, current_request, current_observation
+            gripper_invalidated_requests.update(outstanding)
+            current_chunk = None
+            current_request = None
+            current_observation = None
+
+        _wait_for_policy_observation_ready(
+            observation, process, time.monotonic() + start_timeout
+        )
         capture_observation()
         submit_current_request()
         try:
             while process.poll() is None and not final_episode.is_dir():
                 if observation.shadow_error:
                     raise IntegratedCaptureError(observation.shadow_error)
+                consume_interventions()
+                if observation.episode_ending():
+                    time.sleep(0.005)
+                    continue
                 if not work_episode.is_dir():
                     if native_episode_missing_since is None:
                         native_episode_missing_since = time.monotonic()
@@ -1647,7 +1783,10 @@ class IntegratedShadowBackend:
                 else:
                     native_episode_missing_since = None
 
-                consume_interventions()
+                if observation.human_gripper_goal_active():
+                    yield_to_human_gripper()
+                    time.sleep(0.005)
+                    continue
                 completed = worker.poll()
                 if completed is not None:
                     request, result = completed
@@ -1682,6 +1821,7 @@ class IntegratedShadowBackend:
                         int(result_record["policy_epoch"]) == generation[0]
                         and int(result_record["takeover_generation"]) == generation[1]
                         and not human_takeover_active
+                        and request_id not in gripper_invalidated_requests
                     )
                     proposal = {
                         **result_record,
@@ -1772,13 +1912,24 @@ class IntegratedShadowBackend:
                     recorder_args.hilserl_translation_action_scale_m,
                     recorder_args.hilserl_rotation_action_scale_rad,
                 )
-                sequence = observation.publish_policy_action(
-                    normalized,
-                    policy_epoch=lineage["policy_epoch"],
-                    observation_id=current_observation["observation_id"],
+                try:
+                    sequence = observation.publish_policy_action(
+                        normalized,
+                        policy_epoch=lineage["policy_epoch"],
+                        observation_id=current_observation["observation_id"],
+                    )
+                except IntegratedCaptureError as error:
+                    if str(error) == "POLICY_EXECUTE_EPISODE_END":
+                        current_chunk = None
+                        continue
+                    raise
+                decision = observation.wait_policy_decision(
+                    sequence, int(lineage["policy_epoch"]), 0.50
                 )
-                decision = observation.wait_policy_decision(sequence, 0.50)
                 consume_interventions()
+                if decision is None:
+                    current_chunk = None
+                    continue
                 arbitration = decision.get("arbitration", {})
                 raw_action = arbitration.get("raw_action", {})
                 if (
@@ -1828,6 +1979,9 @@ class IntegratedShadowBackend:
                 pose_ack = observation.wait_reference_ack(
                     int(decision["equilibrium_source_stamp_ns"]), ack_timeout_s
                 )
+                if pose_ack is None:
+                    current_chunk = None
+                    continue
                 deploy.validate_exact_controller_ack(
                     audited_decision,
                     pose_ack,
@@ -1841,15 +1995,27 @@ class IntegratedShadowBackend:
                         * recorder_args.hilserl_rotation_action_scale_rad
                     ),
                 )
-                gripper_authority = observation.ensure_policy_gripper_authority(
-                    float(target[6]),
-                    command_context={
-                        **lineage,
-                        "sequence": sequence,
-                        "action_index": action_index,
-                    },
-                    timeout_s=5.0,
-                )
+                try:
+                    gripper_authority = observation.ensure_policy_gripper_authority(
+                        float(target[6]),
+                        command_context={
+                            **lineage,
+                            "sequence": sequence,
+                            "action_index": action_index,
+                        },
+                        timeout_s=5.0,
+                    )
+                except IntegratedCaptureError as error:
+                    if str(error) == "POLICY_EXECUTE_EPISODE_END":
+                        current_chunk = None
+                        continue
+                    if (
+                        str(error) == "POLICY_EXECUTE_GRIPPER_AUTHORITY_BUSY"
+                        and observation.human_gripper_goal_active()
+                    ):
+                        yield_to_human_gripper()
+                        continue
+                    raise
                 store.append(
                     "policy_execute_gripper_authority.jsonl", gripper_authority
                 )

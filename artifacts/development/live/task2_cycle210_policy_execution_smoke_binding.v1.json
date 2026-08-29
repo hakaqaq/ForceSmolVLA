@@ -1,0 +1,20 @@
+{
+  "approval": {
+    "approval_id": "forcesmolvla-cycle210-policy-execution-smoke-20260829-001",
+    "approved_at": "2026-08-29T11:49:40Z",
+    "approver_identity": "rlc123",
+    "approver_role": "experiment_lead",
+    "status": "approved"
+  },
+  "artifact_status": "approved",
+  "camera_max_age_ms": 250.0,
+  "client_source_sha256": "4ec734a2f1b29871ca18443ad8c639e50836c709214df7203860f2e3b641deca",
+  "controller_ack_timeout_ms": 20.0,
+  "gripper_max_age_ms": 300.0,
+  "max_intercamera_skew_ms": 250.0,
+  "model_sha256": "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d",
+  "rulespec_sha256": "2619b9fe93af11cc021e193790e84261b0f0ae9524714c40a12ca97f5b28fcba",
+  "schema_version": "forcesmolvla-live-deployment-binding-v1",
+  "server_source_sha256": "417bdc9c06e667f367232e07582b86337b7401c73448997b306b36c258df4a8d",
+  "state_pose_max_age_ms": 250.0
+}
