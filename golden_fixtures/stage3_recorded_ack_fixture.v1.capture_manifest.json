@@ -1,0 +1,148 @@
+{
+  "ack_natural_identities": [
+    {
+      "ack_id": "reference-ack:287:1787145538074728303",
+      "receive_monotonic_ns": 175537342382189,
+      "request_sequence": 287,
+      "request_stamp_ns": 1787145538074728303
+    },
+    {
+      "ack_id": "reference-ack:288:1787145538175007367",
+      "receive_monotonic_ns": 175537442345198,
+      "request_sequence": 288,
+      "request_stamp_ns": 1787145538175007367
+    }
+  ],
+  "action_source": "human",
+  "capture_origin": "historical_native_real",
+  "episode_fatal_reason": null,
+  "episode_index": 18,
+  "episode_saved": true,
+  "fixture_id": "task2-episode_000018-recorded-ack-k3-terminal",
+  "fixture_kind": "recorded_live",
+  "gripper_authority": {
+    "accepted_monotonic_ns": 175536974394605,
+    "action_goal_id": "267eb4d9dcd64f10a01dfb8ca7b78e7e",
+    "finished_monotonic_ns": 175537374594503,
+    "local_goal_sequence": 3,
+    "outcome": "reached",
+    "requested_state": "OPEN",
+    "status_receive_monotonic_ns": 175537374679682,
+    "target_receive_monotonic_ns": 175536974644486,
+    "target_width_m": 0.085
+  },
+  "native_raw_format_version": "fr3-hilserl-impedance-native-raw-v5",
+  "observation_boundaries": [
+    {
+      "action_ack_receive_monotonic_ns": 175537342382189,
+      "camera1_receive_monotonic_ns": 175537425180619,
+      "camera2_receive_monotonic_ns": 175537432733385,
+      "external_camera_relative_path": "images/external/frame_000863.jpg",
+      "global_grid_index": 849,
+      "grid_monotonic_ns": 175537433333333,
+      "gripper_source_stamp_ns": 1787145537947433672,
+      "local_grid_index": 0,
+      "role": "current",
+      "state7": [
+        0.573283314704895,
+        0.062228742986917496,
+        0.10260099917650223,
+        -3.0568974018096924,
+        0.03666355088353157,
+        -1.4657315015792847,
+        0.08500000089406967
+      ],
+      "state_pose_source_stamp_ns": 1787145537945085896,
+      "validity_bits": 255,
+      "wrench6": [
+        -0.25869452953338623,
+        0.42756637930870056,
+        0.755315363407135,
+        -0.14368920028209686,
+        -0.09095632284879684,
+        0.00027543690521270037
+      ],
+      "wrench_filter_output_stamp_ns": 1787145537942972446,
+      "wrist_camera_relative_path": "images/wrist/frame_000863.jpg"
+    },
+    {
+      "action_ack_receive_monotonic_ns": 175537442345198,
+      "camera1_receive_monotonic_ns": 175537525081556,
+      "camera2_receive_monotonic_ns": 175537532633985,
+      "external_camera_relative_path": "images/external/frame_000866.jpg",
+      "global_grid_index": 852,
+      "grid_monotonic_ns": 175537533333333,
+      "gripper_source_stamp_ns": 1787145538047433117,
+      "local_grid_index": 3,
+      "role": "next",
+      "state7": [
+        0.573513388633728,
+        0.06156577542424202,
+        0.10409911721944809,
+        -3.0557236671447754,
+        0.03547128289937973,
+        -1.4663565158843994,
+        0.08500000089406967
+      ],
+      "state_pose_source_stamp_ns": 1787145538045202055,
+      "validity_bits": 255,
+      "wrench6": [
+        -0.5009456276893616,
+        0.5488643050193787,
+        0.5655907392501831,
+        -0.1699688583612442,
+        -0.13662835955619812,
+        -0.021552709862589836
+      ],
+      "wrench_filter_output_stamp_ns": 1787145538043034264,
+      "wrist_camera_relative_path": "images/wrist/frame_000866.jpg"
+    },
+    {
+      "action_ack_receive_monotonic_ns": 175537542223028,
+      "camera1_receive_monotonic_ns": 175537591750852,
+      "camera2_receive_monotonic_ns": 175537599295060,
+      "external_camera_relative_path": "images/external/frame_000868.jpg",
+      "global_grid_index": 854,
+      "grid_monotonic_ns": 175537600000000,
+      "gripper_source_stamp_ns": 1787145538113433086,
+      "local_grid_index": 5,
+      "role": "terminal",
+      "state7": [
+        0.5737483501434326,
+        0.060991160571575165,
+        0.104942686855793,
+        -3.054755687713623,
+        0.03474622592329979,
+        -1.4670424461364746,
+        0.08500000089406967
+      ],
+      "state_pose_source_stamp_ns": 1787145538105116376,
+      "validity_bits": 255,
+      "wrench6": [
+        -0.48488757014274597,
+        0.6248723864555359,
+        0.5900571346282959,
+        -0.1788935363292694,
+        -0.13927505910396576,
+        -0.02220161445438862
+      ],
+      "wrench_filter_output_stamp_ns": 1787145538113081581,
+      "wrist_camera_relative_path": "images/wrist/frame_000868.jpg"
+    }
+  ],
+  "raw_episode_path": "/home/rlc123/fr3_client_ws/datasets/task2/episodes/episode_000018",
+  "raw_session_path": "/home/rlc123/fr3_client_ws/datasets/task2",
+  "schema_version": "forcesmolvla_stage3_recorded_ack_capture_manifest.v1",
+  "selection": {
+    "current_observation_grid_index": 0,
+    "full_macro_transition_index": 4926,
+    "last_executable_grid_index": 4,
+    "next_observation_grid_index": 3,
+    "prepared_grid_start_index": 849,
+    "prepared_grid_stop_index_exclusive": 855,
+    "terminal_observation_grid_index": 5,
+    "terminal_transition_index": 4927
+  },
+  "synthetic": false,
+  "task": "Pick up the purple ring and place it onto the red peg."
+}

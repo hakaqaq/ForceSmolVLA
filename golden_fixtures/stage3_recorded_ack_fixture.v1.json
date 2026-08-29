@@ -1,0 +1,320 @@
+{
+  "accepted_references": [
+    {
+      "accepted_receive_monotonic_ns": 175537342260670,
+      "frame_id": "fr3_link0",
+      "gripper_command_id": "267eb4d9dcd64f10a01dfb8ca7b78e7e",
+      "gripper_command_id_origin": "recorded_gripper_target_and_goal_status",
+      "pose": {
+        "position_m": [
+          0.5716766528756452,
+          0.06184983252652533,
+          0.1038990211712019
+        ],
+        "quaternion_xyzw": [
+          0.7419146520201122,
+          -0.6685921929176805,
+          0.017966778964806918,
+          -0.047162734664489114
+        ]
+      },
+      "source_stamp_ns": 1787145537856025190,
+      "target_gripper_width_m": 0.085
+    },
+    {
+      "accepted_receive_monotonic_ns": 175537442226284,
+      "frame_id": "fr3_link0",
+      "gripper_command_id": "267eb4d9dcd64f10a01dfb8ca7b78e7e",
+      "gripper_command_id_origin": "recorded_gripper_target_and_goal_status",
+      "pose": {
+        "position_m": [
+          0.5714851626949886,
+          0.06119625520184417,
+          0.10570612305561387
+        ],
+        "quaternion_xyzw": [
+          0.7418978607526693,
+          -0.6686393636636586,
+          0.017541032894672584,
+          -0.04691777632261287
+        ]
+      },
+      "source_stamp_ns": 1787145537956060012,
+      "target_gripper_width_m": 0.085
+    }
+  ],
+  "action_source": "human",
+  "anchor_states": [
+    {
+      "grid_index": 0,
+      "state7": [
+        0.573283314704895,
+        0.062228742986917496,
+        0.10260099917650223,
+        -3.0568974018096924,
+        0.03666355088353157,
+        -1.4657315015792847,
+        0.08500000089406967
+      ]
+    },
+    {
+      "grid_index": 3,
+      "state7": [
+        0.573513388633728,
+        0.06156577542424202,
+        0.10409911721944809,
+        -3.0557236671447754,
+        0.03547128289937973,
+        -1.4663565158843994,
+        0.08500000089406967
+      ]
+    }
+  ],
+  "bindings": {
+    "action_contract_v2": {
+      "path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/stage2_action_contract.v2.development.json",
+      "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6"
+    },
+    "action_delta": {
+      "path": "src/forcesmolvla/action_delta.py",
+      "sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1"
+    },
+    "calibration_bundle": {
+      "path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/calibration_bundle.development.json",
+      "sha256": "f041784b78e08f1359e27b8f841e6a61f687b59bce1b3db841ca4986937a53f6"
+    },
+    "normalizer_manifest": {
+      "path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/normalizer_manifest.json",
+      "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
+    },
+    "normalizer_source": {
+      "path": "src/forcesmolvla/normalizer.py",
+      "sha256": "df4faa89a6c580b30b12d1496df4b76be68d2b1329cbcaa63adc77fac0100525"
+    },
+    "stage2_ack_converter": {
+      "path": "src/forcesmolvla/raw_to_lerobot_v3.py",
+      "sha256": "49ac92461c49a4c6cf8dac242095ceeff2e47225c3c045174e229cd5ca71807e"
+    },
+    "stage2_runtime_contract": {
+      "path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/converter_runtime_spec.task2.development.json",
+      "sha256": "f6312bc580311077a5eec56c53c3013ab6cebd9744463cf4354651cdc0d616ea"
+    },
+    "stage2_temporal": {
+      "path": "src/forcesmolvla/temporal.py",
+      "sha256": "ea6fd6baed9178d2ea2dd345b2b08bf5ec558c0c77dfe33f0ddd22b2a656132f"
+    },
+    "terminal_transition_index": {
+      "path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/transition_index.parquet",
+      "sha256": "f61dbd6d7e396aca8dc60794be0a16d314553d081dd659b1928bc8c5118bd474"
+    }
+  },
+  "capture_origin": "historical_native_real",
+  "fixture_id": "task2-episode_000018-recorded-ack-k3-terminal",
+  "fixture_kind": "recorded_live",
+  "provenance": {
+    "capture_manifest_path": "golden_fixtures/stage3_recorded_ack_fixture.v1.capture_manifest.json",
+    "capture_manifest_sha256": "6f992e2c333e9e7765dd0edcd174a5602aa7ee3d7fc5bee3b9cfd60a74725ed2",
+    "raw_episode_path": "/home/rlc123/fr3_client_ws/datasets/task2/episodes/episode_000018",
+    "raw_session_path": "/home/rlc123/fr3_client_ws/datasets/task2",
+    "raw_session_tree_sha256": "e47c8741dd52849e43dbb7c489e5205f2f12f4bca82c70f4dc331f05b391bb21",
+    "recorded_live_evidence": true
+  },
+  "reference_acks": [
+    {
+      "accepted_action_source": "human",
+      "ack_id": "reference-ack:287:1787145538074728303",
+      "ack_id_origin": "recorded_request_sequence_and_stamp",
+      "action_decision_id": 286,
+      "action_source_receive_monotonic_ns": 175537334567207,
+      "controller_ack_monotonic_ns": 95327250566820,
+      "gripper_ack_command_id": "267eb4d9dcd64f10a01dfb8ca7b78e7e",
+      "gripper_command_id": "267eb4d9dcd64f10a01dfb8ca7b78e7e",
+      "intervention": true,
+      "payload": {
+        "accepted": true,
+        "accepted_pose": {
+          "position_m": [
+            0.5716766528756452,
+            0.06184983252652533,
+            0.1038990211712019
+          ],
+          "quaternion_xyzw": [
+            0.7419146520201122,
+            -0.6685921929176805,
+            0.017966778964806918,
+            -0.047162734664489114
+          ]
+        }
+      },
+      "receive_monotonic_ns": 175537342382189,
+      "request_sequence": 287,
+      "request_stamp_ns": 1787145538074728303,
+      "slot_owner": "human_intervention",
+      "workspace_clipped": false
+    },
+    {
+      "accepted_action_source": "human",
+      "ack_id": "reference-ack:288:1787145538175007367",
+      "ack_id_origin": "recorded_request_sequence_and_stamp",
+      "action_decision_id": 287,
+      "action_source_receive_monotonic_ns": 175537434742560,
+      "controller_ack_monotonic_ns": 95327350599025,
+      "gripper_ack_command_id": "267eb4d9dcd64f10a01dfb8ca7b78e7e",
+      "gripper_command_id": "267eb4d9dcd64f10a01dfb8ca7b78e7e",
+      "intervention": true,
+      "payload": {
+        "accepted": true,
+        "accepted_pose": {
+          "position_m": [
+            0.5714851626949886,
+            0.06119625520184417,
+            0.10570612305561387
+          ],
+          "quaternion_xyzw": [
+            0.7418978607526693,
+            -0.6686393636636586,
+            0.017541032894672584,
+            -0.04691777632261287
+          ]
+        }
+      },
+      "receive_monotonic_ns": 175537442345198,
+      "request_sequence": 288,
+      "request_stamp_ns": 1787145538175007367,
+      "slot_owner": "human_intervention",
+      "workspace_clipped": false
+    }
+  ],
+  "schema_version": "forcesmolvla_stage3_recorded_ack_fixture.v1",
+  "selection": {
+    "current_observation_grid_index": 0,
+    "full_macro_transition_index": 4926,
+    "gripper_authority": {
+      "accepted_monotonic_ns": 175536974394605,
+      "action_goal_id": "267eb4d9dcd64f10a01dfb8ca7b78e7e",
+      "finished_monotonic_ns": 175537374594503,
+      "local_goal_sequence": 3,
+      "outcome": "reached",
+      "requested_state": "OPEN",
+      "status_receive_monotonic_ns": 175537374679682,
+      "target_receive_monotonic_ns": 175536974644486,
+      "target_width_m": 0.085
+    },
+    "last_executable_grid_index": 4,
+    "next_observation_grid_index": 3,
+    "observation_provenance": [
+      {
+        "action_ack_receive_monotonic_ns": 175537342382189,
+        "camera1_receive_monotonic_ns": 175537425180619,
+        "camera2_receive_monotonic_ns": 175537432733385,
+        "external_camera_relative_path": "images/external/frame_000863.jpg",
+        "global_grid_index": 849,
+        "grid_monotonic_ns": 175537433333333,
+        "gripper_source_stamp_ns": 1787145537947433672,
+        "local_grid_index": 0,
+        "role": "current",
+        "state7": [
+          0.573283314704895,
+          0.062228742986917496,
+          0.10260099917650223,
+          -3.0568974018096924,
+          0.03666355088353157,
+          -1.4657315015792847,
+          0.08500000089406967
+        ],
+        "state_pose_source_stamp_ns": 1787145537945085896,
+        "validity_bits": 255,
+        "wrench6": [
+          -0.25869452953338623,
+          0.42756637930870056,
+          0.755315363407135,
+          -0.14368920028209686,
+          -0.09095632284879684,
+          0.00027543690521270037
+        ],
+        "wrench_filter_output_stamp_ns": 1787145537942972446,
+        "wrist_camera_relative_path": "images/wrist/frame_000863.jpg"
+      },
+      {
+        "action_ack_receive_monotonic_ns": 175537442345198,
+        "camera1_receive_monotonic_ns": 175537525081556,
+        "camera2_receive_monotonic_ns": 175537532633985,
+        "external_camera_relative_path": "images/external/frame_000866.jpg",
+        "global_grid_index": 852,
+        "grid_monotonic_ns": 175537533333333,
+        "gripper_source_stamp_ns": 1787145538047433117,
+        "local_grid_index": 3,
+        "role": "next",
+        "state7": [
+          0.573513388633728,
+          0.06156577542424202,
+          0.10409911721944809,
+          -3.0557236671447754,
+          0.03547128289937973,
+          -1.4663565158843994,
+          0.08500000089406967
+        ],
+        "state_pose_source_stamp_ns": 1787145538045202055,
+        "validity_bits": 255,
+        "wrench6": [
+          -0.5009456276893616,
+          0.5488643050193787,
+          0.5655907392501831,
+          -0.1699688583612442,
+          -0.13662835955619812,
+          -0.021552709862589836
+        ],
+        "wrench_filter_output_stamp_ns": 1787145538043034264,
+        "wrist_camera_relative_path": "images/wrist/frame_000866.jpg"
+      },
+      {
+        "action_ack_receive_monotonic_ns": 175537542223028,
+        "camera1_receive_monotonic_ns": 175537591750852,
+        "camera2_receive_monotonic_ns": 175537599295060,
+        "external_camera_relative_path": "images/external/frame_000868.jpg",
+        "global_grid_index": 854,
+        "grid_monotonic_ns": 175537600000000,
+        "gripper_source_stamp_ns": 1787145538113433086,
+        "local_grid_index": 5,
+        "role": "terminal",
+        "state7": [
+          0.5737483501434326,
+          0.060991160571575165,
+          0.104942686855793,
+          -3.054755687713623,
+          0.03474622592329979,
+          -1.4670424461364746,
+          0.08500000089406967
+        ],
+        "state_pose_source_stamp_ns": 1787145538105116376,
+        "validity_bits": 255,
+        "wrench6": [
+          -0.48488757014274597,
+          0.6248723864555359,
+          0.5900571346282959,
+          -0.1788935363292694,
+          -0.13927505910396576,
+          -0.02220161445438862
+        ],
+        "wrench_filter_output_stamp_ns": 1787145538113081581,
+        "wrist_camera_relative_path": "images/wrist/frame_000868.jpg"
+      }
+    ],
+    "prepared_grid_start_index": 849,
+    "prepared_grid_stop_index_exclusive": 855,
+    "terminal_observation_grid_index": 5,
+    "terminal_transition_index": 4927
+  },
+  "synthetic": false,
+  "temporal": {
+    "K": 3,
+    "data_grid_hz": 30,
+    "episode_end_ns": 175537600000000,
+    "macro_duration_ms": 100,
+    "max_ack_age_ms": 300.0,
+    "policy_anchor_phase_on_30hz_grid": 0,
+    "policy_hz": 10,
+    "session_start_ack_ns": 175537433333333,
+    "terminal_boundary_ns": 175537566666667
+  }
+}

@@ -38,6 +38,9 @@ MISSING_RECORDED_FIELDS = (
     "session start, episode end, and terminal boundary monotonic timestamps",
     "recorded accepted_reference stream with gripper command IDs",
     "recorded positive reference_ack stream with ACK and gripper ACK IDs",
+    "recorded human/policy action-source lineage for each accepted Pose ACK",
+    "recorded gripper target and terminal goal-status origin",
+    "frozen full/terminal transition rows and current/next/terminal observations",
     "30 Hz anchor states for the frozen 10 Hz phase",
 )
 
@@ -126,6 +129,48 @@ def _resolve(path: str) -> Path:
     return value if value.is_absolute() else ROOT / value
 
 
+def _capture_manifest_matches(fixture: Mapping[str, Any], path: Path) -> bool:
+    if fixture["fixture_kind"] != "recorded_live":
+        return True
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return False
+    selection_keys = (
+        "prepared_grid_start_index", "prepared_grid_stop_index_exclusive",
+        "current_observation_grid_index", "next_observation_grid_index",
+        "terminal_observation_grid_index", "last_executable_grid_index",
+        "full_macro_transition_index", "terminal_transition_index",
+    )
+    expected_ack_identities = [
+        {
+            "ack_id": row["ack_id"],
+            "request_sequence": row["request_sequence"],
+            "request_stamp_ns": row["request_stamp_ns"],
+            "receive_monotonic_ns": row["receive_monotonic_ns"],
+        }
+        for row in fixture["reference_acks"]
+    ]
+    return bool(
+        manifest.get("schema_version")
+        == "forcesmolvla_stage3_recorded_ack_capture_manifest.v1"
+        and manifest.get("fixture_id") == fixture["fixture_id"]
+        and manifest.get("fixture_kind") == fixture["fixture_kind"]
+        and manifest.get("synthetic") == fixture["synthetic"]
+        and manifest.get("action_source") == fixture["action_source"]
+        and manifest.get("capture_origin") == fixture["capture_origin"]
+        and manifest.get("raw_session_path") == fixture["provenance"]["raw_session_path"]
+        and manifest.get("raw_episode_path") == fixture["provenance"]["raw_episode_path"]
+        and manifest.get("selection")
+        == {key: fixture["selection"][key] for key in selection_keys}
+        and manifest.get("gripper_authority")
+        == fixture["selection"]["gripper_authority"]
+        and manifest.get("ack_natural_identities") == expected_ack_identities
+        and manifest.get("observation_boundaries")
+        == fixture["selection"]["observation_provenance"]
+    )
+
+
 def _binding_checks(fixture: Mapping[str, Any]) -> dict[str, bool]:
     checks: dict[str, bool] = {}
     for name, binding in fixture["bindings"].items():
@@ -148,6 +193,7 @@ def _binding_checks(fixture: Mapping[str, Any]) -> dict[str, bool]:
     checks["capture_manifest"] = (
         capture_manifest.is_file()
         and sha256_file(capture_manifest) == provenance["capture_manifest_sha256"]
+        and _capture_manifest_matches(fixture, capture_manifest)
     )
     return checks
 
@@ -196,6 +242,247 @@ def _phase2_episode_inputs(
         json.loads(calibration_path.read_text(encoding="utf-8")),
         _runtime_contract(fixture),
     )
+
+
+def _stream(episode: Path, name: str) -> list[dict[str, Any]]:
+    path = episode / "streams" / f"{name}.jsonl"
+    if not path.is_file():
+        raise TemporalParityError(f"STAGE3_RECORDED_STREAM_MISSING:{name}")
+    try:
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    except (OSError, TypeError, ValueError) as error:
+        raise TemporalParityError(f"STAGE3_RECORDED_STREAM_INVALID:{name}") from error
+
+
+def _pose_without_frame_id(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "position_m": value.get("position_m"),
+        "quaternion_xyzw": value.get("quaternion_xyzw"),
+    }
+
+
+def _recorded_ack_id(*, request_sequence: int, request_stamp_ns: int) -> str:
+    return f"reference-ack:{request_sequence}:{request_stamp_ns}"
+
+
+def _validate_recorded_live_sources(
+    fixture: Mapping[str, Any], episode: Path,
+) -> None:
+    """Re-read native streams so a recorded-live gate cannot trust enriched IDs alone."""
+
+    if fixture["fixture_kind"] != "recorded_live":
+        return
+    if (
+        fixture["synthetic"] is not False
+        or fixture["capture_origin"] != "historical_native_real"
+    ):
+        raise TemporalParityError("STAGE3_RECORDED_CAPTURE_CLASSIFICATION_INVALID")
+
+    references = {
+        int(row["accepted_receive_monotonic_ns"]): row
+        for row in _stream(episode, "accepted_reference")
+    }
+    acknowledgements = {
+        int(row["receive_monotonic_ns"]): row
+        for row in _stream(episode, "reference_ack")
+    }
+    safe_actions = {
+        int(row["receive_monotonic_ns"]): row
+        for row in _stream(episode, "safe_action")
+    }
+    for reference in fixture["accepted_references"]:
+        raw = references.get(int(reference["accepted_receive_monotonic_ns"]))
+        if raw is None:
+            raise TemporalParityError("STAGE3_RECORDED_REFERENCE_IDENTITY_MISSING")
+        if (
+            int(raw.get("source_stamp_ns", 0)) != int(reference["source_stamp_ns"])
+            or raw.get("frame_id") != reference["frame_id"]
+            or _pose_without_frame_id(raw.get("pose", {})) != reference["pose"]
+            or float(raw.get("target_gripper_width_m", -1.0))
+            != float(reference["target_gripper_width_m"])
+            or reference["gripper_command_id_origin"]
+            != "recorded_gripper_target_and_goal_status"
+        ):
+            raise TemporalParityError("STAGE3_RECORDED_REFERENCE_SOURCE_MISMATCH")
+
+    authority = fixture["selection"]["gripper_authority"]
+    target_rows = [
+        row for row in _stream(episode, "gripper_target")
+        if row.get("action_goal_id") == authority["action_goal_id"]
+    ]
+    status_rows = [
+        row for row in _stream(episode, "gripper_goal_status")
+        if row.get("action_goal_id") == authority["action_goal_id"]
+    ]
+    if len(target_rows) != 1 or len(status_rows) != 1:
+        raise TemporalParityError("STAGE3_RECORDED_GRIPPER_ORIGIN_MISSING")
+    target, status = target_rows[0], status_rows[0]
+    expected_authority = {
+        "action_goal_id": target.get("action_goal_id"),
+        "local_goal_sequence": target.get("local_goal_sequence"),
+        "accepted_monotonic_ns": target.get("accepted_monotonic_ns"),
+        "target_receive_monotonic_ns": target.get("receive_monotonic_ns"),
+        "finished_monotonic_ns": status.get("finished_monotonic_ns"),
+        "status_receive_monotonic_ns": status.get("receive_monotonic_ns"),
+        "requested_state": target.get("requested_state"),
+        "target_width_m": target.get("target_width_m"),
+        "outcome": status.get("outcome"),
+    }
+    if expected_authority != authority:
+        raise TemporalParityError("STAGE3_RECORDED_GRIPPER_ORIGIN_MISMATCH")
+    if int(authority["finished_monotonic_ns"]) > int(fixture["temporal"]["session_start_ack_ns"]):
+        raise TemporalParityError("STAGE3_INITIAL_GRIPPER_AUTHORITY_NOT_ESTABLISHED")
+    if any(
+        reference["gripper_command_id"] != authority["action_goal_id"]
+        for reference in fixture["accepted_references"]
+    ):
+        raise TemporalParityError("STAGE3_RECORDED_REFERENCE_GRIPPER_ORIGIN_MISMATCH")
+
+    for acknowledgement in fixture["reference_acks"]:
+        raw = acknowledgements.get(int(acknowledgement["receive_monotonic_ns"]))
+        if raw is None:
+            raise TemporalParityError("STAGE3_RECORDED_ACK_IDENTITY_MISSING")
+        payload = raw.get("payload", {})
+        sequence = int(payload.get("request_sequence", -1))
+        stamp = int(payload.get("request_stamp_ns", 0))
+        if (
+            acknowledgement["ack_id_origin"] != "recorded_request_sequence_and_stamp"
+            or acknowledgement["ack_id"]
+            != _recorded_ack_id(request_sequence=sequence, request_stamp_ns=stamp)
+            or sequence != int(acknowledgement["request_sequence"])
+            or stamp != int(acknowledgement["request_stamp_ns"])
+            or int(payload.get("ack_monotonic_ns", 0))
+            != int(acknowledgement["controller_ack_monotonic_ns"])
+            or bool(payload.get("accepted")) is not True
+            or _pose_without_frame_id(payload.get("accepted_pose", {}))
+            != acknowledgement["payload"]["accepted_pose"]
+        ):
+            raise TemporalParityError("STAGE3_RECORDED_ACK_SOURCE_MISMATCH")
+        safe = safe_actions.get(int(acknowledgement["action_source_receive_monotonic_ns"]))
+        safe_payload = {} if safe is None else safe.get("payload", {})
+        arbitration = safe_payload.get("arbitration", {})
+        raw_action = arbitration.get("raw_action", {})
+        workspace = safe_payload.get("workspace_clipped", [])
+        if (
+            safe is None
+            or int(safe_payload.get("decision_id", -1))
+            != int(acknowledgement["action_decision_id"])
+            or int(safe_payload.get("equilibrium_source_stamp_ns", 0)) != stamp
+            or safe_payload.get("equilibrium_published") is not True
+            or arbitration.get("accepted") is not True
+            or raw_action.get("source") != acknowledgement["accepted_action_source"]
+            or bool(raw_action.get("intervention")) != acknowledgement["intervention"]
+            or bool(any(workspace)) != acknowledgement["workspace_clipped"]
+            or acknowledgement["accepted_action_source"] != fixture["action_source"]
+            or acknowledgement["slot_owner"] != "human_intervention"
+            or acknowledgement["gripper_command_id"] != authority["action_goal_id"]
+            or acknowledgement["gripper_ack_command_id"] != authority["action_goal_id"]
+        ):
+            raise TemporalParityError("STAGE3_RECORDED_ACTION_SOURCE_LINEAGE_MISMATCH")
+
+
+def _validate_transition_selection(fixture: Mapping[str, Any]) -> None:
+    if fixture["fixture_kind"] != "recorded_live":
+        return
+    try:
+        import pandas as pd
+    except ImportError as error:
+        raise TemporalParityError("STAGE3_TERMINAL_INDEX_READER_MISSING") from error
+    selection = fixture["selection"]
+    path = _resolve(fixture["bindings"]["terminal_transition_index"]["path"])
+    try:
+        frame = pd.read_parquet(path)
+        full_rows = frame[frame["transition_index"] == selection["full_macro_transition_index"]]
+        terminal_rows = frame[frame["transition_index"] == selection["terminal_transition_index"]]
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        raise TemporalParityError("STAGE3_TERMINAL_INDEX_INVALID") from error
+    if len(full_rows) != 1 or len(terminal_rows) != 1:
+        raise TemporalParityError("STAGE3_TERMINAL_TRANSITION_IDENTITY_MISSING")
+    full = full_rows.iloc[0]
+    terminal = terminal_rows.iloc[0]
+    start = int(selection["prepared_grid_start_index"])
+    terminal_global = start + int(selection["terminal_observation_grid_index"])
+    terminal_anchor = start + int(selection["next_observation_grid_index"])
+    mask = [bool(value) for value in terminal["executed_action_mask"]]
+    if not (
+        full["episode_id"] == terminal["episode_id"] == Path(
+            fixture["provenance"]["raw_episode_path"]
+        ).name
+        and int(full["anchor_frame"]) == start
+        and int(full["next_frame"]) == terminal_anchor
+        and int(full["executed_steps"]) == 3
+        and [bool(value) for value in full["executed_action_mask"]] == [True, True, True]
+        and bool(full["terminated"]) is False
+        and int(terminal["anchor_frame"]) == terminal_anchor
+        and int(terminal["next_frame"]) == terminal_global
+        and int(terminal["detector_terminal_frame"]) == terminal_global
+        and int(terminal["executed_steps"]) == 2
+        and mask == [True, True, False]
+        and bool(terminal["terminated"]) is True
+        and int(terminal["bootstrap_mask"]) == 0
+    ):
+        raise TemporalParityError("STAGE3_TERMINAL_TRANSITION_SOURCE_MISMATCH")
+
+
+def _validate_selection_against_prepared(
+    fixture: Mapping[str, Any], prepared: Any, episode: Path,
+) -> slice:
+    selection = fixture["selection"]
+    start = int(selection["prepared_grid_start_index"])
+    stop = int(selection["prepared_grid_stop_index_exclusive"])
+    terminal_local = int(selection["terminal_observation_grid_index"])
+    last_executable = int(selection["last_executable_grid_index"])
+    if not (
+        0 <= start < stop <= len(prepared.tuple_host_ns)
+        and stop - start == terminal_local + 1
+        and int(selection["next_observation_grid_index"]) == 3
+        and last_executable == terminal_local - 1
+    ):
+        raise TemporalParityError("STAGE3_RECORDED_SELECTION_BOUNDARY_INVALID")
+    grid = np.asarray(prepared.tuple_host_ns[start:stop], dtype=np.int64)
+    temporal = fixture["temporal"]
+    if not (
+        int(temporal["session_start_ack_ns"]) == int(grid[0])
+        and int(temporal["episode_end_ns"]) == int(grid[-1])
+        and int(temporal["terminal_boundary_ns"]) == int(grid[last_executable])
+        and int(temporal["policy_anchor_phase_on_30hz_grid"]) == 0
+    ):
+        raise TemporalParityError("STAGE3_RECORDED_SELECTION_TEMPORAL_MISMATCH")
+
+    expected_roles = {"current": 0, "next": 3, "terminal": terminal_local}
+    observations = selection["observation_provenance"]
+    if {row["role"]: int(row["local_grid_index"]) for row in observations} != expected_roles:
+        raise TemporalParityError("STAGE3_OBSERVATION_BOUNDARY_ROLE_MISMATCH")
+    provenance_fields = (
+        "state_pose_source_stamp_ns", "camera1_receive_monotonic_ns",
+        "camera2_receive_monotonic_ns", "gripper_source_stamp_ns",
+        "wrench_filter_output_stamp_ns", "action_ack_receive_monotonic_ns",
+        "validity_bits",
+    )
+    for row in observations:
+        local = int(row["local_grid_index"])
+        global_index = start + local
+        try:
+            external_path = prepared.camera1_paths[global_index].relative_to(episode).as_posix()
+            wrist_path = prepared.camera2_paths[global_index].relative_to(episode).as_posix()
+        except ValueError as error:
+            raise TemporalParityError("STAGE3_OBSERVATION_CAMERA_OUTSIDE_EPISODE") from error
+        if not (
+            int(row["global_grid_index"]) == global_index
+            and int(row["grid_monotonic_ns"]) == int(prepared.tuple_host_ns[global_index])
+            and np.array_equal(np.asarray(row["state7"]), prepared.state7[global_index])
+            and np.array_equal(np.asarray(row["wrench6"]), prepared.wrench6[global_index])
+            and row["external_camera_relative_path"] == external_path
+            and row["wrist_camera_relative_path"] == wrist_path
+            and all(
+                int(row[field]) == int(prepared.provenance[field][global_index])
+                for field in provenance_fields
+            )
+        ):
+            raise TemporalParityError("STAGE3_OBSERVATION_BOUNDARY_SOURCE_MISMATCH")
+    _validate_transition_selection(fixture)
+    _validate_recorded_live_sources(fixture, episode)
+    return slice(start, stop)
 
 
 def _ack_action7(
@@ -313,11 +600,14 @@ def _stage2_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
         calibration_payload=calibration,
         contract=contract,
     )
-    grid = np.asarray(prepared.tuple_host_ns, dtype=np.int64)
+    selected = _validate_selection_against_prepared(fixture, prepared, episode_dir)
+    grid = np.asarray(prepared.tuple_host_ns[selected], dtype=np.int64)
     ack_times = np.asarray(
-        prepared.provenance["action_ack_receive_monotonic_ns"], dtype=np.int64,
+        prepared.provenance["action_ack_receive_monotonic_ns"][selected], dtype=np.int64,
     )
-    ages_ms = np.asarray(prepared.provenance["action_ack_age_ms"], dtype=np.float64)
+    ages_ms = np.asarray(
+        prepared.provenance["action_ack_age_ms"][selected], dtype=np.float64,
+    )
     if np.any(ages_ms > float(temporal["max_ack_age_ms"])):
         raise TemporalParityError("STAGE2_ACK_MISSING_OR_STALE_FOR_PARITY")
     full, partial = _macro_plan(grid, temporal)
@@ -325,8 +615,9 @@ def _stage2_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
     macros: list[dict[str, Any]] = []
     identity_macros: list[dict[str, Any]] = []
     for anchor in full:
-        absolute = prepared.action7[anchor:anchor + 3]
-        anchor_state = prepared.state7[anchor]
+        global_anchor = selected.start + anchor
+        absolute = prepared.action7[global_anchor:global_anchor + 3]
+        anchor_state = prepared.state7[global_anchor]
         delta = ActionDeltaProcessor.to_delta(absolute, anchor_state)
         normalized, count = _normalized_once(
             normalizer, delta, owner="stage2", anchor=anchor,
@@ -359,6 +650,7 @@ def _stage2_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
         "macros": macros,
         "terminal_boundary_ns": int(temporal["terminal_boundary_ns"]),
         "partial_macro_quarantine": partial,
+        "observation_boundary": fixture["selection"]["observation_provenance"],
         "raw_identity_provenance": {
             "source": "recorded accepted_reference/reference_ack streams; not PreparedEpisode",
             "macros": identity_macros,
@@ -446,6 +738,7 @@ def _stage3_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
         "macros": macros,
         "terminal_boundary_ns": int(temporal["terminal_boundary_ns"]),
         "partial_macro_quarantine": partial,
+        "observation_boundary": fixture["selection"]["observation_provenance"],
         "raw_identity_provenance": {
             "source": "recorded accepted_reference/reference_ack streams",
             "macros": identity_macros,
@@ -524,6 +817,11 @@ def _comparison(stage2: Mapping[str, Any], stage3: Mapping[str, Any]) -> dict[st
         ),
         "terminal_boundary": stage2["terminal_boundary_ns"] == stage3["terminal_boundary_ns"],
         "partial_macro_quarantine": stage2["partial_macro_quarantine"] == stage3["partial_macro_quarantine"],
+        "current_next_terminal_observations": (
+            stage2["observation_boundary"] == stage3["observation_boundary"]
+            and [row["role"] for row in stage3["observation_boundary"]]
+            == ["current", "next", "terminal"]
+        ),
     }
     return {name: bool(value) for name, value in result.items()}
 
@@ -541,6 +839,8 @@ def run_recorded_ack_parity(
     eligible = (
         value["fixture_kind"] == "recorded_live"
         and value["provenance"]["recorded_live_evidence"] is True
+        and value["synthetic"] is False
+        and value["capture_origin"] == "historical_native_real"
     )
     all_pass = bool(bindings) and all(bindings.values()) and bool(comparisons) and all(comparisons.values())
     gate_pass = eligible and all_pass

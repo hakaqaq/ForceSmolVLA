@@ -5,13 +5,17 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "fixture_id", "fixture_kind", "provenance", "bindings",
-    "temporal", "accepted_references", "reference_acks", "anchor_states"
+    "schema_version", "fixture_id", "fixture_kind", "synthetic", "action_source",
+    "capture_origin", "provenance", "bindings", "selection", "temporal",
+    "accepted_references", "reference_acks", "anchor_states"
   ],
   "properties": {
     "schema_version": {"const": "forcesmolvla_stage3_recorded_ack_fixture.v1"},
     "fixture_id": {"$ref": "#/$defs/nonempty"},
     "fixture_kind": {"enum": ["recorded_live", "synthetic_unit_test"]},
+    "synthetic": {"type": "boolean"},
+    "action_source": {"enum": ["human", "policy"]},
+    "capture_origin": {"enum": ["historical_native_real", "synthetic_unit_test"]},
     "provenance": {
       "type": "object",
       "additionalProperties": false,
@@ -35,7 +39,7 @@
       "required": [
         "stage2_ack_converter", "stage2_temporal", "action_delta",
         "normalizer_source", "normalizer_manifest", "action_contract_v2",
-        "stage2_runtime_contract", "calibration_bundle"
+        "stage2_runtime_contract", "calibration_bundle", "terminal_transition_index"
       ],
       "properties": {
         "stage2_ack_converter": {"$ref": "#/$defs/file_binding"},
@@ -45,9 +49,11 @@
         "normalizer_manifest": {"$ref": "#/$defs/file_binding"},
         "action_contract_v2": {"$ref": "#/$defs/file_binding"},
         "stage2_runtime_contract": {"$ref": "#/$defs/file_binding"},
-        "calibration_bundle": {"$ref": "#/$defs/file_binding"}
+        "calibration_bundle": {"$ref": "#/$defs/file_binding"},
+        "terminal_transition_index": {"$ref": "#/$defs/file_binding"}
       }
     },
+    "selection": {"$ref": "#/$defs/selection"},
     "temporal": {
       "type": "object",
       "additionalProperties": false,
@@ -95,11 +101,19 @@
   "allOf": [
     {
       "if": {"properties": {"fixture_kind": {"const": "recorded_live"}}},
-      "then": {"properties": {"provenance": {"properties": {"recorded_live_evidence": {"const": true}}}}}
+      "then": {"properties": {
+        "synthetic": {"const": false},
+        "capture_origin": {"const": "historical_native_real"},
+        "provenance": {"properties": {"recorded_live_evidence": {"const": true}}}
+      }}
     },
     {
       "if": {"properties": {"fixture_kind": {"const": "synthetic_unit_test"}}},
-      "then": {"properties": {"provenance": {"properties": {"recorded_live_evidence": {"const": false}}}}}
+      "then": {"properties": {
+        "synthetic": {"const": true},
+        "capture_origin": {"const": "synthetic_unit_test"},
+        "provenance": {"properties": {"recorded_live_evidence": {"const": false}}}
+      }}
     }
   ],
   "$defs": {
@@ -126,6 +140,10 @@
       "type": "array", "minItems": 7, "maxItems": 7,
       "items": {"type": "number"}
     },
+    "vector6": {
+      "type": "array", "minItems": 6, "maxItems": 6,
+      "items": {"type": "number"}
+    },
     "pose": {
       "type": "object",
       "additionalProperties": false,
@@ -139,27 +157,42 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "accepted_receive_monotonic_ns", "pose", "target_gripper_width_m",
-        "gripper_command_id"
+        "accepted_receive_monotonic_ns", "source_stamp_ns", "frame_id", "pose",
+        "target_gripper_width_m", "gripper_command_id", "gripper_command_id_origin"
       ],
       "properties": {
         "accepted_receive_monotonic_ns": {"type": "integer", "minimum": 1},
+        "source_stamp_ns": {"type": "integer", "minimum": 1},
+        "frame_id": {"$ref": "#/$defs/nonempty"},
         "pose": {"$ref": "#/$defs/pose"},
         "target_gripper_width_m": {"type": "number", "minimum": 0, "maximum": 0.1},
-        "gripper_command_id": {"$ref": "#/$defs/nonempty"}
+        "gripper_command_id": {"$ref": "#/$defs/nonempty"},
+        "gripper_command_id_origin": {
+          "enum": ["recorded_gripper_target_and_goal_status", "synthetic_unit_test"]
+        }
       }
     },
     "ack": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ack_id", "receive_monotonic_ns", "gripper_command_id",
+        "ack_id", "ack_id_origin", "receive_monotonic_ns", "request_sequence",
+        "request_stamp_ns", "controller_ack_monotonic_ns", "action_decision_id",
+        "action_source_receive_monotonic_ns", "gripper_command_id",
         "gripper_ack_command_id", "slot_owner", "accepted_action_source",
         "intervention", "workspace_clipped", "payload"
       ],
       "properties": {
         "ack_id": {"$ref": "#/$defs/nonempty"},
+        "ack_id_origin": {
+          "enum": ["recorded_request_sequence_and_stamp", "synthetic_unit_test"]
+        },
         "receive_monotonic_ns": {"type": "integer", "minimum": 1},
+        "request_sequence": {"type": "integer", "minimum": 0},
+        "request_stamp_ns": {"type": "integer", "minimum": 1},
+        "controller_ack_monotonic_ns": {"type": "integer", "minimum": 1},
+        "action_decision_id": {"type": "integer", "minimum": 0},
+        "action_source_receive_monotonic_ns": {"type": "integer", "minimum": 1},
         "gripper_command_id": {"$ref": "#/$defs/nonempty"},
         "gripper_ack_command_id": {"$ref": "#/$defs/nonempty"},
         "slot_owner": {"enum": ["policy", "human_intervention", "human_release_hold", "safety_hold", "offline_demonstration"]},
@@ -175,6 +208,81 @@
             "accepted_pose": {"$ref": "#/$defs/pose"}
           }
         }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role", "local_grid_index", "global_grid_index", "grid_monotonic_ns",
+        "state7", "wrench6", "external_camera_relative_path",
+        "wrist_camera_relative_path", "state_pose_source_stamp_ns",
+        "camera1_receive_monotonic_ns", "camera2_receive_monotonic_ns",
+        "gripper_source_stamp_ns", "wrench_filter_output_stamp_ns",
+        "action_ack_receive_monotonic_ns", "validity_bits"
+      ],
+      "properties": {
+        "role": {"enum": ["current", "next", "terminal"]},
+        "local_grid_index": {"type": "integer", "minimum": 0},
+        "global_grid_index": {"type": "integer", "minimum": 0},
+        "grid_monotonic_ns": {"type": "integer", "minimum": 1},
+        "state7": {"$ref": "#/$defs/vector7"},
+        "wrench6": {"$ref": "#/$defs/vector6"},
+        "external_camera_relative_path": {"$ref": "#/$defs/nonempty"},
+        "wrist_camera_relative_path": {"$ref": "#/$defs/nonempty"},
+        "state_pose_source_stamp_ns": {"type": "integer", "minimum": 1},
+        "camera1_receive_monotonic_ns": {"type": "integer", "minimum": 1},
+        "camera2_receive_monotonic_ns": {"type": "integer", "minimum": 1},
+        "gripper_source_stamp_ns": {"type": "integer", "minimum": 1},
+        "wrench_filter_output_stamp_ns": {"type": "integer", "minimum": 1},
+        "action_ack_receive_monotonic_ns": {"type": "integer", "minimum": 1},
+        "validity_bits": {"const": 255}
+      }
+    },
+    "gripper_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action_goal_id", "local_goal_sequence", "accepted_monotonic_ns",
+        "target_receive_monotonic_ns", "finished_monotonic_ns",
+        "status_receive_monotonic_ns", "requested_state", "target_width_m", "outcome"
+      ],
+      "properties": {
+        "action_goal_id": {"$ref": "#/$defs/nonempty"},
+        "local_goal_sequence": {"type": "integer", "minimum": 1},
+        "accepted_monotonic_ns": {"type": "integer", "minimum": 1},
+        "target_receive_monotonic_ns": {"type": "integer", "minimum": 1},
+        "finished_monotonic_ns": {"type": "integer", "minimum": 1},
+        "status_receive_monotonic_ns": {"type": "integer", "minimum": 1},
+        "requested_state": {"enum": ["OPEN", "CLOSED"]},
+        "target_width_m": {"type": "number", "minimum": 0, "maximum": 0.1},
+        "outcome": {"enum": ["reached", "stalled"]}
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prepared_grid_start_index", "prepared_grid_stop_index_exclusive",
+        "current_observation_grid_index", "next_observation_grid_index",
+        "terminal_observation_grid_index", "last_executable_grid_index",
+        "full_macro_transition_index", "terminal_transition_index",
+        "observation_provenance", "gripper_authority"
+      ],
+      "properties": {
+        "prepared_grid_start_index": {"type": "integer", "minimum": 0},
+        "prepared_grid_stop_index_exclusive": {"type": "integer", "minimum": 1},
+        "current_observation_grid_index": {"const": 0},
+        "next_observation_grid_index": {"const": 3},
+        "terminal_observation_grid_index": {"type": "integer", "minimum": 4},
+        "last_executable_grid_index": {"type": "integer", "minimum": 3},
+        "full_macro_transition_index": {"type": "integer", "minimum": 0},
+        "terminal_transition_index": {"type": "integer", "minimum": 0},
+        "observation_provenance": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"$ref": "#/$defs/observation"}
+        },
+        "gripper_authority": {"$ref": "#/$defs/gripper_authority"}
       }
     }
   }

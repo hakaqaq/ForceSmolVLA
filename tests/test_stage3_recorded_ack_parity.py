@@ -136,13 +136,22 @@ def _synthetic_fixture(tmp_path: Path) -> dict:
         command = f"gripper-{index}"
         references.append({
             "accepted_receive_monotonic_ns": ack_time - 1_000_000,
+            "source_stamp_ns": ack_time - 1_000_000,
+            "frame_id": "fr3_link0",
             "pose": pose,
             "target_gripper_width_m": 0.085 if index % 2 else 0.0,
             "gripper_command_id": command,
+            "gripper_command_id_origin": "synthetic_unit_test",
         })
         acknowledgements.append({
             "ack_id": f"ack-{index}",
+            "ack_id_origin": "synthetic_unit_test",
             "receive_monotonic_ns": ack_time,
+            "request_sequence": index,
+            "request_stamp_ns": ack_time - 2_000_000,
+            "controller_ack_monotonic_ns": ack_time - 500_000,
+            "action_decision_id": index,
+            "action_source_receive_monotonic_ns": ack_time - 2_000_000,
             "gripper_command_id": command,
             "gripper_ack_command_id": command,
             "slot_owner": "policy",
@@ -228,6 +237,9 @@ def _synthetic_fixture(tmp_path: Path) -> dict:
         "schema_version": "forcesmolvla_stage3_recorded_ack_fixture.v1",
         "fixture_id": "synthetic-tool-test",
         "fixture_kind": "synthetic_unit_test",
+        "synthetic": True,
+        "action_source": "policy",
+        "capture_origin": "synthetic_unit_test",
         "provenance": {
             "recorded_live_evidence": False,
             "raw_session_path": str(raw),
@@ -247,6 +259,50 @@ def _synthetic_fixture(tmp_path: Path) -> dict:
             "action_contract_v2": _binding("configs/stage2_action_contract.v2.development.json"),
             "stage2_runtime_contract": _path_binding(runtime),
             "calibration_bundle": _path_binding(calibration),
+            "terminal_transition_index": _path_binding(capture),
+        },
+        "selection": {
+            "prepared_grid_start_index": 0,
+            "prepared_grid_stop_index_exclusive": 9,
+            "current_observation_grid_index": 0,
+            "next_observation_grid_index": 3,
+            "terminal_observation_grid_index": 8,
+            "last_executable_grid_index": 7,
+            "full_macro_transition_index": 0,
+            "terminal_transition_index": 1,
+            "observation_provenance": [
+                {
+                    "role": role,
+                    "local_grid_index": index,
+                    "global_grid_index": index,
+                    "grid_monotonic_ns": grid[index],
+                    "state7": state_position + [0.0, 0.0, 0.0, 0.0],
+                    "wrench6": [0.0] * 6,
+                    "external_camera_relative_path": "images/camera1.rgb",
+                    "wrist_camera_relative_path": "images/camera2.rgb",
+                    "state_pose_source_stamp_ns": grid[index],
+                    "camera1_receive_monotonic_ns": grid[index],
+                    "camera2_receive_monotonic_ns": grid[index],
+                    "gripper_source_stamp_ns": grid[index],
+                    "wrench_filter_output_stamp_ns": grid[index],
+                    "action_ack_receive_monotonic_ns": {
+                        0: ack_times[0], 3: ack_times[2], 8: ack_times[4],
+                    }[index],
+                    "validity_bits": 255,
+                }
+                for role, index in (("current", 0), ("next", 3), ("terminal", 8))
+            ],
+            "gripper_authority": {
+                "action_goal_id": "synthetic-gripper-authority",
+                "local_goal_sequence": 1,
+                "accepted_monotonic_ns": 900_000_000,
+                "target_receive_monotonic_ns": 901_000_000,
+                "finished_monotonic_ns": 950_000_000,
+                "status_receive_monotonic_ns": 951_000_000,
+                "requested_state": "OPEN",
+                "target_width_m": 0.085,
+                "outcome": "reached",
+            },
         },
         "temporal": {
             "session_start_ack_ns": grid[0],
