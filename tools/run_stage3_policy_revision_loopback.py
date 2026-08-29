@@ -159,25 +159,67 @@ def verify_historical_evidence(
     }
 
 
-def _matches_git_glob(relative_path: str, pattern: str) -> bool:
-    candidate = PurePosixPath(relative_path)
-    while True:
-        if candidate.match(pattern):
-            return True
-        if "/**/" not in pattern:
-            return False
-        pattern = pattern.replace("/**/", "/", 1)
+def _validated_repo_relative_path(value: str, *, allow_glob: bool) -> str:
+    require(bool(value), "G6C_EMPTY_BOUND_PATH")
+    require("\\" not in value, f"G6C_NON_POSIX_BOUND_PATH:{value}")
+    require(not value.startswith(":"), f"G6C_INVALID_PATHSPEC_MAGIC:{value}")
+    require(
+        not PurePosixPath(value).is_absolute(),
+        f"G6C_ABSOLUTE_BOUND_PATH:{value}",
+    )
+    require(
+        all(component not in {"", ".", ".."} for component in value.split("/")),
+        f"G6C_BOUND_PATH_TRAVERSAL:{value}",
+    )
+    if not allow_glob:
+        require(
+            not any(character in value for character in "*?["),
+            f"G6C_GLOB_IN_LITERAL_BOUND_PATH:{value}",
+        )
+    return value
 
 
-def _configured_bound_paths(config: Mapping[str, Any], repo_root: Path) -> set[str]:
-    source = config["source_binding"]
-    paths = {
-        path.relative_to(repo_root).as_posix()
-        for pattern in source["recursive_globs"]
-        for path in repo_root.glob(pattern)
-        if path.is_file()
+def _git_tree_glob_paths(
+    repo_root: Path, commit: str, patterns: list[str],
+) -> set[str]:
+    """Enumerate a committed tree with Git's native glob pathspec semantics."""
+    pathspecs = [
+        f":(glob){_validated_repo_relative_path(pattern, allow_glob=True)}"
+        for pattern in patterns
+    ]
+    if not pathspecs:
+        return set()
+    with tempfile.TemporaryDirectory(prefix="g6c-git-index-") as temporary:
+        git_environment = os.environ.copy()
+        git_environment["GIT_INDEX_FILE"] = str(Path(temporary) / "index")
+        loaded = subprocess.run(
+            ["git", "read-tree", commit],
+            cwd=repo_root,
+            env=git_environment,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        require(
+            loaded.returncode == 0,
+            f"G6C_COMMITTED_TREE_ENUMERATION_FAILED:{commit}",
+        )
+        output = subprocess.check_output(
+            ["git", "ls-files", "-z", "--", *pathspecs],
+            cwd=repo_root,
+            env=git_environment,
+            stderr=subprocess.DEVNULL,
+        )
+    return {
+        path.decode("utf-8")
+        for path in output.split(b"\0")
+        if path
     }
-    paths.update(source["exact_files"])
+
+
+def _static_bound_paths(config: Mapping[str, Any]) -> set[str]:
+    source = config["source_binding"]
+    paths = set(source["exact_files"])
     paths.update(
         relative
         for relatives in config.get("contract_files", {}).values()
@@ -185,7 +227,76 @@ def _configured_bound_paths(config: Mapping[str, Any], repo_root: Path) -> set[s
     )
     if config.get("approved_hybrid_parent"):
         paths.add(config["approved_hybrid_parent"])
+    return {
+        _validated_repo_relative_path(path, allow_glob=False)
+        for path in paths
+    }
+
+
+def _worktree_bound_paths(config: Mapping[str, Any], repo_root: Path) -> set[str]:
+    source = config["source_binding"]
+    paths = {
+        path.relative_to(repo_root).as_posix()
+        for pattern in source["recursive_globs"]
+        for path in repo_root.glob(
+            _validated_repo_relative_path(pattern, allow_glob=True)
+        )
+        if path.is_file()
+    }
     return paths
+
+
+def _committed_bound_paths(
+    config: Mapping[str, Any], repo_root: Path, commit: str,
+) -> set[str]:
+    source = config["source_binding"]
+    paths = _git_tree_glob_paths(
+        repo_root, commit, list(source["recursive_globs"]),
+    )
+    vendor_path = source.get("vendor_path", "").rstrip("/")
+    if vendor_path:
+        vendor_path = _validated_repo_relative_path(vendor_path, allow_glob=False)
+        paths = {
+            path for path in paths if not path.startswith(f"{vendor_path}/")
+        }
+    return paths
+
+
+def verify_worktree_bound_sources_clean(
+    config: Mapping[str, Any], repo_root: Path = ROOT,
+) -> dict[str, Any]:
+    """Check worktree dirt independently from committed-tree provenance."""
+    _static_bound_paths(config)  # Validate non-recursive bindings without treating artifacts as Git blobs.
+    head = _git("rev-parse", "HEAD", repo_root=repo_root)
+    committed_paths = _committed_bound_paths(config, repo_root, head)
+    worktree_paths = _worktree_bound_paths(config, repo_root)
+    vendor_path = config["source_binding"].get("vendor_path", "").rstrip("/")
+    if vendor_path:
+        vendor_path = _validated_repo_relative_path(vendor_path, allow_glob=False)
+        worktree_paths = {
+            path for path in worktree_paths
+            if not path.startswith(f"{vendor_path}/")
+        }
+    require(
+        worktree_paths == committed_paths,
+        "G6C_DIRTY_BOUND_PATH_SET_MISMATCH",
+    )
+    repo_resolved = repo_root.resolve()
+    for relative_path in sorted(committed_paths):
+        worktree_path = repo_root / relative_path
+        require(
+            worktree_path.resolve().is_relative_to(repo_resolved),
+            f"G6C_BOUND_PATH_OUTSIDE_REPOSITORY:{relative_path}",
+        )
+        require(
+            worktree_path.is_file(),
+            f"G6C_DIRTY_BOUND_FILE_MISSING:{relative_path}",
+        )
+        require(
+            worktree_path.read_bytes() == _git_blob(repo_root, head, relative_path),
+            f"G6C_DIRTY_BOUND_FILE_MISMATCH:{relative_path}",
+        )
+    return {"head": head, "bound_file_count": len(committed_paths), "clean": True}
 
 
 def verify_frozen_bound_sources(
@@ -193,45 +304,19 @@ def verify_frozen_bound_sources(
 ) -> dict[str, Any]:
     """Explicit release-boundary check; ordinary loopback intentionally skips it."""
     current = verify_required_freeze_ancestor(config, repo_root)
+    _static_bound_paths(config)  # Current-tree closure hashes these separately.
     freeze = current["required_freeze_ancestor"]
     source = config["source_binding"]
     vendor_path = source.get("vendor_path", "").rstrip("/")
-    current_paths = _configured_bound_paths(config, repo_root)
-    tree_paths = set(
-        _git("ls-tree", "-r", "--name-only", freeze, repo_root=repo_root).splitlines()
-    )
-    frozen_paths = {
-        path
-        for path in tree_paths
-        if any(_matches_git_glob(path, pattern) for pattern in source["recursive_globs"])
-    }
-    frozen_paths.update(source["exact_files"])
-    frozen_paths.update(
-        relative
-        for relatives in config.get("contract_files", {}).values()
-        for relative in relatives
-    )
-    if config.get("approved_hybrid_parent"):
-        frozen_paths.add(config["approved_hybrid_parent"])
-    if vendor_path:
-        current_paths = {
-            path for path in current_paths if not path.startswith(f"{vendor_path}/")
-        }
-        frozen_paths = {
-            path for path in frozen_paths if not path.startswith(f"{vendor_path}/")
-        }
+    frozen_paths = _committed_bound_paths(config, repo_root, freeze)
+    current_paths = _committed_bound_paths(config, repo_root, current["head"])
     require(
         current_paths == frozen_paths,
         "G6C_FROZEN_SOURCE_PATH_SET_MISMATCH",
     )
     entries = []
-    for relative_path in sorted(frozen_paths):
-        frozen_bytes = _git_blob(repo_root, freeze, relative_path)
-        current_bytes = (repo_root / relative_path).read_bytes()
-        require(
-            current_bytes == frozen_bytes,
-            f"G6C_FROZEN_BOUND_FILE_MISMATCH:{relative_path}",
-        )
+    for relative_path in sorted(current_paths):
+        current_bytes = _git_blob(repo_root, current["head"], relative_path)
         entries.append({
             "relative_path": relative_path,
             "size_bytes": len(current_bytes),
@@ -241,12 +326,17 @@ def verify_frozen_bound_sources(
     if vendor_path:
         vendor_commit = _git("rev-parse", f"{freeze}:{vendor_path}", repo_root=repo_root)
         require(
-            _git("rev-parse", f":{vendor_path}", repo_root=repo_root) == vendor_commit,
+            _git(
+                "rev-parse", f"{current['head']}:{vendor_path}", repo_root=repo_root,
+            ) == vendor_commit,
             "G6C_FROZEN_VENDOR_GITLINK_MISMATCH",
         )
     return {
         **current,
         "bound_file_count": len(entries),
+        "frozen_path_count": len(frozen_paths),
+        "current_path_count": len(current_paths),
+        "path_set_parity": True,
         "bound_tree_sha256": canonical_sha256(entries),
         "vendor_commit": vendor_commit,
     }

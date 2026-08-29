@@ -78,8 +78,21 @@ def provenance_repo(tmp_path: Path) -> tuple[Path, dict, str]:
     )
     _git(repo, "config", "user.name", "G6C Test")
     _git(repo, "config", "user.email", "g6c@example.invalid")
-    (repo / "bound").mkdir()
-    (repo / "bound/source.txt").write_text("frozen source\n", encoding="utf-8")
+    included = {
+        "src/forcesmolvla/top.py": "top\n",
+        "src/forcesmolvla/rft/a.py": "rft\n",
+        "src/forcesmolvla/rft/stage3/a.py": "stage3\n",
+        "src/forcesmolvla/rft/stage3/nested/a.py": "nested\n",
+    }
+    excluded = {
+        "src/forcesmolvla/rft/a.json": "{}\n",
+        "src/other/a.py": "other\n",
+        "tools/a.py": "tool\n",
+    }
+    for relative_path, content in {**included, **excluded}.items():
+        path = repo / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
     (repo / "artifacts").mkdir()
     historical = {"baseline": {"head": "0" * 40}, "result": "PASS"}
     historical["canonical_report_sha256"] = canonical_sha256(historical)
@@ -107,7 +120,7 @@ def provenance_repo(tmp_path: Path) -> tuple[Path, dict, str]:
             },
         },
         "source_binding": {
-            "recursive_globs": ["bound/*.txt"],
+            "recursive_globs": ["src/forcesmolvla/**/*.py"],
             "exact_files": [],
             "vendor_path": "",
         },
@@ -125,7 +138,7 @@ def test_freeze_and_descendant_with_unchanged_bound_closure_pass(
     assert g6p.verify_historical_evidence(provenance, repo)[
         "historical_evidence_verified"
     ] is True
-    assert g6p.verify_frozen_bound_sources(provenance, repo)["bound_file_count"] == 1
+    assert g6p.verify_frozen_bound_sources(provenance, repo)["bound_file_count"] == 4
 
     (repo / "unrelated.txt").write_text("descendant only\n", encoding="utf-8")
     _git(repo, "add", "unrelated.txt")
@@ -133,7 +146,82 @@ def test_freeze_and_descendant_with_unchanged_bound_closure_pass(
     descendant = g6p.verify_required_freeze_ancestor(provenance, repo)
     assert descendant["head"] != freeze
     assert descendant["freeze_ancestor_verified"] is True
-    assert g6p.verify_frozen_bound_sources(provenance, repo)["bound_file_count"] == 1
+    first = g6p.verify_frozen_bound_sources(provenance, repo)
+    second = g6p.verify_frozen_bound_sources(provenance, repo)
+    assert first == second
+    assert first["bound_file_count"] == 4
+
+
+def test_git_native_recursive_pathspec_includes_zero_to_many_components(
+    provenance_repo: tuple[Path, dict, str],
+) -> None:
+    repo, provenance, freeze = provenance_repo
+    paths = g6p._git_tree_glob_paths(
+        repo, freeze, provenance["source_binding"]["recursive_globs"],
+    )
+    assert paths == {
+        "src/forcesmolvla/top.py",
+        "src/forcesmolvla/rft/a.py",
+        "src/forcesmolvla/rft/stage3/a.py",
+        "src/forcesmolvla/rft/stage3/nested/a.py",
+    }
+
+
+def test_nested_bound_path_removed_fails_closed(
+    provenance_repo: tuple[Path, dict, str],
+) -> None:
+    repo, provenance, _ = provenance_repo
+    nested = repo / "src/forcesmolvla/rft/stage3/nested/a.py"
+    nested.unlink()
+    _git(repo, "add", "-u")
+    _git(repo, "commit", "-m", "remove nested bound source")
+    with pytest.raises(RuntimeError, match="G6C_FROZEN_SOURCE_PATH_SET_MISMATCH"):
+        g6p.verify_frozen_bound_sources(provenance, repo)
+
+
+def test_nested_bound_path_added_fails_closed(
+    provenance_repo: tuple[Path, dict, str],
+) -> None:
+    repo, provenance, _ = provenance_repo
+    added = repo / "src/forcesmolvla/rft/stage3/nested/deeper/a.py"
+    added.parent.mkdir(parents=True)
+    added.write_text("added\n", encoding="utf-8")
+    _git(repo, "add", added.relative_to(repo).as_posix())
+    _git(repo, "commit", "-m", "add nested bound source")
+    with pytest.raises(RuntimeError, match="G6C_FROZEN_SOURCE_PATH_SET_MISMATCH"):
+        g6p.verify_frozen_bound_sources(provenance, repo)
+
+
+def test_dirty_nested_bound_content_and_path_changes_fail_closed(
+    provenance_repo: tuple[Path, dict, str],
+) -> None:
+    repo, provenance, _ = provenance_repo
+    nested = repo / "src/forcesmolvla/rft/stage3/nested/a.py"
+    nested.write_text("dirty content\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="G6C_DIRTY_BOUND_FILE_MISMATCH"):
+        g6p.verify_worktree_bound_sources_clean(provenance, repo)
+
+    nested.write_text("nested\n", encoding="utf-8")
+    added = repo / "src/forcesmolvla/rft/stage3/nested/dirty.py"
+    added.write_text("dirty path\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="G6C_DIRTY_BOUND_PATH_SET_MISMATCH"):
+        g6p.verify_worktree_bound_sources_clean(provenance, repo)
+
+
+@pytest.mark.parametrize(
+    "pattern, error",
+    [
+        ("/src/**/*.py", "G6C_ABSOLUTE_BOUND_PATH"),
+        ("src/../outside.py", "G6C_BOUND_PATH_TRAVERSAL"),
+        (":(glob)src/**/*.py", "G6C_INVALID_PATHSPEC_MAGIC"),
+    ],
+)
+def test_invalid_recursive_pathspecs_fail_closed(
+    provenance_repo: tuple[Path, dict, str], pattern: str, error: str,
+) -> None:
+    repo, _, freeze = provenance_repo
+    with pytest.raises(RuntimeError, match=error):
+        g6p._git_tree_glob_paths(repo, freeze, [pattern])
 
 
 def test_missing_freeze_and_non_descendant_fail_closed(
@@ -166,9 +254,10 @@ def test_explicit_frozen_verification_rejects_bound_file_tamper(
     provenance_repo: tuple[Path, dict, str],
 ) -> None:
     repo, provenance, _ = provenance_repo
-    (repo / "bound/source.txt").write_text("tampered source\n", encoding="utf-8")
-    with pytest.raises(RuntimeError, match="G6C_FROZEN_BOUND_FILE_MISMATCH"):
-        g6p.verify_frozen_bound_sources(provenance, repo)
+    path = repo / "src/forcesmolvla/rft/stage3/a.py"
+    path.write_text("tampered source\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="G6C_DIRTY_BOUND_FILE_MISMATCH"):
+        g6p.verify_worktree_bound_sources_clean(provenance, repo)
 
 
 def quiet(**overrides) -> QuiescentBoundary:
