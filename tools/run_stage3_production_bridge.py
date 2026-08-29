@@ -192,6 +192,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--episode", type=Path)
     parser.add_argument("--state-root", type=Path)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--operator-task-outcome",
+        choices=("success", "failure"),
+        help="Required operator semantic label for an integrated shadow episode.",
+    )
     parser.add_argument("--detector-worker-request", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--detector-worker-output", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
@@ -219,7 +224,11 @@ def main(argv: list[str] | None = None) -> int:
         config=config,
         state_root=state_root,
         episode_materializer=frozen_episode_materializer(OneShotFrozenG1Detector()),
-    ).process_episode(episode, dry_run=args.dry_run)
+    ).process_episode(
+        episode,
+        dry_run=args.dry_run,
+        operator_task_outcome=args.operator_task_outcome,
+    )
     print(json.dumps(report.to_dict(), sort_keys=True, indent=2))
     return 0 if report.status in {"DRY_RUN_READY", "SEALED_COMMITTED", "ACTIVE_STAGED"} else 2
 

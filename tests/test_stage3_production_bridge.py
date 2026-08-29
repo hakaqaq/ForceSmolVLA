@@ -204,6 +204,252 @@ def _fixture(tmp_path: Path, *, sealed: bool = True) -> Path:
     return episode
 
 
+def _integrated_shadow_fixture(episode: Path) -> None:
+    dataset = episode.parent.parent
+    revision = "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
+    identity = {
+        "session_id": "stage3-shadow-fixture",
+        "episode_id": episode.name,
+        "clock_domain_id": "upper_host_monotonic",
+        "policy_revision": revision,
+        "policy_epoch": 0,
+        "reset_generation": 0,
+        "takeover_generation": 0,
+    }
+    _write_json(
+        dataset / "session.json",
+        {
+            "primary_alignment_clock": "upper_host_receive_monotonic_ns",
+            "tool_config_hash": "tool-profile-fixture",
+        },
+    )
+    _write_json(
+        dataset / "integrated_capture_session.json",
+        {
+            "schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+            "contract": {
+                "schema": "forcesmolvla-stage3-integrated-capture-v1",
+                "mode": "shadow",
+                "identity": identity,
+                "actual_action_source": "human",
+                "policy_inference": True,
+                "policy_execution": False,
+                "formal_replay": False,
+                "real_online_r": False,
+                "controller_owner": "recorder",
+                "controller_process_count": 1,
+                "recorder_controller": True,
+                "deploy_controller": False,
+            },
+            "clock_binding": {
+                "native_primary_alignment_clock": "upper_host_receive_monotonic_ns",
+                "policy_request_clock_domain_id": "upper_host_monotonic_ns",
+                "same_upper_host_monotonic_epoch": True,
+                "stage3_clock_domain_id": "upper_host_monotonic",
+            },
+            "controller_owner": "recorder",
+            "controller_process_count": 1,
+            "deploy_controller_started": False,
+            "policy_action_publisher_created": False,
+            "policy_metadata": {
+                "model_sha256": revision,
+                "dataset_repo_id": "local/task2_lerobotv3",
+                "tool_profile_sha256": "tool-profile-fixture",
+                "calibration_id": "calibration-fixture",
+            },
+        },
+    )
+    stream_root = dataset / "integrated_capture" / episode.name / "streams"
+    native_streams = episode / "streams"
+    native_pose = json.loads(
+        (native_streams / "measured_tcp_pose.jsonl").read_text().splitlines()[1]
+    )
+    native_wrench = json.loads(
+        (native_streams / "wrench_notch_sensor.jsonl").read_text().splitlines()[1]
+    )
+    native_gripper = json.loads(
+        (native_streams / "gripper_state.jsonl").read_text().splitlines()[1]
+    )
+    t_ref_ns = 1_101_000_000
+    observation_id = f"{episode.name}:observation:000000"
+    observation = {
+        "schema": "forcesmolvla-stage3-integrated-capture-v1",
+        **identity,
+        "observation_id": observation_id,
+        "t_ref_ns": t_ref_ns,
+        "stream_timestamps_ns": {
+            "measured_tcp_pose": native_pose["receive_monotonic_ns"] + 100_000,
+            "wrench_notch_sensor": native_wrench["receive_monotonic_ns"] + 100_000,
+            "gripper_state": native_gripper["receive_monotonic_ns"] + 100_000,
+            "external_camera": 1_100_000_000,
+            "wrist_camera": 1_100_000_000,
+        },
+        "stream_ids": {
+            "measured_tcp_pose": (
+                f"source:{native_pose['source_stamp_ns']}@receive:"
+                f"{native_pose['receive_monotonic_ns'] + 100_000}"
+            ),
+            "wrench_notch_sensor": (
+                f"source:{native_wrench['source_stamp_ns']}@receive:"
+                f"{native_wrench['receive_monotonic_ns'] + 100_000}"
+            ),
+            "gripper_state": (
+                f"source:{native_gripper['source_stamp_ns']}@receive:"
+                f"{native_gripper['receive_monotonic_ns'] + 100_000}"
+            ),
+            "external_camera": "images/external/frame_000001.jpg",
+            "wrist_camera": "images/wrist/frame_000001.jpg",
+        },
+    }
+    request = {
+        "schema": "forcesmolvla-stage3-policy-lineage-v1",
+        **identity,
+        "observation_id": observation_id,
+        "request_id": "request-1",
+        "chunk_id": "live-request-1",
+        "proposal_id": "policy-proposal:request-1",
+        "t_ref_ns": t_ref_ns,
+        "request_clock_domain_id": "upper_host_monotonic_ns",
+        "request_recorded_monotonic_ns": 1_102_000_000,
+    }
+    result = {
+        **request,
+        "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+        "result_id": "policy-result:request-1",
+        "result_recorded_monotonic_ns": 1_103_000_000,
+        "shadow_proposal": True,
+        "executed": False,
+    }
+    proposal = {
+        **result,
+        "schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+        "actual_action_source": "human",
+        "policy_inference": True,
+        "policy_execution": False,
+        "formal_replay": False,
+        "real_online_r": False,
+        "action_semantics": "absolute7",
+        "valid_horizon": 1,
+        "actions_absolute7": [[0.5, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085]],
+    }
+    _write_jsonl(stream_root / "policy_shadow_observation.jsonl", [observation])
+    _write_jsonl(stream_root / "policy_shadow_request.jsonl", [request])
+    _write_jsonl(stream_root / "policy_shadow_result.jsonl", [result])
+    _write_jsonl(stream_root / "policy_shadow_proposal.jsonl", [proposal])
+
+    safe_rows = [
+        json.loads(line)
+        for line in (native_streams / "safe_action.jsonl").read_text().splitlines()
+    ]
+    ack_rows = [
+        json.loads(line)
+        for line in (native_streams / "reference_ack.jsonl").read_text().splitlines()
+    ]
+    human_acks = []
+    observed_ack_count = 0
+    for safe, ack in zip(safe_rows, ack_rows, strict=True):
+        receive_ns = int(ack["receive_monotonic_ns"])
+        ack_observation = observation_id if receive_ns >= t_ref_ns else None
+        observed_ack_count += ack_observation is not None
+        stamp = int(ack["payload"]["request_stamp_ns"])
+        human_acks.append(
+            {
+                "schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+                **identity,
+                "ack_id": f"human-ack:{stamp}",
+                "observation_id": ack_observation,
+                "receive_monotonic_ns": receive_ns,
+                "actual_action_source": "human",
+                "policy_result_id": None,
+                "proposal_id": None,
+                "policy_executed_transition": False,
+                "policy_execution": False,
+                "formal_replay": False,
+                "real_online_r": False,
+                "safe_action": safe["payload"],
+                "reference_ack": ack["payload"],
+            }
+        )
+    _write_jsonl(stream_root / "policy_shadow_human_ack.jsonl", human_acks)
+
+    generation = GripperGeneration(
+        episode_id=episode.name,
+        reset_generation=0,
+        takeover_generation=0,
+        policy_revision=revision,
+        policy_epoch=0,
+    )
+    lease = InitialGripperAuthority(
+        episode_id=episode.name,
+        origin_local_goal_sequence=9,
+        origin_action_goal_id="integrated-startup-open",
+        origin_accepted_monotonic_ns=800_000_000,
+        requested_state="OPEN",
+        requested_width_m=0.085,
+        terminal_outcome="reached",
+        terminal_finished_monotonic_ns=850_000_000,
+        feedback_width_m=0.085,
+        feedback_state="OPEN",
+        feedback_monotonic_ns=990_000_000,
+        captured_monotonic_ns=995_000_000,
+        feedback_age_ns=5_000_000,
+        clock_domain_id="upper_host_monotonic",
+        generation=generation,
+    ).validate(max_feedback_age_ns=100_000_000).to_dict()
+    _write_json(stream_root / "policy_shadow_initial_gripper_lease.json", lease)
+    camera_records = []
+    for role in ("external", "wrist"):
+        camera_records.append(
+            {
+                "clock_domain_id": "upper_host_monotonic",
+                "native_receive_monotonic_ns": 1_099_000_000,
+                "observation_id": observation_id,
+                "policy_receive_monotonic_ns": 1_100_000_000,
+                "rgb_path": f"images/{role}/frame_000001.jpg",
+                "role": role,
+                "same_recorder_jpeg": True,
+            }
+        )
+    _write_json(
+        stream_root / "policy_shadow_camera_reconciliation.json",
+        {
+            "schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+            "native_episode": str(episode),
+            "records": camera_records,
+        },
+    )
+    native_result = json.loads((episode / "episode_result.json").read_text())
+    _write_json(
+        stream_root / "policy_shadow_episode_seal.json",
+        {
+            "schema": "forcesmolvla-stage3-integrated-capture-v1",
+            **identity,
+            "backend_schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+            "seal_id": "shadow-seal:fixture",
+            "sealed_monotonic_ns": 1_500_000_000,
+            "terminal_observation_id": observation_id,
+            "observation_count": 1,
+            "policy_request_count": 1,
+            "policy_result_count": 1,
+            "human_action_ack_count": observed_ack_count,
+            "actual_action_source": "human",
+            "policy_inference": True,
+            "policy_execution": False,
+            "formal_replay": False,
+            "real_online_r": False,
+            "shadow_proposals_executed": False,
+            "controller_owner": "recorder",
+            "controller_process_count": 1,
+            "deploy_controller_started": False,
+            "policy_action_publisher_created": False,
+            "native_episode": str(episode),
+            "native_episode_result": native_result,
+            "initial_gripper_lease": lease,
+            "camera_records_reconciled": 2,
+        },
+    )
+
+
 def _fake_materialization(episode: Path, *, trigger_frame: int = 9) -> EpisodeMaterialization:
     count = max(10, trigger_frame + 1)
     grid = np.asarray(
@@ -296,6 +542,80 @@ def test_core_source_has_no_ros_network_robot_or_cuda_imports() -> None:
     source = (ROOT / "src/forcesmolvla/rft/stage3/production_bridge.py").read_text()
     for forbidden in ("import rclpy", "import requests", "import torch", "import socket"):
         assert forbidden not in source
+
+
+def test_integrated_shadow_keeps_human_execution_separate_from_policy_lineage(
+    tmp_path: Path,
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_shadow_fixture(episode)
+    state = tmp_path / "state"
+    report = _bridge(state).process_episode(
+        episode, operator_task_outcome="success"
+    )
+    assert report.status == "SEALED_COMMITTED"
+    assert report.classification == "recorded_live_policy_shadow"
+    assert report.technical_seal == "complete"
+    assert report.operator_task_outcome == "success"
+    assert report.executed_action_source == "human"
+    assert report.policy_execution is False
+    assert report.real_online_r_used is False
+    assert report.formal_training_replay_written is False
+    assert report.detector_outcome == "success"
+    assert report.shadow_observation_count == 1
+    assert report.shadow_policy_request_count == 1
+    assert report.shadow_policy_result_count == 1
+    assert report.shadow_policy_proposal_count == 1
+    assert report.shadow_human_ack_count == 5
+    assert report.outbox_eligible_count == 3
+    assert report.quarantined_count == 0
+    payloads = _wal_payloads(state)
+    assert all(item["classification"] == "recorded_live_policy_shadow" for item in payloads)
+    assert all(
+        item["runtime_lineage"]["binding_kind"]
+        == "recorded_live_human_execution"
+        and item["runtime_lineage"]["policy_result_id"] is None
+        and item["runtime_lineage"]["policy_proposal_id"] is None
+        and item["runtime_lineage"]["policy_executed_transition"] is False
+        and item["behavior"]["actual_action_source"] == "human"
+        and item["behavior"]["human_ack_bound_to_policy_proposal"] is False
+        and item["eligibility"]["formal_replay"] is False
+        and item["eligibility"]["real_online_r"] is False
+        for item in payloads
+    )
+    assert all(
+        item["shadow_policy_lineage"]["policy_request_count"] == 1
+        and item["shadow_policy_lineage"]["policy_execution"] is False
+        and item["shadow_policy_lineage"]["human_ack_policy_binding"] is None
+        and item["commit"]["integrated_shadow_episode_sealed"] is True
+        for item in payloads
+    )
+
+
+def test_integrated_shadow_dry_run_is_read_only_and_rejects_ack_rebinding(
+    tmp_path: Path,
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_shadow_fixture(episode)
+    path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_shadow_human_ack.jsonl"
+    )
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[0]["proposal_id"] = "policy-proposal:forged"
+    _write_jsonl(path, rows)
+    state = tmp_path / "dry-run-state"
+    report = _bridge(state).process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+    assert report.status == "SEALED_QUARANTINED"
+    assert report.classification == "recorded_live_policy_shadow"
+    assert report.quarantine_reasons == ("BRIDGE_SHADOW_HUMAN_ACK_INVALID",)
+    assert not state.exists()
 
 
 def test_active_episode_only_updates_staging(tmp_path: Path) -> None:

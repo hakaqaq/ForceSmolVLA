@@ -49,6 +49,8 @@ from .policy_lineage import InitialGripperAuthority, POLICY_LINEAGE_SCHEMA
 
 SCHEMA_VERSION = "forcesmolvla_stage3_production_bridge_transition.v1"
 REPORT_VERSION = "forcesmolvla_stage3_production_bridge_report.v1"
+INTEGRATED_CAPTURE_SCHEMA = "forcesmolvla-stage3-integrated-capture-v1"
+INTEGRATED_SHADOW_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
 UPPER_CLOCK = "upper_host_monotonic"
 POLICY_LINEAGE_FIELDS = frozenset(
     {
@@ -358,6 +360,18 @@ class BridgeReport:
     held_command_count: int = 0
     real_online_r_used: bool = False
     formal_training_replay_written: bool = False
+    classification: str = "recorded_offline_shadow"
+    technical_seal: str = "complete"
+    operator_task_outcome: str | None = None
+    executed_action_source: str = "human"
+    policy_execution: bool = False
+    detector_outcome: str = "not_evaluated"
+    detector_trigger_frame: int | None = None
+    shadow_observation_count: int = 0
+    shadow_policy_request_count: int = 0
+    shadow_policy_result_count: int = 0
+    shadow_policy_proposal_count: int = 0
+    shadow_human_ack_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -545,6 +559,456 @@ class Stage3ProductionBridge:
             raise ProductionBridgeError(f"BRIDGE_REQUIRED_STREAM_MISSING:{','.join(missing)}")
         return {name: _read_jsonl(root / f"{name}.jsonl") for name in REQUIRED_STREAMS}
 
+    @staticmethod
+    def _validate_shadow_identity(
+        row: Mapping[str, Any], identity: Mapping[str, Any]
+    ) -> None:
+        for field in (
+            "session_id",
+            "episode_id",
+            "clock_domain_id",
+            "policy_revision",
+            "policy_epoch",
+            "reset_generation",
+            "takeover_generation",
+        ):
+            if row.get(field) != identity.get(field):
+                raise ProductionBridgeError(
+                    f"BRIDGE_SHADOW_IDENTITY_MISMATCH:{field}"
+                )
+
+    def _load_integrated_shadow(
+        self,
+        *,
+        episode_dir: Path,
+        native_result: Mapping[str, Any],
+        streams: Mapping[str, list[dict[str, Any]]],
+        operator_task_outcome: str | None,
+    ) -> dict[str, Any] | None:
+        dataset_root = episode_dir.parent.parent
+        manifest_path = dataset_root / "integrated_capture_session.json"
+        shadow_root = dataset_root / "integrated_capture" / episode_dir.name / "streams"
+        if not manifest_path.exists() and not shadow_root.exists():
+            if operator_task_outcome is not None:
+                raise ProductionBridgeError(
+                    "BRIDGE_OPERATOR_OUTCOME_WITHOUT_INTEGRATED_SHADOW"
+                )
+            return None
+        if not manifest_path.is_file() or not shadow_root.is_dir():
+            raise ProductionBridgeError("BRIDGE_INTEGRATED_SHADOW_INCOMPLETE")
+        if operator_task_outcome not in {"success", "failure"}:
+            raise ProductionBridgeError("BRIDGE_OPERATOR_TASK_OUTCOME_REQUIRED")
+
+        manifest = _read_json(manifest_path)
+        contract = manifest.get("contract")
+        identity = contract.get("identity") if isinstance(contract, Mapping) else None
+        if (
+            manifest.get("schema") != INTEGRATED_SHADOW_SCHEMA
+            or not isinstance(contract, Mapping)
+            or contract.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+            or not isinstance(identity, Mapping)
+            or identity.get("episode_id") != episode_dir.name
+            or identity.get("clock_domain_id") != UPPER_CLOCK
+            or contract.get("mode") != "shadow"
+            or contract.get("actual_action_source") != "human"
+            or contract.get("policy_inference") is not True
+            or contract.get("policy_execution") is not False
+            or contract.get("formal_replay") is not False
+            or contract.get("real_online_r") is not False
+            or contract.get("controller_owner") != "recorder"
+            or contract.get("controller_process_count") != 1
+            or contract.get("recorder_controller") is not True
+            or contract.get("deploy_controller") is not False
+            or manifest.get("controller_owner") != "recorder"
+            or manifest.get("controller_process_count") != 1
+            or manifest.get("deploy_controller_started") is not False
+            or manifest.get("policy_action_publisher_created") is not False
+        ):
+            raise ProductionBridgeError("BRIDGE_INTEGRATED_SHADOW_CONTRACT_INVALID")
+        clock = manifest.get("clock_binding")
+        if (
+            not isinstance(clock, Mapping)
+            or clock.get("stage3_clock_domain_id") != UPPER_CLOCK
+            or clock.get("policy_request_clock_domain_id")
+            != "upper_host_monotonic_ns"
+            or clock.get("native_primary_alignment_clock")
+            != "upper_host_receive_monotonic_ns"
+            or clock.get("same_upper_host_monotonic_epoch") is not True
+        ):
+            raise ProductionBridgeError("BRIDGE_INTEGRATED_SHADOW_CLOCK_INVALID")
+        metadata = manifest.get("policy_metadata")
+        session = _read_json(dataset_root / "session.json")
+        if (
+            not isinstance(metadata, Mapping)
+            or metadata.get("model_sha256") != identity.get("policy_revision")
+            or not str(metadata.get("dataset_repo_id", ""))
+            or metadata.get("tool_profile_sha256")
+            != session.get("tool_config_hash")
+            or not str(metadata.get("calibration_id", ""))
+        ):
+            raise ProductionBridgeError("BRIDGE_INTEGRATED_SHADOW_POLICY_BINDING_INVALID")
+
+        names = {
+            "observations": "policy_shadow_observation.jsonl",
+            "requests": "policy_shadow_request.jsonl",
+            "results": "policy_shadow_result.jsonl",
+            "proposals": "policy_shadow_proposal.jsonl",
+            "human_acks": "policy_shadow_human_ack.jsonl",
+        }
+        rows = {
+            key: _read_jsonl(shadow_root / name)
+            for key, name in names.items()
+            if (shadow_root / name).is_file()
+        }
+        if set(rows) != set(names):
+            raise ProductionBridgeError("BRIDGE_INTEGRATED_SHADOW_STREAM_MISSING")
+        observations = rows["observations"]
+        requests = rows["requests"]
+        results = rows["results"]
+        proposals = rows["proposals"]
+        human_acks = rows["human_acks"]
+        if not observations or not (
+            len(observations) == len(requests) == len(results) == len(proposals)
+        ):
+            raise ProductionBridgeError("BRIDGE_SHADOW_POLICY_LINEAGE_COUNT_MISMATCH")
+
+        native_by_source: dict[str, dict[int, dict[str, Any]]] = {}
+        for name in ("measured_tcp_pose", "wrench_notch_sensor", "gripper_state"):
+            native_by_source[name] = {
+                int(item.get("source_stamp_ns", 0)): item
+                for item in streams[name]
+            }
+        observation_by_id: dict[str, dict[str, Any]] = {}
+        previous_t_ref = 0
+        required_streams = set(native_by_source) | {"external_camera", "wrist_camera"}
+        receive_skew_limits = {
+            "measured_tcp_pose": self.config.max_pose_age_ns,
+            "wrench_notch_sensor": self.config.max_wrench_age_ns,
+            "gripper_state": self.config.max_gripper_feedback_age_ns,
+        }
+        for index, observation in enumerate(observations):
+            self._validate_shadow_identity(observation, identity)
+            observation_id = str(observation.get("observation_id", ""))
+            if (
+                observation.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+                or observation_id
+                != f"{episode_dir.name}:observation:{index:06d}"
+                or observation_id in observation_by_id
+            ):
+                raise ProductionBridgeError("BRIDGE_SHADOW_OBSERVATION_IDENTITY_INVALID")
+            t_ref = int(observation.get("t_ref_ns", 0))
+            timestamps = observation.get("stream_timestamps_ns")
+            stream_ids = observation.get("stream_ids")
+            if (
+                t_ref <= previous_t_ref
+                or not isinstance(timestamps, Mapping)
+                or not isinstance(stream_ids, Mapping)
+                or set(timestamps) != required_streams
+                or set(stream_ids) != required_streams
+            ):
+                raise ProductionBridgeError("BRIDGE_SHADOW_OBSERVATION_STREAM_INVALID")
+            for name, native_index in native_by_source.items():
+                policy_receive_ns = int(timestamps.get(name, 0))
+                stream_id = str(stream_ids.get(name, ""))
+                prefix = "source:"
+                separator = "@receive:"
+                if not stream_id.startswith(prefix) or separator not in stream_id:
+                    raise ProductionBridgeError(
+                        f"BRIDGE_SHADOW_NATIVE_STREAM_ID_MISMATCH:{name}"
+                    )
+                source_text, receive_text = stream_id[len(prefix) :].split(
+                    separator, 1
+                )
+                try:
+                    source_ns = int(source_text)
+                    identity_receive_ns = int(receive_text)
+                except ValueError as error:
+                    raise ProductionBridgeError(
+                        f"BRIDGE_SHADOW_NATIVE_STREAM_ID_MISMATCH:{name}"
+                    ) from error
+                native = native_index.get(source_ns)
+                native_receive_ns = int(
+                    0 if native is None else native.get("receive_monotonic_ns", 0)
+                )
+                if (
+                    native is None
+                    or policy_receive_ns > t_ref
+                    or native_receive_ns > t_ref
+                    or identity_receive_ns != policy_receive_ns
+                    or abs(native_receive_ns - policy_receive_ns)
+                    > receive_skew_limits[name]
+                ):
+                    raise ProductionBridgeError(
+                        f"BRIDGE_SHADOW_NATIVE_STREAM_MISSING:{name}"
+                    )
+                if name == "measured_tcp_pose":
+                    _pose_tcp6(native.get("pose", {}))
+                elif name == "wrench_notch_sensor":
+                    _finite_vector(
+                        native.get("force_xyz_n_torque_xyz_nm"),
+                        6,
+                        "BRIDGE_SHADOW_WRENCH_STREAM_INVALID",
+                    )
+                else:
+                    width = float(native.get("width_m", -1.0))
+                    if not math.isfinite(width) or not 0.0 <= width <= 0.1:
+                        raise ProductionBridgeError("BRIDGE_SHADOW_STATE_STREAM_INVALID")
+            observation_by_id[observation_id] = observation
+            previous_t_ref = t_ref
+
+        lineage_fields = (
+            "request_id",
+            "chunk_id",
+            "proposal_id",
+            "policy_revision",
+            "policy_epoch",
+            "reset_generation",
+            "takeover_generation",
+            "t_ref_ns",
+            "request_clock_domain_id",
+            "clock_domain_id",
+            "request_recorded_monotonic_ns",
+        )
+        request_ids: set[str] = set()
+        result_ids: set[str] = set()
+        for observation, request, result, proposal in zip(
+            observations, requests, results, proposals, strict=True
+        ):
+            for row in (request, result, proposal):
+                self._validate_shadow_identity(row, identity)
+            request_id = str(request.get("request_id", ""))
+            result_id = str(result.get("result_id", ""))
+            if (
+                request.get("schema") != POLICY_LINEAGE_SCHEMA
+                or result.get("schema") != POLICY_LINEAGE_SCHEMA
+                or proposal.get("schema") != INTEGRATED_SHADOW_SCHEMA
+                or not request_id
+                or request_id in request_ids
+                or result_id != f"policy-result:{request_id}"
+                or result_id in result_ids
+                or request.get("observation_id") != observation.get("observation_id")
+                or int(request.get("t_ref_ns", 0)) != int(observation.get("t_ref_ns", 0))
+                or int(request.get("request_recorded_monotonic_ns", 0))
+                < int(observation.get("t_ref_ns", 0))
+            ):
+                raise ProductionBridgeError("BRIDGE_SHADOW_POLICY_REQUEST_INVALID")
+            for field in lineage_fields:
+                if result.get(field) != request.get(field) or proposal.get(field) != result.get(field):
+                    raise ProductionBridgeError(
+                        f"BRIDGE_SHADOW_POLICY_LINEAGE_MISMATCH:{field}"
+                    )
+            if proposal.get("result_id") != result_id:
+                raise ProductionBridgeError("BRIDGE_SHADOW_POLICY_RESULT_ID_MISMATCH")
+            result_recorded_ns = int(result.get("result_recorded_monotonic_ns", 0))
+            actions = proposal.get("actions_absolute7")
+            valid_horizon = int(proposal.get("valid_horizon", 0))
+            if (
+                result.get("lineage_schema") != POLICY_LINEAGE_SCHEMA
+                or result.get("shadow_proposal") is not True
+                or result.get("executed") is not False
+                or result_recorded_ns < int(request["request_recorded_monotonic_ns"])
+                or proposal.get("actual_action_source") != "human"
+                or proposal.get("policy_inference") is not True
+                or proposal.get("policy_execution") is not False
+                or proposal.get("shadow_proposal") is not True
+                or proposal.get("executed") is not False
+                or proposal.get("formal_replay") is not False
+                or proposal.get("real_online_r") is not False
+                or proposal.get("action_semantics") != "absolute7"
+                or not isinstance(actions, list)
+                or valid_horizon <= 0
+                or len(actions) != valid_horizon
+            ):
+                raise ProductionBridgeError("BRIDGE_SHADOW_POLICY_PROPOSAL_INVALID")
+            for action in actions:
+                _finite_vector(action, 7, "BRIDGE_SHADOW_POLICY_ACTION_INVALID")
+            request_ids.add(request_id)
+            result_ids.add(result_id)
+
+        native_acks = {
+            int(item.get("payload", {}).get("request_stamp_ns", 0)): item
+            for item in streams["reference_ack"]
+        }
+        native_safe = {
+            int(item.get("payload", {}).get("equilibrium_source_stamp_ns", 0)): item
+            for item in streams["safe_action"]
+        }
+        seen_ack_stamps: set[int] = set()
+        observed_ack_count = 0
+        for row in human_acks:
+            self._validate_shadow_identity(row, identity)
+            reference_ack = row.get("reference_ack")
+            safe_action = row.get("safe_action")
+            if not isinstance(reference_ack, Mapping) or not isinstance(safe_action, Mapping):
+                raise ProductionBridgeError("BRIDGE_SHADOW_HUMAN_ACK_PAYLOAD_MISSING")
+            stamp = int(reference_ack.get("request_stamp_ns", 0))
+            observation_id = row.get("observation_id")
+            if (
+                row.get("schema") != INTEGRATED_SHADOW_SCHEMA
+                or row.get("actual_action_source") != "human"
+                or row.get("policy_result_id") is not None
+                or row.get("proposal_id") is not None
+                or row.get("policy_executed_transition") is not False
+                or row.get("policy_execution") is not False
+                or row.get("formal_replay") is not False
+                or row.get("real_online_r") is not False
+                or row.get("ack_id") != f"human-ack:{stamp}"
+                or stamp <= 0
+                or stamp in seen_ack_stamps
+                or reference_ack.get("accepted") is not True
+                or native_acks.get(stamp, {}).get("payload") != reference_ack
+                or native_safe.get(stamp, {}).get("payload") != safe_action
+                or safe_action.get("arbitration", {})
+                .get("raw_action", {})
+                .get("source")
+                != "human"
+            ):
+                raise ProductionBridgeError("BRIDGE_SHADOW_HUMAN_ACK_INVALID")
+            if observation_id is not None:
+                observation = observation_by_id.get(str(observation_id))
+                if (
+                    observation is None
+                    or int(row.get("receive_monotonic_ns", 0))
+                    < int(observation.get("t_ref_ns", 0))
+                ):
+                    raise ProductionBridgeError("BRIDGE_SHADOW_HUMAN_ACK_TIME_INVALID")
+                observed_ack_count += 1
+            seen_ack_stamps.add(stamp)
+        if seen_ack_stamps != set(native_acks):
+            raise ProductionBridgeError("BRIDGE_SHADOW_HUMAN_ACK_COVERAGE_MISMATCH")
+
+        reconciliation = _read_json(
+            shadow_root / "policy_shadow_camera_reconciliation.json"
+        )
+        records = reconciliation.get("records")
+        if (
+            reconciliation.get("schema") != INTEGRATED_SHADOW_SCHEMA
+            or Path(str(reconciliation.get("native_episode", ""))).resolve()
+            != episode_dir.resolve()
+            or not isinstance(records, list)
+            or len(records) != 2 * len(observations)
+        ):
+            raise ProductionBridgeError("BRIDGE_SHADOW_CAMERA_RECONCILIATION_INVALID")
+        native_cameras = {
+            role: {
+                str(item.get("rgb_path", "")): item
+                for item in streams[f"{role}_camera"]
+            }
+            for role in ("external", "wrist")
+        }
+        reconciled: set[tuple[str, str]] = set()
+        for record in records:
+            observation_id = str(record.get("observation_id", ""))
+            role = str(record.get("role", ""))
+            observation = observation_by_id.get(observation_id)
+            key = (observation_id, role)
+            stream_name = f"{role}_camera"
+            path = str(record.get("rgb_path", ""))
+            native = native_cameras.get(role, {}).get(path)
+            if (
+                observation is None
+                or role not in {"external", "wrist"}
+                or key in reconciled
+                or record.get("clock_domain_id") != UPPER_CLOCK
+                or record.get("same_recorder_jpeg") is not True
+                or observation["stream_ids"].get(stream_name) != path
+                or int(observation["stream_timestamps_ns"].get(stream_name, 0))
+                != int(record.get("policy_receive_monotonic_ns", 0))
+                or native is None
+                or int(native.get("receive_monotonic_ns", 0))
+                != int(record.get("native_receive_monotonic_ns", 0))
+                or not (episode_dir / path).is_file()
+            ):
+                raise ProductionBridgeError("BRIDGE_SHADOW_CAMERA_BINDING_INVALID")
+            reconciled.add(key)
+
+        lease_payload = _read_json(
+            shadow_root / "policy_shadow_initial_gripper_lease.json"
+        )
+        try:
+            lease = InitialGripperAuthority.from_mapping(lease_payload).validate(
+                max_feedback_age_ns=self.config.max_gripper_feedback_age_ns
+            )
+        except GripperProvenanceError as error:
+            raise ProductionBridgeError(
+                f"BRIDGE_SHADOW_INITIAL_GRIPPER_LEASE_INVALID:{error}"
+            ) from error
+        generation = lease.generation
+        if (
+            lease.episode_id != identity.get("episode_id")
+            or generation.policy_revision != identity.get("policy_revision")
+            or generation.policy_epoch != identity.get("policy_epoch")
+            or generation.reset_generation != identity.get("reset_generation")
+            or generation.takeover_generation != identity.get("takeover_generation")
+        ):
+            raise ProductionBridgeError("BRIDGE_SHADOW_INITIAL_GRIPPER_LEASE_IDENTITY_MISMATCH")
+
+        seal = _read_json(shadow_root / "policy_shadow_episode_seal.json")
+        latest_lineage_ns = max(
+            int(results[-1].get("result_recorded_monotonic_ns", 0)),
+            max(int(row.get("receive_monotonic_ns", 0)) for row in human_acks),
+            int(observations[-1].get("t_ref_ns", 0)),
+        )
+        if (
+            seal.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+            or seal.get("backend_schema") != INTEGRATED_SHADOW_SCHEMA
+            or seal.get("actual_action_source") != "human"
+            or seal.get("policy_inference") is not True
+            or seal.get("policy_execution") is not False
+            or seal.get("formal_replay") is not False
+            or seal.get("real_online_r") is not False
+            or seal.get("shadow_proposals_executed") is not False
+            or seal.get("controller_owner") != "recorder"
+            or seal.get("controller_process_count") != 1
+            or seal.get("deploy_controller_started") is not False
+            or seal.get("policy_action_publisher_created") is not False
+            or Path(str(seal.get("native_episode", ""))).resolve()
+            != episode_dir.resolve()
+            or seal.get("native_episode_result") != native_result
+            or seal.get("initial_gripper_lease") != lease_payload
+            or seal.get("terminal_observation_id")
+            != observations[-1].get("observation_id")
+            or int(seal.get("observation_count", -1)) != len(observations)
+            or int(seal.get("policy_request_count", -1)) != len(requests)
+            or int(seal.get("policy_result_count", -1)) != len(results)
+            or int(seal.get("human_action_ack_count", -1)) != observed_ack_count
+            or int(seal.get("camera_records_reconciled", -1)) != len(records)
+            or int(seal.get("sealed_monotonic_ns", 0)) < latest_lineage_ns
+            or int(seal.get("sealed_monotonic_ns", 0))
+            < int(native_result.get("finished_monotonic_ns", 0))
+        ):
+            raise ProductionBridgeError("BRIDGE_INTEGRATED_SHADOW_SEAL_INVALID")
+        self._validate_shadow_identity(seal, identity)
+
+        return {
+            "initial_gripper_lease": lease,
+            "summary": {
+                "schema": INTEGRATED_SHADOW_SCHEMA,
+                "session_id": identity["session_id"],
+                "episode_id": identity["episode_id"],
+                "policy_revision": identity["policy_revision"],
+                "policy_epoch": identity["policy_epoch"],
+                "reset_generation": identity["reset_generation"],
+                "takeover_generation": identity["takeover_generation"],
+                "observation_count": len(observations),
+                "policy_request_count": len(requests),
+                "policy_result_count": len(results),
+                "policy_proposal_count": len(proposals),
+                "human_ack_count": len(human_acks),
+                "camera_reconciliation_count": len(records),
+                "terminal_observation_id": observations[-1]["observation_id"],
+                "actual_action_source": "human",
+                "human_ack_policy_binding": None,
+                "policy_execution": False,
+                "formal_replay": False,
+                "real_online_r": False,
+                "state_streams_bound": True,
+                "calibrated_tcp_wrench_materialized": True,
+                "technical_seal": "complete",
+                "operator_task_outcome": operator_task_outcome,
+            },
+        }
+
     def _validate_seal(
         self, result: Mapping[str, Any], streams: Mapping[str, list[dict[str, Any]]]
     ) -> None:
@@ -607,8 +1071,27 @@ class Stage3ProductionBridge:
         streams: Mapping[str, list[dict[str, Any]]],
         *,
         episode_id: str,
+        integrated_initial_lease: InitialGripperAuthority | None = None,
     ) -> tuple[_Goal, ...]:
         initial = self._initial_gripper_goal(streams, episode_id=episode_id)
+        if integrated_initial_lease is not None:
+            integrated = _Goal(
+                sequence=integrated_initial_lease.origin_local_goal_sequence,
+                action_goal_id=integrated_initial_lease.origin_action_goal_id,
+                requested_state=integrated_initial_lease.requested_state,
+                requested_width_m=integrated_initial_lease.requested_width_m,
+                started_ns=integrated_initial_lease.origin_accepted_monotonic_ns,
+                accepted_ns=integrated_initial_lease.origin_accepted_monotonic_ns,
+                finished_ns=integrated_initial_lease.terminal_finished_monotonic_ns,
+                outcome=integrated_initial_lease.terminal_outcome,
+                generation=None,
+                initial_authority=True,
+            )
+            if initial is not None and initial != integrated:
+                raise ProductionBridgeError(
+                    "BRIDGE_INITIAL_GRIPPER_AUTHORITY_SOURCE_CONFLICT"
+                )
+            initial = integrated
         targets: dict[int, dict[str, Any]] = {}
         statuses: dict[int, dict[str, Any]] = {}
         for record in streams["gripper_target"]:
@@ -1048,6 +1531,7 @@ class Stage3ProductionBridge:
         timelines: Mapping[str, _Timeline],
         materialization: EpisodeMaterialization,
         macro: DetectorMacroTransition,
+        shadow_evidence: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         safe = safe_record.get("payload", {})
         arbitration = safe.get("arbitration", {})
@@ -1116,9 +1600,19 @@ class Stage3ProductionBridge:
             > self.config.pose_quaternion_tolerance_rad
         ):
             raise ProductionBridgeError("BRIDGE_ACCEPTED_REFERENCE_ACK_MISMATCH")
-        lineage, generation, policy_fixture = self._lineage(
+        lineage, generation, executed_policy_fixture = self._lineage(
             episode_id=episode_id, raw=raw, safe=safe
         )
+        if shadow_evidence is not None:
+            lineage = {
+                **lineage,
+                "binding_kind": "recorded_live_human_execution",
+                "actual_action_source": "human",
+                "policy_result_id": None,
+                "policy_proposal_id": None,
+                "policy_executed_transition": False,
+            }
+        policy_fixture = executed_policy_fixture or shadow_evidence is not None
         selected_tcp6, selected_width, selection_provenance = self._selected_pose(
             raw=raw,
             safe=safe,
@@ -1315,6 +1809,9 @@ class Stage3ProductionBridge:
                 "transition_uid": None,
             },
             "runtime_lineage": lineage,
+            "shadow_policy_lineage": (
+                None if shadow_evidence is None else dict(shadow_evidence)
+            ),
             "generation": asdict(generation),
             "action_authority": {
                 "selected_post_adapter_tcp6": list(selected_tcp6),
@@ -1351,11 +1848,11 @@ class Stage3ProductionBridge:
                 "executed_action_mask": list(macro.executed_action_mask),
                 "executed_steps": macro.executed_steps,
                 "slot_owner": [
-                    "policy" if source == "policy" else "offline_demonstration"
+                    "policy" if source == "policy" else "human"
                 ]
                 * 3,
                 "accepted_action_source": [
-                    "policy" if source == "policy" else "offline"
+                    "policy" if source == "policy" else "human"
                 ]
                 * 3,
                 "intervention_flags": [bool(raw.get("intervention", False))] * 3,
@@ -1368,10 +1865,13 @@ class Stage3ProductionBridge:
             "next_observation": next_observation,
             "behavior": {
                 "recorder_source": source,
+                "actual_action_source": source,
                 "recorder_owner": arbitration.get("owner"),
                 "intervention": bool(raw.get("intervention", False)),
                 "phase": raw.get("phase"),
                 "workspace_clipped": safe.get("workspace_clipped"),
+                "policy_execution": source == "policy",
+                "human_ack_bound_to_policy_proposal": False,
             },
             "recorder_evidence": {
                 "raw_action": {
@@ -1427,6 +1927,12 @@ class Stage3ProductionBridge:
                     materialization.detector_scores.probabilities[detector_trigger]
                 ),
                 "provenance": dict(materialization.outcome_provenance),
+                "detector_outcome": "success",
+                "operator_task_outcome": (
+                    None
+                    if shadow_evidence is None
+                    else shadow_evidence["operator_task_outcome"]
+                ),
                 "current_observation_frame": anchor,
                 "next_observation_frame": next_frame,
                 "episode_saved": True,
@@ -1436,9 +1942,11 @@ class Stage3ProductionBridge:
                 "formal_training_replay_eligible": False,
                 "recorded_live_policy_fixture": policy_fixture,
                 "real_online_r": False,
+                "formal_replay": False,
             },
             "commit": {
                 "episode_sealed": True,
+                "integrated_shadow_episode_sealed": shadow_evidence is not None,
                 "pose_ack_watermark": int(ack.get("request_sequence", 0)),
                 "gripper_terminal_sealed": True,
                 "wrench_materialized": True,
@@ -1457,6 +1965,9 @@ class Stage3ProductionBridge:
         result_path: Path,
         error: Exception,
         dry_run: bool,
+        classification: str = "recorded_offline_shadow",
+        operator_task_outcome: str | None = None,
+        detector_outcome: str = "not_evaluated",
     ) -> BridgeReport:
         if not dry_run:
             self._immutable_write(
@@ -1481,7 +1992,10 @@ class Stage3ProductionBridge:
             idempotent_count=0,
             quarantine_reasons=(str(error),),
             recorded_offline_production_bridge="FAIL",
-            policy_fixture=False,
+            policy_fixture=classification == "recorded_live_policy_shadow",
+            classification=classification,
+            operator_task_outcome=operator_task_outcome,
+            detector_outcome=detector_outcome,
         )
 
     def _immutable_write(self, path: Path, value: Mapping[str, Any]) -> bool:
@@ -1528,12 +2042,21 @@ class Stage3ProductionBridge:
         *,
         dry_run: bool = False,
         inject_crash_after_wal: int | None = None,
+        operator_task_outcome: str | None = None,
     ) -> BridgeReport:
         episode_dir = Path(episode_dir)
         start = _read_json(episode_dir / "episode_start.json")
         episode_id = self._episode_id(episode_dir, start)
         episode_key = episode_id.replace("/", "__")
         result_path = episode_dir / "episode_result.json"
+        integrated_present = (
+            episode_dir.parent.parent / "integrated_capture" / episode_dir.name / "streams"
+        ).is_dir()
+        classification = (
+            "recorded_live_policy_shadow"
+            if integrated_present
+            else "recorded_offline_shadow"
+        )
         if not result_path.is_file():
             cursors: dict[str, dict[str, int]] = {}
             candidate_count = 0
@@ -1583,10 +2106,25 @@ class Stage3ProductionBridge:
                 policy_fixture=False,
             )
         result = _read_json(result_path)
+        integrated_shadow: dict[str, Any] | None = None
         try:
             streams = self._load_streams(episode_dir)
             self._validate_seal(result, streams)
-            goals = self._goals(streams, episode_id=episode_id)
+            integrated_shadow = self._load_integrated_shadow(
+                episode_dir=episode_dir,
+                native_result=result,
+                streams=streams,
+                operator_task_outcome=operator_task_outcome,
+            )
+            goals = self._goals(
+                streams,
+                episode_id=episode_id,
+                integrated_initial_lease=(
+                    None
+                    if integrated_shadow is None
+                    else integrated_shadow["initial_gripper_lease"]
+                ),
+            )
             if self.episode_materializer is None:
                 raise ProductionBridgeError("BRIDGE_EPISODE_MATERIALIZER_UNBOUND")
             materialization = self.episode_materializer(episode_dir).validate()
@@ -1611,6 +2149,13 @@ class Stage3ProductionBridge:
                 result_path=result_path,
                 error=error,
                 dry_run=dry_run,
+                classification=classification,
+                operator_task_outcome=operator_task_outcome,
+                detector_outcome=(
+                    "miss"
+                    if str(error) == "BRIDGE_FROZEN_G1_DETECTOR_MISS"
+                    else "not_evaluated"
+                ),
             )
         try:
             requested: dict[tuple[str, int], dict[str, Any]] = {}
@@ -1665,11 +2210,17 @@ class Stage3ProductionBridge:
                 result_path=result_path,
                 error=error,
                 dry_run=dry_run,
+                classification=classification,
+                operator_task_outcome=operator_task_outcome,
+                detector_outcome="success",
             )
         used_new: set[int] = set()
         transitions: list[dict[str, Any]] = []
         quarantines: list[dict[str, Any]] = []
-        policy_fixture = False
+        policy_fixture = integrated_shadow is not None
+        shadow_evidence = (
+            None if integrated_shadow is None else integrated_shadow["summary"]
+        )
         task = str(result.get("task", start.get("task", "")))
         for macro in materialization.macros:
             decision = -1
@@ -1724,6 +2275,7 @@ class Stage3ProductionBridge:
                     timelines=timelines,
                     materialization=materialization,
                     macro=macro,
+                    shadow_evidence=shadow_evidence,
                 )
                 transitions.append(transition)
                 policy_fixture = policy_fixture or is_policy
@@ -1819,4 +2371,23 @@ class Stage3ProductionBridge:
             policy_fixture=policy_fixture,
             new_command_count=authority_kinds.count("NEW_COMMAND"),
             held_command_count=authority_kinds.count("HELD_FROM_ACCEPTED_COMMAND"),
+            classification=classification,
+            operator_task_outcome=operator_task_outcome,
+            detector_outcome="success",
+            detector_trigger_frame=materialization.detection_trace.trigger_frame,
+            shadow_observation_count=(
+                0 if shadow_evidence is None else shadow_evidence["observation_count"]
+            ),
+            shadow_policy_request_count=(
+                0 if shadow_evidence is None else shadow_evidence["policy_request_count"]
+            ),
+            shadow_policy_result_count=(
+                0 if shadow_evidence is None else shadow_evidence["policy_result_count"]
+            ),
+            shadow_policy_proposal_count=(
+                0 if shadow_evidence is None else shadow_evidence["policy_proposal_count"]
+            ),
+            shadow_human_ack_count=(
+                0 if shadow_evidence is None else shadow_evidence["human_ack_count"]
+            ),
         )
