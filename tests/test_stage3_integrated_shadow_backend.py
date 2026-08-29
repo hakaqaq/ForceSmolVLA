@@ -5,10 +5,18 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import threading
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
+from forcesmolvla.rft.stage3 import integrated_shadow_backend as shadow_backend
 from forcesmolvla.rft.stage3.integrated_capture import (
+    CYCLE210_DEPLOYMENT_BINDING,
+    CYCLE210_EXECUTION_PROFILE,
+    CYCLE210_POLICY_REVISION,
     IntegratedCaptureError,
     IntegratedCaptureLedger,
     RECORDER_CONTROL_CHAIN,
@@ -45,6 +53,20 @@ def _arguments(tmp_path: Path) -> dict:
         "episode_time": 60.0,
         "tool_profile": "onrobot_robotiq",
     }
+
+
+def _policy_contract():
+    return build_capture_contract(
+        mode="policy-execute",
+        session_id="policy-session-1",
+        episode_id="episode_000000",
+        policy_revision=CYCLE210_POLICY_REVISION,
+        policy_epoch=0,
+        reset_generation=0,
+        takeover_generation=0,
+        deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
+        allow_development_policy_execution_smoke=True,
+    )
 
 
 def test_backend_owns_exactly_one_native_recorder_control_chain(tmp_path: Path) -> None:
@@ -122,6 +144,251 @@ def test_backend_rejects_forged_policy_execution_before_loading_runtime(
             ledger=IntegratedCaptureLedger(_contract()),
             recorder_arguments=_arguments(tmp_path),
         )
+
+
+def test_policy_execution_requires_cycle210_server_binding_and_one_controller() -> None:
+    contract = _policy_contract()
+    shadow_backend._validate_policy_execution_contract(contract)
+    profile = json.loads(CYCLE210_EXECUTION_PROFILE.read_text(encoding="utf-8"))
+    for field in ("checkpoint", "rulespec", "deployment_binding", "dataset_manifest"):
+        profile[field] = ROOT / profile[field]
+    required_client = "client-source-binding"
+    deploy = SimpleNamespace(client_source_tree_sha256=lambda: required_client)
+    metadata = {
+        "model_sha256": CYCLE210_POLICY_REVISION,
+        "robot_execution_allowed": True,
+        "robot_execution_mode": "approved_binding_supervised_development",
+        "development_execution_override": True,
+        "deployment_binding_sha256": shadow_backend.CYCLE210_DEPLOYMENT_BINDING_SHA256,
+        "required_client_source_sha256": required_client,
+        "rulespec_mode": "development_only",
+        "rulespec_approval_status": "approved",
+    }
+    shadow_backend._validate_policy_execution_profile(
+        deploy, CYCLE210_EXECUTION_PROFILE, profile, metadata, contract
+    )
+    with pytest.raises(
+        IntegratedCaptureError, match="SERVER_AUTHORIZATION_MISMATCH"
+    ):
+        shadow_backend._validate_policy_execution_profile(
+            deploy,
+            CYCLE210_EXECUTION_PROFILE,
+            profile,
+            {**metadata, "robot_execution_allowed": False},
+            contract,
+        )
+    assert IntegratedShadowBackend.capabilities.controller_process_count == 1
+    assert IntegratedShadowBackend.capabilities.starts_deploy_controller is False
+
+
+def test_policy_chunk_selection_uses_apply_time_rational_grid() -> None:
+    actions = np.arange(350, dtype=np.float64).reshape(50, 7)
+    index, selected = shadow_backend._selected_chunk_action(
+        actions,
+        t_ref_ns=1_000_000_000,
+        fps=30,
+        selection_ns=1_205_000_000,
+    )
+    assert index == 7
+    assert np.array_equal(selected, actions[7])
+    with pytest.raises(IntegratedCaptureError, match="CHUNK_EXPIRED"):
+        shadow_backend._selected_chunk_action(
+            actions,
+            t_ref_ns=1_000_000_000,
+            fps=30,
+            selection_ns=3_000_000_000,
+        )
+
+
+def test_policy_execution_artifacts_require_policy_ack_and_next_observation(
+    tmp_path: Path,
+) -> None:
+    store = ShadowArtifactStore(tmp_path / "execution-sidecar")
+    proposal = {
+        "actual_action_source": "policy",
+        "policy_execution": True,
+        "formal_replay": False,
+        "real_online_r": False,
+    }
+    store.append("policy_execute_proposal.jsonl", proposal)
+    store.append(
+        "policy_execute_chunk.jsonl",
+        {
+            "executed_action_source": "policy",
+            "action_semantics": "absolute7",
+            "actions_absolute7": [[0.0] * 7 for _ in range(50)],
+            "formal_replay": False,
+            "real_online_r": False,
+        },
+    )
+    transition = {
+        "executed_action_source": "policy",
+        "policy_executed_transition": True,
+        "current_observation_id": "observation-1",
+        "next_observation_id": "observation-2",
+        "formal_replay": False,
+        "real_online_r": False,
+    }
+    store.append("policy_execute_transition.jsonl", transition)
+    with pytest.raises(IntegratedCaptureError, match="TRANSITION_SEMANTICS_INVALID"):
+        store.append(
+            "policy_execute_transition.jsonl",
+            {**transition, "next_observation_id": None},
+        )
+
+
+def test_initial_gripper_authority_accepts_inference_only_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_ns = 1_000_000_000
+    observation = SimpleNamespace(
+        _lock=threading.Lock(),
+        gripper_width_m=0.084,
+        gripper_receive_ns=captured_ns - 50_000_000,
+        shadow_initial_gripper_origin=lambda _started_ns: (
+            {
+                "local_goal_sequence": 1,
+                "action_goal_id": "initial-open-goal",
+                "accepted_monotonic_ns": 800_000_000,
+                "requested_state": "OPEN",
+            },
+            {"outcome": "reached", "finished_monotonic_ns": 900_000_000},
+        ),
+    )
+    recorder_args = SimpleNamespace(
+        gripper_open_width_m=0.085,
+        gripper_closed_width_m=0.0,
+    )
+    monkeypatch.setattr(shadow_backend.time, "monotonic_ns", lambda: captured_ns)
+
+    authority = shadow_backend._initial_gripper_authority(
+        observation,
+        recorder_args,
+        {"gripper_max_age_ms": None},
+        _contract(),
+        episode_started_ns=700_000_000,
+    )
+
+    assert authority is not None
+    assert authority["feedback_age_ns"] == 50_000_000
+
+
+def test_session_binding_hydrates_frames_from_active_tool_profile() -> None:
+    frames = {
+        "base": "fr3_link0",
+        "tcp": "franka_desk_ee_tcp",
+        "sensor_body": "onrobot_hexe_body_link",
+        "wrench_measurement": "onrobot_fts_measurement_link",
+    }
+    transform = {
+        "xyz_m": [0.0, 0.0, -0.195],
+        "rpy_rad": [0.0, 0.0, np.pi / 2.0],
+    }
+    session = {
+        "task": "task",
+        "tool_config_hash": "tool-hash",
+        "controller": {"name": RECORDER_CONTROL_CHAIN},
+        "primary_alignment_clock": "upper_host_receive_monotonic_ns",
+        "workspace": {"min_xyz_m": [0.0] * 3, "max_xyz_m": [1.0] * 3},
+        "frames": frames,
+        "tool_profile": {
+            "profile": {
+                "frames": frames,
+                "transforms": {"tcp_to_wrench_measurement": transform},
+            }
+        },
+    }
+    metadata = {
+        "tool_profile_sha256": "tool-hash",
+        "model_sha256": _contract().identity.policy_revision,
+        "calibration_bundle": {
+            "static_transform_tcp_sensor": {
+                "translation_m": transform["xyz_m"],
+                "quaternion_xyzw": Rotation.from_euler(
+                    "xyz", transform["rpy_rad"]
+                ).as_quat().tolist(),
+            }
+        },
+    }
+    recorder_args = SimpleNamespace(
+        task="task",
+        workspace_min=(0.0,) * 3,
+        workspace_max=(1.0,) * 3,
+        base_frame=None,
+        tcp_frame=None,
+        sensor_body_frame=None,
+        wrench_measurement_frame=None,
+    )
+    deploy = SimpleNamespace(
+        np=np,
+        Rotation=Rotation,
+        quaternion_xyzw_to_matrix=lambda value: Rotation.from_quat(
+            value
+        ).as_matrix(),
+    )
+
+    shadow_backend._validate_session_binding(
+        deploy, session, metadata, _contract(), recorder_args
+    )
+
+    assert recorder_args.base_frame == frames["base"]
+    assert recorder_args.tcp_frame == frames["tcp"]
+    assert recorder_args.sensor_body_frame == frames["sensor_body"]
+    assert recorder_args.wrench_measurement_frame == frames["wrench_measurement"]
+    recorder_args.tcp_frame = "conflicting_tcp"
+    with pytest.raises(IntegratedCaptureError, match="SHADOW_SESSION_FRAME_MISMATCH"):
+        shadow_backend._validate_session_binding(
+            deploy, session, metadata, _contract(), recorder_args
+        )
+
+
+def test_native_camera_tail_waits_for_complete_jpeg(tmp_path: Path) -> None:
+    class FakeCv2:
+        IMREAD_COLOR = 1
+        COLOR_BGR2RGB = 2
+
+        def __init__(self) -> None:
+            self.reads = 0
+
+        def imread(self, _path: str, _mode: int) -> np.ndarray:
+            self.reads += 1
+            return np.zeros((480, 640, 3), dtype=np.uint8)
+
+        @staticmethod
+        def cvtColor(image: np.ndarray, _conversion: int) -> np.ndarray:
+            return image
+
+    episode = tmp_path / "episode"
+    image = episode / "images/external/frame_000000.jpg"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"\xff\xd8partial")
+    cv2 = FakeCv2()
+    cameras = shadow_backend._NativeCameraPair(episode, cv2)
+
+    cameras._update_role("external")
+    assert cv2.reads == 0
+    assert cameras._next["external"] == 0
+
+    image.write_bytes(b"\xff\xd8complete\xff\xd9")
+    cameras._update_role("external")
+    assert cv2.reads == 1
+    assert cameras._next["external"] == 1
+    assert cameras.external.frame is not None
+
+
+def test_only_transient_camera_tuple_misses_are_retryable() -> None:
+    assert shadow_backend._retryable_camera_error(
+        RuntimeError("CAMERA_AGE_EXCEEDED: camera1_age_ms=34.118")
+    )
+    assert shadow_backend._retryable_camera_error(
+        RuntimeError("INTERCAMERA_SKEW_EXCEEDED: intercamera_skew_ms=34.0")
+    )
+    assert not shadow_backend._retryable_camera_error(
+        RuntimeError("CAMERA_TIMESTAMP_IN_FUTURE")
+    )
+    assert not shadow_backend._retryable_camera_error(
+        RuntimeError("STATE_POSE_AGE_EXCEEDED")
+    )
 
 
 def test_integrated_cli_passes_shadow_runtime_binding_without_launch(

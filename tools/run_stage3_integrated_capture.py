@@ -18,6 +18,8 @@ DEFAULT_SHADOW_BACKEND = (
 )
 
 from forcesmolvla.rft.stage3.integrated_capture import (  # noqa: E402
+    CYCLE210_DEPLOYMENT_BINDING,
+    CYCLE210_EXECUTION_PROFILE,
     IntegratedCaptureError,
     build_capture_contract,
     capture_mode_semantics,
@@ -42,6 +44,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--reset-generation", type=int, default=0)
     parser.add_argument("--takeover-generation", type=int, default=0)
     parser.add_argument("--deployment-binding", type=Path)
+    parser.add_argument(
+        "--allow-development-policy-execution-smoke",
+        action="store_true",
+        help=(
+            "explicitly unlock one approved cycle210 development policy-execution "
+            "episode; has no effect without --mode policy-execute"
+        ),
+    )
     parser.add_argument("--policy-host", default="127.0.0.1")
     parser.add_argument("--policy-port", type=int, default=8000)
     parser.add_argument(
@@ -52,6 +62,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--inference-timeout", type=float, default=30.0)
     parser.add_argument("--shadow-inference-period", type=float, default=0.1)
     parser.add_argument("--backend-start-timeout", type=float, default=180.0)
+    parser.add_argument("--policy-replan-steps", type=int, default=8)
+    parser.add_argument("--policy-queue-low-watermark", type=int, default=4)
+    parser.add_argument("--max-force-n", type=float, default=25.0)
+    parser.add_argument("--max-torque-nm", type=float, default=2.0)
     parser.add_argument(
         "--launch",
         action="store_true",
@@ -91,8 +105,18 @@ def main(argv: list[str] | None = None) -> int:
             or args.inference_timeout <= 0
             or args.shadow_inference_period <= 0
             or args.backend_start_timeout <= 0
+            or args.max_force_n <= 0
+            or args.max_torque_nm <= 0
         ):
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_BACKEND_ARGUMENTS_INVALID")
+        if not 0 < args.policy_queue_low_watermark < args.policy_replan_steps <= 50:
+            raise IntegratedCaptureError("POLICY_EXECUTE_RUNTIME_LIMITS_INVALID")
+        deployment_binding = args.deployment_binding
+        if args.mode == "policy-execute":
+            if args.deployment_profile.resolve() != CYCLE210_EXECUTION_PROFILE:
+                raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_PROFILE_REQUIRED")
+            if deployment_binding is None:
+                deployment_binding = CYCLE210_DEPLOYMENT_BINDING
         contract = build_capture_contract(
             mode=args.mode,
             session_id=args.session_id,
@@ -101,7 +125,10 @@ def main(argv: list[str] | None = None) -> int:
             policy_epoch=args.policy_epoch,
             reset_generation=args.reset_generation,
             takeover_generation=args.takeover_generation,
-            deployment_binding=args.deployment_binding,
+            deployment_binding=deployment_binding,
+            allow_development_policy_execution_smoke=(
+                args.allow_development_policy_execution_smoke
+            ),
         )
         recorder_arguments = {
             "root": str(args.root.resolve()),
@@ -115,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
             "inference_timeout": args.inference_timeout,
             "shadow_inference_period": args.shadow_inference_period,
             "backend_start_timeout": args.backend_start_timeout,
+            "policy_replan_steps": args.policy_replan_steps,
+            "policy_queue_low_watermark": args.policy_queue_low_watermark,
+            "max_force_n": args.max_force_n,
+            "max_torque_nm": args.max_torque_nm,
         }
         if args.launch:
             result = run_integrated_capture(

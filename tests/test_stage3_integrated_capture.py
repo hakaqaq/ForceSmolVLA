@@ -8,6 +8,9 @@ import sys
 import pytest
 
 from forcesmolvla.rft.stage3.integrated_capture import (
+    CYCLE210_DEPLOYMENT_BINDING,
+    CYCLE210_EXECUTION_PROFILE,
+    CYCLE210_POLICY_REVISION,
     CaptureBackendCapabilities,
     IntegratedCaptureError,
     IntegratedCaptureLedger,
@@ -63,7 +66,7 @@ def _result() -> dict:
     }
 
 
-def test_shadow_contract_is_human_inference_only_and_policy_execute_is_hard_disabled(
+def test_policy_execute_requires_explicit_flag_and_exact_cycle210_binding(
     tmp_path: Path,
 ) -> None:
     contract = _contract()
@@ -83,20 +86,49 @@ def test_shadow_contract_is_human_inference_only_and_policy_execute_is_hard_disa
         "real_online_r": False,
         "activation_authorized": False,
         "unlock_requires": [
-            "future_explicit_authorization", "verified_deployment_binding",
+            "explicit_development_policy_execution_smoke_flag",
+            "approved_cycle210_deployment_binding",
         ],
     }
-    with pytest.raises(IntegratedCaptureError, match="POLICY_EXECUTE_HARD_DISABLED"):
+    with pytest.raises(IntegratedCaptureError, match="EXPLICIT_FLAG_REQUIRED"):
         build_capture_contract(
             mode="policy-execute",
             session_id="session-real-1",
             episode_id="episode_000001",
-            policy_revision="revision-sha-1",
+            policy_revision=CYCLE210_POLICY_REVISION,
             policy_epoch=2,
             reset_generation=3,
             takeover_generation=4,
-            deployment_binding=tmp_path / "even-if-present.json",
+            deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
         )
+    with pytest.raises(IntegratedCaptureError, match="CYCLE210_REVISION_REQUIRED"):
+        build_capture_contract(
+            mode="policy-execute",
+            session_id="session-real-1",
+            episode_id="episode_000000",
+            policy_revision="wrong-revision",
+            policy_epoch=0,
+            reset_generation=0,
+            takeover_generation=0,
+            deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
+            allow_development_policy_execution_smoke=True,
+        )
+    policy = build_capture_contract(
+        mode="policy-execute",
+        session_id="session-real-1",
+        episode_id="episode_000000",
+        policy_revision=CYCLE210_POLICY_REVISION,
+        policy_epoch=0,
+        reset_generation=0,
+        takeover_generation=0,
+        deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
+        allow_development_policy_execution_smoke=True,
+    )
+    assert policy.actual_action_source == "policy"
+    assert policy.policy_execution is True
+    assert policy.formal_replay is policy.real_online_r is False
+    assert policy.controller_process_count == 1
+    assert policy.deploy_controller is False
 
 
 def test_shadow_proposal_cannot_be_bound_to_human_ack_or_real_online_r() -> None:
@@ -136,6 +168,80 @@ def test_shadow_proposal_cannot_be_bound_to_human_ack_or_real_online_r() -> None
     assert seal["shadow_proposals_executed"] is False
     assert seal["formal_replay"] is False
     assert seal["real_online_r"] is False
+
+
+def test_policy_execute_ack_binds_lineage_current_next_and_takeover() -> None:
+    contract = build_capture_contract(
+        mode="policy-execute",
+        session_id="session-policy-1",
+        episode_id="episode_000000",
+        policy_revision=CYCLE210_POLICY_REVISION,
+        policy_epoch=0,
+        reset_generation=0,
+        takeover_generation=0,
+        deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
+        allow_development_policy_execution_smoke=True,
+    )
+    ledger = IntegratedCaptureLedger(contract)
+    _observation(ledger)
+    request = _request()
+    request_record = ledger.record_policy_request(
+        request,
+        observation_id="observation-1",
+        recorded_monotonic_ns=1_000_000_010,
+    )
+    result = ledger.record_policy_result(
+        request, _result(), recorded_monotonic_ns=1_010_000_000,
+    )
+    dispatch = ledger.bind_policy_dispatch(result["result_id"])
+    assert dispatch["chunk_id"] == request_record["chunk_id"]
+    names = (
+        "measured_tcp_pose", "wrench_notch_sensor", "gripper_state",
+        "external_camera", "wrist_camera",
+    )
+    ledger.record_observation(
+        observation_id="observation-2",
+        t_ref_ns=1_030_000_000,
+        stream_timestamps_ns={name: 1_029_000_000 for name in names},
+        stream_ids={name: f"{name}:record-2" for name in names},
+    )
+    ack = ledger.record_actual_action_ack(
+        ack_id="policy-ack-1",
+        observation_id="observation-1",
+        next_observation_id="observation-2",
+        receive_monotonic_ns=1_020_000_000,
+        actual_action_source="policy",
+        policy_result_id=result["result_id"],
+        proposal_id=result["proposal_id"],
+        accepted_absolute7=[0.5, 0.0, 0.1, 0.0, 0.0, 0.0, 0.085],
+    )
+    assert ack["current_observation_id"] == "observation-1"
+    assert ack["next_observation_id"] == "observation-2"
+    assert ack["policy_executed_transition"] is True
+    intervention = ledger.record_intervention(
+        event="intervention_start",
+        policy_epoch=1,
+        receive_monotonic_ns=1_040_000_000,
+        safe_action={"arbitration": {"event": "intervention_start"}},
+    )
+    assert intervention["old_policy_chunk_invalidated"] is True
+    with pytest.raises(IntegratedCaptureError, match="POLICY_LINEAGE_STALE_GENERATION"):
+        ledger.bind_policy_dispatch(result["result_id"])
+    ledger.record_intervention(
+        event="intervention_end",
+        policy_epoch=1,
+        receive_monotonic_ns=1_050_000_000,
+        safe_action={"arbitration": {"event": "intervention_end"}},
+    )
+    seal = ledger.seal_episode(
+        seal_id="policy-seal-1",
+        sealed_monotonic_ns=1_060_000_000,
+        terminal_observation_id="observation-2",
+    )
+    assert seal["executed_action_source"] == "policy"
+    assert seal["policy_execution"] is True
+    assert seal["formal_replay"] is seal["real_online_r"] is False
+    assert seal["learner_started"] is False
 
 
 def test_integrated_backend_is_called_once_and_must_own_only_recorder_controller() -> None:
@@ -207,10 +313,25 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
     payload = json.loads(completed.stdout)
     assert payload["status"] == "VALIDATED_NOT_LAUNCHED"
     assert payload["robot_or_ros_started"] is False
+    policy_command = [
+        *command[:3], "policy-execute", *command[4:-2],
+        "--policy-revision", CYCLE210_POLICY_REVISION,
+        "--deployment-profile", str(CYCLE210_EXECUTION_PROFILE),
+    ]
     blocked = subprocess.run(
-        [*command[:3], "policy-execute", *command[4:]],
+        policy_command,
         cwd=ROOT, text=True, capture_output=True, check=False,
     )
     assert blocked.returncode == 2
-    assert "POLICY_EXECUTE_HARD_DISABLED" in blocked.stdout
+    assert "POLICY_EXECUTE_EXPLICIT_FLAG_REQUIRED" in blocked.stdout
     assert json.loads(blocked.stdout)["requested_mode_semantics"]["policy_execution"] is True
+    enabled = subprocess.run(
+        [*policy_command, "--allow-development-policy-execution-smoke"],
+        cwd=ROOT, text=True, capture_output=True, check=False,
+    )
+    assert enabled.returncode == 0, enabled.stdout + enabled.stderr
+    payload = json.loads(enabled.stdout)
+    assert payload["status"] == "VALIDATED_NOT_LAUNCHED"
+    assert payload["robot_or_ros_started"] is False
+    assert payload["contract"]["policy_execution"] is True
+    assert payload["contract"]["deploy_controller"] is False

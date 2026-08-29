@@ -9,7 +9,21 @@
     "reward_model_training_overlap": true,
     "unbiased_policy_evaluation": false,
     "reward_bearing_online_update_authorized": false,
-    "reward_pending_logging_allowed": true
+    "reward_pending_logging_allowed": true,
+    "development_policy_execution_smoke": {
+      "approved": true,
+      "scope": "single_episode_cycle210_policy_execution_smoke",
+      "basis": {
+        "episode": "task2_shadow_stage3_cycle210_20260829_003/episode_000000",
+        "technical_seal": "complete",
+        "operator_task_outcome": "success",
+        "detector_outcome": "success",
+        "executed_action_source": "human",
+        "policy_execution": false,
+        "formal_replay": false,
+        "real_online_r": false
+      }
+    }
   },
   "outcomes": {
     "approved_success": {"terminated": true, "truncated": false, "bootstrap": false},

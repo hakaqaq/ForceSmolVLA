@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import json
+import math
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
@@ -19,6 +21,17 @@ INTEGRATED_CAPTURE_SCHEMA = "forcesmolvla-stage3-integrated-capture-v1"
 RECORDER_CONTROL_CHAIN = "franky_native_hilserl_cartesian_impedance"
 RECORDER_ENTRY = Path(
     "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py"
+)
+CYCLE210_POLICY_REVISION = (
+    "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
+)
+CYCLE210_EXECUTION_PROFILE = Path(
+    "/home/rlc123/ForceSmolVLA/"
+    "configs/deployment.stage3_cycle210_shadow.development.json"
+)
+CYCLE210_DEPLOYMENT_BINDING = Path(
+    "/home/rlc123/ForceSmolVLA/"
+    "artifacts/development/live/task2_cycle210_evaluation_smoke_binding.v1.json"
 )
 CAPTURE_MODE_SEMANTICS: dict[str, dict[str, Any]] = {
     "shadow": {
@@ -37,8 +50,8 @@ CAPTURE_MODE_SEMANTICS: dict[str, dict[str, Any]] = {
         "real_online_r": False,
         "activation_authorized": False,
         "unlock_requires": [
-            "future_explicit_authorization",
-            "verified_deployment_binding",
+            "explicit_development_policy_execution_smoke_flag",
+            "approved_cycle210_deployment_binding",
         ],
     },
 }
@@ -105,6 +118,8 @@ class IntegratedCaptureContract:
     deploy_controller: bool
     control_chain_id: str
     recorder_entry: str
+    development_policy_execution_smoke: bool
+    deployment_binding: str | None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -123,16 +138,39 @@ def build_capture_contract(
     reset_generation: int,
     takeover_generation: int,
     deployment_binding: Path | None = None,
+    allow_development_policy_execution_smoke: bool = False,
 ) -> IntegratedCaptureContract:
-    """Build the only currently authorized mode; policy execution stays unreachable."""
+    """Build a recorder-owned shadow or explicitly authorized development smoke."""
 
     semantics = capture_mode_semantics(mode)
     if mode == "policy-execute":
-        del deployment_binding
-        raise IntegratedCaptureError(
-            "POLICY_EXECUTE_HARD_DISABLED:"
-            "future_explicit_authorization_and_deployment_binding_required"
-        )
+        if not allow_development_policy_execution_smoke:
+            raise IntegratedCaptureError("POLICY_EXECUTE_EXPLICIT_FLAG_REQUIRED")
+        if policy_revision != CYCLE210_POLICY_REVISION:
+            raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_REVISION_REQUIRED")
+        if deployment_binding is None:
+            raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_BINDING_REQUIRED")
+        resolved_binding = deployment_binding.expanduser().resolve()
+        if resolved_binding != CYCLE210_DEPLOYMENT_BINDING:
+            raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_BINDING_REQUIRED")
+        try:
+            binding = json.loads(resolved_binding.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise IntegratedCaptureError(
+                "POLICY_EXECUTE_CYCLE210_BINDING_UNREADABLE"
+            ) from error
+        if (
+            not isinstance(binding, Mapping)
+            or binding.get("artifact_status") != "approved"
+            or binding.get("model_sha256") != CYCLE210_POLICY_REVISION
+            or not isinstance(binding.get("approval"), Mapping)
+            or binding["approval"].get("status") != "approved"
+        ):
+            raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_BINDING_INVALID")
+    elif allow_development_policy_execution_smoke:
+        raise IntegratedCaptureError("POLICY_EXECUTE_FLAG_REQUIRES_POLICY_EXECUTE_MODE")
+    else:
+        resolved_binding = None
     identity = SharedCaptureIdentity(
         session_id=session_id,
         episode_id=episode_id,
@@ -143,7 +181,7 @@ def build_capture_contract(
         takeover_generation=takeover_generation,
     ).validate()
     return IntegratedCaptureContract(
-        mode="shadow",
+        mode=mode,
         identity=identity,
         actual_action_source=str(semantics["actual_action_source"]),
         policy_inference=bool(semantics["policy_inference"]),
@@ -156,6 +194,10 @@ def build_capture_contract(
         deploy_controller=False,
         control_chain_id=RECORDER_CONTROL_CHAIN,
         recorder_entry=str(RECORDER_ENTRY),
+        development_policy_execution_smoke=(mode == "policy-execute"),
+        deployment_binding=(
+            None if resolved_binding is None else str(resolved_binding)
+        ),
     )
 
 
@@ -163,7 +205,9 @@ class IntegratedCaptureLedger:
     """One identity/clock/observation store shared by recorder and policy lineage."""
 
     def __init__(self, contract: IntegratedCaptureContract) -> None:
-        if contract.mode != "shadow" or contract.policy_execution:
+        if contract.mode not in {"shadow", "policy-execute"}:
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_LEDGER_MODE_NOT_AUTHORIZED")
+        if contract.policy_execution is not (contract.mode == "policy-execute"):
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_LEDGER_MODE_NOT_AUTHORIZED")
         self.contract = contract
         identity = contract.identity
@@ -176,7 +220,12 @@ class IntegratedCaptureLedger:
         self._observations: dict[str, dict[str, Any]] = {}
         self._requests: dict[str, dict[str, Any]] = {}
         self._results: dict[str, PolicyResultLineage] = {}
+        self._canceled_requests: dict[str, dict[str, Any]] = {}
         self._actual_acks: dict[str, dict[str, Any]] = {}
+        self._interventions: list[dict[str, Any]] = []
+        self._current_policy_epoch = identity.policy_epoch
+        self._current_takeover_generation = identity.takeover_generation
+        self._human_takeover_active = False
         self._sealed: dict[str, Any] | None = None
 
     def _shared(self) -> dict[str, Any]:
@@ -186,6 +235,10 @@ class IntegratedCaptureLedger:
         if self._sealed is not None:
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_EPISODE_ALREADY_SEALED")
 
+    @property
+    def current_policy_generation(self) -> tuple[int, int]:
+        return self._current_policy_epoch, self._current_takeover_generation
+
     def record_observation(
         self,
         *,
@@ -193,6 +246,8 @@ class IntegratedCaptureLedger:
         t_ref_ns: int,
         stream_timestamps_ns: Mapping[str, int],
         stream_ids: Mapping[str, str],
+        policy_epoch: int | None = None,
+        takeover_generation: int | None = None,
     ) -> dict[str, Any]:
         self._ensure_open()
         identity = _nonempty(observation_id, "INTEGRATED_CAPTURE_OBSERVATION_ID_MISSING")
@@ -214,11 +269,23 @@ class IntegratedCaptureLedger:
         record = {
             "schema": INTEGRATED_CAPTURE_SCHEMA,
             **self._shared(),
+            "policy_epoch": self._current_policy_epoch,
+            "takeover_generation": self._current_takeover_generation,
             "observation_id": identity,
             "t_ref_ns": int(t_ref_ns),
             "stream_timestamps_ns": timestamps,
             "stream_ids": streams,
         }
+        if (
+            policy_epoch is not None
+            and policy_epoch != self._current_policy_epoch
+        ) or (
+            takeover_generation is not None
+            and takeover_generation != self._current_takeover_generation
+        ):
+            raise IntegratedCaptureError(
+                "INTEGRATED_CAPTURE_OBSERVATION_GENERATION_MISMATCH"
+            )
         previous = self._observations.get(identity)
         if previous is not None and previous != record:
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_OBSERVATION_ID_CONFLICT")
@@ -247,8 +314,8 @@ class IntegratedCaptureLedger:
         try:
             lineage = self._policy.record_request(
                 request,
-                policy_epoch=self.contract.identity.policy_epoch,
-                takeover_generation=self.contract.identity.takeover_generation,
+                policy_epoch=self._current_policy_epoch,
+                takeover_generation=self._current_takeover_generation,
                 recorded_monotonic_ns=recorded_monotonic_ns,
             )
         except PolicyLineageError as error:
@@ -284,11 +351,97 @@ class IntegratedCaptureLedger:
             **self._shared(),
             **lineage.selection_fields(),
             "observation_id": request_record["observation_id"],
-            "shadow_proposal": True,
+            "shadow_proposal": self.contract.mode == "shadow",
+            "policy_execution_candidate": self.contract.mode == "policy-execute",
             "executed": False,
         }
         self._results[lineage.result_id] = lineage
+        self._canceled_requests.pop(lineage.request_id, None)
         return record
+
+    def cancel_policy_request(
+        self, request_id: str, *, reason: str, recorded_monotonic_ns: int
+    ) -> dict[str, Any]:
+        self._ensure_open()
+        request = self._requests.get(request_id)
+        if request is None:
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_CANCEL_REQUEST_MISSING")
+        if any(item.request_id == request_id for item in self._results.values()):
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_CANCEL_AFTER_RESULT")
+        if recorded_monotonic_ns < int(request["request_recorded_monotonic_ns"]):
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_CANCEL_TIME_INVALID")
+        record = {
+            "schema": POLICY_LINEAGE_SCHEMA,
+            **request,
+            "canceled_monotonic_ns": int(recorded_monotonic_ns),
+            "cancel_reason": _nonempty(
+                reason, "INTEGRATED_CAPTURE_CANCEL_REASON_MISSING"
+            ),
+            "executed": False,
+        }
+        self._canceled_requests[request_id] = record
+        return dict(record)
+
+    def bind_policy_dispatch(self, result_id: str) -> dict[str, Any]:
+        self._ensure_open()
+        lineage = self._results.get(result_id)
+        if lineage is None:
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_DISPATCH_RESULT_MISSING")
+        try:
+            return self._policy.bind_dispatch(
+                lineage,
+                policy_epoch=self._current_policy_epoch,
+                takeover_generation=self._current_takeover_generation,
+            )
+        except PolicyLineageError as error:
+            raise IntegratedCaptureError(str(error)) from error
+
+    def record_intervention(
+        self,
+        *,
+        event: str,
+        policy_epoch: int,
+        receive_monotonic_ns: int,
+        safe_action: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        self._ensure_open()
+        if self.contract.mode != "policy-execute":
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_INTERVENTION_MODE_INVALID")
+        if event not in {"intervention_start", "human_action", "intervention_end"}:
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_INTERVENTION_EVENT_INVALID")
+        epoch = _counter(policy_epoch, "INTEGRATED_CAPTURE_POLICY_EPOCH_INVALID")
+        if receive_monotonic_ns <= 0:
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_INTERVENTION_TIME_INVALID")
+        invalidated = False
+        if event == "intervention_start":
+            if epoch != self._current_policy_epoch + 1:
+                raise IntegratedCaptureError(
+                    "INTEGRATED_CAPTURE_TAKEOVER_EPOCH_DISCONTINUITY"
+                )
+            self._current_policy_epoch = epoch
+            self._current_takeover_generation += 1
+            self._human_takeover_active = True
+            invalidated = True
+        elif epoch != self._current_policy_epoch:
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_INTERVENTION_EPOCH_MISMATCH")
+        elif event == "intervention_end":
+            self._human_takeover_active = False
+        elif not self._human_takeover_active:
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_INTERVENTION_NOT_ACTIVE")
+        record = {
+            "schema": INTEGRATED_CAPTURE_SCHEMA,
+            **self._shared(),
+            "event": event,
+            "receive_monotonic_ns": int(receive_monotonic_ns),
+            "policy_epoch": self._current_policy_epoch,
+            "takeover_generation": self._current_takeover_generation,
+            "old_policy_chunk_invalidated": invalidated,
+            "actual_action_source": "human",
+            "policy_execution": True,
+            "safe_action": dict(safe_action),
+        }
+        self._interventions.append(record)
+        return dict(record)
 
     def record_actual_action_ack(
         self,
@@ -299,31 +452,54 @@ class IntegratedCaptureLedger:
         actual_action_source: str,
         policy_result_id: str | None = None,
         proposal_id: str | None = None,
+        next_observation_id: str | None = None,
+        accepted_absolute7: list[float] | tuple[float, ...] | None = None,
     ) -> dict[str, Any]:
         self._ensure_open()
         identity = _nonempty(ack_id, "INTEGRATED_CAPTURE_ACK_ID_MISSING")
         observation = self._observations.get(observation_id)
         if observation is None:
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_ACK_OBSERVATION_MISSING")
-        if (
-            actual_action_source != "human"
-            or actual_action_source != self.contract.actual_action_source
-        ):
-            raise IntegratedCaptureError("INTEGRATED_CAPTURE_SHADOW_ACTUAL_SOURCE_NOT_HUMAN")
-        if policy_result_id is not None or proposal_id is not None:
-            raise IntegratedCaptureError("SHADOW_PROPOSAL_CANNOT_BIND_HUMAN_ACTION_ACK")
+        if actual_action_source != self.contract.actual_action_source:
+            raise IntegratedCaptureError("INTEGRATED_CAPTURE_ACTUAL_SOURCE_MISMATCH")
         if receive_monotonic_ns < int(observation["t_ref_ns"]):
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_ACK_TIME_INVALID")
+        if self.contract.mode == "shadow":
+            if policy_result_id is not None or proposal_id is not None:
+                raise IntegratedCaptureError("SHADOW_PROPOSAL_CANNOT_BIND_HUMAN_ACTION_ACK")
+            if next_observation_id is not None or accepted_absolute7 is not None:
+                raise IntegratedCaptureError("SHADOW_ACK_POLICY_FIELDS_FORBIDDEN")
+            lineage_fields: dict[str, Any] = {}
+        else:
+            lineage = self._results.get(str(policy_result_id))
+            next_observation = self._observations.get(str(next_observation_id))
+            values = tuple(float(value) for value in (accepted_absolute7 or ()))
+            if (
+                lineage is None
+                or proposal_id != lineage.proposal_id
+                or next_observation is None
+                or next_observation["t_ref_ns"] < receive_monotonic_ns
+                or len(values) != 7
+                or not all(math.isfinite(value) for value in values)
+            ):
+                raise IntegratedCaptureError("POLICY_EXECUTE_ACK_LINEAGE_INVALID")
+            lineage_fields = {
+                **lineage.selection_fields(),
+                "current_observation_id": observation_id,
+                "next_observation_id": str(next_observation_id),
+                "accepted_absolute7": list(values),
+            }
         record = {
             "schema": INTEGRATED_CAPTURE_SCHEMA,
             **self._shared(),
+            **lineage_fields,
             "ack_id": identity,
             "observation_id": observation_id,
             "receive_monotonic_ns": int(receive_monotonic_ns),
-            "actual_action_source": "human",
-            "policy_result_id": None,
-            "proposal_id": None,
-            "policy_executed_transition": False,
+            "actual_action_source": actual_action_source,
+            "policy_result_id": policy_result_id,
+            "proposal_id": proposal_id,
+            "policy_executed_transition": self.contract.mode == "policy-execute",
             "formal_replay": False,
             "real_online_r": False,
         }
@@ -352,7 +528,7 @@ class IntegratedCaptureLedger:
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_TERMINAL_OBSERVATION_MISSING")
         request_ids = set(self._requests)
         result_request_ids = {lineage.request_id for lineage in self._results.values()}
-        if request_ids != result_request_ids:
+        if request_ids != result_request_ids | set(self._canceled_requests):
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_UNSEALED_POLICY_LINEAGE")
         latest = max(
             [row["t_ref_ns"] for row in self._observations.values()]
@@ -369,13 +545,25 @@ class IntegratedCaptureLedger:
             "observation_count": len(self._observations),
             "policy_request_count": len(self._requests),
             "policy_result_count": len(self._results),
-            "human_action_ack_count": len(self._actual_acks),
-            "actual_action_source": "human",
+            "policy_request_canceled_count": len(self._canceled_requests),
+            "human_action_ack_count": (
+                len(self._actual_acks) if self.contract.mode == "shadow" else 0
+            ),
+            "policy_action_ack_count": (
+                len(self._actual_acks) if self.contract.mode == "policy-execute" else 0
+            ),
+            "intervention_count": len(self._interventions),
+            "actual_action_source": self.contract.actual_action_source,
+            "executed_action_source": self.contract.actual_action_source,
             "policy_inference": True,
-            "policy_execution": False,
+            "policy_execution": self.contract.policy_execution,
             "shadow_proposals_executed": False,
             "formal_replay": False,
             "real_online_r": False,
+            "learner_started": False,
+            "actor_updates": 0,
+            "critic_updates": 0,
+            "policy_revision_published": False,
         }
         return dict(self._sealed)
 
@@ -432,6 +620,9 @@ def run_integrated_capture(
 
 
 __all__ = [
+    "CYCLE210_DEPLOYMENT_BINDING",
+    "CYCLE210_EXECUTION_PROFILE",
+    "CYCLE210_POLICY_REVISION",
     "CaptureBackendCapabilities",
     "CAPTURE_MODE_SEMANTICS",
     "IntegratedCaptureBackend",

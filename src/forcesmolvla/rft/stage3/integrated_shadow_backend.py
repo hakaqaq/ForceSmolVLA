@@ -1,4 +1,4 @@
-"""Recorder-owned live shadow capture with read-only policy inference."""
+"""Recorder-owned integrated shadow and development policy-execution capture."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from collections import deque
 from dataclasses import asdict, dataclass
 import importlib
 import json
+import math
 from pathlib import Path
 import signal
 import subprocess
@@ -16,6 +17,9 @@ from typing import Any, Mapping
 
 from .gripper_provenance import GripperGeneration
 from .integrated_capture import (
+    CYCLE210_DEPLOYMENT_BINDING,
+    CYCLE210_EXECUTION_PROFILE,
+    CYCLE210_POLICY_REVISION,
     CaptureBackendCapabilities,
     IntegratedCaptureContract,
     IntegratedCaptureError,
@@ -27,6 +31,30 @@ from .policy_lineage import InitialGripperAuthority, UPPER_CLOCK_DOMAIN
 
 
 SHADOW_BACKEND_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
+POLICY_EXECUTION_BACKEND_SCHEMA = (
+    "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
+)
+CYCLE210_DEPLOYMENT_BINDING_SHA256 = (
+    "6f15f33aedbf4327388012dc7a0418de09f05ba070833ac95c092b95104471d5"
+)
+CYCLE210_CHECKPOINT = Path(
+    "/home/rlc123/ForceSmolVLA/"
+    "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1"
+)
+CYCLE210_RULESPEC = Path(
+    "/home/rlc123/ForceSmolVLA/configs/live_action_safety.task2.development.yaml"
+)
+CYCLE210_DATASET_MANIFEST = Path(
+    "/home/rlc123/ForceSmolVLA/datasets/task2_lerobotv3/conversion_manifest.json"
+)
+DETECTOR_CONTRACT = Path(
+    "/home/rlc123/ForceSmolVLA/"
+    "configs/stage3_reward_terminal_contract.v1.development.json"
+)
+RETRYABLE_CAMERA_ERRORS = (
+    "CAMERA_AGE_EXCEEDED:",
+    "INTERCAMERA_SKEW_EXCEEDED:",
+)
 EXTERNAL_SCRIPTS = Path("/home/rlc123/fr3_client_ws/scripts")
 DEFAULT_DEPLOYMENT_PROFILE = Path(
     "/home/rlc123/ForceSmolVLA/configs/deployment.active.development.json"
@@ -73,7 +101,7 @@ def build_native_recorder_command(arguments: Mapping[str, Any]) -> list[str]:
 
 
 class ShadowArtifactStore:
-    """Append-only shadow artifacts; proposals and human ACKs cannot commingle."""
+    """Append-only integrated artifacts with mode-specific fail-closed rows."""
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory
@@ -107,6 +135,36 @@ class ShadowArtifactStore:
                 or row.get("real_online_r") is not False
             ):
                 raise IntegratedCaptureError("SHADOW_HUMAN_ACK_SEMANTICS_INVALID")
+        if name == "policy_execute_proposal.jsonl":
+            if (
+                row.get("actual_action_source") != "policy"
+                or row.get("policy_execution") is not True
+                or row.get("formal_replay") is not False
+                or row.get("real_online_r") is not False
+            ):
+                raise IntegratedCaptureError("POLICY_EXECUTE_PROPOSAL_SEMANTICS_INVALID")
+        if name == "policy_execute_chunk.jsonl":
+            actions = row.get("actions_absolute7")
+            if (
+                row.get("executed_action_source") != "policy"
+                or row.get("action_semantics") != "absolute7"
+                or not isinstance(actions, list)
+                or len(actions) != 50
+                or any(not isinstance(action, list) or len(action) != 7 for action in actions)
+                or row.get("formal_replay") is not False
+                or row.get("real_online_r") is not False
+            ):
+                raise IntegratedCaptureError("POLICY_EXECUTE_CHUNK_SEMANTICS_INVALID")
+        if name == "policy_execute_transition.jsonl":
+            if (
+                row.get("executed_action_source") != "policy"
+                or row.get("policy_executed_transition") is not True
+                or not row.get("current_observation_id")
+                or not row.get("next_observation_id")
+                or row.get("formal_replay") is not False
+                or row.get("real_online_r") is not False
+            ):
+                raise IntegratedCaptureError("POLICY_EXECUTE_TRANSITION_SEMANTICS_INVALID")
         path = self.streams / name
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
@@ -166,12 +224,23 @@ class _NativeCameraPair:
         if self._thread.is_alive():
             self._thread.join(timeout=2.0)
 
+    @staticmethod
+    def _jpeg_complete(path: Path) -> bool:
+        try:
+            if path.stat().st_size < 2:
+                return False
+            with path.open("rb") as handle:
+                handle.seek(-2, 2)
+                return handle.read(2) == b"\xff\xd9"
+        except OSError:
+            return False
+
     def _update_role(self, role: str) -> None:
         latest: tuple[Path, Any] | None = None
         while True:
             index = self._next[role]
             path = self.episode_dir / "images" / role / f"frame_{index:06d}.jpg"
-            if not path.is_file():
+            if not path.is_file() or not self._jpeg_complete(path):
                 break
             bgr = self.cv2.imread(str(path), self.cv2.IMREAD_COLOR)
             if bgr is None:
@@ -220,7 +289,7 @@ def _parse_recorder_arguments(recorder: Any, command: list[str]) -> Any:
         sys.argv = original
 
 
-def _shadow_observation_type(deploy: Any) -> type:
+def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> type:
     class ShadowObservation(deploy.LiveForceSmolObservation):
         def __init__(self, args: Any, cameras: Any, metadata: dict, task: str) -> None:
             self._shadow_policy_topic = str(args.policy_action_topic)
@@ -230,8 +299,32 @@ def _shadow_observation_type(deploy: Any) -> type:
             self._shadow_targets: list[dict[str, Any]] = []
             self._shadow_statuses: list[dict[str, Any]] = []
             self._shadow_gripper_sources: deque[tuple[int, int]] = deque(maxlen=512)
+            self._policy_sequence = 0
+            self._policy_decisions: dict[int, dict[str, Any]] = {}
+            self._policy_decision_condition = threading.Condition(self._shadow_lock)
+            self._reference_ack_condition = threading.Condition(self._shadow_lock)
+            self._policy_gripper_condition = threading.Condition(self._shadow_lock)
+            self._policy_gripper_sequence = 1_000_000
+            self._policy_gripper_active = False
+            self._policy_gripper_results: dict[str, dict[str, Any]] = {}
             self.shadow_error: str | None = None
             super().__init__(args, cameras, metadata, task)
+            if policy_execution:
+                spacemouse = deploy.forcevla.spacemouse_base
+                self._policy_gripper_api = spacemouse
+                self._policy_gripper_client = spacemouse.ActionClient(
+                    self, spacemouse.GripperCommand, args.gripper_action
+                )
+                self._policy_gripper_target_publisher = self.create_publisher(
+                    deploy.String,
+                    deploy.forcevla.collector.GRIPPER_TARGET_TOPIC,
+                    10,
+                )
+                self._policy_gripper_status_publisher = self.create_publisher(
+                    deploy.String,
+                    deploy.forcevla.collector.GRIPPER_STATUS_TOPIC,
+                    20,
+                )
             self.create_subscription(
                 deploy.String,
                 args.reference_ack_topic,
@@ -252,7 +345,7 @@ def _shadow_observation_type(deploy: Any) -> type:
             )
 
         def create_publisher(self, message_type: Any, topic: str, *args: Any, **kwargs: Any) -> Any:
-            if str(topic) == self._shadow_policy_topic:
+            if not policy_execution and str(topic) == self._shadow_policy_topic:
                 return ForbiddenPolicyPublisher(str(topic))
             return super().create_publisher(message_type, topic, *args, **kwargs)
 
@@ -265,10 +358,7 @@ def _shadow_observation_type(deploy: Any) -> type:
                 payload = json.loads(message.data)
                 raw = payload["arbitration"]["raw_action"]
                 source_stamp = payload.get("equilibrium_source_stamp_ns")
-                if source_stamp is None:
-                    return
-                stamp = int(source_stamp)
-                if stamp <= 0 or not isinstance(raw, dict):
+                if not isinstance(raw, dict):
                     raise ValueError("invalid safe-action identity")
                 record = {
                     "shadow_receive_monotonic_ns": time.monotonic_ns(),
@@ -276,9 +366,16 @@ def _shadow_observation_type(deploy: Any) -> type:
                     "payload": payload,
                 }
                 with self._shadow_lock:
-                    self._shadow_safe_by_stamp[stamp] = record
-                    for old in list(self._shadow_safe_by_stamp)[:-512]:
-                        self._shadow_safe_by_stamp.pop(old, None)
+                    if raw.get("source") == "policy":
+                        self._policy_decisions[int(raw["sequence"])] = record
+                        self._policy_decision_condition.notify_all()
+                    if source_stamp is not None:
+                        stamp = int(source_stamp)
+                        if stamp <= 0:
+                            raise ValueError("invalid safe-action source stamp")
+                        self._shadow_safe_by_stamp[stamp] = record
+                        for old in list(self._shadow_safe_by_stamp)[:-512]:
+                            self._shadow_safe_by_stamp.pop(old, None)
             except Exception as error:
                 self._fail_shadow("SHADOW_SAFE_ACTION_INVALID", error)
 
@@ -298,6 +395,7 @@ def _shadow_observation_type(deploy: Any) -> type:
                 }
                 with self._shadow_lock:
                     self._shadow_acks.append(record)
+                    self._reference_ack_condition.notify_all()
             except Exception as error:
                 self._fail_shadow("SHADOW_REFERENCE_ACK_INVALID", error)
 
@@ -334,6 +432,238 @@ def _shadow_observation_type(deploy: Any) -> type:
         def shadow_ack_snapshot(self) -> tuple[list[dict[str, Any]], dict[int, dict[str, Any]]]:
             with self._shadow_lock:
                 return list(self._shadow_acks), dict(self._shadow_safe_by_stamp)
+
+        def policy_audit_snapshot(self) -> list[dict[str, Any]]:
+            with self._shadow_lock:
+                return list(self._shadow_safe_by_stamp.values())
+
+        def publish_policy_action(
+            self,
+            normalized_action: Any,
+            *,
+            policy_epoch: int,
+            observation_id: str,
+        ) -> int:
+            if not policy_execution:
+                raise IntegratedCaptureError("POLICY_EXECUTE_PUBLISH_NOT_AUTHORIZED")
+            values = tuple(float(value) for value in normalized_action)
+            if len(values) != 7 or not all(math.isfinite(value) for value in values):
+                raise IntegratedCaptureError("POLICY_EXECUTE_NORMALIZED_ACTION_INVALID")
+            sequence = self._policy_sequence
+            self._policy_sequence += 1
+            raw_action = deploy.RawAction(
+                source="policy",
+                sequence=sequence,
+                source_monotonic_ns=time.monotonic_ns(),
+                action=values,
+                intervention=False,
+                phase="control",
+                policy_epoch=int(policy_epoch),
+                observation_id=str(observation_id),
+            )
+            message = deploy.String()
+            message.data = raw_action.to_json()
+            self.action_publisher.publish(message)
+            return sequence
+
+        def wait_policy_decision(self, sequence: int, timeout_s: float) -> dict[str, Any]:
+            deadline = time.monotonic() + timeout_s
+            with self._policy_decision_condition:
+                while sequence not in self._policy_decisions:
+                    if self.shadow_error:
+                        raise IntegratedCaptureError(self.shadow_error)
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0.0:
+                        raise IntegratedCaptureError(
+                            f"POLICY_EXECUTE_DECISION_TIMEOUT:{sequence}"
+                        )
+                    self._policy_decision_condition.wait(min(remaining, 0.02))
+                return self._policy_decisions.pop(sequence)["payload"]
+
+        def wait_reference_ack(self, request_stamp_ns: int, timeout_s: float) -> dict[str, Any]:
+            deadline = time.monotonic() + timeout_s
+            with self._reference_ack_condition:
+                while True:
+                    for row in self._shadow_acks:
+                        if int(row["payload"]["request_stamp_ns"]) == request_stamp_ns:
+                            payload = dict(row["payload"])
+                            payload["upper_receive_monotonic_ns"] = int(
+                                row["upper_receive_monotonic_ns"]
+                            )
+                            return payload
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0.0:
+                        raise IntegratedCaptureError(
+                            f"POLICY_EXECUTE_POSE_ACK_TIMEOUT:{request_stamp_ns}"
+                        )
+                    self._reference_ack_condition.wait(min(remaining, 0.02))
+
+        def _publish_policy_gripper_event(
+            self, metadata: Mapping[str, Any], *, outcome: str | None = None
+        ) -> None:
+            payload = dict(metadata)
+            message = deploy.String()
+            if outcome is None:
+                payload["event_type"] = "accepted_goal"
+                publisher = self._policy_gripper_target_publisher
+            else:
+                payload.update(
+                    event_type="terminal_goal",
+                    outcome=outcome,
+                )
+                payload.setdefault("finished_monotonic_ns", time.monotonic_ns())
+                publisher = self._policy_gripper_status_publisher
+            message.data = json.dumps(payload, separators=(",", ":"))
+            publisher.publish(message)
+
+        def _policy_gripper_goal_response(
+            self, future: Any, command_id: str, metadata: dict[str, Any]
+        ) -> None:
+            try:
+                goal_handle = future.result()
+                if not goal_handle.accepted:
+                    raise RuntimeError("POLICY_GRIPPER_GOAL_REJECTED")
+                metadata["accepted_monotonic_ns"] = time.monotonic_ns()
+                goal_uuid = getattr(getattr(goal_handle, "goal_id", None), "uuid", [])
+                metadata["action_goal_id"] = bytes(
+                    int(value) for value in goal_uuid
+                ).hex()
+                if not metadata["action_goal_id"]:
+                    raise RuntimeError("POLICY_GRIPPER_GOAL_ID_MISSING")
+                self._publish_policy_gripper_event(metadata)
+                goal_handle.get_result_async().add_done_callback(
+                    lambda completed: self._policy_gripper_terminal(
+                        completed, command_id, metadata
+                    )
+                )
+            except Exception as error:
+                with self._policy_gripper_condition:
+                    self._policy_gripper_active = False
+                    self._policy_gripper_results[command_id] = {
+                        "error": f"{type(error).__name__}:{error}"
+                    }
+                    self._policy_gripper_condition.notify_all()
+
+        def _policy_gripper_terminal(
+            self, future: Any, command_id: str, metadata: dict[str, Any]
+        ) -> None:
+            outcome = "result_error"
+            try:
+                result = future.result().result
+                outcome = (
+                    "reached" if result.reached_goal
+                    else "stalled" if result.stalled
+                    else "not_reached"
+                )
+            except Exception:
+                pass
+            terminal = {
+                **metadata,
+                "outcome": outcome,
+                "finished_monotonic_ns": time.monotonic_ns(),
+            }
+            self._publish_policy_gripper_event(terminal, outcome=outcome)
+            with self._policy_gripper_condition:
+                self._policy_gripper_active = False
+                self._policy_gripper_results[command_id] = terminal
+                self._policy_gripper_condition.notify_all()
+
+        def ensure_policy_gripper_authority(
+            self,
+            target_width_m: float,
+            *,
+            command_context: Mapping[str, Any],
+            timeout_s: float,
+        ) -> dict[str, Any]:
+            if not policy_execution:
+                raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_NOT_AUTHORIZED")
+            width = float(target_width_m)
+            desired_closed = True if width <= 0.030 else False if width >= 0.055 else None
+            if desired_closed is None:
+                raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_TARGET_AMBIGUOUS")
+            with self._lock:
+                feedback_width = self.gripper_width_m
+                feedback_ns = int(self.gripper_receive_ns)
+            if feedback_width is None or feedback_ns <= 0:
+                raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_FEEDBACK_MISSING")
+            feedback_closed = float(feedback_width) < 0.0425
+            if feedback_closed == desired_closed:
+                return {
+                    **dict(command_context),
+                    "command_required": False,
+                    "requested_state": "CLOSED" if desired_closed else "OPEN",
+                    "requested_width_m": 0.0 if desired_closed else 0.085,
+                    "feedback_width_m": float(feedback_width),
+                    "feedback_monotonic_ns": feedback_ns,
+                    "authority": "existing_accepted_gripper_state",
+                }
+            if timeout_s <= 0.0 or not self._policy_gripper_client.server_is_ready():
+                raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_SERVER_UNAVAILABLE")
+            with self._policy_gripper_condition:
+                active_human = {
+                    (int(row["local_goal_sequence"]), str(row["action_goal_id"]))
+                    for row in self._shadow_targets
+                } - {
+                    (int(row["local_goal_sequence"]), str(row["action_goal_id"]))
+                    for row in self._shadow_statuses
+                }
+                if self._policy_gripper_active or active_human:
+                    raise IntegratedCaptureError("POLICY_EXECUTE_GRIPPER_AUTHORITY_BUSY")
+                sequence = self._policy_gripper_sequence
+                self._policy_gripper_sequence += 1
+                self._policy_gripper_active = True
+            command_id = f"policy-gripper:{sequence}"
+            controller_position = (
+                self.args.gripper_closed_position
+                if desired_closed
+                else self.args.gripper_open_position
+            )
+            metadata = {
+                **dict(command_context),
+                "command_id": command_id,
+                "token": "stage3-policy-execute",
+                "local_goal_sequence": sequence,
+                "requested_state": "CLOSED" if desired_closed else "OPEN",
+                "requested_closed": desired_closed,
+                "requested_width_m": 0.0 if desired_closed else 0.085,
+                "controller_position": float(controller_position),
+                "started_monotonic_ns": time.monotonic_ns(),
+                "accepted_monotonic_ns": None,
+                "action_goal_id": None,
+                "command_required": True,
+                "authority": "policy_execution_backend",
+            }
+            goal = self._policy_gripper_api.GripperCommand.Goal()
+            goal.command.position = float(controller_position)
+            goal.command.max_effort = float(self.args.gripper_max_effort)
+            try:
+                future = self._policy_gripper_client.send_goal_async(goal)
+                future.add_done_callback(
+                    lambda completed: self._policy_gripper_goal_response(
+                        completed, command_id, metadata
+                    )
+                )
+            except Exception as error:
+                with self._policy_gripper_condition:
+                    self._policy_gripper_active = False
+                raise IntegratedCaptureError(
+                    f"POLICY_EXECUTE_GRIPPER_SEND_FAILED:{type(error).__name__}:{error}"
+                ) from error
+            deadline = time.monotonic() + timeout_s
+            with self._policy_gripper_condition:
+                while command_id not in self._policy_gripper_results:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0.0:
+                        raise IntegratedCaptureError(
+                            f"POLICY_EXECUTE_GRIPPER_ACK_TIMEOUT:{command_id}"
+                        )
+                    self._policy_gripper_condition.wait(min(remaining, 0.02))
+                result = self._policy_gripper_results.pop(command_id)
+            if result.get("outcome") not in {"reached", "stalled"}:
+                raise IntegratedCaptureError(
+                    f"POLICY_EXECUTE_GRIPPER_TERMINAL_INVALID:{result}"
+                )
+            return result
 
         def shadow_initial_gripper_origin(
             self, episode_started_ns: int
@@ -419,6 +749,94 @@ def _validate_shadow_contract(contract: IntegratedCaptureContract) -> None:
         raise IntegratedCaptureError("SHADOW_BACKEND_CONTRACT_NOT_AUTHORIZED")
 
 
+def _validate_policy_execution_contract(contract: IntegratedCaptureContract) -> None:
+    if (
+        contract.mode != "policy-execute"
+        or contract.actual_action_source != "policy"
+        or contract.policy_inference is not True
+        or contract.policy_execution is not True
+        or contract.formal_replay is not False
+        or contract.real_online_r is not False
+        or contract.development_policy_execution_smoke is not True
+        or Path(str(contract.deployment_binding)).resolve()
+        != CYCLE210_DEPLOYMENT_BINDING
+        or contract.identity.policy_revision != CYCLE210_POLICY_REVISION
+        or contract.controller_owner != "recorder"
+        or contract.controller_process_count != 1
+        or contract.recorder_controller is not True
+        or contract.deploy_controller is not False
+        or contract.control_chain_id != RECORDER_CONTROL_CHAIN
+        or Path(contract.recorder_entry) != RECORDER_ENTRY
+    ):
+        raise IntegratedCaptureError("POLICY_EXECUTE_BACKEND_CONTRACT_NOT_AUTHORIZED")
+
+
+def _validate_policy_execution_profile(
+    deploy: Any,
+    profile_path: Path,
+    profile: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    contract: IntegratedCaptureContract,
+) -> None:
+    detector = _json(DETECTOR_CONTRACT)
+    detector_smoke = detector.get("reward_gate", {}).get(
+        "development_policy_execution_smoke", {}
+    )
+    if (
+        profile_path != CYCLE210_EXECUTION_PROFILE
+        or profile.get("deployment_id") != "task2-stage3-cycle210-shadow"
+        or Path(profile["checkpoint"]).resolve() != CYCLE210_CHECKPOINT
+        or Path(profile["rulespec"]).resolve() != CYCLE210_RULESPEC
+        or Path(profile["deployment_binding"]).resolve()
+        != CYCLE210_DEPLOYMENT_BINDING
+        or Path(profile["dataset_manifest"]).resolve()
+        != CYCLE210_DATASET_MANIFEST
+        or profile.get("deployment_binding_sha256")
+        != CYCLE210_DEPLOYMENT_BINDING_SHA256
+        or contract.deployment_binding != str(CYCLE210_DEPLOYMENT_BINDING)
+    ):
+        raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_PROFILE_REQUIRED")
+    expected_metadata = {
+        "model_sha256": CYCLE210_POLICY_REVISION,
+        "robot_execution_allowed": True,
+        "robot_execution_mode": "approved_binding_supervised_development",
+        "development_execution_override": True,
+        "deployment_binding_sha256": CYCLE210_DEPLOYMENT_BINDING_SHA256,
+        "required_client_source_sha256": deploy.client_source_tree_sha256(),
+        "rulespec_mode": "development_only",
+        "rulespec_approval_status": "approved",
+    }
+    if any(metadata.get(key) != value for key, value in expected_metadata.items()):
+        raise IntegratedCaptureError("POLICY_EXECUTE_SERVER_AUTHORIZATION_MISMATCH")
+    if (
+        detector_smoke.get("approved") is not True
+        or detector_smoke.get("scope")
+        != "single_episode_cycle210_policy_execution_smoke"
+        or detector.get("reward_gate", {}).get(
+            "reward_bearing_online_update_authorized"
+        )
+        is not False
+    ):
+        raise IntegratedCaptureError("POLICY_EXECUTE_DETECTOR_SCOPE_NOT_APPROVED")
+
+
+def _selected_chunk_action(
+    actions: Any, *, t_ref_ns: int, fps: int, selection_ns: int
+) -> tuple[int, Any]:
+    if t_ref_ns <= 0 or fps != 30 or selection_ns < t_ref_ns:
+        raise IntegratedCaptureError("POLICY_EXECUTE_CHUNK_TIME_INVALID")
+    action_index = (
+        (selection_ns - t_ref_ns) * fps + 1_000_000_000 - 1
+    ) // 1_000_000_000
+    if action_index >= 50:
+        raise IntegratedCaptureError("POLICY_EXECUTE_CHUNK_EXPIRED")
+    return int(action_index), actions[int(action_index)]
+
+
+def _retryable_camera_error(error: RuntimeError) -> bool:
+    return str(error).startswith(RETRYABLE_CAMERA_ERRORS)
+
+
 def _json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -461,14 +879,28 @@ def _validate_session_binding(
     ):
         raise IntegratedCaptureError("SHADOW_SESSION_WORKSPACE_MISMATCH")
     frames = session.get("frames", {})
+    profile_frames = (
+        session.get("tool_profile", {}).get("profile", {}).get("frames", {})
+    )
     for key, attribute in (
         ("base", "base_frame"),
         ("tcp", "tcp_frame"),
         ("sensor_body", "sensor_body_frame"),
         ("wrench_measurement", "wrench_measurement_frame"),
     ):
-        if str(frames.get(key, "")) != str(getattr(recorder_args, attribute)):
+        active_frame = frames.get(key)
+        requested_frame = getattr(recorder_args, attribute)
+        if (
+            not isinstance(active_frame, str)
+            or not active_frame
+            or profile_frames.get(key) != active_frame
+            or (
+                requested_frame is not None
+                and requested_frame != active_frame
+            )
+        ):
             raise IntegratedCaptureError("SHADOW_SESSION_FRAME_MISMATCH")
+        setattr(recorder_args, attribute, active_frame)
     profile_transform = session["tool_profile"]["profile"]["transforms"][
         "tcp_to_wrench_measurement"
     ]
@@ -545,8 +977,15 @@ def _initial_gripper_authority(
             policy_epoch=contract.identity.policy_epoch,
         ),
     )
+    configured_max_age_ms = metadata.get("gripper_max_age_ms")
     maximum_age_ns = int(
-        min(float(metadata["gripper_max_age_ms"]), 100.0) * 1.0e6
+        min(
+            100.0
+            if configured_max_age_ms is None
+            else float(configured_max_age_ms),
+            100.0,
+        )
+        * 1.0e6
     )
     try:
         return authority.validate(max_feedback_age_ns=maximum_age_ns).to_dict()
@@ -591,8 +1030,52 @@ def _camera_reconciliation(
     return result
 
 
+def _record_live_observation(
+    observation: Any,
+    metadata: Mapping[str, Any],
+    contract: IntegratedCaptureContract,
+    ledger: IntegratedCaptureLedger,
+    store: ShadowArtifactStore,
+    observations: list[dict[str, Any]],
+    *,
+    stream_name: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    while True:
+        try:
+            request = observation.request(metadata)
+            break
+        except RuntimeError as error:
+            if not _retryable_camera_error(error):
+                raise
+            time.sleep(0.005)
+    request["provenance"]["session_id"] = contract.identity.session_id
+    observation_id = (
+        f"{contract.identity.episode_id}:observation:{len(observations):06d}"
+    )
+    provenance = request["provenance"]
+    timestamps = {
+        "measured_tcp_pose": int(provenance["pose_receive_monotonic_ns"]),
+        "wrench_notch_sensor": int(provenance["wrench_receive_monotonic_ns"]),
+        "gripper_state": int(provenance["gripper_receive_monotonic_ns"]),
+        "external_camera": int(provenance["camera1_receive_monotonic_ns"]),
+        "wrist_camera": int(provenance["camera2_receive_monotonic_ns"]),
+    }
+    policy_epoch, takeover_generation = ledger.current_policy_generation
+    record = ledger.record_observation(
+        observation_id=observation_id,
+        t_ref_ns=int(provenance["t_ref_ns"]),
+        stream_timestamps_ns=timestamps,
+        stream_ids=observation.shadow_stream_ids(request),
+        policy_epoch=policy_epoch,
+        takeover_generation=takeover_generation,
+    )
+    observations.append(record)
+    store.append(stream_name, record)
+    return request, record
+
+
 class IntegratedShadowBackend:
-    """Actual shadow backend: one native recorder plus read-only inference."""
+    """One native recorder with shadow inference or explicit policy smoke."""
 
     capabilities = CaptureBackendCapabilities(
         controller_owner="recorder",
@@ -611,7 +1094,10 @@ class IntegratedShadowBackend:
         ledger: IntegratedCaptureLedger,
         recorder_arguments: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        _validate_shadow_contract(contract)
+        if contract.mode == "shadow":
+            _validate_shadow_contract(contract)
+        else:
+            _validate_policy_execution_contract(contract)
         command = build_native_recorder_command(recorder_arguments)
         try:
             return self._capture_live(contract, ledger, recorder_arguments, command)
@@ -650,6 +1136,10 @@ class IntegratedShadowBackend:
         )
         metadata = client.metadata()
         deploy.validate_metadata(metadata)
+        if contract.mode == "policy-execute":
+            _validate_policy_execution_profile(
+                deploy, profile_path, profile, metadata, contract
+            )
         manifest_task = deploy.validate_manifest(manifest, metadata, manifest_path)
         if manifest_task != str(arguments["task"]).strip():
             raise IntegratedCaptureError("SHADOW_DEPLOYMENT_TASK_MISMATCH")
@@ -682,12 +1172,17 @@ class IntegratedShadowBackend:
 
             deploy.rclpy.init()
             rclpy_started = True
-            observation_type = _shadow_observation_type(deploy)
+            observation_type = _shadow_observation_type(
+                deploy, policy_execution=contract.mode == "policy-execute"
+            )
             observation = observation_type(
                 recorder_args, cameras, metadata, str(arguments["task"]).strip()
             )
-            if not isinstance(observation.action_publisher, ForbiddenPolicyPublisher):
-                raise IntegratedCaptureError("SHADOW_POLICY_PUBLISHER_WAS_CREATED")
+            if contract.mode == "shadow":
+                if not isinstance(observation.action_publisher, ForbiddenPolicyPublisher):
+                    raise IntegratedCaptureError("SHADOW_POLICY_PUBLISHER_WAS_CREATED")
+            elif isinstance(observation.action_publisher, ForbiddenPolicyPublisher):
+                raise IntegratedCaptureError("POLICY_EXECUTE_PUBLISHER_MISSING")
             executor = deploy.SingleThreadedExecutor()
             executor.add_node(observation)
 
@@ -705,8 +1200,13 @@ class IntegratedShadowBackend:
                 target=spin, name="stage3-shadow-observation", daemon=True
             )
             executor_thread.start()
+            backend_schema = (
+                SHADOW_BACKEND_SCHEMA
+                if contract.mode == "shadow"
+                else POLICY_EXECUTION_BACKEND_SCHEMA
+            )
             integrated_manifest = {
-                "schema": SHADOW_BACKEND_SCHEMA,
+                "schema": backend_schema,
                 "contract": contract.to_dict(),
                 "native_session": "session.json",
                 "native_recorder_entry": str(RECORDER_ENTRY),
@@ -715,7 +1215,10 @@ class IntegratedShadowBackend:
                 "controller_process_count": 1,
                 "deploy_controller_started": False,
                 "policy_server_started_by_backend": False,
-                "policy_action_publisher_created": False,
+                "policy_action_publisher_created": contract.mode == "policy-execute",
+                "learner_started": False,
+                "formal_replay_writer_started": False,
+                "policy_revision_publisher_started": False,
                 "clock_binding": {
                     "stage3_clock_domain_id": UPPER_CLOCK_DOMAIN,
                     "policy_request_clock_domain_id": "upper_host_monotonic_ns",
@@ -761,7 +1264,34 @@ class IntegratedShadowBackend:
                         "SHADOW_INITIAL_GRIPPER_AUTHORITY_MISSING"
                     )
                 time.sleep(0.01)
-            store.write("policy_shadow_initial_gripper_lease.json", authority)
+            initial_lease_name = (
+                "policy_shadow_initial_gripper_lease.json"
+                if contract.mode == "shadow"
+                else "policy_execute_initial_gripper_lease.json"
+            )
+            store.write(initial_lease_name, authority)
+
+            if contract.mode == "policy-execute":
+                return self._capture_policy_execution_episode(
+                    deploy=deploy,
+                    process=process,
+                    client=client,
+                    metadata=metadata,
+                    session=session,
+                    recorder_args=recorder_args,
+                    contract=contract,
+                    ledger=ledger,
+                    observation=observation,
+                    store=store,
+                    authority=authority,
+                    episode_started_ns=episode_started_ns,
+                    work_episode=work_episode,
+                    final_episode=final_episode,
+                    artifact_work=artifact_work,
+                    root=root,
+                    start_timeout=start_timeout,
+                    arguments=arguments,
+                )
 
             observations: list[dict[str, Any]] = []
             processed_acks: set[int] = set()
@@ -841,7 +1371,13 @@ class IntegratedShadowBackend:
                 ):
                     time.sleep(0.005)
                     continue
-                request = observation.request(metadata)
+                try:
+                    request = observation.request(metadata)
+                except RuntimeError as error:
+                    if not _retryable_camera_error(error):
+                        raise
+                    next_inference = time.monotonic() + 0.005
+                    continue
                 request["provenance"]["session_id"] = contract.identity.session_id
                 observation_id = (
                     f"{contract.identity.episode_id}:observation:{len(observations):06d}"
@@ -983,10 +1519,445 @@ class IntegratedShadowBackend:
                         "SHADOW_RECORDER_GRACEFUL_SHUTDOWN_TIMEOUT"
                     ) from error
 
+    def _capture_policy_execution_episode(
+        self,
+        *,
+        deploy: Any,
+        process: subprocess.Popen[Any],
+        client: Any,
+        metadata: Mapping[str, Any],
+        session: Mapping[str, Any],
+        recorder_args: Any,
+        contract: IntegratedCaptureContract,
+        ledger: IntegratedCaptureLedger,
+        observation: Any,
+        store: ShadowArtifactStore,
+        authority: Mapping[str, Any],
+        episode_started_ns: int,
+        work_episode: Path,
+        final_episode: Path,
+        artifact_work: Path,
+        root: Path,
+        start_timeout: float,
+        arguments: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Execute approved cycle210 actions through the recorder's sole bridge."""
+
+        replan_steps = int(arguments.get("policy_replan_steps", 8))
+        low_watermark = int(arguments.get("policy_queue_low_watermark", 4))
+        max_force_n = float(arguments.get("max_force_n", 25.0))
+        max_torque_nm = float(arguments.get("max_torque_nm", 2.0))
+        if (
+            not 0 < low_watermark < replan_steps <= 50
+            or min(max_force_n, max_torque_nm) <= 0.0
+        ):
+            raise IntegratedCaptureError("POLICY_EXECUTE_RUNTIME_LIMITS_INVALID")
+
+        worker = deploy.LatestOnlyInferenceWorker(client)
+        observations: list[dict[str, Any]] = []
+        transitions: list[dict[str, Any]] = []
+        chunk_count = 0
+        submitted: set[str] = set()
+        outstanding: dict[str, dict[str, Any]] = {}
+        processed_decisions: set[int] = set()
+        current_request: dict[str, Any] | None = None
+        current_observation: dict[str, Any] | None = None
+        current_chunk: dict[str, Any] | None = None
+        human_takeover_active = False
+        native_episode_missing_since: float | None = None
+
+        def capture_observation() -> None:
+            nonlocal current_request, current_observation
+            current_request, current_observation = _record_live_observation(
+                observation,
+                metadata,
+                contract,
+                ledger,
+                store,
+                observations,
+                stream_name="policy_execute_observation.jsonl",
+            )
+
+        def submit_current_request() -> None:
+            assert current_request is not None and current_observation is not None
+            request_id = str(current_request["request_id"])
+            if request_id in submitted or worker.pending_or_busy():
+                return
+            request_record = ledger.record_policy_request(
+                current_request,
+                observation_id=current_observation["observation_id"],
+                recorded_monotonic_ns=time.monotonic_ns(),
+            )
+            store.append("policy_execute_request.jsonl", request_record)
+            submitted.add(request_id)
+            outstanding[request_id] = current_request
+            worker.submit(current_request)
+
+        def consume_interventions() -> None:
+            nonlocal current_chunk, current_request, current_observation
+            nonlocal human_takeover_active
+            for audit in observation.policy_audit_snapshot():
+                payload = audit["payload"]
+                decision_id = int(payload.get("decision_id", -1))
+                receive_ns = int(audit["shadow_receive_monotonic_ns"])
+                if decision_id in processed_decisions or receive_ns < episode_started_ns:
+                    continue
+                processed_decisions.add(decision_id)
+                arbitration = payload.get("arbitration", {})
+                raw_action = arbitration.get("raw_action", {})
+                event = str(arbitration.get("event", ""))
+                if raw_action.get("source") != "human" or event not in {
+                    "intervention_start", "human_action", "intervention_end"
+                }:
+                    continue
+                old_chunk_id = (
+                    None if current_chunk is None else current_chunk["result"]["chunk_id"]
+                )
+                intervention = ledger.record_intervention(
+                    event=event,
+                    policy_epoch=int(arbitration["policy_epoch"]),
+                    receive_monotonic_ns=receive_ns,
+                    safe_action=payload,
+                )
+                intervention["invalidated_chunk_id"] = (
+                    old_chunk_id if event == "intervention_start" else None
+                )
+                store.append("policy_execute_intervention.jsonl", intervention)
+                if event == "intervention_start":
+                    human_takeover_active = True
+                    current_chunk = None
+                    current_request = None
+                    current_observation = None
+                elif event == "intervention_end":
+                    human_takeover_active = False
+
+        capture_observation()
+        submit_current_request()
+        try:
+            while process.poll() is None and not final_episode.is_dir():
+                if observation.shadow_error:
+                    raise IntegratedCaptureError(observation.shadow_error)
+                if not work_episode.is_dir():
+                    if native_episode_missing_since is None:
+                        native_episode_missing_since = time.monotonic()
+                    elif time.monotonic() - native_episode_missing_since > 0.5:
+                        raise IntegratedCaptureError(
+                            "POLICY_EXECUTE_NATIVE_EPISODE_ENDED_WITHOUT_SAVE"
+                        )
+                else:
+                    native_episode_missing_since = None
+
+                consume_interventions()
+                completed = worker.poll()
+                if completed is not None:
+                    request, result = completed
+                    request_id = str(request["request_id"])
+                    if request_id not in outstanding:
+                        raise IntegratedCaptureError(
+                            "POLICY_EXECUTE_RESULT_WITHOUT_REQUEST"
+                        )
+                    outstanding.pop(request_id)
+                    observation.assert_request_generation_current(request)
+                    actions = deploy.validate_response(
+                        result, request, session["workspace"]
+                    )
+                    result_record = ledger.record_policy_result(
+                        request, result, recorded_monotonic_ns=time.monotonic_ns()
+                    )
+                    store.append("policy_execute_result.jsonl", result_record)
+                    chunk_record = {
+                        **result_record,
+                        "schema": POLICY_EXECUTION_BACKEND_SCHEMA,
+                        "action_semantics": "absolute7",
+                        "valid_horizon": int(result["valid_horizon"]),
+                        "actions_absolute7": actions.tolist(),
+                        "executed_action_source": "policy",
+                        "formal_replay": False,
+                        "real_online_r": False,
+                    }
+                    store.append("policy_execute_chunk.jsonl", chunk_record)
+                    chunk_count += 1
+                    generation = ledger.current_policy_generation
+                    fresh = (
+                        int(result_record["policy_epoch"]) == generation[0]
+                        and int(result_record["takeover_generation"]) == generation[1]
+                        and not human_takeover_active
+                    )
+                    proposal = {
+                        **result_record,
+                        "schema": POLICY_EXECUTION_BACKEND_SCHEMA,
+                        "actual_action_source": "policy",
+                        "policy_inference": True,
+                        "policy_execution": True,
+                        "executed": False,
+                        "invalidated_by_takeover": not fresh,
+                        "formal_replay": False,
+                        "real_online_r": False,
+                        "action_semantics": "absolute7",
+                        "valid_horizon": int(result["valid_horizon"]),
+                        "actions_absolute7": actions.tolist(),
+                        "server_timing": {
+                            key: result[key]
+                            for key in (
+                                "server_started_monotonic_ns",
+                                "server_completed_monotonic_ns",
+                                "inference_latency_ms",
+                            )
+                        },
+                    }
+                    store.append("policy_execute_proposal.jsonl", proposal)
+                    current_chunk = (
+                        {
+                            "request": request,
+                            "result": result,
+                            "result_record": result_record,
+                            "actions": actions,
+                            "dispatched": 0,
+                        }
+                        if fresh
+                        else None
+                    )
+
+                if human_takeover_active:
+                    time.sleep(0.005)
+                    continue
+                if current_request is None or current_observation is None:
+                    capture_observation()
+                if current_chunk is None:
+                    if str(current_request["request_id"]) in submitted:
+                        capture_observation()
+                    submit_current_request()
+                    time.sleep(0.005)
+                    continue
+
+                remaining = replan_steps - int(current_chunk["dispatched"])
+                if remaining <= low_watermark:
+                    submit_current_request()
+                lineage = ledger.bind_policy_dispatch(
+                    str(current_chunk["result_record"]["result_id"])
+                )
+                wrench = observation.wrench()
+                force_norm = float(deploy.np.linalg.norm(wrench[:3]))
+                torque_norm = float(deploy.np.linalg.norm(wrench[3:]))
+                if force_norm > max_force_n or torque_norm > max_torque_nm:
+                    raise IntegratedCaptureError(
+                        "POLICY_EXECUTE_WRENCH_GUARD:"
+                        f"force={force_norm:.3f}:torque={torque_norm:.3f}"
+                    )
+                selection_ns = time.monotonic_ns()
+                try:
+                    action_index, target = _selected_chunk_action(
+                        current_chunk["actions"],
+                        t_ref_ns=int(current_chunk["result"]["t_ref_ns"]),
+                        fps=int(metadata["fps"]),
+                        selection_ns=selection_ns,
+                    )
+                except IntegratedCaptureError as error:
+                    if str(error) != "POLICY_EXECUTE_CHUNK_EXPIRED":
+                        raise
+                    current_chunk = None
+                    continue
+                position, quaternion = observation.pose()
+                deploy.forcevla.check_target_guard(
+                    target,
+                    position,
+                    quaternion,
+                    0.08,
+                    25.0,
+                )
+                normalized = deploy.forcevla.absolute_target_to_normalized(
+                    target,
+                    position,
+                    quaternion,
+                    recorder_args.hilserl_translation_action_scale_m,
+                    recorder_args.hilserl_rotation_action_scale_rad,
+                )
+                sequence = observation.publish_policy_action(
+                    normalized,
+                    policy_epoch=lineage["policy_epoch"],
+                    observation_id=current_observation["observation_id"],
+                )
+                decision = observation.wait_policy_decision(sequence, 0.50)
+                consume_interventions()
+                arbitration = decision.get("arbitration", {})
+                raw_action = arbitration.get("raw_action", {})
+                if (
+                    raw_action.get("source") != "policy"
+                    or int(raw_action.get("sequence", -1)) != sequence
+                    or int(raw_action.get("policy_epoch", -1))
+                    != int(lineage["policy_epoch"])
+                    or raw_action.get("observation_id")
+                    != current_observation["observation_id"]
+                    or not deploy.np.array_equal(
+                        deploy.np.asarray(raw_action.get("action"), dtype=deploy.np.float64),
+                        deploy.np.asarray(normalized, dtype=deploy.np.float64),
+                    )
+                ):
+                    raise IntegratedCaptureError(
+                        "POLICY_EXECUTE_ARBITRATION_LINEAGE_MISMATCH"
+                    )
+                if arbitration.get("accepted") is not True:
+                    reason = str(arbitration.get("reason"))
+                    if reason in {"human_override", "stale_policy_epoch"}:
+                        current_chunk = None
+                        continue
+                    raise IntegratedCaptureError(
+                        f"POLICY_EXECUTE_ACTION_REJECTED:{reason}"
+                    )
+                if decision.get("equilibrium_published") is not True:
+                    raise IntegratedCaptureError("POLICY_EXECUTE_POSE_NOT_PUBLISHED")
+                if (
+                    arbitration.get("reason") != "accepted_policy"
+                    or arbitration.get("event") != "policy_action"
+                    or decision.get("execute_enabled") is not True
+                ):
+                    raise IntegratedCaptureError(
+                        "POLICY_EXECUTE_ARBITRATION_ACCEPTANCE_INVALID"
+                    )
+                selection = {
+                    **lineage,
+                    "sequence": sequence,
+                    "action_index": action_index,
+                    "apply_selection_monotonic_ns": selection_ns,
+                    "selected_post_adapter_absolute7": target.tolist(),
+                    "normalized_action7": normalized.tolist(),
+                }
+                audited_decision = dict(decision)
+                audited_decision["forcesmolvla_chunk_selection"] = selection
+                ack_timeout_s = float(metadata["controller_ack_timeout_ms"]) / 1000.0
+                pose_ack = observation.wait_reference_ack(
+                    int(decision["equilibrium_source_stamp_ns"]), ack_timeout_s
+                )
+                deploy.validate_exact_controller_ack(
+                    audited_decision,
+                    pose_ack,
+                    base_frame=recorder_args.base_frame,
+                    max_position_error_m=(
+                        math.sqrt(3.0)
+                        * recorder_args.hilserl_translation_action_scale_m
+                    ),
+                    max_rotation_error_rad=(
+                        math.sqrt(3.0)
+                        * recorder_args.hilserl_rotation_action_scale_rad
+                    ),
+                )
+                gripper_authority = observation.ensure_policy_gripper_authority(
+                    float(target[6]),
+                    command_context={
+                        **lineage,
+                        "sequence": sequence,
+                        "action_index": action_index,
+                    },
+                    timeout_s=5.0,
+                )
+                store.append(
+                    "policy_execute_gripper_authority.jsonl", gripper_authority
+                )
+                previous_observation = current_observation
+                capture_observation()
+                transition = ledger.record_actual_action_ack(
+                    ack_id=(
+                        f"policy-ack:{sequence}:"
+                        f"{int(decision['equilibrium_source_stamp_ns'])}"
+                    ),
+                    observation_id=previous_observation["observation_id"],
+                    next_observation_id=current_observation["observation_id"],
+                    receive_monotonic_ns=int(
+                        pose_ack["upper_receive_monotonic_ns"]
+                    ),
+                    actual_action_source="policy",
+                    policy_result_id=str(lineage["result_id"]),
+                    proposal_id=str(lineage["proposal_id"]),
+                    accepted_absolute7=target.tolist(),
+                )
+                transition.update(
+                    {
+                        "schema": POLICY_EXECUTION_BACKEND_SCHEMA,
+                        "executed_action_source": "policy",
+                        "policy_executed_transition": True,
+                        "selection": selection,
+                        "safety_arbitration": arbitration,
+                        "pose_command": decision["requested_equilibrium"],
+                        "pose_ack": pose_ack,
+                        "gripper_authority": gripper_authority,
+                        "intervention": False,
+                    }
+                )
+                store.append("policy_execute_transition.jsonl", transition)
+                transitions.append(transition)
+                current_chunk["dispatched"] = int(current_chunk["dispatched"]) + 1
+                if int(current_chunk["dispatched"]) >= replan_steps:
+                    current_chunk = None
+
+            for request_id in tuple(outstanding):
+                canceled = ledger.cancel_policy_request(
+                    request_id,
+                    reason="episode_sealed_before_inference_result",
+                    recorded_monotonic_ns=time.monotonic_ns(),
+                )
+                store.append("policy_execute_request_canceled.jsonl", canceled)
+                outstanding.pop(request_id, None)
+        finally:
+            worker.close()
+
+        return_code = process.wait(timeout=max(30.0, start_timeout))
+        if return_code != 0 or not final_episode.is_dir():
+            raise IntegratedCaptureError(
+                f"POLICY_EXECUTE_NATIVE_EPISODE_NOT_SAVED:{return_code}"
+            )
+        native_result = _json(final_episode / "episode_result.json")
+        if native_result.get("saved") is not True:
+            raise IntegratedCaptureError("POLICY_EXECUTE_NATIVE_EPISODE_NOT_SAVED")
+        if not transitions:
+            raise IntegratedCaptureError("POLICY_EXECUTE_ACCEPTED_ACTION_MISSING")
+        reconciliation = _camera_reconciliation(final_episode, observations)
+        store.write(
+            "policy_execute_camera_reconciliation.json",
+            {
+                "schema": POLICY_EXECUTION_BACKEND_SCHEMA,
+                "native_episode": str(final_episode),
+                "records": reconciliation,
+            },
+        )
+        seal = ledger.seal_episode(
+            seal_id=(
+                f"policy-execute-seal:{contract.identity.session_id}:"
+                f"{contract.identity.episode_id}"
+            ),
+            sealed_monotonic_ns=time.monotonic_ns(),
+            terminal_observation_id=observations[-1]["observation_id"],
+        )
+        seal.update(
+            {
+                "backend_schema": POLICY_EXECUTION_BACKEND_SCHEMA,
+                "technical_seal": "complete",
+                "native_episode": str(final_episode),
+                "native_episode_result": native_result,
+                "initial_gripper_lease": dict(authority),
+                "controller_owner": "recorder",
+                "controller_process_count": 1,
+                "deploy_controller_started": False,
+                "policy_action_publisher_created": True,
+                "camera_records_reconciled": len(reconciliation),
+                "policy_chunk_count": chunk_count,
+                "detector_approval_scope": (
+                    "single_episode_cycle210_policy_execution_smoke"
+                ),
+                "formal_training_replay_written": False,
+                "checkpoint_written": False,
+            }
+        )
+        store.write("policy_execute_episode_seal.json", seal)
+        artifact_final = root / "integrated_capture/episode_000000"
+        artifact_work.rename(artifact_final)
+        return seal
+
 
 __all__ = [
+    "CYCLE210_DEPLOYMENT_BINDING_SHA256",
     "ForbiddenPolicyPublisher",
     "IntegratedShadowBackend",
+    "POLICY_EXECUTION_BACKEND_SCHEMA",
     "SHADOW_BACKEND_SCHEMA",
     "ShadowArtifactStore",
     "build_native_recorder_command",
