@@ -15,7 +15,25 @@ import json
 import math
 import os
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
+
+import numpy as np
+
+from forcesmolvla.raw_to_lerobot_v3 import (
+    PreparedEpisode,
+    RuntimeContract,
+    prepare_episode,
+)
+from forcesmolvla.rft.detector_reward_transitions import (
+    CHECKPOINT_SHA256,
+    REQUIRED_CONSECUTIVE_FRAMES,
+    REWARD_SOURCE,
+    TAU,
+    DetectionTrace,
+    DetectorMacroTransition,
+    causal_detection_trace,
+    detector_macro_transitions,
+)
 
 from .gripper_provenance import (
     GripperAuthorityEvidence,
@@ -60,6 +78,9 @@ REQUIRED_STREAMS = (
     "external_camera",
     "wrist_camera",
 )
+REPO_ROOT = Path(__file__).resolve().parents[4]
+DEFAULT_PARENT_BINDING = REPO_ROOT / "configs/stage3_parent_binding.v1.development.json"
+DEFAULT_G1_CONFIG = REPO_ROOT / "configs/stage2_g1_frozen_detector_transition_view.development.json"
 
 
 class ProductionBridgeError(RuntimeError):
@@ -72,6 +93,148 @@ class BridgeDigestCollisionError(ProductionBridgeError):
 
 class InjectedBridgeCrash(ProductionBridgeError):
     """Test-only crash point after an immutable WAL write."""
+
+
+@dataclass(frozen=True)
+class FrozenDetectorScores:
+    """One frozen-classifier pass over the current prepared episode."""
+
+    probabilities: tuple[float, ...]
+    validity: tuple[bool, ...]
+    detector_id: str = CHECKPOINT_SHA256
+    config_identity: str = "stage2_g1_frozen_detector_transition_view.development"
+
+
+@dataclass(frozen=True)
+class EpisodeMaterialization:
+    """Calibrated 30 Hz episode plus its causally detected G1 boundary."""
+
+    prepared: PreparedEpisode
+    detector_scores: FrozenDetectorScores
+    detection_trace: DetectionTrace
+    macros: tuple[DetectorMacroTransition, ...]
+    wrench_provenance: Mapping[str, Any]
+    outcome_provenance: Mapping[str, Any]
+
+    def validate(self) -> "EpisodeMaterialization":
+        count = len(self.prepared.tuple_host_ns)
+        if count < 2 or len(self.detector_scores.probabilities) != count:
+            raise ProductionBridgeError("BRIDGE_DETECTOR_FRAME_COUNT_MISMATCH")
+        if len(self.detector_scores.validity) != count:
+            raise ProductionBridgeError("BRIDGE_DETECTOR_VALIDITY_COUNT_MISMATCH")
+        if self.detector_scores.detector_id != CHECKPOINT_SHA256:
+            raise ProductionBridgeError("BRIDGE_DETECTOR_IDENTITY_MISMATCH")
+        if self.detection_trace.trigger_frame is None or not self.macros:
+            raise ProductionBridgeError("BRIDGE_FROZEN_G1_DETECTOR_MISS")
+        if self.macros[-1].next_frame != self.detection_trace.trigger_frame:
+            raise ProductionBridgeError("BRIDGE_DETECTOR_MACRO_CLOSURE_INVALID")
+        if not np.all(np.isfinite(self.prepared.wrench6)):
+            raise ProductionBridgeError("BRIDGE_MATERIALIZED_WRENCH_NONFINITE")
+        return self
+
+
+EpisodeMaterializer = Callable[[Path], EpisodeMaterialization]
+FrozenDetector = Callable[[PreparedEpisode], FrozenDetectorScores]
+
+
+def frozen_episode_materializer(
+    detector: FrozenDetector,
+    *,
+    parent_binding_path: Path = DEFAULT_PARENT_BINDING,
+    detector_config_path: Path = DEFAULT_G1_CONFIG,
+) -> EpisodeMaterializer:
+    """Bind the existing single-episode converter and frozen G1 detector."""
+
+    parent = _read_json(Path(parent_binding_path))
+    detector_config = _read_json(Path(detector_config_path))
+    spec = detector_config.get("detector_spec", {})
+    reward_contract = detector_config.get("reward_contract", {})
+    if (
+        spec.get("classifier_checkpoint_sha256") != CHECKPOINT_SHA256
+        or float(spec.get("probability_threshold", -1.0)) != TAU
+        or int(spec.get("required_consecutive_frames", -1))
+        != REQUIRED_CONSECUTIVE_FRAMES
+        or int(spec.get("detector_input_rate_hz", -1)) != 30
+        or reward_contract.get("reward_source") != REWARD_SOURCE
+        or reward_contract.get("detector_miss_policy") != "exclude_without_fallback"
+    ):
+        raise ProductionBridgeError("BRIDGE_FROZEN_G1_CONFIG_MISMATCH")
+    calibration_path = Path(parent["calibration_binding"]["absolute_path"])
+    runtime_path = Path(parent["runtime_contract_binding"]["absolute_path"])
+    calibration_payload = _read_json(calibration_path)
+    runtime_contract = RuntimeContract.from_development_json(runtime_path)
+    parent_id = str(parent.get("binding_id", ""))
+    if not parent_id:
+        raise ProductionBridgeError("BRIDGE_PARENT_BINDING_ID_MISSING")
+
+    def materialize(episode_dir: Path) -> EpisodeMaterialization:
+        episode_dir = Path(episode_dir)
+        session = _read_json(episode_dir.parent.parent / "session.json")
+        try:
+            prepared = prepare_episode(
+                episode_dir,
+                session=session,
+                calibration_payload=calibration_payload,
+                contract=runtime_contract,
+            )
+            scores = detector(prepared)
+            trace = causal_detection_trace(
+                range(len(prepared.tuple_host_ns)),
+                scores.probabilities,
+                scores.validity,
+                tau=TAU,
+                required=REQUIRED_CONSECUTIVE_FRAMES,
+            )
+            macros = (
+                ()
+                if trace.trigger_frame is None
+                else detector_macro_transitions(trace.trigger_frame)
+            )
+        except ProductionBridgeError:
+            raise
+        except Exception as error:
+            raise ProductionBridgeError(
+                f"BRIDGE_EPISODE_MATERIALIZATION_FAILED:{type(error).__name__}:{error}"
+            ) from error
+        return EpisodeMaterialization(
+            prepared=prepared,
+            detector_scores=scores,
+            detection_trace=trace,
+            macros=macros,
+            wrench_provenance={
+                "source": "raw_to_lerobot_v3.prepare_episode",
+                "parent_binding_id": parent_id,
+                "calibration_path": str(calibration_path),
+                "runtime_contract_path": str(runtime_path),
+                "operations": [
+                    "sensor_bias",
+                    "wrench_sign",
+                    "payload_gravity_force_and_moment_compensation",
+                    "measurement_to_fr3_link0",
+                    "moment_shift_to_tcp",
+                    "causal_sos_filter",
+                    "rational_30hz_alignment",
+                ],
+                "normalizer_refit": False,
+                "raw_wrench_learner_eligible": False,
+                "diagnostics": prepared.diagnostics,
+            },
+            outcome_provenance={
+                "source": REWARD_SOURCE,
+                "detector_id": scores.detector_id,
+                "detector_config_identity": scores.config_identity,
+                "detector_config_path": str(detector_config_path),
+                "probability_threshold": TAU,
+                "required_consecutive_frames": REQUIRED_CONSECUTIVE_FRAMES,
+                "trigger_frame": trace.trigger_frame,
+                "streak_start_frame": trace.streak_start_frame,
+                "manual_boundary_used": False,
+                "episode_result_fallback_used": False,
+                "time_limit_fallback_used": False,
+            },
+        ).validate()
+
+    return materialize
 
 
 @dataclass(frozen=True)
@@ -356,9 +519,16 @@ class _Timeline:
 class Stage3ProductionBridge:
     """Single-process filesystem development bridge with immutable WAL records."""
 
-    def __init__(self, *, config: BridgeConfig, state_root: Path) -> None:
+    def __init__(
+        self,
+        *,
+        config: BridgeConfig,
+        state_root: Path,
+        episode_materializer: EpisodeMaterializer | None = None,
+    ) -> None:
         self.config = config.validate()
         self.state_root = Path(state_root)
+        self.episode_materializer = episode_materializer
         self._camera_hashes: dict[Path, str] = {}
 
     def _episode_id(self, episode_dir: Path, start: Mapping[str, Any]) -> str:
@@ -719,6 +889,79 @@ class Stage3ProductionBridge:
             "normalization": "not_applied_in_absolute_authority_bridge",
         }
 
+    def _materialized_camera(
+        self,
+        *,
+        episode_dir: Path,
+        path: Path,
+        timestamp_ns: int,
+        at_ns: int,
+    ) -> dict[str, Any]:
+        path = Path(path)
+        if not path.is_file() or not path.is_relative_to(episode_dir):
+            raise ProductionBridgeError("BRIDGE_MATERIALIZED_CAMERA_BLOB_INVALID")
+        digest: str | None = None
+        if self.config.hash_camera_files:
+            digest = self._camera_hashes.get(path)
+            if digest is None:
+                digest = _sha256_file(path)
+                self._camera_hashes[path] = digest
+        age_ns = at_ns - int(timestamp_ns)
+        if age_ns < 0 or age_ns > self.config.max_camera_age_ns:
+            raise ProductionBridgeError("BRIDGE_MATERIALIZED_CAMERA_STALE")
+        return {
+            "blob_reference": path.relative_to(episode_dir).as_posix(),
+            "sha256": digest,
+            "timestamp_monotonic_ns": int(timestamp_ns),
+            "age_ms": age_ns / 1.0e6,
+            "timestamp_domain": "host_monotonic_receive",
+        }
+
+    def _materialized_observation(
+        self,
+        *,
+        episode_dir: Path,
+        episode_id: str,
+        observation_id: str,
+        materialization: EpisodeMaterialization,
+        frame: int,
+    ) -> dict[str, Any]:
+        prepared = materialization.prepared
+        if frame < 0 or frame >= len(prepared.tuple_host_ns):
+            raise ProductionBridgeError("BRIDGE_MATERIALIZED_FRAME_INVALID")
+        at_ns = int(prepared.tuple_host_ns[frame])
+        provenance = prepared.provenance
+        state7 = _finite_vector(
+            prepared.state7[frame], 7, "BRIDGE_MATERIALIZED_STATE_INVALID"
+        )
+        wrench6 = _finite_vector(
+            prepared.wrench6[frame], 6, "BRIDGE_MATERIALIZED_WRENCH_INVALID"
+        )
+        return {
+            "observation_id": observation_id,
+            "episode_id": episode_id,
+            "frame_index": frame,
+            "timestamp_monotonic_ns": at_ns,
+            "clock_domain_id": self.config.clock_domain_id,
+            "state7_absolute": list(state7),
+            "wrench6": list(wrench6),
+            "wrench_materialization": dict(materialization.wrench_provenance),
+            "camera_external": self._materialized_camera(
+                episode_dir=episode_dir,
+                path=prepared.camera1_paths[frame],
+                timestamp_ns=int(provenance["camera1_receive_monotonic_ns"][frame]),
+                at_ns=at_ns,
+            ),
+            "camera_wrist": self._materialized_camera(
+                episode_dir=episode_dir,
+                path=prepared.camera2_paths[frame],
+                timestamp_ns=int(provenance["camera2_receive_monotonic_ns"][frame]),
+                at_ns=at_ns,
+            ),
+            "normalization": "not_applied; frozen normalizer deferred to learner adapter",
+            "raw_wrench_learner_eligible": False,
+        }
+
     def _selected_pose(
         self,
         *,
@@ -777,6 +1020,7 @@ class Stage3ProductionBridge:
             "schema_version": payload["schema_version"],
             "episode_id": payload["identity"]["episode_id"],
             "decision_id": payload["identity"]["decision_id"],
+            "anchor_frame": payload["identity"]["anchor_frame"],
             "pose_ack_id": payload["action_authority"]["pose"]["pose_ack_id"],
             "gripper_goal_id": payload["action_authority"]["gripper"][
                 "origin_action_goal_id"
@@ -795,14 +1039,15 @@ class Stage3ProductionBridge:
         episode_id: str,
         task: str,
         safe_record: Mapping[str, Any],
-        next_safe_record: Mapping[str, Any],
         raw_by_identity: Mapping[tuple[str, int], dict[str, Any]],
         requested: Mapping[tuple[str, int], dict[str, Any]],
         ack_by_stamp: Mapping[int, dict[str, Any]],
+        ack_by_receive: Mapping[int, dict[str, Any]],
         goals: Sequence[_Goal],
         used_new: set[int],
         timelines: Mapping[str, _Timeline],
-        episode_result: Mapping[str, Any],
+        materialization: EpisodeMaterialization,
+        macro: DetectorMacroTransition,
     ) -> tuple[dict[str, Any], bool]:
         safe = safe_record.get("payload", {})
         arbitration = safe.get("arbitration", {})
@@ -828,6 +1073,14 @@ class Stage3ProductionBridge:
             raise ProductionBridgeError("BRIDGE_POSE_ACK_UPPER_CLOCK_CAUSALITY_INVALID")
         if ack_receive_ns - publish_ns > self.config.max_pose_ack_latency_ns:
             raise ProductionBridgeError("BRIDGE_POSE_ACK_STALE")
+        prepared = materialization.prepared
+        anchor = macro.anchor_frame
+        next_frame = macro.next_frame
+        anchor_ack_ns = int(
+            prepared.provenance["action_ack_receive_monotonic_ns"][anchor]
+        )
+        if anchor_ack_ns != ack_receive_ns:
+            raise ProductionBridgeError("BRIDGE_MATERIALIZED_ACTION_ACK_MISMATCH")
         accepted_pose = ack.get("accepted_pose")
         if not isinstance(accepted_pose, dict):
             raise ProductionBridgeError("BRIDGE_POSE_ACK_ACCEPTED_POSE_MISSING")
@@ -951,45 +1204,103 @@ class Stage3ProductionBridge:
         )
         if kind is GripperAuthorityKind.NEW_COMMAND:
             used_new.add(goal.sequence)
-        at_ns = int(safe.get("accept_monotonic_ns", safe_record.get("receive_monotonic_ns", 0)))
-        next_safe = next_safe_record.get("payload", {})
-        next_at_ns = int(
-            next_safe.get(
-                "accept_monotonic_ns", next_safe_record.get("receive_monotonic_ns", 0)
-            )
-        )
+        at_ns = int(prepared.tuple_host_ns[anchor])
+        next_at_ns = int(prepared.tuple_host_ns[next_frame])
         if next_at_ns <= at_ns:
             raise ProductionBridgeError("BRIDGE_NEXT_OBSERVATION_NOT_CAUSAL")
         macro_span_ns = next_at_ns - at_ns
-        if macro_span_ns < self.config.minimum_full_macro_span_ns:
-            raise ProductionBridgeError("BRIDGE_PARTIAL_MACRO_AT_BOUNDARY")
-        macro_grid_ns = [
-            at_ns + (slot * 1_000_000_000) // 30 for slot in range(3)
+        executed_actions = [
+            list(
+                _finite_vector(
+                    prepared.action7[frame],
+                    7,
+                    "BRIDGE_MATERIALIZED_ACTION_INVALID",
+                )
+            )
+            for frame in range(anchor, next_frame)
         ]
-        if macro_grid_ns[-1] >= next_at_ns:
-            raise ProductionBridgeError("BRIDGE_PARTIAL_MACRO_AT_BOUNDARY")
+        if len(executed_actions) != macro.executed_steps or not executed_actions:
+            raise ProductionBridgeError("BRIDGE_MATERIALIZED_ACTION_SLICE_INVALID")
+        if (
+            math.dist(executed_actions[0][:3], list(selected_tcp6[:3]))
+            > self.config.pose_position_tolerance_m
+            or abs(executed_actions[0][6] - selected_width)
+            > self.config.requested_width_tolerance_m
+        ):
+            raise ProductionBridgeError("BRIDGE_MATERIALIZED_ACTION_AUTHORITY_MISMATCH")
+        slot_ack_ids: list[str] = []
+        slot_goal_ids: list[str] = []
+        slot_authority_kinds: list[str] = []
+        for offset, frame in enumerate(range(anchor, next_frame)):
+            slot_ack_ns = int(
+                prepared.provenance["action_ack_receive_monotonic_ns"][frame]
+            )
+            slot_ack = ack_by_receive.get(slot_ack_ns)
+            if slot_ack is None or slot_ack.get("payload", {}).get("accepted") is not True:
+                raise ProductionBridgeError("BRIDGE_MATERIALIZED_SLOT_ACK_MISSING")
+            slot_ack_ids.append(
+                f"reference-request-stamp:"
+                f"{int(slot_ack['payload'].get('request_stamp_ns', 0))}"
+            )
+            width = executed_actions[offset][6]
+            slot_authority_ns = max(
+                slot_ack_ns, int(prepared.tuple_host_ns[frame])
+            )
+            matching_goals = [
+                item
+                for item in goals
+                if item.accepted_ns <= slot_authority_ns
+                and abs(item.requested_width_m - width)
+                <= self.config.requested_width_tolerance_m
+                and (item.generation is None or item.generation == generation)
+            ]
+            if not matching_goals:
+                raise ProductionBridgeError(
+                    "BRIDGE_MATERIALIZED_SLOT_GRIPPER_AUTHORITY_MISSING"
+                )
+            slot_goal = max(matching_goals, key=lambda item: item.accepted_ns)
+            slot_kind = (
+                GripperAuthorityKind.NEW_COMMAND
+                if slot_goal.sequence not in used_new
+                and abs(slot_goal.started_ns - slot_ack_ns)
+                <= self.config.max_gripper_command_association_ns
+                else GripperAuthorityKind.HELD_FROM_ACCEPTED_COMMAND
+            )
+            if slot_kind is GripperAuthorityKind.NEW_COMMAND:
+                used_new.add(slot_goal.sequence)
+            slot_goal_ids.append(slot_goal.action_goal_id)
+            slot_authority_kinds.append(slot_kind.value)
+        padded_actions = list(executed_actions)
+        padded_ack_ids = list(slot_ack_ids)
+        padded_goal_ids = list(slot_goal_ids)
+        padded_authority_kinds = list(slot_authority_kinds)
+        while len(padded_actions) < 3:
+            padded_actions.append(list(padded_actions[-1]))
+            padded_ack_ids.append(padded_ack_ids[-1])
+            padded_goal_ids.append(padded_goal_ids[-1])
+            padded_authority_kinds.append(padded_authority_kinds[-1])
+        macro_grid_ns = [
+            int(prepared.tuple_host_ns[min(anchor + slot, next_frame - 1)])
+            for slot in range(3)
+        ]
         decision = int(safe.get("decision_id", -1))
-        observation = self._observation(
+        observation = self._materialized_observation(
             episode_dir=episode_dir,
             episode_id=episode_id,
-            observation_id=f"{episode_id}:observation:{decision}",
-            at_ns=at_ns,
-            timelines=timelines,
+            observation_id=f"{episode_id}:frame:{anchor}",
+            materialization=materialization,
+            frame=anchor,
         )
-        next_observation = self._observation(
+        next_observation = self._materialized_observation(
             episode_dir=episode_dir,
             episode_id=episode_id,
-            observation_id=(
-                f"{episode_id}:observation:"
-                f"{int(next_safe.get('decision_id', decision + 1))}"
-            ),
-            at_ns=next_at_ns,
-            timelines=timelines,
+            observation_id=f"{episode_id}:frame:{next_frame}",
+            materialization=materialization,
+            frame=next_frame,
         )
-        next_phase = str(
-            next_safe.get("arbitration", {}).get("raw_action", {}).get("phase", "")
-        )
-        reward_available = "reward" in episode_result
+        detector_trigger = materialization.detection_trace.trigger_frame
+        if detector_trigger is None:
+            raise ProductionBridgeError("BRIDGE_FROZEN_G1_DETECTOR_MISS")
         payload = {
             "schema_version": SCHEMA_VERSION,
             "classification": (
@@ -998,6 +1309,8 @@ class Stage3ProductionBridge:
             "identity": {
                 "episode_id": episode_id,
                 "decision_id": decision,
+                "anchor_frame": anchor,
+                "next_frame": next_frame,
                 "task": task,
                 "transition_uid": None,
             },
@@ -1031,11 +1344,12 @@ class Stage3ProductionBridge:
                 "controller_internal_servo_hz": "UNVERIFIED",
                 "K": 3,
                 "grid_monotonic_ns": macro_grid_ns,
-                "ack_ids": [pose.pose_ack_id] * 3,
-                "gripper_origin_action_goal_ids": [goal.action_goal_id] * 3,
-                "accepted_absolute_action_k7": [
-                    list(full.accepted_absolute_action7) for _ in range(3)
-                ],
+                "ack_ids": padded_ack_ids,
+                "gripper_origin_action_goal_ids": padded_goal_ids,
+                "gripper_authority_kinds": padded_authority_kinds,
+                "accepted_absolute_action_k7": padded_actions,
+                "executed_action_mask": list(macro.executed_action_mask),
+                "executed_steps": macro.executed_steps,
                 "slot_owner": [
                     "policy" if source == "policy" else "offline_demonstration"
                 ]
@@ -1045,8 +1359,10 @@ class Stage3ProductionBridge:
                 ]
                 * 3,
                 "intervention_flags": [bool(raw.get("intervention", False))] * 3,
-                "partial": False,
+                "partial": macro.executed_steps < 3,
                 "span_to_next_dispatch_ns": macro_span_ns,
+                "source": "raw_to_lerobot_v3.prepare_episode.action7",
+                "normalizer_refit": False,
             },
             "observation": observation,
             "next_observation": next_observation,
@@ -1086,26 +1402,33 @@ class Stage3ProductionBridge:
                     "accepted_pose": accepted_pose,
                 },
                 "episode_result_payload_sha256": _sha256_bytes(
-                    _canonical_bytes(episode_result)
+                    _canonical_bytes(_read_json(episode_dir / "episode_result.json"))
                 ),
             },
             "outcome": {
-                "reward_available": reward_available,
-                "reward": (
-                    episode_result.get("reward")
-                    if next_phase == "episode_end"
-                    else (0.0 if reward_available else None)
+                "reward_available": True,
+                "reward": macro.reward,
+                "reward_source": REWARD_SOURCE,
+                "episode_boundary": macro.terminated,
+                "task_terminated": macro.terminated,
+                "done": macro.terminated,
+                "success": macro.terminated,
+                "failure": False,
+                "time_limit": False,
+                "terminal_source": "causal_fifth_confirming_frame",
+                "bootstrap_mask": macro.bootstrap_mask,
+                "discount": macro.discount,
+                "mc_return": macro.mc_return,
+                "detector_terminal_frame": detector_trigger,
+                "detector_streak_start_frame": (
+                    materialization.detection_trace.streak_start_frame
                 ),
-                "reward_source": (
-                    "episode_result" if reward_available else "absent_from_recorder"
+                "detector_probability_at_trigger": (
+                    materialization.detector_scores.probabilities[detector_trigger]
                 ),
-                "episode_boundary": next_phase == "episode_end",
-                "task_terminated": (
-                    bool(episode_result.get("terminated"))
-                    if reward_available and next_phase == "episode_end"
-                    else None
-                ),
-                "terminal_source": "accepted_episode_result_seal",
+                "provenance": dict(materialization.outcome_provenance),
+                "current_observation_frame": anchor,
+                "next_observation_frame": next_frame,
                 "episode_saved": True,
             },
             "eligibility": {
@@ -1118,6 +1441,8 @@ class Stage3ProductionBridge:
                 "episode_sealed": True,
                 "pose_ack_watermark": int(ack.get("request_sequence", 0)),
                 "gripper_terminal_sealed": True,
+                "wrench_materialized": True,
+                "reward_terminal_materialized": True,
                 "normalizer_invocations": 0,
                 "normalization_boundary": "deferred_to_frozen_replay_adapter",
             },
@@ -1262,7 +1587,24 @@ class Stage3ProductionBridge:
             streams = self._load_streams(episode_dir)
             self._validate_seal(result, streams)
             goals = self._goals(streams, episode_id=episode_id)
-        except ProductionBridgeError as error:
+            if self.episode_materializer is None:
+                raise ProductionBridgeError("BRIDGE_EPISODE_MATERIALIZER_UNBOUND")
+            materialization = self.episode_materializer(episode_dir).validate()
+            if (
+                materialization.prepared.raw_episode_id != episode_dir.name
+                or materialization.prepared.task
+                != str(result.get("task", start.get("task", "")))
+            ):
+                raise ProductionBridgeError("BRIDGE_MATERIALIZED_EPISODE_IDENTITY_MISMATCH")
+        except Exception as raw_error:
+            error = (
+                raw_error
+                if isinstance(raw_error, ProductionBridgeError)
+                else ProductionBridgeError(
+                    f"BRIDGE_EPISODE_MATERIALIZATION_FAILED:"
+                    f"{type(raw_error).__name__}:{raw_error}"
+                )
+            )
             return self._episode_quarantine(
                 episode_id=episode_id,
                 episode_key=episode_key,
@@ -1277,6 +1619,17 @@ class Stage3ProductionBridge:
                 if key in requested:
                     raise ProductionBridgeError("BRIDGE_REQUESTED_IDENTITY_DUPLICATE")
                 requested[key] = item
+            safe_by_identity: dict[tuple[str, int], dict[str, Any]] = {}
+            for item in streams["safe_action"]:
+                raw = (
+                    item.get("payload", {})
+                    .get("arbitration", {})
+                    .get("raw_action", {})
+                )
+                key = (str(raw.get("source", "")), int(raw.get("sequence", -1)))
+                if key in safe_by_identity:
+                    raise ProductionBridgeError("BRIDGE_SAFE_ACTION_IDENTITY_DUPLICATE")
+                safe_by_identity[key] = item
             raw_by_identity: dict[tuple[str, int], dict[str, Any]] = {}
             for item in streams["raw_action"]:
                 raw = item.get("payload", {})
@@ -1285,11 +1638,16 @@ class Stage3ProductionBridge:
                     raise ProductionBridgeError("BRIDGE_RAW_ACTION_IDENTITY_DUPLICATE")
                 raw_by_identity[key] = raw
             ack_by_stamp: dict[int, dict[str, Any]] = {}
+            ack_by_receive: dict[int, dict[str, Any]] = {}
             for item in streams["reference_ack"]:
                 stamp = int(item.get("payload", {}).get("request_stamp_ns", 0))
                 if stamp <= 0 or stamp in ack_by_stamp:
                     raise ProductionBridgeError("BRIDGE_POSE_ACK_IDENTITY_DUPLICATE")
                 ack_by_stamp[stamp] = item
+                receive_ns = int(item.get("receive_monotonic_ns", 0))
+                if receive_ns <= 0 or receive_ns in ack_by_receive:
+                    raise ProductionBridgeError("BRIDGE_POSE_ACK_RECEIVE_DUPLICATE")
+                ack_by_receive[receive_ns] = item
             timelines = {
                 "pose": _Timeline(streams["measured_tcp_pose"], "receive_monotonic_ns"),
                 "wrench": _Timeline(streams["wrench_notch_sensor"], "receive_monotonic_ns"),
@@ -1308,38 +1666,64 @@ class Stage3ProductionBridge:
                 error=error,
                 dry_run=dry_run,
             )
-        safe_records = streams["safe_action"]
-        control_indices = [
-            index
-            for index, item in enumerate(safe_records[:-1])
-            if item.get("payload", {})
-            .get("arbitration", {})
-            .get("raw_action", {})
-            .get("phase")
-            == "control"
-        ]
         used_new: set[int] = set()
         transitions: list[dict[str, Any]] = []
         quarantines: list[dict[str, Any]] = []
         policy_fixture = False
         task = str(result.get("task", start.get("task", "")))
-        for index in control_indices:
-            item = safe_records[index]
-            decision = int(item.get("payload", {}).get("decision_id", -1))
+        for macro in materialization.macros:
+            decision = -1
             try:
+                anchor_ack_ns = int(
+                    materialization.prepared.provenance[
+                        "action_ack_receive_monotonic_ns"
+                    ][macro.anchor_frame]
+                )
+                anchor_ack = ack_by_receive.get(anchor_ack_ns)
+                if anchor_ack is None:
+                    raise ProductionBridgeError("BRIDGE_MATERIALIZED_ANCHOR_ACK_MISSING")
+                stamp = int(anchor_ack.get("payload", {}).get("request_stamp_ns", 0))
+                anchor_request = next(
+                    (
+                        item
+                        for item in requested.values()
+                        if int(item.get("source_stamp_ns", 0)) == stamp
+                    ),
+                    None,
+                )
+                if anchor_request is None:
+                    raise ProductionBridgeError(
+                        "BRIDGE_MATERIALIZED_ANCHOR_REQUEST_MISSING"
+                    )
+                key = (
+                    str(anchor_request.get("source", "")),
+                    int(anchor_request.get("sequence", -1)),
+                )
+                item = safe_by_identity.get(key)
+                if item is None:
+                    raise ProductionBridgeError("BRIDGE_MATERIALIZED_SAFE_ACTION_MISSING")
+                raw = (
+                    item.get("payload", {})
+                    .get("arbitration", {})
+                    .get("raw_action", {})
+                )
+                if raw.get("phase") != "control":
+                    raise ProductionBridgeError("BRIDGE_MATERIALIZED_ANCHOR_NOT_CONTROL")
+                decision = int(item.get("payload", {}).get("decision_id", -1))
                 transition, is_policy = self._transition(
                     episode_dir=episode_dir,
                     episode_id=episode_id,
                     task=task,
                     safe_record=item,
-                    next_safe_record=safe_records[index + 1],
                     raw_by_identity=raw_by_identity,
                     requested=requested,
                     ack_by_stamp=ack_by_stamp,
+                    ack_by_receive=ack_by_receive,
                     goals=goals,
                     used_new=used_new,
                     timelines=timelines,
-                    episode_result=result,
+                    materialization=materialization,
+                    macro=macro,
                 )
                 transitions.append(transition)
                 policy_fixture = policy_fixture or is_policy
@@ -1349,6 +1733,7 @@ class Stage3ProductionBridge:
                         "schema_version": REPORT_VERSION,
                         "episode_id": episode_id,
                         "decision_id": decision,
+                        "anchor_frame": macro.anchor_frame,
                         "reason": str(error),
                         "formal_training_replay_eligible": False,
                     }
@@ -1385,6 +1770,7 @@ class Stage3ProductionBridge:
                 stable = {
                     "episode_id": episode_id,
                     "decision_id": item["decision_id"],
+                    "anchor_frame": item["anchor_frame"],
                 }
                 name = _sha256_bytes(_canonical_bytes(stable))
                 self._immutable_write(
@@ -1397,7 +1783,13 @@ class Stage3ProductionBridge:
                 "transition_uids": [
                     item["identity"]["transition_uid"] for item in transitions
                 ],
-                "quarantined_decisions": [item["decision_id"] for item in quarantines],
+                "quarantined_transitions": [
+                    {
+                        "decision_id": item["decision_id"],
+                        "anchor_frame": item["anchor_frame"],
+                    }
+                    for item in quarantines
+                ],
                 "episode_result_sha256": _sha256_file(result_path),
                 "formal_training_replay_written": False,
             }
@@ -1416,7 +1808,7 @@ class Stage3ProductionBridge:
             episode_id=episode_id,
             sealed=True,
             dry_run=dry_run,
-            candidate_count=len(control_indices),
+            candidate_count=len(materialization.macros),
             outbox_eligible_count=len(transitions),
             quarantined_count=len(quarantines),
             wal_written_count=wal_written,
