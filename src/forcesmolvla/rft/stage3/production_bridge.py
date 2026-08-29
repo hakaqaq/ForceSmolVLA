@@ -26,6 +26,7 @@ from .gripper_provenance import (
     VALID_TERMINAL_OUTCOMES,
     close_full_action7_authority,
 )
+from .policy_lineage import InitialGripperAuthority, POLICY_LINEAGE_SCHEMA
 
 
 SCHEMA_VERSION = "forcesmolvla_stage3_production_bridge_transition.v1"
@@ -209,6 +210,8 @@ class _Goal:
     accepted_ns: int
     finished_ns: int
     outcome: str
+    generation: GripperGeneration | None = None
+    initial_authority: bool = False
 
 
 def load_bridge_config(path: Path) -> tuple[BridgeConfig, dict[str, Any]]:
@@ -384,7 +387,58 @@ class Stage3ProductionBridge:
             if int(counts.get(name, -1)) != len(records):
                 raise ProductionBridgeError(f"BRIDGE_SEAL_COUNT_MISMATCH:{name}")
 
-    def _goals(self, streams: Mapping[str, list[dict[str, Any]]]) -> tuple[_Goal, ...]:
+    def _initial_gripper_goal(
+        self,
+        streams: Mapping[str, list[dict[str, Any]]],
+        *,
+        episode_id: str,
+    ) -> _Goal | None:
+        records = [
+            item.get("payload", {})
+            for item in streams["safe_action"]
+            if item.get("payload", {})
+            .get("arbitration", {})
+            .get("raw_action", {})
+            .get("phase")
+            == "episode_start"
+        ]
+        if len(records) != 1:
+            raise ProductionBridgeError("BRIDGE_EPISODE_START_IDENTITY_INVALID")
+        value = records[0].get("stage3_initial_gripper_authority")
+        if value is None:
+            return None
+        if not isinstance(value, Mapping):
+            raise ProductionBridgeError("BRIDGE_INITIAL_GRIPPER_AUTHORITY_INVALID")
+        try:
+            authority = InitialGripperAuthority.from_mapping(value).validate(
+                max_feedback_age_ns=self.config.max_gripper_feedback_age_ns
+            )
+        except GripperProvenanceError as error:
+            raise ProductionBridgeError(
+                f"BRIDGE_INITIAL_GRIPPER_AUTHORITY_INVALID:{error}"
+            ) from error
+        if authority.episode_id != episode_id:
+            raise ProductionBridgeError("BRIDGE_INITIAL_GRIPPER_EPISODE_MISMATCH")
+        return _Goal(
+            sequence=authority.origin_local_goal_sequence,
+            action_goal_id=authority.origin_action_goal_id,
+            requested_state=authority.requested_state,
+            requested_width_m=authority.requested_width_m,
+            started_ns=authority.origin_accepted_monotonic_ns,
+            accepted_ns=authority.origin_accepted_monotonic_ns,
+            finished_ns=authority.terminal_finished_monotonic_ns,
+            outcome=authority.terminal_outcome,
+            generation=authority.generation,
+            initial_authority=True,
+        )
+
+    def _goals(
+        self,
+        streams: Mapping[str, list[dict[str, Any]]],
+        *,
+        episode_id: str,
+    ) -> tuple[_Goal, ...]:
+        initial = self._initial_gripper_goal(streams, episode_id=episode_id)
         targets: dict[int, dict[str, Any]] = {}
         statuses: dict[int, dict[str, Any]] = {}
         for record in streams["gripper_target"]:
@@ -399,7 +453,7 @@ class Stage3ProductionBridge:
             statuses[sequence] = record
         if set(targets) != set(statuses):
             raise ProductionBridgeError("BRIDGE_GRIPPER_TERMINAL_PAIRING_INCOMPLETE")
-        goals: list[_Goal] = []
+        goals: list[_Goal] = [] if initial is None else [initial]
         for sequence in sorted(targets):
             target, status = targets[sequence], statuses[sequence]
             identity = (
@@ -430,6 +484,13 @@ class Stage3ProductionBridge:
                     outcome=outcome,
                 )
             )
+        if initial is not None and initial.sequence in targets:
+            recorded = targets[initial.sequence]
+            if str(recorded.get("action_goal_id", "")) != initial.action_goal_id:
+                raise ProductionBridgeError(
+                    "BRIDGE_INITIAL_GRIPPER_GOAL_ID_CONFLICT"
+                )
+            goals = [goal for goal in goals if not goal.initial_authority]
         if not goals:
             raise ProductionBridgeError("BRIDGE_GRIPPER_GOAL_STREAM_EMPTY")
         return tuple(goals)
@@ -455,6 +516,22 @@ class Stage3ProductionBridge:
                 raise ProductionBridgeError(
                     f"BRIDGE_POLICY_LINEAGE_UNBOUND:{','.join(missing)}"
                 )
+            if selection.get("lineage_schema") not in {
+                None,
+                POLICY_LINEAGE_SCHEMA,
+            }:
+                raise ProductionBridgeError("BRIDGE_POLICY_LINEAGE_SCHEMA_INVALID")
+            for field in (
+                "request_id",
+                "result_id",
+                "chunk_id",
+                "proposal_id",
+                "policy_revision",
+            ):
+                if not isinstance(selection[field], str) or not selection[field].strip():
+                    raise ProductionBridgeError(
+                        f"BRIDGE_POLICY_LINEAGE_IDENTITY_INVALID:{field}"
+                    )
             lineage = {
                 "binding_kind": "recorded_policy_runtime_ledger",
                 "request_id": str(selection["request_id"]),
@@ -467,10 +544,24 @@ class Stage3ProductionBridge:
                 "takeover_generation": int(selection["takeover_generation"]),
                 "t_ref_ns": int(selection["t_ref_ns"]),
                 "selected_index": int(selection["action_index"]),
+                "dispatch_sequence": int(
+                    selection.get("dispatch_sequence", sequence)
+                ),
                 "source_sequence": sequence,
                 "policy_fixture": True,
             }
-            if lineage["policy_epoch"] != policy_epoch:
+            if (
+                lineage["policy_epoch"] != policy_epoch
+                or lineage["dispatch_sequence"] != sequence
+                or int(selection.get("selected_index", lineage["selected_index"]))
+                != lineage["selected_index"]
+                or min(
+                    lineage["reset_generation"],
+                    lineage["takeover_generation"],
+                    lineage["selected_index"],
+                )
+                < 0
+            ):
                 raise ProductionBridgeError("BRIDGE_POLICY_EPOCH_MISMATCH")
             policy_fixture = True
         else:
@@ -517,8 +608,13 @@ class Stage3ProductionBridge:
         authority_ns: int,
         selected_width_m: float | None,
         used_new: set[int],
+        generation: GripperGeneration,
     ) -> tuple[_Goal, GripperAuthorityKind]:
-        pending = [goal for goal in goals if goal.started_ns <= authority_ns < goal.accepted_ns]
+        pending = [
+            goal
+            for goal in goals
+            if goal.started_ns <= authority_ns < goal.accepted_ns
+        ]
         near = [
             goal
             for goal in goals
@@ -545,8 +641,18 @@ class Stage3ProductionBridge:
                 or abs(goal.requested_width_m - selected_width_m)
                 <= self.config.requested_width_tolerance_m
             )
+            and (goal.generation is None or goal.generation == generation)
         ]
         if not accepted:
+            if any(
+                goal.initial_authority
+                and goal.accepted_ns <= authority_ns
+                and goal.generation != generation
+                for goal in goals
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_INITIAL_GRIPPER_GENERATION_MISMATCH"
+                )
             raise ProductionBridgeError("BRIDGE_GRIPPER_ACCEPTED_ORIGIN_MISSING")
         return (
             max(accepted, key=lambda item: item.accepted_ns),
@@ -771,6 +877,7 @@ class Stage3ProductionBridge:
             authority_ns=ack_receive_ns,
             selected_width_m=selected_width,
             used_new=used_new,
+            generation=generation,
         )
         if selected_width is None:
             selected_width = goal.requested_width_m
@@ -823,6 +930,24 @@ class Stage3ProductionBridge:
             selected_gripper_width_m=selected_width,
             gripper=gripper,
             requested_width_tolerance_m=self.config.requested_width_tolerance_m,
+        )
+        lineage = dict(lineage)
+        lineage.update(
+            {
+                "dispatch_sequence": sequence,
+                "selected_post_adapter_absolute7": list(
+                    full.accepted_absolute_action7
+                ),
+                "pose_command_id": pose.pose_command_id,
+                "pose_ack_id": pose.pose_ack_id,
+                "gripper_authority_reference": {
+                    "authority_kind": gripper.authority_kind.value,
+                    "origin_local_goal_sequence": (
+                        gripper.origin_local_goal_sequence
+                    ),
+                    "origin_action_goal_id": gripper.origin_action_goal_id,
+                },
+            }
         )
         if kind is GripperAuthorityKind.NEW_COMMAND:
             used_new.add(goal.sequence)
@@ -1136,7 +1261,7 @@ class Stage3ProductionBridge:
         try:
             streams = self._load_streams(episode_dir)
             self._validate_seal(result, streams)
-            goals = self._goals(streams)
+            goals = self._goals(streams, episode_id=episode_id)
         except ProductionBridgeError as error:
             return self._episode_quarantine(
                 episode_id=episode_id,
