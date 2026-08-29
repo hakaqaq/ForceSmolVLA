@@ -1,0 +1,192 @@
+{
+  "schema_version": "forcesmolvla_stage3_gripper_provenance.v1.development",
+  "status": "development_only_not_production_integrated",
+  "authority_kinds": [
+    "NEW_COMMAND",
+    "HELD_FROM_ACCEPTED_COMMAND"
+  ],
+  "lifecycle": [
+    "UNBOUND",
+    "COMMAND_PENDING",
+    "ACCEPTED_ACTIVE",
+    "TERMINAL_REACHED",
+    "TERMINAL_STALLED",
+    "INVALIDATED"
+  ],
+  "clock_contract": {
+    "clock_domain_id": "upper_host_monotonic",
+    "feedback_timestamp_field": "receive_monotonic_ns",
+    "max_feedback_age_ms": 100.0,
+    "GRIPPER_FEEDBACK_FRESHNESS_BOUND": true
+  },
+  "generation_contract": {
+    "required": [
+      "episode_id",
+      "reset_generation",
+      "takeover_generation",
+      "policy_revision",
+      "policy_epoch"
+    ],
+    "invalidating_boundaries": [
+      "reset_home",
+      "human_takeover",
+      "policy_revision",
+      "episode_change"
+    ]
+  },
+  "terminal_contract": {
+    "valid_outcomes_from_current_recorder_quality_gate": [
+      "reached",
+      "stalled"
+    ],
+    "invalid_outcomes": [
+      "rejected",
+      "send_error",
+      "result_error",
+      "not_reached"
+    ],
+    "GRIPPER_TERMINAL_SEAL_REQUIRED": true,
+    "staged_before_terminal_allowed": true,
+    "replay_before_terminal_seal_allowed": false
+  },
+  "held_authority_contract": {
+    "origin_command_identity_reused": true,
+    "new_command_or_ack_identity_synthesized": false,
+    "fresh_measured_feedback_required": true,
+    "no_pending_command_required": true,
+    "same_generation_required": true,
+    "requested_width_tolerance_m": 1e-09,
+    "GRIPPER_NOOP_ACK_POLICY": "BOUND"
+  },
+  "current_production_source_audit": {
+    "/home/rlc123/fr3_client_ws/scripts/record_franka_spacemouse_publisher.py": {
+      "sha256": "5d0a6ab0538a67f6cc21e87f546d6ff3cac7039fbe4cbd2d9e3c3b7f365f491f",
+      "symbols": [
+        "FrankaRecordSpaceMousePublisher._send_gripper_goal",
+        "FrankaRecordSpaceMousePublisher._gripper_goal_response",
+        "FrankaRecordSpaceMousePublisher._gripper_result"
+      ],
+      "emits": [
+        "local_goal_sequence",
+        "requested_state",
+        "requested_closed",
+        "controller_position",
+        "started_monotonic_ns",
+        "accepted_monotonic_ns",
+        "action_goal_id",
+        "terminal outcome"
+      ]
+    },
+    "/home/rlc123/fr3_client_ws/scripts/record_franka_forcevla.py": {
+      "sha256": "c9519d82bcbb953b85e73f37f07abc0c3c19642050703af4536ac6e164088db3",
+      "symbols": [
+        "IsolatedSpaceMouseController._on_gripper_goal_accepted",
+        "IsolatedSpaceMouseController._on_gripper_goal_terminal",
+        "NativeActionRecorder._gripper_target_cb",
+        "NativeActionRecorder._gripper_status_cb",
+        "_gripper_goal_integrity_reason",
+        "_gripper_state_integrity_reason",
+        "_finish_episode"
+      ],
+      "quality_gate": {
+        "reached_valid": true,
+        "stalled_valid": true,
+        "terminal_pairing_required": true,
+        "event_freshness_limit_ms": 100.0,
+        "final_settle_window_ms": 500.0
+      }
+    },
+    "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py": {
+      "sha256": "eba43dcc5d22d8ab06f7b7e64b474d0c63b4fa425bcfc85faba8829f65c6798c",
+      "symbols": [
+        "HilserlNativeActionRecorder",
+        "_finish_episode"
+      ],
+      "behavior": "inherits ForceVLA gripper target/status callbacks and reuses the same goal/state integrity gates"
+    },
+    "/home/rlc123/fr3_client_ws/scripts/deploy_forcesmolvla.py": {
+      "sha256": "c64acde5cc3eb8c531f58cc376d2b7e0d1d26e97f1adff9cfbfa8fc1118a94f2",
+      "symbols": [
+        "ForceSmolAbsoluteActionAdapter.apply",
+        "LiveForceSmolObservation._gripper_callback",
+        "LiveForceSmolObservation.request",
+        "run_async_policy_loop"
+      ],
+      "current_limitation": "Pose ACK is validated before an optional asynchronous gripper command; goal acceptance, terminal result, and held-origin provenance are not bound to the policy transition"
+    }
+  },
+  "current_record_field_binding": {
+    "gripper_target.jsonl": [
+      "local_goal_sequence",
+      "action_goal_id",
+      "requested_state",
+      "requested_closed",
+      "started_monotonic_ns",
+      "accepted_monotonic_ns",
+      "controller_position",
+      "target_width_m",
+      "token"
+    ],
+    "gripper_goal_status.jsonl": [
+      "local_goal_sequence",
+      "action_goal_id",
+      "requested_state",
+      "requested_closed",
+      "started_monotonic_ns",
+      "accepted_monotonic_ns",
+      "finished_monotonic_ns",
+      "outcome",
+      "token"
+    ],
+    "gripper_state.jsonl": [
+      "source_stamp_ns",
+      "receive_monotonic_ns",
+      "joint_name",
+      "controller_position",
+      "width_m"
+    ],
+    "absent_from_gripper_event_streams": [
+      "episode_id",
+      "reset_generation",
+      "takeover_generation",
+      "policy_revision",
+      "policy_epoch",
+      "measured_discrete_gripper_state"
+    ],
+    "notes": [
+      "episode_id is available from the accepted episode directory, not each gripper record",
+      "token is a recorder coordination token and is not treated as reset/takeover/revision generation",
+      "measured discrete state is code-derived from width when needed and is not claimed as a recorded field"
+    ]
+  },
+  "recorded_offline_trace": {
+    "classification": "recorded-offline gripper provenance; not a Stage-3 recorded-live policy fixture",
+    "episode_dir": "/home/rlc123/fr3_client_ws/datasets/task1/episodes/episode_000017",
+    "episode_result_sha256": "ca4f9566e56732561a039f27e6b14117157a39a99e49ef5f7eba29b430b1f9c7",
+    "gripper_target_sha256": "9521f78c34dbe26810c4928427e60997686d8d76f58df5602db0c527a9896832",
+    "gripper_goal_status_sha256": "b7cd02413146b05f0db4776dc821542a3479f03f8d31321e359f0257641607c6",
+    "gripper_state_sha256": "6fe4c7cbe313b93c1ac1f7b735216bc564de09df986262d5b1d59171c63f0d6c",
+    "saved": true,
+    "goal_count": 2,
+    "state_count": 14312,
+    "terminal_outcomes": [
+      "stalled",
+      "reached"
+    ],
+    "recorded_generation_limit": "episode identity is directory-bound; reset/takeover/revision boundary tests are CPU fault injections"
+  },
+  "g7c1_integration": {
+    "runtime_contract_source_closure_modified": false,
+    "append_only_pose_bridge": "pose_authority_from_g7c1_entry",
+    "existing_gripper_ack_check_lowered": false,
+    "gap": "G7C1 record_gripper_ack cannot directly express held-origin acceptance plus fresh feedback and terminal seal"
+  },
+  "gates": {
+    "FULL_ACTION7_ACK_CLOSURE_PRODUCTION": false,
+    "PRODUCTION_INTEGRATION_BLOCKED_ON_GRIPPER_ACK": true,
+    "RECORDED_LIVE_TEMPORAL_PARITY": false,
+    "PRODUCTION_CADENCE_BINDING_COMPLETE": false,
+    "G7_FORMAL_GATE_PASSED": false,
+    "G8_STARTED": false
+  }
+}
