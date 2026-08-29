@@ -33,10 +33,30 @@
       "required": ["branch", "head", "g5p_report_canonical_sha256", "g5p_checkpoint_canonical_digest"],
       "properties": {
         "branch": {"const": "stage3-online-hil"},
-        "head": {"const": "0698f7635f479a36794c349ce0e1e77a3a26bc2d"},
+        "head": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "required_freeze_ancestor": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "freeze_ancestor_verified": {"const": true},
+        "historical_evidence_verified": {"const": true},
+        "historical_report_canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_report_file_sha256": {"$ref": "#/$defs/sha256"},
+        "historical_markdown_file_sha256": {"$ref": "#/$defs/sha256"},
         "g5p_report_canonical_sha256": {"const": "75c3b0bab63b17bc0b4a685cd1a2177d7194fc82a1b2fd2fb112bc268210fdad"},
         "g5p_checkpoint_canonical_digest": {"const": "b0d24880e02f0eff3f18f22930b3fe8bbc1ebd8f9cfa9da825d27a08533d1058"}
-      }
+      },
+      "allOf": [{
+        "if": {
+          "properties": {
+            "head": {"not": {"const": "0698f7635f479a36794c349ce0e1e77a3a26bc2d"}}
+          }
+        },
+        "then": {
+          "required": [
+            "required_freeze_ancestor", "freeze_ancestor_verified",
+            "historical_evidence_verified", "historical_report_canonical_sha256",
+            "historical_report_file_sha256", "historical_markdown_file_sha256"
+          ]
+        }
+      }]
     },
     "revision_artifacts": {
       "type": "object",

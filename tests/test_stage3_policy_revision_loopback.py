@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -56,6 +57,118 @@ def config() -> dict:
 @pytest.fixture(scope="module")
 def bindings(config: dict) -> dict:
     return g6p.build_revision_bindings(config)
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.check_output(
+        ["git", *args], cwd=repo, text=True, stderr=subprocess.DEVNULL,
+    ).strip()
+
+
+@pytest.fixture
+def provenance_repo(tmp_path: Path) -> tuple[Path, dict, str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init", "-b", "stage3-online-hil"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _git(repo, "config", "user.name", "G6C Test")
+    _git(repo, "config", "user.email", "g6c@example.invalid")
+    (repo / "bound").mkdir()
+    (repo / "bound/source.txt").write_text("frozen source\n", encoding="utf-8")
+    (repo / "artifacts").mkdir()
+    historical = {"baseline": {"head": "0" * 40}, "result": "PASS"}
+    historical["canonical_report_sha256"] = canonical_sha256(historical)
+    report_bytes = (
+        json.dumps(historical, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    )
+    (repo / "artifacts/report.json").write_bytes(report_bytes)
+    (repo / "report.md").write_text("historical evidence\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "freeze evidence")
+    freeze = _git(repo, "rev-parse", "HEAD")
+    config = {
+        "provenance": {
+            "required_branch": "stage3-online-hil",
+            "required_freeze_ancestor": freeze,
+            "historical_evidence": {
+                "historical_generation_head": "0" * 40,
+                "report_path": "artifacts/report.json",
+                "report_file_sha256": hashlib.sha256(report_bytes).hexdigest(),
+                "canonical_report_sha256": historical["canonical_report_sha256"],
+                "markdown_path": "report.md",
+                "markdown_file_sha256": hashlib.sha256(
+                    (repo / "report.md").read_bytes()
+                ).hexdigest(),
+            },
+        },
+        "source_binding": {
+            "recursive_globs": ["bound/*.txt"],
+            "exact_files": [],
+            "vendor_path": "",
+        },
+        "contract_files": {},
+    }
+    return repo, config, freeze
+
+
+def test_freeze_and_descendant_with_unchanged_bound_closure_pass(
+    provenance_repo: tuple[Path, dict, str],
+) -> None:
+    repo, provenance, freeze = provenance_repo
+    at_freeze = g6p.verify_required_freeze_ancestor(provenance, repo)
+    assert at_freeze["head"] == freeze
+    assert g6p.verify_historical_evidence(provenance, repo)[
+        "historical_evidence_verified"
+    ] is True
+    assert g6p.verify_frozen_bound_sources(provenance, repo)["bound_file_count"] == 1
+
+    (repo / "unrelated.txt").write_text("descendant only\n", encoding="utf-8")
+    _git(repo, "add", "unrelated.txt")
+    _git(repo, "commit", "-m", "unrelated descendant")
+    descendant = g6p.verify_required_freeze_ancestor(provenance, repo)
+    assert descendant["head"] != freeze
+    assert descendant["freeze_ancestor_verified"] is True
+    assert g6p.verify_frozen_bound_sources(provenance, repo)["bound_file_count"] == 1
+
+
+def test_missing_freeze_and_non_descendant_fail_closed(
+    provenance_repo: tuple[Path, dict, str],
+) -> None:
+    repo, provenance, freeze = provenance_repo
+    missing = deepcopy(provenance)
+    missing["provenance"]["required_freeze_ancestor"] = "f" * 40
+    with pytest.raises(RuntimeError, match="G6C_REQUIRED_FREEZE_ANCESTOR_MISSING"):
+        g6p.verify_required_freeze_ancestor(missing, repo)
+
+    tree = _git(repo, "rev-parse", f"{freeze}^{{tree}}")
+    non_descendant = _git(repo, "commit-tree", tree, "-m", "non descendant")
+    _git(repo, "switch", "--detach", non_descendant)
+    with pytest.raises(RuntimeError, match="G6C_CURRENT_HEAD_NOT_FREEZE_DESCENDANT"):
+        g6p.verify_required_freeze_ancestor(provenance, repo)
+
+
+def test_historical_artifact_tamper_is_rejected(
+    provenance_repo: tuple[Path, dict, str],
+) -> None:
+    repo, provenance, _ = provenance_repo
+    report = repo / provenance["provenance"]["historical_evidence"]["report_path"]
+    report.write_bytes(report.read_bytes() + b"tamper")
+    with pytest.raises(RuntimeError, match="G6C_HISTORICAL_REPORT_FILE_SHA_MISMATCH"):
+        g6p.verify_historical_evidence(provenance, repo)
+
+
+def test_explicit_frozen_verification_rejects_bound_file_tamper(
+    provenance_repo: tuple[Path, dict, str],
+) -> None:
+    repo, provenance, _ = provenance_repo
+    (repo / "bound/source.txt").write_text("tampered source\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="G6C_FROZEN_BOUND_FILE_MISMATCH"):
+        g6p.verify_frozen_bound_sources(provenance, repo)
 
 
 def quiet(**overrides) -> QuiescentBoundary:
@@ -327,13 +440,26 @@ def test_cli_runs_twice_with_identical_canonical_report_and_full_fault_evidence(
         reports.append(json.loads(report_path.read_text(encoding="utf-8")))
     assert reports[0] == reports[1]
     assert reports[0]["canonical_report_sha256"] == reports[1]["canonical_report_sha256"]
+    assert reports[0]["baseline"]["head"] == _git(ROOT, "rev-parse", "HEAD")
+    assert reports[0]["baseline"]["required_freeze_ancestor"] == (
+        "aef723103dd8683fc99f03766102b9b19dbcc43b"
+    )
+    assert reports[0]["baseline"]["freeze_ancestor_verified"] is True
+    assert reports[0]["baseline"]["historical_evidence_verified"] is True
+    assert reports[0]["baseline"]["historical_report_canonical_sha256"] == (
+        "d597ef3631a580e4cc8e67e00d7dacf4190de14ba830760cfe5c2e7225e80fd6"
+    )
     canonical = deepcopy(reports[0])
     recorded_digest = canonical.pop("canonical_report_sha256")
     assert recorded_digest == canonical_sha256(canonical)
     schema = json.loads(
         (ROOT / "schemas/stage3_policy_revision_loopback_report.v1.schema.json").read_text()
     )
-    Draft202012Validator(schema).validate(reports[0])
+    validator = Draft202012Validator(schema)
+    validator.validate(reports[0])
+    missing_provenance = deepcopy(reports[0])
+    missing_provenance["baseline"].pop("required_freeze_ancestor")
+    assert list(validator.iter_errors(missing_provenance))
     assert reports[0]["fault_injection"]["all_passed"] is True
     assert len(reports[0]["fault_injection"]["cases"]) >= 23
     assert reports[0]["fresh_process_recovery"]["safe_reset_required"] is True
@@ -363,6 +489,7 @@ def test_cli_has_no_ros_robot_or_network_server_imports() -> None:
     assert imported.isdisjoint(banned)
     assert "serve_policy" not in imported
     assert "deploy_forcesmolvla" not in imported
+    assert "EXPECTED_HEAD" not in source
 
 
 def test_checked_in_report_is_schema_valid_and_canonically_self_signed() -> None:

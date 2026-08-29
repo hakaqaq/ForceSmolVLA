@@ -6,9 +6,10 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from dataclasses import replace
+import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
 import sys
@@ -49,8 +50,6 @@ from forcesmolvla.rft.stage3.transition import (
 )
 
 
-EXPECTED_BRANCH = "stage3-online-hil"
-EXPECTED_HEAD = "0698f7635f479a36794c349ce0e1e77a3a26bc2d"
 REPORT_SCHEMA_VERSION = "forcesmolvla_stage3_policy_revision_loopback_report.v1"
 REPORT_SCHEMA = ROOT / "schemas/stage3_policy_revision_loopback_report.v1.schema.json"
 
@@ -60,10 +59,197 @@ def require(condition: bool, code: str) -> None:
         raise RuntimeError(code)
 
 
-def _git(*args: str) -> str:
+def _git(*args: str, repo_root: Path = ROOT) -> str:
     return subprocess.check_output(
-        ["git", *args], cwd=ROOT, text=True, stderr=subprocess.DEVNULL,
+        ["git", *args], cwd=repo_root, text=True, stderr=subprocess.DEVNULL,
     ).strip()
+
+
+def _git_blob(repo_root: Path, commit: str, relative_path: str) -> bytes:
+    try:
+        return subprocess.check_output(
+            ["git", "show", f"{commit}:{relative_path}"],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(f"G6C_FROZEN_BLOB_MISSING:{relative_path}") from error
+
+
+def verify_required_freeze_ancestor(
+    config: Mapping[str, Any], repo_root: Path = ROOT,
+) -> dict[str, Any]:
+    provenance = config["provenance"]
+    freeze = provenance["required_freeze_ancestor"]
+    exists = subprocess.run(
+        ["git", "cat-file", "-e", f"{freeze}^{{commit}}"],
+        cwd=repo_root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    require(exists.returncode == 0, "G6C_REQUIRED_FREEZE_ANCESTOR_MISSING")
+    head = _git("rev-parse", "HEAD", repo_root=repo_root)
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", freeze, head],
+        cwd=repo_root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    require(ancestor.returncode == 0, "G6C_CURRENT_HEAD_NOT_FREEZE_DESCENDANT")
+    branch = _git("branch", "--show-current", repo_root=repo_root)
+    require(
+        branch == provenance["required_branch"],
+        "G6P_BASELINE_BRANCH_MISMATCH",
+    )
+    return {
+        "branch": branch,
+        "head": head,
+        "required_freeze_ancestor": freeze,
+        "freeze_ancestor_verified": True,
+    }
+
+
+def verify_historical_evidence(
+    config: Mapping[str, Any], repo_root: Path = ROOT,
+) -> dict[str, Any]:
+    provenance = config["provenance"]
+    freeze = provenance["required_freeze_ancestor"]
+    evidence = provenance["historical_evidence"]
+    report_path = repo_root / evidence["report_path"]
+    markdown_path = repo_root / evidence["markdown_path"]
+    report_bytes = report_path.read_bytes()
+    markdown_bytes = markdown_path.read_bytes()
+    require(
+        hashlib.sha256(report_bytes).hexdigest() == evidence["report_file_sha256"],
+        "G6C_HISTORICAL_REPORT_FILE_SHA_MISMATCH",
+    )
+    require(
+        hashlib.sha256(markdown_bytes).hexdigest() == evidence["markdown_file_sha256"],
+        "G6C_HISTORICAL_MARKDOWN_FILE_SHA_MISMATCH",
+    )
+    require(
+        report_bytes == _git_blob(repo_root, freeze, evidence["report_path"]),
+        "G6C_HISTORICAL_REPORT_NOT_FREEZE_BLOB",
+    )
+    require(
+        markdown_bytes == _git_blob(repo_root, freeze, evidence["markdown_path"]),
+        "G6C_HISTORICAL_MARKDOWN_NOT_FREEZE_BLOB",
+    )
+    report = json.loads(report_bytes)
+    recorded_digest = report.pop("canonical_report_sha256")
+    require(
+        recorded_digest == evidence["canonical_report_sha256"],
+        "G6C_HISTORICAL_CANONICAL_DIGEST_MISMATCH",
+    )
+    require(
+        canonical_sha256(report) == recorded_digest,
+        "G6C_HISTORICAL_CANONICAL_SELF_SIGNATURE_MISMATCH",
+    )
+    require(
+        report["baseline"]["head"] == evidence["historical_generation_head"],
+        "G6C_HISTORICAL_GENERATION_HEAD_MISMATCH",
+    )
+    return {
+        "historical_evidence_verified": True,
+        "historical_report_canonical_sha256": recorded_digest,
+        "historical_report_file_sha256": evidence["report_file_sha256"],
+        "historical_markdown_file_sha256": evidence["markdown_file_sha256"],
+    }
+
+
+def _matches_git_glob(relative_path: str, pattern: str) -> bool:
+    candidate = PurePosixPath(relative_path)
+    while True:
+        if candidate.match(pattern):
+            return True
+        if "/**/" not in pattern:
+            return False
+        pattern = pattern.replace("/**/", "/", 1)
+
+
+def _configured_bound_paths(config: Mapping[str, Any], repo_root: Path) -> set[str]:
+    source = config["source_binding"]
+    paths = {
+        path.relative_to(repo_root).as_posix()
+        for pattern in source["recursive_globs"]
+        for path in repo_root.glob(pattern)
+        if path.is_file()
+    }
+    paths.update(source["exact_files"])
+    paths.update(
+        relative
+        for relatives in config.get("contract_files", {}).values()
+        for relative in relatives
+    )
+    if config.get("approved_hybrid_parent"):
+        paths.add(config["approved_hybrid_parent"])
+    return paths
+
+
+def verify_frozen_bound_sources(
+    config: Mapping[str, Any], repo_root: Path = ROOT,
+) -> dict[str, Any]:
+    """Explicit release-boundary check; ordinary loopback intentionally skips it."""
+    current = verify_required_freeze_ancestor(config, repo_root)
+    freeze = current["required_freeze_ancestor"]
+    source = config["source_binding"]
+    vendor_path = source.get("vendor_path", "").rstrip("/")
+    current_paths = _configured_bound_paths(config, repo_root)
+    tree_paths = set(
+        _git("ls-tree", "-r", "--name-only", freeze, repo_root=repo_root).splitlines()
+    )
+    frozen_paths = {
+        path
+        for path in tree_paths
+        if any(_matches_git_glob(path, pattern) for pattern in source["recursive_globs"])
+    }
+    frozen_paths.update(source["exact_files"])
+    frozen_paths.update(
+        relative
+        for relatives in config.get("contract_files", {}).values()
+        for relative in relatives
+    )
+    if config.get("approved_hybrid_parent"):
+        frozen_paths.add(config["approved_hybrid_parent"])
+    if vendor_path:
+        current_paths = {
+            path for path in current_paths if not path.startswith(f"{vendor_path}/")
+        }
+        frozen_paths = {
+            path for path in frozen_paths if not path.startswith(f"{vendor_path}/")
+        }
+    require(
+        current_paths == frozen_paths,
+        "G6C_FROZEN_SOURCE_PATH_SET_MISMATCH",
+    )
+    entries = []
+    for relative_path in sorted(frozen_paths):
+        frozen_bytes = _git_blob(repo_root, freeze, relative_path)
+        current_bytes = (repo_root / relative_path).read_bytes()
+        require(
+            current_bytes == frozen_bytes,
+            f"G6C_FROZEN_BOUND_FILE_MISMATCH:{relative_path}",
+        )
+        entries.append({
+            "relative_path": relative_path,
+            "size_bytes": len(current_bytes),
+            "sha256": hashlib.sha256(current_bytes).hexdigest(),
+        })
+    vendor_commit = None
+    if vendor_path:
+        vendor_commit = _git("rev-parse", f"{freeze}:{vendor_path}", repo_root=repo_root)
+        require(
+            _git("rev-parse", f":{vendor_path}", repo_root=repo_root) == vendor_commit,
+            "G6C_FROZEN_VENDOR_GITLINK_MISMATCH",
+        )
+    return {
+        **current,
+        "bound_file_count": len(entries),
+        "bound_tree_sha256": canonical_sha256(entries),
+        "vendor_commit": vendor_commit,
+    }
 
 
 def _file_entry(path: Path) -> dict[str, Any]:
@@ -323,9 +509,9 @@ def _fresh_subprocess_recovery(registry_path: Path) -> dict[str, Any]:
 
 def run_loopback(output_root: Path, config_path: Path) -> dict[str, Any]:
     require(os.environ.get("CUDA_VISIBLE_DEVICES") == "", "G6P_CUDA_MUST_BE_HIDDEN")
-    require(_git("branch", "--show-current") == EXPECTED_BRANCH, "G6P_BASELINE_BRANCH_MISMATCH")
-    require(_git("rev-parse", "HEAD") == EXPECTED_HEAD, "G6P_BASELINE_HEAD_MISMATCH")
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    provenance = verify_required_freeze_ancestor(config)
+    historical = verify_historical_evidence(config)
     bindings = build_revision_bindings(config)
     require(
         bindings["approved_hybrid_parent"]["decision"] == "APPROVED_HYBRID",
@@ -702,8 +888,11 @@ def run_loopback(output_root: Path, config_path: Path) -> dict[str, Any]:
         "schema_version": REPORT_SCHEMA_VERSION,
         "scope": config["scope"],
         "baseline": {
-            "branch": EXPECTED_BRANCH,
-            "head": EXPECTED_HEAD,
+            "branch": provenance["branch"],
+            "head": provenance["head"],
+            "required_freeze_ancestor": provenance["required_freeze_ancestor"],
+            "freeze_ancestor_verified": provenance["freeze_ancestor_verified"],
+            **historical,
             "g5p_report_canonical_sha256": "75c3b0bab63b17bc0b4a685cd1a2177d7194fc82a1b2fd2fb112bc268210fdad",
             "g5p_checkpoint_canonical_digest": "b0d24880e02f0eff3f18f22930b3fe8bbc1ebd8f9cfa9da825d27a08533d1058",
         },
@@ -895,6 +1084,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--verify-frozen-evidence", action="store_true")
     parser.add_argument("--recover-registry", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args()
 
@@ -903,6 +1093,12 @@ def main() -> int:
     args = parse_args()
     if args.recover_registry is not None:
         print(json.dumps(recover_registry_fresh_process(args.recover_registry), sort_keys=True))
+        return 0
+    if args.verify_frozen_evidence:
+        config = yaml.safe_load(args.config.resolve().read_text(encoding="utf-8"))
+        verify_historical_evidence(config)
+        result = verify_frozen_bound_sources(config)
+        print(json.dumps(result, sort_keys=True))
         return 0
     if args.output_root is None or args.report is None:
         raise SystemExit("--output-root and --report are required")
