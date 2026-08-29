@@ -1,0 +1,80 @@
+schema_version: forcesmolvla_stage3_gpu_coexistence.v1.development
+authorization: isolated_single_gpu_actor_learner_coexistence_only
+
+baseline:
+  branch: stage3-online-hil
+  head: 7f1b9ea490e7d8286895d55745d6aa701e122ea1
+  g6c_commit: ae5c74a53c8afb58e0ba0557fae84cf98ee32832
+  g6c2_commit: 7f1b9ea490e7d8286895d55745d6aa701e122ea1
+  g6p_freeze_commit: aef723103dd8683fc99f03766102b9b19dbcc43b
+  g6p_historical_canonical_sha256: d597ef3631a580e4cc8e67e00d7dacf4190de14ba830760cfe5c2e7225e80fd6
+  g6p_historical_json_sha256: 211ae0b9f397ef30685e55a66b5187de05eef59568ac61e722d3fd4c1caf5d40
+  g6p_historical_md_sha256: 01d2fca550426836cddcabf8fb10c4ea0648020e013219cbbe9bf89978976d2e
+
+environment:
+  physical_cuda_device_index: 0
+  visible_cuda_device_index: 0
+  expected_cuda_visible_devices: "0"
+  expected_gpu_name: NVIDIA GeForce RTX 4090 D
+  expected_gpu_uuid: GPU-0f7fb0c9-3905-7cd0-7e0e-bad412e1cc66
+  python_executable: /home/rlc123/anaconda3/envs/forcesmolvla/bin/python
+  cublas_workspace_config: ':4096:8'
+  seed: 7707
+  sample_period_ms: 200
+
+inference:
+  checkpoint: artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1
+  evaluation_config: configs/stage2b_cycle210_evaluation_smoke.development.json
+  rulespec: tests/fixtures/shadow_safety_thresholds.test_only.yaml
+  rulespec_schema: schemas/rulespec.schema.json
+  release_period_ms: 100
+  queue_capacity: 8
+  cache_max_bytes: 16777216
+  fixed_flow_noise_seed: 19224
+  warmup_requests: 1
+  measured_trials: 3
+  inference_only_requests_per_trial: 334
+  concurrent_requests_per_trial: 200
+  time_sliced_requests_per_trial: 30
+  resume_requests_per_trial: 10
+  formal_p99_minimum_requests: 1000
+
+learner:
+  config: configs/stage3_gpu_preflight.v1.development.yaml
+  critic_batch_size: 64
+  actor_batch_size: 24
+  flow_subbatch: 4
+  critic_updates_per_cycle: 2
+  actor_updates_per_cycle: 1
+  polyak_updates_per_cycle: 2
+  warmup_cycles: 1
+  measured_cycles: 3
+  real_online_R_used: false
+  R_source: synthetic_preflight_R_only
+
+time_sliced:
+  inter_phase_gap_ms: 1000
+  inter_phase_gap_is_execution_budget: false
+  topology: cold_process_swap
+  resident_time_slicing: NOT_RUN
+  synthetic_reset_window: true
+
+deadline:
+  inference_deadline_source: UNBOUND
+  approved_inference_deadline_ms: null
+  approved_miss_rate: null
+  deadline_equals_macro_period_assumed: false
+  benchmark_macro_period_ms: 100
+
+output:
+  schema: schemas/stage3_gpu_coexistence_report.v1.schema.json
+  json: artifacts/development/stage3/stage3_gpu_coexistence.v1.json
+  markdown: docs/stage3_gpu_coexistence_report.v1.md
+
+safety:
+  network_server_authorized: false
+  robot_execution_authorized: false
+  replay_write_authorized: false
+  checkpoint_writeback_authorized: false
+  policy_publication_authorized: false
+  g8_and_later: NOT_RUN

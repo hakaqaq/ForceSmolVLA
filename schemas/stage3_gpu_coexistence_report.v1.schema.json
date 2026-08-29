@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "forcesmolvla-stage3-gpu-coexistence-report-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "tool_status", "baseline", "source_audit", "gpu_preflight",
+    "bindings", "modes", "comparisons", "semantic_audit", "gates", "safety", "final_checks",
+    "canonical_report_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "forcesmolvla_stage3_gpu_coexistence_report.v1"},
+    "tool_status": {"enum": ["PASS", "FAIL", "BLOCKED"]},
+    "baseline": {"type": "object"},
+    "source_audit": {"type": "object"},
+    "gpu_preflight": {"type": "object"},
+    "bindings": {"type": "object"},
+    "modes": {
+      "type": "object",
+      "required": ["inference_only", "learner_only", "concurrent", "episode_time_sliced", "separate_device"],
+      "properties": {
+        "inference_only": {"$ref": "#/$defs/mode"},
+        "learner_only": {"$ref": "#/$defs/mode"},
+        "concurrent": {"$ref": "#/$defs/mode"},
+        "episode_time_sliced": {"$ref": "#/$defs/mode"},
+        "separate_device": {"$ref": "#/$defs/mode"}
+      },
+      "additionalProperties": false
+    },
+    "comparisons": {"type": "object"},
+    "semantic_audit": {"$ref": "#/$defs/semantic_audit"},
+    "g7b_timestamp_instrumentation": {"$ref": "#/$defs/g7b_timestamp_instrumentation"},
+    "gates": {"$ref": "#/$defs/gates"},
+    "safety": {"type": "object"},
+    "final_checks": {"type": "object"},
+    "canonical_report_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "gates": {
+      "type": "object",
+      "required": [
+        "G7P_BENCHMARK_EXECUTION", "G7P_RESULT_SEMANTICS",
+        "G7P_100MS_SYNTHETIC_GRID_FEASIBLE",
+        "G7P_INFERENCE_ONLY_10HZ_SUSTAINABLE",
+        "G7P_CONCURRENT_10HZ_SUSTAINABLE",
+        "G7P_TIME_SLICED_10HZ_SUSTAINABLE",
+        "PRODUCTION_REQUEST_CADENCE_VALIDATED", "PRODUCTION_COLD_PROCESS_SWAP_APPROVED",
+        "G7P_EVIDENCE_FREEZE_ALLOWED"
+      ],
+      "properties": {
+        "G7P_BENCHMARK_EXECUTION": {"const": "PASS"},
+        "G7P_RESULT_SEMANTICS": {"const": "PASS_MEANS_MEASUREMENT_COMPLETED_ONLY"},
+        "G7P_100MS_SYNTHETIC_GRID_FEASIBLE": {"const": false},
+        "G7P_INFERENCE_ONLY_10HZ_SUSTAINABLE": {"const": false},
+        "G7P_CONCURRENT_10HZ_SUSTAINABLE": {"const": false},
+        "G7P_TIME_SLICED_10HZ_SUSTAINABLE": {"const": false},
+        "PRODUCTION_REQUEST_CADENCE_VALIDATED": {"const": false},
+        "PRODUCTION_COLD_PROCESS_SWAP_APPROVED": {"const": false},
+        "G7P_EVIDENCE_FREEZE_ALLOWED": {"type": "boolean"},
+        "G7P_TIME_SLICED_SEMANTICS": {
+          "enum": ["UNVERIFIED", "VERIFIED_COLD_PROCESS_SWAP_ONLY"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "semantic_audit": {
+      "type": "object",
+      "required": [
+        "G7A_SEMANTIC_AUDIT", "GPU_RERUN", "GPU_OPTIMIZER_STEP_RERUN",
+        "G7A_RAW_COUNTS_CONSISTENT", "G7A_DROP_RATES_RECOMPUTED",
+        "G7A_QUEUE_STABILITY_CLASSIFIED", "G7A_TIME_SLICED_TIMESTAMPS_SUFFICIENT",
+        "G7A_QUIESCENT_WINDOW_SEMANTICS", "request_accounting",
+        "queue_stability", "time_sliced", "memory", "formal_conclusion",
+        "G7P_EVIDENCE_FREEZE_ALLOWED"
+      ],
+      "properties": {
+        "G7A_SEMANTIC_AUDIT": {"const": "PASS"},
+        "GPU_RERUN": {"type": "boolean"},
+        "GPU_OPTIMIZER_STEP_RERUN": {"type": "boolean"},
+        "G7A_RAW_COUNTS_CONSISTENT": {"const": true},
+        "G7A_DROP_RATES_RECOMPUTED": {"const": true},
+        "G7A_QUEUE_STABILITY_CLASSIFIED": {"const": true},
+        "G7A_TIME_SLICED_TIMESTAMPS_SUFFICIENT": {"type": "boolean"},
+        "G7A_QUIESCENT_WINDOW_SEMANTICS": {"enum": ["budget", "gap", "extended", "unverified", "gap_not_budget"]},
+        "G7A_QUIESCENT_WINDOW_BUDGET_MET": {
+          "oneOf": [{"type": "boolean"}, {"const": "UNVERIFIED"}]
+        },
+        "G7A_MINIMUM_MEASURED_QUIESCENT_WINDOW_MS": {
+          "oneOf": [{"type": "number", "exclusiveMinimum": 0}, {"const": "UNVERIFIED"}]
+        },
+        "request_accounting": {
+          "type": "object", "required": ["modes", "totals"]
+        },
+        "queue_stability": {
+          "type": "object",
+          "required": ["QUEUE_MEMORY_BOUNDED_BY_CAP", "QUEUE_LOAD_STABLE_AT_10HZ", "NO_DROP_10HZ"],
+          "properties": {
+            "QUEUE_MEMORY_BOUNDED_BY_CAP": {"const": true},
+            "QUEUE_LOAD_STABLE_AT_10HZ": {"const": false},
+            "NO_DROP_10HZ": {"const": false}
+          }
+        },
+        "time_sliced": {"type": "object"},
+        "memory": {
+          "type": "object",
+          "required": [
+            "SHORT_RUN_MEMORY_SAFETY", "OOM_COUNT", "ALLOCATION_FAILURE_COUNT",
+            "SUSTAINED_MEMORY_LEAK_TEST", "SUSTAINED_THERMAL_STABILITY",
+            "PRODUCTION_DECODED_CACHE_BOUNDED"
+          ],
+          "properties": {
+            "SHORT_RUN_MEMORY_SAFETY": {"const": "PASS"},
+            "OOM_COUNT": {"const": 0},
+            "ALLOCATION_FAILURE_COUNT": {"const": 0},
+            "SUSTAINED_MEMORY_LEAK_TEST": {"const": "NOT_RUN"},
+            "SUSTAINED_THERMAL_STABILITY": {"const": "UNVERIFIED"},
+            "PRODUCTION_DECODED_CACHE_BOUNDED": {"const": false}
+          }
+        },
+        "formal_conclusion": {
+          "type": "object",
+          "required": [
+            "resource_coexistence", "numerical_action_parity", "synthetic_10hz_scheduling",
+            "production_cadence_deadline", "production_topology"
+          ],
+          "properties": {
+            "resource_coexistence": {"const": "PASS"},
+            "numerical_action_parity": {"const": "PASS"},
+            "synthetic_10hz_scheduling": {"const": "FAIL"},
+            "production_cadence_deadline": {"const": "UNBOUND"},
+            "production_topology": {"const": "NOT_APPROVED"}
+          }
+        },
+        "G7P_EVIDENCE_FREEZE_ALLOWED": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "g7b_timestamp_instrumentation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "G7B_BASE_G7A_CANONICAL_SHA256", "G7B_TIMESTAMP_INSTRUMENTATION",
+        "G7B_TARGETED_TIME_SLICED_RERUN", "G7B_RESULT", "GPU_RERUN",
+        "GPU_OPTIMIZER_STEP_RERUN", "base_component_digests",
+        "post_rerun_component_digests", "component_digest_unchanged",
+        "G7B_TIMESTAMP_ORDER_VALID", "G7B_INTER_PHASE_GAP_SEMANTICS",
+        "G7B_TIME_SLICED_TOPOLOGY", "RESIDENT_TIME_SLICING",
+        "REAL_RESET_HOME_WINDOW_USED", "INTER_PHASE_GAP_IS_EXECUTION_BUDGET",
+        "PRODUCTION_REQUIRED_RESET_HOME_WINDOW_MS", "timestamp_trace",
+        "derived_timing", "parent_checkpoint_sha_unchanged"
+      ],
+      "properties": {
+        "G7B_BASE_G7A_CANONICAL_SHA256": {"const": "1fd51e03eaa57c10412f4b38e2c4671edcd3abb474f7cec9ac45a800e4dacadb"},
+        "G7B_TIMESTAMP_INSTRUMENTATION": {"const": "PASS"},
+        "G7B_TARGETED_TIME_SLICED_RERUN": {"const": "PASS"},
+        "G7B_RESULT": {"const": "PASS"},
+        "GPU_RERUN": {"const": true},
+        "GPU_OPTIMIZER_STEP_RERUN": {"const": true},
+        "G7B_TIMESTAMP_ORDER_VALID": {"const": true},
+        "G7B_INTER_PHASE_GAP_SEMANTICS": {"const": "gap_not_budget"},
+        "G7B_TIME_SLICED_TOPOLOGY": {"const": "cold_process_swap"},
+        "RESIDENT_TIME_SLICING": {"const": "NOT_RUN"},
+        "REAL_RESET_HOME_WINDOW_USED": {"const": false},
+        "INTER_PHASE_GAP_IS_EXECUTION_BUDGET": {"const": false},
+        "PRODUCTION_REQUIRED_RESET_HOME_WINDOW_MS": {"const": "UNVERIFIED"},
+        "base_component_digests": {"$ref": "#/$defs/component_digests"},
+        "post_rerun_component_digests": {"$ref": "#/$defs/component_digests"},
+        "component_digest_unchanged": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inference_only", "learner_only", "concurrent", "environment", "checkpoint_bindings", "action_semantics"],
+          "properties": {
+            "inference_only": {"const": true}, "learner_only": {"const": true},
+            "concurrent": {"const": true}, "environment": {"const": true},
+            "checkpoint_bindings": {"const": true}, "action_semantics": {"const": true}
+          }
+        },
+        "timestamp_trace": {"$ref": "#/$defs/g7b_timestamp_trace"},
+        "derived_timing": {"$ref": "#/$defs/g7b_derived_timing"},
+        "parent_checkpoint_sha_unchanged": {"const": true}
+      }
+    },
+    "component_digests": {
+      "type": "object", "additionalProperties": false,
+      "required": ["inference_only", "learner_only", "concurrent", "environment", "checkpoint_bindings", "action_semantics"],
+      "properties": {
+        "inference_only": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "learner_only": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "concurrent": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "environment": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "checkpoint_bindings": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "action_semantics": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "g7b_timestamp_trace": {
+      "type": "object", "additionalProperties": true,
+      "required": [
+        "clock_source", "linux_same_boot_cross_process_comparable",
+        "TIME_SLICED_TOPOLOGY", "RESIDENT_TIME_SLICING", "REAL_RESET_HOME_WINDOW_USED",
+        "INTER_PHASE_GAP_IS_EXECUTION_BUDGET",
+        "episode_last_release_ns", "episode_queue_drained_ns", "episode_worker_exit_ns",
+        "pre_learner_gap_start_ns", "pre_learner_gap_end_ns", "learner_spawn_requested_ns",
+        "learner_process_spawn_ns", "learner_model_ready_ns", "learner_warmup_cycle_start_ns",
+        "learner_warmup_cycle_end_ns", "learner_measured_cycle_1_start_ns",
+        "learner_measured_cycle_1_end_ns", "learner_measured_cycle_2_start_ns",
+        "learner_measured_cycle_2_end_ns", "learner_measured_cycle_3_start_ns",
+        "learner_measured_cycle_3_end_ns", "learner_worker_exit_ns",
+        "pre_resume_gap_start_ns", "pre_resume_gap_end_ns", "resume_requested_ns",
+        "resume_process_spawn_ns", "resume_model_ready_ns", "resume_first_request_release_ns",
+        "resume_first_service_start_ns", "resume_first_service_end_ns",
+        "resume_first_result_ready_ns", "resume_queue_drained_ns", "resume_worker_exit_ns"
+      ],
+      "properties": {
+        "clock_source": {"const": "CLOCK_MONOTONIC"},
+        "linux_same_boot_cross_process_comparable": {"const": true},
+        "TIME_SLICED_TOPOLOGY": {"const": "cold_process_swap"},
+        "RESIDENT_TIME_SLICING": {"const": "NOT_RUN"},
+        "REAL_RESET_HOME_WINDOW_USED": {"const": false},
+        "INTER_PHASE_GAP_IS_EXECUTION_BUDGET": {"const": false}
+      }
+    },
+    "g7b_derived_timing": {
+      "type": "object", "additionalProperties": true,
+      "required": [
+        "episode_drain_duration_ms", "pre_learner_gap_actual_ms", "learner_process_load_ms",
+        "warmup_cycle_ms", "measured_cycle_ms", "measured_cycles_total_ms",
+        "learner_phase_total_ms", "pre_resume_gap_actual_ms", "resume_model_load_ms",
+        "resume_first_inference_service_ms", "resume_spawn_to_first_ready_ms",
+        "episode_drain_to_resume_spawn_ms", "episode_drain_to_first_resumed_action_ms",
+        "full_policy_unavailability_ms", "MINIMUM_MEASURED_SINGLE_JOINT_CYCLE_MS",
+        "FULL_MEASURED_LEARNER_PHASE_MS", "COLD_RESUME_SPAWN_TO_FIRST_READY_MS",
+        "FULL_COLD_SWAP_INTERRUPTION_MS", "PRODUCTION_REQUIRED_RESET_HOME_WINDOW_MS"
+      ],
+      "properties": {
+        "measured_cycle_ms": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number", "exclusiveMinimum": 0}},
+        "PRODUCTION_REQUIRED_RESET_HOME_WINDOW_MS": {"const": "UNVERIFIED"}
+      }
+    },
+    "mode": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {"status": {"enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"]}},
+      "additionalProperties": true
+    }
+  }
+}
