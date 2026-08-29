@@ -1,0 +1,71 @@
+{
+  "schema_version": "forcesmolvla_stage3_production_bridge.v1.development",
+  "status": "filesystem_shadow_only_not_production_integrated",
+  "clock_domain_id": "upper_host_monotonic",
+  "allow_recorded_offline_lineage": true,
+  "hash_camera_files": true,
+  "limits": {
+    "max_pose_age_ms": 30.0,
+    "max_wrench_age_ms": 30.0,
+    "max_camera_age_ms": 100.0,
+    "max_gripper_feedback_age_ms": 100.0,
+    "max_gripper_command_association_ms": 50.0,
+    "max_pose_ack_latency_ms": 50.0,
+    "pose_position_tolerance_m": 0.02,
+    "pose_quaternion_tolerance_rad": 0.2,
+    "requested_width_tolerance_m": 1e-09,
+    "minimum_full_macro_span_ns": 66666666,
+    "gripper_close_threshold_m": 0.030,
+    "gripper_open_threshold_m": 0.055,
+    "gripper_closed_width_m": 0.0,
+    "gripper_open_width_m": 0.085
+  },
+  "policy_selection_required_fields": [
+    "request_id",
+    "result_id",
+    "chunk_id",
+    "proposal_id",
+    "policy_revision",
+    "policy_epoch",
+    "reset_generation",
+    "takeover_generation",
+    "t_ref_ns",
+    "action_index"
+  ],
+  "persistence": {
+    "kind": "immutable_per_transition_filesystem_wal_outbox",
+    "active_episode": "staging_only_with_jsonl_record_count_and_byte_offset_cursors",
+    "same_uid_same_digest": "idempotent",
+    "same_uid_different_digest": "fail_closed",
+    "formal_training_replay_written": false
+  },
+  "normalization": {
+    "bridge_invocations": 0,
+    "normalizer_refit": false,
+    "boundary": "deferred_to_frozen_replay_adapter",
+    "recorded_live_exactly_once": "UNVERIFIED"
+  },
+  "recorded_offline_fixture": {
+    "episode_dir": "/home/rlc123/fr3_client_ws/datasets/task1/episodes/episode_000017",
+    "classification": "recorded-offline production recorder provenance; not recorded-live policy parity"
+  },
+  "audited_production_sources": {
+    "/home/rlc123/fr3_client_ws/scripts/record_franka_spacemouse_publisher.py": "5d0a6ab0538a67f6cc21e87f546d6ff3cac7039fbe4cbd2d9e3c3b7f365f491f",
+    "/home/rlc123/fr3_client_ws/scripts/record_franka_forcevla.py": "c9519d82bcbb953b85e73f37f07abc0c3c19642050703af4536ac6e164088db3",
+    "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py": "eba43dcc5d22d8ab06f7b7e64b474d0c63b4fa425bcfc85faba8829f65c6798c",
+    "/home/rlc123/fr3_client_ws/scripts/deploy_forcesmolvla.py": "c64acde5cc3eb8c531f58cc376d2b7e0d1d26e97f1adff9cfbfa8fc1118a94f2"
+  },
+  "known_blockers": [
+    "current production selection omits request/result/proposal/revision/reset/takeover identities",
+    "no recorded-live policy episode exists in the audited datasets",
+    "recorded offline episode has no online reward field"
+  ],
+  "gates": {
+    "RECORDED_LIVE_POLICY_FIXTURE": "BLOCKED",
+    "REAL_ONLINE_R_USED": false,
+    "FORMAL_TRAINING_REPLAY_WRITTEN": false,
+    "PRODUCTION_CADENCE_BINDING_COMPLETE": false,
+    "G7_FORMAL_GATE_PASSED": false,
+    "G8_STARTED": false
+  }
+}
