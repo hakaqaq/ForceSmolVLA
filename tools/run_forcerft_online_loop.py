@@ -221,7 +221,7 @@ def _report(command: list[str]) -> dict[str, Any]:
 
 def _bridge(args: argparse.Namespace, episode: Path, outcome: str) -> None:
     report = _report([
-        str(args.model_python), str(ROOT / "tools/run_stage3_production_bridge.py"),
+        str(args.model_python), str(ROOT / "tools/run_forcerft_production_bridge.py"),
         "--episode", str(episode), "--operator-task-outcome", outcome, "--dry-run",
     ])
     require(
@@ -235,7 +235,7 @@ def _bridge(args: argparse.Namespace, episode: Path, outcome: str) -> None:
 
 def _admit(args: argparse.Namespace, episode: Path) -> None:
     report = _report([
-        str(args.model_python), str(ROOT / "tools/run_stage3_production_bridge.py"),
+        str(args.model_python), str(ROOT / "tools/run_forcerft_production_bridge.py"),
         "--episode", str(episode), "--state-root", str(args.formal_r_root),
         "--operator-task-outcome", "success", "--admit-formal-online-r",
     ])
@@ -252,7 +252,7 @@ def _publish(args: argparse.Namespace, checkpoint: Path) -> Candidate:
         "STAGE3_CONTINUOUS_CANDIDATE_OUTPUT_EXISTS",
     )
     _run([
-        str(args.model_python), str(ROOT / "tools/export_stage3_joint_candidate.py"),
+        str(args.model_python), str(ROOT / "tools/export_forcerft_candidate.py"),
         "--joint-checkpoint", str(checkpoint),
         "--destination", str(candidate.package),
         "--deployment-profile", str(candidate.profile),
@@ -293,7 +293,7 @@ def _activate(
         "--interface-timeout", "10", "--home-timeout", "30",
     ])
     _run([
-        str(args.model_python), str(ROOT / "tools/activate_stage3_policy_revision.py"),
+        str(args.model_python), str(ROOT / "tools/activate_forcerft_policy_revision.py"),
         "activate", "--registry", str(args.registry), "--home-witness", str(witness),
         "--candidate-package", str(candidate.package),
         "--candidate-id", candidate.candidate_id,
@@ -430,7 +430,7 @@ def _run_episode(args: argparse.Namespace, index: int) -> None:
         args, index
     )
     server_command = [
-        str(args.model_python), str(ROOT / "tools/run_stage3_async_policy_learner_server.py"),
+        str(args.model_python), str(ROOT / "tools/serve_forcerft_actor_learner.py"),
         "--deployment-profile", str(deployment.profile),
         "--deployment-binding", str(deployment.binding),
         "--trusted-deployment-binding-sha256", deployment.trusted_binding,
@@ -458,7 +458,7 @@ def _run_episode(args: argparse.Namespace, index: int) -> None:
             "STAGE3_CONTINUOUS_SERVER_IDENTITY_MISMATCH",
         )
         _run([
-            str(args.robot_python), str(ROOT / "tools/run_stage3_integrated_capture.py"),
+            str(args.robot_python), str(ROOT / "tools/run_forcerft_integrated_capture.py"),
             "--mode", "policy-execute", "--allow-development-policy-execution-smoke",
             "--async-learner", "--root", str(root), "--task", args.task,
             "--episodes", "1", "--episode-time", str(args.episode_time),

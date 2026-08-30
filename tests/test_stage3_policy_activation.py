@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from robot.deployment.reset_home_witness import write_reset_home_witness
-from tools.activate_stage3_policy_revision import (
+from tools.activate_forcerft_policy_revision import (
     PolicyActivationError,
     activate_published_candidate,
     revision_status,

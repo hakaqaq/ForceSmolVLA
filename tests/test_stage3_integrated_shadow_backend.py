@@ -794,7 +794,7 @@ def test_integrated_cli_passes_shadow_runtime_binding_without_launch(
     completed = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tools/run_stage3_integrated_capture.py"),
+            str(ROOT / "tools/run_forcerft_integrated_capture.py"),
             "--mode",
             "shadow",
             "--root",

@@ -41,7 +41,7 @@ def atomic_write(path: Path, payload: bytes) -> None:
 
 def snapshot() -> dict:
     from forcesmolvla.rft.exact_resume import checkpoint_tree
-    import preflight_s2_g7a_r2_critic_warmup_gpu as r2
+    import train_twin_q_critic as r2
 
     base = r2._protected_snapshot_r2()
     files = {

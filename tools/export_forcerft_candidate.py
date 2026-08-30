@@ -22,7 +22,7 @@ if str(SRC) not in sys.path:
 if str(ROOT / "tools") not in sys.path:
     sys.path.insert(0, str(ROOT / "tools"))
 
-import validate_stage3_joint_candidate as validator  # noqa: E402
+import validate_forcerft_candidate as validator  # noqa: E402
 
 
 JOINT_CHECKPOINT = validator.JOINT_CHECKPOINT

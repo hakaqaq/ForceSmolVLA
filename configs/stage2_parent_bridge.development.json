@@ -46,8 +46,8 @@
     "tools/train_task2_full_gpu.py": {
       "status": "renamed_and_refactored",
       "parent_sha256": "643698922968e63ae68eb29654831970e29db3ba67a49ac0de518d808437b859",
-      "current_path": "tools/train.py",
-      "current_sha256": "c91321e61d5a84b88e251f89611a7f64eeb5c9bb74c5c2d9d0d0d4c221db4316"
+      "current_path": "tools/train_forcesmolvla_sft.py",
+      "current_sha256": "5048beac3136863c40a5e9554e6af7ad9adc9879f8742f9ac91393af5cf5b7ca"
     }
   },
   "current_head_change_allowlist": [
@@ -61,7 +61,7 @@
     {
       "status": "R077",
       "old_path": "tools/train_task2_full_gpu.py",
-      "new_path": "tools/train.py"
+      "new_path": "tools/train_forcesmolvla_sft.py"
     }
   ],
   "authorized_worktree_prefixes": [
@@ -71,7 +71,7 @@
     "configs/stage2_",
     "labels/task2_episode_outcomes.v1.json",
     "tools/build_stage2_source_manifest.py",
-    "tools/build_task2_offline_rl_transitions.py",
+    "tools/materialize_offline_demo_replay.py",
     "tools/preflight_s2_",
     "tests/test_s2_",
     "tests/test_rft_",

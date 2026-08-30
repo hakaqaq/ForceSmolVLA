@@ -9,6 +9,9 @@ limitations, evidence, and GitHub exclusions.
 独立工程根目录：`/home/rlc123/ForceSmolVLA`  
 独立 Conda 环境：`/home/rlc123/anaconda3/envs/forcesmolvla`
 
+从原生采集、LeRobot v3 转换、SFT、reward/Twin-Q 到 ForceRFT 持续在线训练的完整操作说明见
+[`docs/forcerft_end_to_end_user_guide.md`](docs/forcerft_end_to_end_user_guide.md)。
+
 本工程基于固定的 LeRobot v0.6.0 commit 和 SmolVLA base revision，实现约
 505.6M 参数的力觉条件化 Flow Actor；不修改 ForceVLA/OpenPI。当前架构、训练、
 推理与 gate 的 source-of-truth 是 `ForceSmolVLA_Implementation_Spec_v4_2.md`，
@@ -103,12 +106,12 @@ python tools/convert_franka_raw_to_lerobot_v3.py \
 ```bash
 env PYTHONHASHSEED=42 CUBLAS_WORKSPACE_CONFIG=:4096:8 \
   HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_DATASETS_OFFLINE=1 \
-  python tools/train.py \
+  python tools/train_forcesmolvla_sft.py \
     --dataset datasets/task2_lerobotv3 \
     --config configs/train/task2.json
 ```
 
-`tools/train.py`是通用训练入口，不包含task1/task2/task3分支。`--dataset`指定任意满足
+`tools/train_forcesmolvla_sft.py`是通用训练入口，不包含task1/task2/task3分支。`--dataset`指定任意满足
 ForceSmolVLA数据契约的LeRobot v3目录；任务名、输出目录、数据准入工件、P8证据和日志间隔
 由`--config`指定。新增数据集时创建新的`configs/train/<experiment>.json`，无需修改训练代码。
 

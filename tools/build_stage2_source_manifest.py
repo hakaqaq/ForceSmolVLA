@@ -46,7 +46,7 @@ V4_SOURCE_ENTRIES = {
     "tests/test_rft_offline_transitions.py": ("test_source", False),
     "tests/test_s2_parent_bridge.py": ("test_source", False),
     "tools/build_stage2_source_manifest.py": ("manifest_builder", True),
-    "tools/build_task2_offline_rl_transitions.py": ("g1_blocked_builder", False),
+    "tools/materialize_offline_demo_replay.py": ("g1_blocked_builder", False),
     "tools/preflight_s2_common.py": ("preflight_library", True),
     "tools/preflight_s2_differentiable_flow_gpu.py": ("g3_preflight", True),
     "tools/preflight_s2_g3_gradient_matrix_gpu.py": ("g3_measurement", True),
@@ -75,7 +75,7 @@ def _discover_stage2_files(root: Path) -> set[str]:
         "tests/test_rft_*.py",
         "tests/test_s2_*.py",
         "tools/build_stage2_source_manifest.py",
-        "tools/build_task2_offline_rl_transitions.py",
+        "tools/materialize_offline_demo_replay.py",
         "tools/preflight_s2_*.py",
     )
     for pattern in patterns:

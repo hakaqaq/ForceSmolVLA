@@ -11,7 +11,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from run_stage3_joint_update import (  # noqa: E402
+from train_forcerft_actor_critic import (  # noqa: E402
     assert_optimizer_ownership,
     load_joint_checkpoint_once,
     make_schedules,

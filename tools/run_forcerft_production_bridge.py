@@ -22,7 +22,7 @@ G1_CHECKPOINT = (
     ROOT
     / "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack"
 )
-G1_TRAINING_TOOL = ROOT / "tools/reward_classifier/train_task2_reward_classifier.py"
+G1_TRAINING_TOOL = ROOT / "tools/reward_classifier/train_reward_classifier.py"
 CONRFT_RUNTIME_ROOT = Path("/home/rlc123/conrft/serl_launcher")
 CAMERA_KEYS = ("d435_third_person", "d405_wrist")
 IMAGE_SHAPE = (480, 640, 3)

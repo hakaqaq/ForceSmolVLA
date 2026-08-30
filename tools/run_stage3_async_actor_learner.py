@@ -21,8 +21,8 @@ for path in (SRC, ROOT / "tools"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import run_stage3_critic_warmup as warmup  # noqa: E402
-import run_stage3_joint_update as joint  # noqa: E402
+import train_forcerft_critic_warmup as warmup  # noqa: E402
+import train_forcerft_actor_critic as joint  # noqa: E402
 from forcesmolvla.rft.stage3.async_runtime import (  # noqa: E402
     EpisodePin,
     InferenceRequest,

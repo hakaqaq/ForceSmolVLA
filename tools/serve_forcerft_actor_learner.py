@@ -25,8 +25,8 @@ for path in (SRC, ROOT / "tools"):
         sys.path.insert(0, str(path))
 
 import run_stage3_async_actor_learner as async_runner  # noqa: E402
-import run_stage3_critic_warmup as warmup  # noqa: E402
-import run_stage3_joint_update as joint  # noqa: E402
+import train_forcerft_critic_warmup as warmup  # noqa: E402
+import train_forcerft_actor_critic as joint  # noqa: E402
 import serve_policy  # noqa: E402
 from forcesmolvla.rft.stage3.async_runtime import (  # noqa: E402
     EpisodePin,

@@ -47,7 +47,7 @@ def test_real_builder_fails_closed_before_creating_output(tmp_path):
     result = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tools/build_task2_offline_rl_transitions.py"),
+            str(ROOT / "tools/materialize_offline_demo_replay.py"),
             "--reward-labels",
             str(ROOT / "labels/task2_episode_outcomes.v1.json"),
             "--output-root",

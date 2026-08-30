@@ -11,7 +11,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from run_stage3_critic_warmup import (  # noqa: E402
+from train_forcerft_critic_warmup import (  # noqa: E402
     build_ack_macros,
     load_formal_online_r,
     load_checkpoint_once,

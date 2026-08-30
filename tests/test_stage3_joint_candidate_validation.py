@@ -10,8 +10,8 @@ from forcesmolvla.checkpoint import export_development_actor_checkpoint
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
-    "validate_stage3_joint_candidate",
-    ROOT / "tools/validate_stage3_joint_candidate.py",
+    "validate_forcerft_candidate",
+    ROOT / "tools/validate_forcerft_candidate.py",
 )
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)

@@ -25,7 +25,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 CONRFT_ROOT = Path("/home/rlc123/conrft")
 CONRFT_RUNTIME_ROOT = CONRFT_ROOT / "serl_launcher"
-TRAINING_TOOL_PATH = ROOT / "tools/reward_classifier/train_task2_reward_classifier.py"
+TRAINING_TOOL_PATH = ROOT / "tools/reward_classifier/train_reward_classifier.py"
 ADAPTER_PATH = ROOT / "tools/reward_classifier/conrft_lerobot_v3_adapter.py"
 CHECKPOINT_PATH = ROOT / "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack"
 TRAINING_REPORT_PATH = ROOT / "artifacts/development/stage2/reward_classifier/r0_training/r0_training_validation_report.v1.json"

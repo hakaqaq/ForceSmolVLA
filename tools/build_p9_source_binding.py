@@ -82,7 +82,7 @@ def main() -> None:
         "tools/p8_checkpoint_common.py",
         "tools/preflight_p7_two_pass_gpu.py",
         "tools/preflight_p9_offline_replay.py",
-        "tools/train.py",
+        "tools/train_forcesmolvla_sft.py",
     ]
     bound_inputs = {
         item["path"]: item["sha256"]

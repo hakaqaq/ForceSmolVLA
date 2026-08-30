@@ -10,7 +10,7 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-import run_stage3_continuous_online_loop as loop  # noqa: E402
+import run_forcerft_online_loop as loop  # noqa: E402
 
 
 ACTIVE_ID = "active-cycle22"

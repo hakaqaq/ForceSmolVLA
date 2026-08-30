@@ -24,7 +24,7 @@ if str(SRC) not in sys.path:
 if str(ROOT / "tools") not in sys.path:
     sys.path.insert(0, str(ROOT / "tools"))
 
-import run_stage3_critic_warmup as warmup  # noqa: E402
+import train_forcerft_critic_warmup as warmup  # noqa: E402
 
 
 JOINT_CHECKPOINT = (

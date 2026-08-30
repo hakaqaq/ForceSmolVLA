@@ -3,14 +3,14 @@ import json
 from pathlib import Path
 import sys
 
-from train import _bind_fixture_provenance, _load_config, parse_args
+from train_forcesmolvla_sft import _bind_fixture_provenance, _load_config, parse_args
 
 
 ROOT = Path(__file__).parents[1]
 
 
 def test_training_entry_is_dataset_agnostic() -> None:
-    source = (ROOT / "tools/train.py").read_text(encoding="utf-8").lower()
+    source = (ROOT / "tools/train_forcesmolvla_sft.py").read_text(encoding="utf-8").lower()
     assert "task2" not in source
     assert not (ROOT / "tools/train_task2_full_gpu.py").exists()
 
@@ -21,7 +21,7 @@ def test_cli_requires_only_dataset_and_experiment_config(monkeypatch) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
-        ["train.py", "--dataset", str(dataset), "--config", str(config)],
+        ["train_forcesmolvla_sft.py", "--dataset", str(dataset), "--config", str(config)],
     )
 
     args = parse_args()

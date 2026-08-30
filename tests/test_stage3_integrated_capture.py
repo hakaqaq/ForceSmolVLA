@@ -437,7 +437,7 @@ def test_integrated_backend_is_called_once_and_must_own_only_recorder_controller
 
 def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_path: Path) -> None:
     command = [
-        sys.executable, str(ROOT / "tools/run_stage3_integrated_capture.py"),
+        sys.executable, str(ROOT / "tools/run_forcerft_integrated_capture.py"),
         "--mode", "shadow", "--root", str(tmp_path), "--task", "task",
         "--session-id", "session-1", "--episode-id", "episode_000001",
         "--policy-revision", "revision-1",
@@ -465,7 +465,7 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
     )
     policy_command = [
         sys.executable,
-        str(ROOT / "tools/run_stage3_integrated_capture.py"),
+        str(ROOT / "tools/run_forcerft_integrated_capture.py"),
         "--mode",
         "policy-execute",
         "--root",

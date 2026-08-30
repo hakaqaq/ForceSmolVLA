@@ -26,7 +26,7 @@ for path in (SRC, ROOT / "tools"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import run_stage3_critic_warmup as warmup  # noqa: E402
+import train_forcerft_critic_warmup as warmup  # noqa: E402
 
 
 RESUME_CHECKPOINT = (

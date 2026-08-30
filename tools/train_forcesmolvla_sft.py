@@ -223,7 +223,7 @@ def _source_binding(
         "tools/preflight_p5_dense_compute_gpu.py",
         "tools/preflight_p7_two_pass_gpu.py",
         "tools/action_target_population_parity_gate.py",
-        "tools/train.py",
+        "tools/train_forcesmolvla_sft.py",
         "artifacts/development/action_target_population_parity_r1.json",
         "configs/p7_training_recipe.development.yaml",
         "configs/training_checkpoint_contract.development.json",

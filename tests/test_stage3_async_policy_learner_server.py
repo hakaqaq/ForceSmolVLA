@@ -12,7 +12,7 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from run_stage3_async_policy_learner_server import (  # noqa: E402
+from serve_forcerft_actor_learner import (  # noqa: E402
     AsyncPolicyLearnerRuntime,
     RequestHandler,
 )
