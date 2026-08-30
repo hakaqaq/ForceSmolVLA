@@ -39,7 +39,7 @@ PACKAGED_CHECKPOINT = (
     / "stage3_joint_cycle_000010_candidate.v1"
 )
 PARENT_BINDING = ROOT / "configs/stage3_parent_binding.v1.development.json"
-GPU_CONFIG = ROOT / "configs/stage3_gpu_preflight.v1.development.yaml"
+TRAINING_CONFIG = ROOT / "configs/forcerft_actor_critic_training.development.yaml"
 RULESPEC = ROOT / "configs/live_action_safety.task2.development.yaml"
 EXECUTION_BINDING = (
     ROOT / "artifacts/development/live/task2_cycle210_policy_execution_smoke_binding.v1.json"
@@ -302,7 +302,7 @@ def run(
     device = torch.device("cuda:0")
 
     parent_binding = json.loads(PARENT_BINDING.read_text(encoding="utf-8"))
-    gpu_config = yaml.safe_load(GPU_CONFIG.read_text(encoding="utf-8"))
+    training_config = yaml.safe_load(TRAINING_CONFIG.read_text(encoding="utf-8"))
     packaged_checkpoint = packaged_checkpoint.resolve()
     candidate_meta = json.loads(
         (packaged_checkpoint / "candidate.json").read_text(encoding="utf-8")
@@ -416,7 +416,7 @@ def run(
     feature = torch.from_numpy(frozen_task_feature()).to(device=device, dtype=torch.float32)
     observation = warmup._critic_observation(samples, feature, device)
     mask = torch.ones(FIXED_OBSERVATION_COUNT, 3, dtype=torch.bool, device=device)
-    q1, q2 = _load_post_joint_critics(checkpoint, device, gpu_config)
+    q1, q2 = _load_post_joint_critics(checkpoint, device, training_config)
     with torch.no_grad():
         parent_q = torch.minimum(
             q1(*observation.as_tuple(), parent_q_action, mask),

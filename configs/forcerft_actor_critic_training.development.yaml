@@ -1,6 +1,5 @@
-schema_version: forcesmolvla_stage3_gpu_preflight.v1.development
-authorization: isolated_gpu_numerical_preflight_only
-preflight_only: true
+configuration_kind: forcerft_actor_critic_training.development
+authorization: approved_offline_and_asynchronous_training
 
 parent_binding:
   path: configs/stage3_parent_binding.v1.development.json
@@ -89,14 +88,3 @@ loss:
   cql_enabled: false
   random_candidates_enabled: false
   mc_return_input_enabled: false
-
-output:
-  markdown_report: docs/stage3_gpu_preflight_report.v1.md
-  schema: schemas/stage3_gpu_preflight_report.v1.schema.json
-
-safety:
-  runtime_critic_ready: false
-  runtime_actor_q_guidance_enabled: false
-  policy_revision_exported: false
-  robot_execution_authorized: false
-  network_service_authorized: false

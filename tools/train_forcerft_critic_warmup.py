@@ -35,7 +35,7 @@ FORMAL_R_ROOT = (
 )
 CHECKPOINT = FORMAL_R_ROOT / "checkpoints/stage3_critic_warmup_step_000100"
 PARENT_BINDING = ROOT / "configs/stage3_parent_binding.v1.development.json"
-GPU_CONFIG = ROOT / "configs/stage3_gpu_preflight.v1.development.yaml"
+TRAINING_CONFIG = ROOT / "configs/forcerft_actor_critic_training.development.yaml"
 DATASET = ROOT / "datasets/task2_lerobotv3"
 G1_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
 SEED = 4404
@@ -274,7 +274,7 @@ def load_parents(device: torch.device):
     from forcesmolvla.rft.critic import build_twin_q
 
     binding = json.loads(PARENT_BINDING.read_text(encoding="utf-8"))
-    config = yaml.safe_load(GPU_CONFIG.read_text(encoding="utf-8"))
+    config = yaml.safe_load(TRAINING_CONFIG.read_text(encoding="utf-8"))
     require(binding["binding_id"] == "approved_hybrid_cycle210_actor_g7a_r2_twin_q.v1", "STAGE3_WARMUP_PARENT_BINDING")
     actor = ForceSmolVLAPolicy.from_pretrained(
         Path(binding["actor_parent"]["architecture_binding"]["container_path"]),
