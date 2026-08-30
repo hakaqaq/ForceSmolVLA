@@ -8,9 +8,6 @@ import sys
 import pytest
 
 from forcesmolvla.rft.stage3.integrated_capture import (
-    CYCLE210_DEPLOYMENT_BINDING,
-    CYCLE210_EXECUTION_PROFILE,
-    CYCLE210_POLICY_REVISION,
     CaptureBackendCapabilities,
     IntegratedCaptureError,
     IntegratedCaptureLedger,
@@ -18,10 +15,86 @@ from forcesmolvla.rft.stage3.integrated_capture import (
     build_capture_contract,
     capture_mode_semantics,
     run_integrated_capture,
+    validate_development_policy_package,
 )
 
 
 ROOT = Path(__file__).parents[1]
+BASELINE_POLICY_REVISION = (
+    "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
+)
+BASELINE_DEPLOYMENT_BINDING = ROOT / (
+    "artifacts/development/live/"
+    "task2_cycle210_policy_execution_smoke_binding.v1.json"
+)
+
+
+def _development_package(
+    tmp_path: Path,
+    revision: str,
+    *,
+    candidate: bool,
+    published: bool = True,
+    activated: bool = False,
+) -> Path:
+    package = tmp_path / (
+        f"candidate-{revision[0]}" if candidate else f"baseline-{revision[0]}"
+    )
+    package.mkdir()
+    metadata = {
+        "artifact_purpose": (
+            "stage3_development_candidate_actor"
+            if candidate
+            else "evaluation_smoke_only"
+        )
+    }
+    if candidate:
+        metadata.update(
+            {
+                "published": published,
+                "activated": activated,
+                "model_revision": revision,
+            }
+        )
+        (package / "candidate.json").write_text(
+            json.dumps(
+                {
+                    "state": "published" if published else "candidate",
+                    "published": published,
+                    "activated": activated,
+                    "model_revision": revision,
+                }
+            ),
+            encoding="utf-8",
+        )
+    (package / "artifact_manifest.json").write_text(
+        json.dumps(
+            {
+                "acceptance_status": "development_only",
+                "formal_eligible": False,
+                "metadata": metadata,
+                "payloads": {"model.safetensors": {"sha256": revision}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return package
+
+
+def _development_binding(tmp_path: Path, revision: str, name: str = "binding") -> Path:
+    binding = tmp_path / f"{name}.json"
+    binding.write_text(
+        json.dumps(
+            {
+                "schema_version": "forcesmolvla-live-deployment-binding-v1",
+                "artifact_status": "approved",
+                "model_sha256": revision,
+                "approval": {"status": "approved"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return binding
 
 
 def _contract():
@@ -66,7 +139,7 @@ def _result() -> dict:
     }
 
 
-def test_policy_execute_requires_explicit_flag_and_exact_cycle210_binding(
+def test_policy_execute_requires_explicit_flag_and_approved_revision_binding(
     tmp_path: Path,
 ) -> None:
     contract = _contract()
@@ -87,7 +160,7 @@ def test_policy_execute_requires_explicit_flag_and_exact_cycle210_binding(
         "activation_authorized": False,
         "unlock_requires": [
             "explicit_development_policy_execution_smoke_flag",
-            "approved_cycle210_deployment_binding",
+            "approved_development_deployment_binding",
         ],
     }
     with pytest.raises(IntegratedCaptureError, match="EXPLICIT_FLAG_REQUIRED"):
@@ -95,13 +168,13 @@ def test_policy_execute_requires_explicit_flag_and_exact_cycle210_binding(
             mode="policy-execute",
             session_id="session-real-1",
             episode_id="episode_000001",
-            policy_revision=CYCLE210_POLICY_REVISION,
+            policy_revision=BASELINE_POLICY_REVISION,
             policy_epoch=2,
             reset_generation=3,
             takeover_generation=4,
-            deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
+            deployment_binding=BASELINE_DEPLOYMENT_BINDING,
         )
-    with pytest.raises(IntegratedCaptureError, match="CYCLE210_REVISION_REQUIRED"):
+    with pytest.raises(IntegratedCaptureError, match="DEVELOPMENT_REVISION_MISMATCH"):
         build_capture_contract(
             mode="policy-execute",
             session_id="session-real-1",
@@ -110,18 +183,18 @@ def test_policy_execute_requires_explicit_flag_and_exact_cycle210_binding(
             policy_epoch=0,
             reset_generation=0,
             takeover_generation=0,
-            deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
+            deployment_binding=BASELINE_DEPLOYMENT_BINDING,
             allow_development_policy_execution_smoke=True,
         )
     policy = build_capture_contract(
         mode="policy-execute",
         session_id="session-real-1",
         episode_id="episode_000000",
-        policy_revision=CYCLE210_POLICY_REVISION,
+        policy_revision=BASELINE_POLICY_REVISION,
         policy_epoch=0,
         reset_generation=0,
         takeover_generation=0,
-        deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
+        deployment_binding=BASELINE_DEPLOYMENT_BINDING,
         allow_development_policy_execution_smoke=True,
     )
     assert policy.actual_action_source == "policy"
@@ -129,6 +202,52 @@ def test_policy_execute_requires_explicit_flag_and_exact_cycle210_binding(
     assert policy.formal_replay is policy.real_online_r is False
     assert policy.controller_process_count == 1
     assert policy.deploy_controller is False
+
+
+def test_development_package_accepts_baseline_and_published_inactive_candidate(
+    tmp_path: Path,
+) -> None:
+    baseline_revision = "a" * 64
+    baseline = _development_package(tmp_path, baseline_revision, candidate=False)
+    assert validate_development_policy_package(baseline, baseline_revision) == {
+        "kind": "baseline_evaluation_smoke",
+        "activated": False,
+    }
+
+    candidate_revision = "b" * 64
+    candidate = _development_package(
+        tmp_path, candidate_revision, candidate=True, activated=False
+    )
+    assert validate_development_policy_package(candidate, candidate_revision) == {
+        "kind": "published_development_candidate",
+        "activated": False,
+    }
+
+    unpublished = _development_package(
+        tmp_path, "c" * 64, candidate=True, published=False
+    )
+    with pytest.raises(
+        IntegratedCaptureError, match="PUBLISHED_DEVELOPMENT_CANDIDATE_REQUIRED"
+    ):
+        validate_development_policy_package(unpublished, "c" * 64)
+
+    r5 = tmp_path / "r5"
+    r5.mkdir()
+    (r5 / "artifact_manifest.json").write_text(
+        json.dumps(
+            {
+                "acceptance_status": "development_only",
+                "formal_eligible": False,
+                "metadata": {},
+                "payloads": {"model.safetensors": {"sha256": "d" * 64}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        IntegratedCaptureError, match="APPROVED_DEVELOPMENT_PACKAGE_REQUIRED"
+    ):
+        validate_development_policy_package(r5, "d" * 64)
 
 
 def test_shadow_proposal_cannot_be_bound_to_human_ack_or_real_online_r() -> None:
@@ -175,11 +294,11 @@ def test_policy_execute_ack_binds_lineage_current_next_and_takeover() -> None:
         mode="policy-execute",
         session_id="session-policy-1",
         episode_id="episode_000000",
-        policy_revision=CYCLE210_POLICY_REVISION,
+        policy_revision=BASELINE_POLICY_REVISION,
         policy_epoch=0,
         reset_generation=0,
         takeover_generation=0,
-        deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
+        deployment_binding=BASELINE_DEPLOYMENT_BINDING,
         allow_development_policy_execution_smoke=True,
     )
     ledger = IntegratedCaptureLedger(contract)
@@ -313,10 +432,39 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
     payload = json.loads(completed.stdout)
     assert payload["status"] == "VALIDATED_NOT_LAUNCHED"
     assert payload["robot_or_ros_started"] is False
+
+    revision = "f" * 64
+    package = _development_package(tmp_path, revision, candidate=True)
+    binding = _development_binding(tmp_path, revision)
+    profile = tmp_path / "candidate-profile.json"
+    profile.write_text(
+        json.dumps(
+            {
+                "schema_version": "forcesmolvla-deployment-profile-v1",
+                "artifact_status": "development_only",
+                "checkpoint": str(package),
+                "deployment_binding": str(binding),
+            }
+        ),
+        encoding="utf-8",
+    )
     policy_command = [
-        *command[:3], "policy-execute", *command[4:-2],
-        "--policy-revision", CYCLE210_POLICY_REVISION,
-        "--deployment-profile", str(CYCLE210_EXECUTION_PROFILE),
+        sys.executable,
+        str(ROOT / "tools/run_stage3_integrated_capture.py"),
+        "--mode",
+        "policy-execute",
+        "--root",
+        str(tmp_path / "capture"),
+        "--task",
+        "task",
+        "--session-id",
+        "session-1",
+        "--episode-id",
+        "episode_000000",
+        "--policy-revision",
+        revision,
+        "--deployment-profile",
+        str(profile),
     ]
     blocked = subprocess.run(
         policy_command,
@@ -335,3 +483,20 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
     assert payload["robot_or_ros_started"] is False
     assert payload["contract"]["policy_execution"] is True
     assert payload["contract"]["deploy_controller"] is False
+    assert payload["contract"]["deployment_binding"] == str(binding.resolve())
+
+    other_binding = _development_binding(tmp_path, revision, "other-binding")
+    mismatch = subprocess.run(
+        [
+            *policy_command,
+            "--deployment-binding",
+            str(other_binding),
+            "--allow-development-policy-execution-smoke",
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert mismatch.returncode == 2
+    assert "APPROVED_DEVELOPMENT_BINDING_MISMATCH" in mismatch.stdout

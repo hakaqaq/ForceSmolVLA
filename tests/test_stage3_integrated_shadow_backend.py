@@ -14,9 +14,6 @@ from scipy.spatial.transform import Rotation
 
 from forcesmolvla.rft.stage3 import integrated_shadow_backend as shadow_backend
 from forcesmolvla.rft.stage3.integrated_capture import (
-    CYCLE210_DEPLOYMENT_BINDING,
-    CYCLE210_EXECUTION_PROFILE,
-    CYCLE210_POLICY_REVISION,
     IntegratedCaptureError,
     IntegratedCaptureLedger,
     RECORDER_CONTROL_CHAIN,
@@ -31,6 +28,13 @@ from forcesmolvla.rft.stage3.integrated_shadow_backend import (
 
 
 ROOT = Path(__file__).parents[1]
+BASELINE_POLICY_REVISION = (
+    "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
+)
+BASELINE_DEPLOYMENT_BINDING = ROOT / (
+    "artifacts/development/live/"
+    "task2_cycle210_policy_execution_smoke_binding.v1.json"
+)
 
 
 def _contract():
@@ -60,11 +64,11 @@ def _policy_contract():
         mode="policy-execute",
         session_id="policy-session-1",
         episode_id="episode_000000",
-        policy_revision=CYCLE210_POLICY_REVISION,
+        policy_revision=BASELINE_POLICY_REVISION,
         policy_epoch=0,
         reset_generation=0,
         takeover_generation=0,
-        deployment_binding=CYCLE210_DEPLOYMENT_BINDING,
+        deployment_binding=BASELINE_DEPLOYMENT_BINDING,
         allow_development_policy_execution_smoke=True,
     )
 
@@ -146,36 +150,127 @@ def test_backend_rejects_forged_policy_execution_before_loading_runtime(
         )
 
 
-def test_policy_execution_requires_cycle210_server_binding_and_one_controller() -> None:
-    contract = _policy_contract()
-    shadow_backend._validate_policy_execution_contract(contract)
-    profile = json.loads(CYCLE210_EXECUTION_PROFILE.read_text(encoding="utf-8"))
+def test_policy_execution_accepts_authorized_baseline_and_published_candidate(
+    tmp_path: Path,
+) -> None:
+    def validate_execution_authorization(cli, metadata) -> None:
+        if metadata.get("robot_execution_allowed") is not True:
+            raise PermissionError("not authorized")
+        assert cli.allow_development_robot_execution is True
+        assert cli.execute is True
+        assert cli.yes is False
+        assert (
+            cli.trusted_deployment_binding_sha256
+            == metadata["deployment_binding_sha256"]
+        )
+
+    deploy = SimpleNamespace(
+        validate_execution_authorization=validate_execution_authorization
+    )
+
+    baseline_contract = _policy_contract()
+    shadow_backend._validate_policy_execution_contract(baseline_contract)
+    baseline_profile_path = (
+        ROOT / "configs/deployment.stage3_cycle210_shadow.development.json"
+    )
+    baseline_profile = json.loads(
+        baseline_profile_path.read_text(encoding="utf-8")
+    )
     for field in ("checkpoint", "rulespec", "deployment_binding", "dataset_manifest"):
-        profile[field] = ROOT / profile[field]
-    required_client = "client-source-binding"
-    deploy = SimpleNamespace(client_source_tree_sha256=lambda: required_client)
-    metadata = {
-        "model_sha256": CYCLE210_POLICY_REVISION,
+        baseline_profile[field] = ROOT / baseline_profile[field]
+    baseline_metadata = {
+        "model_sha256": BASELINE_POLICY_REVISION,
+        "checkpoint": str(Path(baseline_profile["checkpoint"]).resolve()),
         "robot_execution_allowed": True,
-        "robot_execution_mode": "approved_binding_supervised_development",
-        "development_execution_override": True,
-        "deployment_binding_sha256": shadow_backend.CYCLE210_DEPLOYMENT_BINDING_SHA256,
-        "required_client_source_sha256": required_client,
+        "deployment_binding_sha256": baseline_profile[
+            "deployment_binding_sha256"
+        ],
         "rulespec_mode": "development_only",
         "rulespec_approval_status": "approved",
     }
     shadow_backend._validate_policy_execution_profile(
-        deploy, CYCLE210_EXECUTION_PROFILE, profile, metadata, contract
+        deploy, baseline_profile, baseline_metadata, baseline_contract
+    )
+
+    revision = "a" * 64
+    package = tmp_path / "published-candidate"
+    package.mkdir()
+    (package / "candidate.json").write_text(
+        json.dumps(
+            {
+                "state": "published",
+                "published": True,
+                "activated": False,
+                "model_revision": revision,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (package / "artifact_manifest.json").write_text(
+        json.dumps(
+            {
+                "acceptance_status": "development_only",
+                "formal_eligible": False,
+                "metadata": {
+                    "artifact_purpose": "stage3_development_candidate_actor",
+                    "published": True,
+                    "activated": False,
+                    "model_revision": revision,
+                },
+                "payloads": {"model.safetensors": {"sha256": revision}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    binding = tmp_path / "candidate-binding.json"
+    binding.write_text(
+        json.dumps(
+            {
+                "schema_version": "forcesmolvla-live-deployment-binding-v1",
+                "artifact_status": "approved",
+                "model_sha256": revision,
+                "approval": {"status": "approved"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    candidate_contract = build_capture_contract(
+        mode="policy-execute",
+        session_id="candidate-session-1",
+        episode_id="episode_000000",
+        policy_revision=revision,
+        policy_epoch=0,
+        reset_generation=0,
+        takeover_generation=0,
+        deployment_binding=binding,
+        allow_development_policy_execution_smoke=True,
+    )
+    candidate_profile = {
+        "artifact_status": "development_only",
+        "checkpoint": package,
+        "deployment_binding": binding,
+        "deployment_binding_sha256": "b" * 64,
+    }
+    candidate_metadata = {
+        "model_sha256": revision,
+        "checkpoint": str(package.resolve()),
+        "robot_execution_allowed": True,
+        "deployment_binding_sha256": "b" * 64,
+        "rulespec_mode": "development_only",
+        "rulespec_approval_status": "approved",
+    }
+    shadow_backend._validate_policy_execution_contract(candidate_contract)
+    shadow_backend._validate_policy_execution_profile(
+        deploy, candidate_profile, candidate_metadata, candidate_contract
     )
     with pytest.raises(
         IntegratedCaptureError, match="SERVER_AUTHORIZATION_MISMATCH"
     ):
         shadow_backend._validate_policy_execution_profile(
             deploy,
-            CYCLE210_EXECUTION_PROFILE,
-            profile,
-            {**metadata, "robot_execution_allowed": False},
-            contract,
+            candidate_profile,
+            {**candidate_metadata, "robot_execution_allowed": False},
+            candidate_contract,
         )
     assert IntegratedShadowBackend.capabilities.controller_process_count == 1
     assert IntegratedShadowBackend.capabilities.starts_deploy_controller is False

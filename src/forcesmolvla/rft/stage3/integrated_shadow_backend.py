@@ -13,19 +13,18 @@ import subprocess
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from typing import Any, Mapping
 
 from .gripper_provenance import GripperGeneration
 from .integrated_capture import (
-    CYCLE210_DEPLOYMENT_BINDING,
-    CYCLE210_EXECUTION_PROFILE,
-    CYCLE210_POLICY_REVISION,
     CaptureBackendCapabilities,
     IntegratedCaptureContract,
     IntegratedCaptureError,
     IntegratedCaptureLedger,
     RECORDER_CONTROL_CHAIN,
     RECORDER_ENTRY,
+    validate_development_policy_package,
 )
 from .policy_lineage import InitialGripperAuthority, UPPER_CLOCK_DOMAIN
 
@@ -33,19 +32,6 @@ from .policy_lineage import InitialGripperAuthority, UPPER_CLOCK_DOMAIN
 SHADOW_BACKEND_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
 POLICY_EXECUTION_BACKEND_SCHEMA = (
     "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
-)
-CYCLE210_DEPLOYMENT_BINDING_SHA256 = (
-    "f80053505ea0434ef9f92be5edd0d24227b6914643e31314474fb6abfa9f085f"
-)
-CYCLE210_CHECKPOINT = Path(
-    "/home/rlc123/ForceSmolVLA/"
-    "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1"
-)
-CYCLE210_RULESPEC = Path(
-    "/home/rlc123/ForceSmolVLA/configs/live_action_safety.task2.development.yaml"
-)
-CYCLE210_DATASET_MANIFEST = Path(
-    "/home/rlc123/ForceSmolVLA/datasets/task2_lerobotv3/conversion_manifest.json"
 )
 DETECTOR_CONTRACT = Path(
     "/home/rlc123/ForceSmolVLA/"
@@ -860,9 +846,7 @@ def _validate_policy_execution_contract(contract: IntegratedCaptureContract) -> 
         or contract.formal_replay is not False
         or contract.real_online_r is not False
         or contract.development_policy_execution_smoke is not True
-        or Path(str(contract.deployment_binding)).resolve()
-        != CYCLE210_DEPLOYMENT_BINDING
-        or contract.identity.policy_revision != CYCLE210_POLICY_REVISION
+        or not contract.deployment_binding
         or contract.controller_owner != "recorder"
         or contract.controller_process_count != 1
         or contract.recorder_controller is not True
@@ -875,7 +859,6 @@ def _validate_policy_execution_contract(contract: IntegratedCaptureContract) -> 
 
 def _validate_policy_execution_profile(
     deploy: Any,
-    profile_path: Path,
     profile: Mapping[str, Any],
     metadata: Mapping[str, Any],
     contract: IntegratedCaptureContract,
@@ -884,27 +867,38 @@ def _validate_policy_execution_profile(
     detector_smoke = detector.get("reward_gate", {}).get(
         "development_policy_execution_smoke", {}
     )
+    profile_binding = Path(profile["deployment_binding"]).resolve()
+    checkpoint = Path(profile["checkpoint"]).resolve()
     if (
-        profile_path != CYCLE210_EXECUTION_PROFILE
-        or profile.get("deployment_id") != "task2-stage3-cycle210-shadow"
-        or Path(profile["checkpoint"]).resolve() != CYCLE210_CHECKPOINT
-        or Path(profile["rulespec"]).resolve() != CYCLE210_RULESPEC
-        or Path(profile["deployment_binding"]).resolve()
-        != CYCLE210_DEPLOYMENT_BINDING
-        or Path(profile["dataset_manifest"]).resolve()
-        != CYCLE210_DATASET_MANIFEST
-        or profile.get("deployment_binding_sha256")
-        != CYCLE210_DEPLOYMENT_BINDING_SHA256
-        or contract.deployment_binding != str(CYCLE210_DEPLOYMENT_BINDING)
+        profile.get("artifact_status") != "development_only"
+        or profile_binding != Path(str(contract.deployment_binding)).resolve()
     ):
-        raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_PROFILE_REQUIRED")
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_APPROVED_DEVELOPMENT_DEPLOYMENT_MISMATCH"
+        )
+    validate_development_policy_package(
+        checkpoint, contract.identity.policy_revision
+    )
+    try:
+        deploy.validate_execution_authorization(
+            SimpleNamespace(
+                allow_development_robot_execution=True,
+                execute=True,
+                trusted_deployment_binding_sha256=profile[
+                    "deployment_binding_sha256"
+                ],
+                yes=False,
+            ),
+            dict(metadata),
+        )
+    except (OSError, PermissionError, RuntimeError, TypeError, ValueError) as error:
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_SERVER_AUTHORIZATION_MISMATCH"
+        ) from error
     expected_metadata = {
-        "model_sha256": CYCLE210_POLICY_REVISION,
-        "robot_execution_allowed": True,
-        "robot_execution_mode": "approved_binding_supervised_development",
-        "development_execution_override": True,
-        "deployment_binding_sha256": CYCLE210_DEPLOYMENT_BINDING_SHA256,
-        "required_client_source_sha256": deploy.client_source_tree_sha256(),
+        "model_sha256": contract.identity.policy_revision,
+        "checkpoint": str(checkpoint),
+        "deployment_binding_sha256": profile["deployment_binding_sha256"],
         "rulespec_mode": "development_only",
         "rulespec_approval_status": "approved",
     }
@@ -1256,7 +1250,7 @@ class IntegratedShadowBackend:
         deploy.validate_metadata(metadata)
         if contract.mode == "policy-execute":
             _validate_policy_execution_profile(
-                deploy, profile_path, profile, metadata, contract
+                deploy, profile, metadata, contract
             )
         manifest_task = deploy.validate_manifest(manifest, metadata, manifest_path)
         if manifest_task != str(arguments["task"]).strip():
@@ -1662,7 +1656,7 @@ class IntegratedShadowBackend:
         start_timeout: float,
         arguments: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        """Execute approved cycle210 actions through the recorder's sole bridge."""
+        """Execute an approved development policy through the recorder's sole bridge."""
 
         replan_steps = int(arguments.get("policy_replan_steps", 8))
         low_watermark = int(arguments.get("policy_queue_low_watermark", 4))
@@ -2120,7 +2114,6 @@ class IntegratedShadowBackend:
 
 
 __all__ = [
-    "CYCLE210_DEPLOYMENT_BINDING_SHA256",
     "ForbiddenPolicyPublisher",
     "IntegratedShadowBackend",
     "POLICY_EXECUTION_BACKEND_SCHEMA",

@@ -18,12 +18,11 @@ DEFAULT_SHADOW_BACKEND = (
 )
 
 from forcesmolvla.rft.stage3.integrated_capture import (  # noqa: E402
-    CYCLE210_DEPLOYMENT_BINDING,
-    CYCLE210_EXECUTION_PROFILE,
     IntegratedCaptureError,
     build_capture_contract,
     capture_mode_semantics,
     run_integrated_capture,
+    validate_development_policy_package,
 )
 
 
@@ -48,7 +47,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--allow-development-policy-execution-smoke",
         action="store_true",
         help=(
-            "explicitly unlock one approved cycle210 development policy-execution "
+            "explicitly unlock one approved development policy-execution "
             "episode; has no effect without --mode policy-execute"
         ),
     )
@@ -91,6 +90,52 @@ def _backend(specification: str | None) -> Any:
         raise IntegratedCaptureError("INTEGRATED_CAPTURE_BACKEND_LOAD_FAILED") from error
 
 
+def _policy_execution_deployment(
+    profile_path: Path,
+    deployment_binding: Path | None,
+    policy_revision: str,
+) -> Path:
+    """Resolve profile-selected package and binding before any backend is launched."""
+
+    try:
+        profile = json.loads(profile_path.resolve().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_APPROVED_DEVELOPMENT_PROFILE_UNREADABLE"
+        ) from error
+    if (
+        not isinstance(profile, dict)
+        or profile.get("schema_version")
+        != "forcesmolvla-deployment-profile-v1"
+        or profile.get("artifact_status") != "development_only"
+    ):
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_APPROVED_DEVELOPMENT_PROFILE_REQUIRED"
+        )
+    try:
+        profile_binding = Path(str(profile["deployment_binding"]))
+        checkpoint = Path(str(profile["checkpoint"]))
+    except (KeyError, TypeError, ValueError) as error:
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_APPROVED_DEVELOPMENT_PROFILE_REQUIRED"
+        ) from error
+    if not profile_binding.is_absolute():
+        profile_binding = ROOT / profile_binding
+    if not checkpoint.is_absolute():
+        checkpoint = ROOT / checkpoint
+    selected_binding = (
+        profile_binding.resolve()
+        if deployment_binding is None
+        else deployment_binding.expanduser().resolve()
+    )
+    if selected_binding != profile_binding.resolve():
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_APPROVED_DEVELOPMENT_BINDING_MISMATCH"
+        )
+    validate_development_policy_package(checkpoint, policy_revision)
+    return selected_binding
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     requested_mode = capture_mode_semantics(args.mode)
@@ -113,10 +158,13 @@ def main(argv: list[str] | None = None) -> int:
             raise IntegratedCaptureError("POLICY_EXECUTE_RUNTIME_LIMITS_INVALID")
         deployment_binding = args.deployment_binding
         if args.mode == "policy-execute":
-            if args.deployment_profile.resolve() != CYCLE210_EXECUTION_PROFILE:
-                raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_PROFILE_REQUIRED")
-            if deployment_binding is None:
-                deployment_binding = CYCLE210_DEPLOYMENT_BINDING
+            if not args.allow_development_policy_execution_smoke:
+                raise IntegratedCaptureError("POLICY_EXECUTE_EXPLICIT_FLAG_REQUIRED")
+            deployment_binding = _policy_execution_deployment(
+                args.deployment_profile,
+                deployment_binding,
+                args.policy_revision,
+            )
         contract = build_capture_contract(
             mode=args.mode,
             session_id=args.session_id,

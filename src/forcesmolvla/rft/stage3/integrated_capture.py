@@ -22,17 +22,6 @@ RECORDER_CONTROL_CHAIN = "franky_native_hilserl_cartesian_impedance"
 RECORDER_ENTRY = Path(
     "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py"
 )
-CYCLE210_POLICY_REVISION = (
-    "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
-)
-CYCLE210_EXECUTION_PROFILE = Path(
-    "/home/rlc123/ForceSmolVLA/"
-    "configs/deployment.stage3_cycle210_shadow.development.json"
-)
-CYCLE210_DEPLOYMENT_BINDING = Path(
-    "/home/rlc123/ForceSmolVLA/"
-    "artifacts/development/live/task2_cycle210_policy_execution_smoke_binding.v1.json"
-)
 CAPTURE_MODE_SEMANTICS: dict[str, dict[str, Any]] = {
     "shadow": {
         "actual_action_source": "human",
@@ -51,7 +40,7 @@ CAPTURE_MODE_SEMANTICS: dict[str, dict[str, Any]] = {
         "activation_authorized": False,
         "unlock_requires": [
             "explicit_development_policy_execution_smoke_flag",
-            "approved_cycle210_deployment_binding",
+            "approved_development_deployment_binding",
         ],
     },
 }
@@ -79,6 +68,70 @@ def _counter(value: Any, reason: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise IntegratedCaptureError(reason)
     return value
+
+
+def validate_development_policy_package(
+    checkpoint: Path, policy_revision: str
+) -> dict[str, Any]:
+    """Accept a packaged baseline smoke Actor or a published development candidate."""
+
+    checkpoint = checkpoint.expanduser().resolve()
+    try:
+        manifest = json.loads(
+            (checkpoint / "artifact_manifest.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError) as error:
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_APPROVED_DEVELOPMENT_PACKAGE_UNREADABLE"
+        ) from error
+    metadata = manifest.get("metadata", {}) if isinstance(manifest, Mapping) else {}
+    model_payload = (
+        manifest.get("payloads", {}).get("model.safetensors", {})
+        if isinstance(manifest, Mapping)
+        else {}
+    )
+    if (
+        manifest.get("acceptance_status") != "development_only"
+        or manifest.get("formal_eligible") is not False
+        or model_payload.get("sha256") != policy_revision
+    ):
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_APPROVED_DEVELOPMENT_PACKAGE_REVISION_MISMATCH"
+        )
+
+    candidate_path = checkpoint / "candidate.json"
+    if not candidate_path.exists():
+        if metadata.get("artifact_purpose") != "evaluation_smoke_only":
+            raise IntegratedCaptureError(
+                "POLICY_EXECUTE_APPROVED_DEVELOPMENT_PACKAGE_REQUIRED"
+            )
+        return {"kind": "baseline_evaluation_smoke", "activated": False}
+
+    try:
+        candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_APPROVED_DEVELOPMENT_CANDIDATE_UNREADABLE"
+        ) from error
+    if (
+        not isinstance(candidate, Mapping)
+        or candidate.get("state") != "published"
+        or candidate.get("published") is not True
+        or not isinstance(candidate.get("activated"), bool)
+        or candidate.get("model_revision") != policy_revision
+        or metadata.get("artifact_purpose")
+        != "stage3_development_candidate_actor"
+        or metadata.get("published") is not True
+        or metadata.get("activated") != candidate.get("activated")
+        or metadata.get("model_revision") != policy_revision
+    ):
+        raise IntegratedCaptureError(
+            "POLICY_EXECUTE_PUBLISHED_DEVELOPMENT_CANDIDATE_REQUIRED"
+        )
+    return {
+        "kind": "published_development_candidate",
+        "activated": bool(candidate["activated"]),
+    }
 
 
 @dataclass(frozen=True)
@@ -146,27 +199,32 @@ def build_capture_contract(
     if mode == "policy-execute":
         if not allow_development_policy_execution_smoke:
             raise IntegratedCaptureError("POLICY_EXECUTE_EXPLICIT_FLAG_REQUIRED")
-        if policy_revision != CYCLE210_POLICY_REVISION:
-            raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_REVISION_REQUIRED")
         if deployment_binding is None:
-            raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_BINDING_REQUIRED")
+            raise IntegratedCaptureError(
+                "POLICY_EXECUTE_APPROVED_DEVELOPMENT_BINDING_REQUIRED"
+            )
         resolved_binding = deployment_binding.expanduser().resolve()
-        if resolved_binding != CYCLE210_DEPLOYMENT_BINDING:
-            raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_BINDING_REQUIRED")
         try:
             binding = json.loads(resolved_binding.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise IntegratedCaptureError(
-                "POLICY_EXECUTE_CYCLE210_BINDING_UNREADABLE"
+                "POLICY_EXECUTE_APPROVED_DEVELOPMENT_BINDING_UNREADABLE"
             ) from error
         if (
             not isinstance(binding, Mapping)
+            or binding.get("schema_version")
+            != "forcesmolvla-live-deployment-binding-v1"
             or binding.get("artifact_status") != "approved"
-            or binding.get("model_sha256") != CYCLE210_POLICY_REVISION
             or not isinstance(binding.get("approval"), Mapping)
             or binding["approval"].get("status") != "approved"
         ):
-            raise IntegratedCaptureError("POLICY_EXECUTE_CYCLE210_BINDING_INVALID")
+            raise IntegratedCaptureError(
+                "POLICY_EXECUTE_APPROVED_DEVELOPMENT_BINDING_INVALID"
+            )
+        if binding.get("model_sha256") != policy_revision:
+            raise IntegratedCaptureError(
+                "POLICY_EXECUTE_APPROVED_DEVELOPMENT_REVISION_MISMATCH"
+            )
     elif allow_development_policy_execution_smoke:
         raise IntegratedCaptureError("POLICY_EXECUTE_FLAG_REQUIRES_POLICY_EXECUTE_MODE")
     else:
@@ -620,9 +678,6 @@ def run_integrated_capture(
 
 
 __all__ = [
-    "CYCLE210_DEPLOYMENT_BINDING",
-    "CYCLE210_EXECUTION_PROFILE",
-    "CYCLE210_POLICY_REVISION",
     "CaptureBackendCapabilities",
     "CAPTURE_MODE_SEMANTICS",
     "IntegratedCaptureBackend",
@@ -635,4 +690,5 @@ __all__ = [
     "build_capture_contract",
     "capture_mode_semantics",
     "run_integrated_capture",
+    "validate_development_policy_package",
 ]
