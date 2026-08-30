@@ -1,0 +1,20 @@
+{
+  "approval": {
+    "approval_id": "forcesmolvla-stage3-joint-cycle000010-candidate-20260830-001",
+    "approved_at": "2026-08-30T03:28:29Z",
+    "approver_identity": "rlc123",
+    "approver_role": "experiment_lead",
+    "status": "approved"
+  },
+  "artifact_status": "approved",
+  "camera_max_age_ms": 250.0,
+  "client_source_sha256": "4ec734a2f1b29871ca18443ad8c639e50836c709214df7203860f2e3b641deca",
+  "controller_ack_timeout_ms": 20.0,
+  "gripper_max_age_ms": 300.0,
+  "max_intercamera_skew_ms": 250.0,
+  "model_sha256": "ab97aefb6a916a4f03e02d264e6c4b2f5c6462d2a7d6e1e9ebcd171d3a527c6b",
+  "rulespec_sha256": "2619b9fe93af11cc021e193790e84261b0f0ae9524714c40a12ca97f5b28fcba",
+  "schema_version": "forcesmolvla-live-deployment-binding-v1",
+  "server_source_sha256": "4d4ad753cc66ab7e8d2588fdca61fd6e7cdf2d28d0ad799de3485bca3d6fe7da",
+  "state_pose_max_age_ms": 250.0
+}

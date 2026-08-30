@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
+import tempfile
 from typing import Any
 
 from safetensors.torch import load_file
@@ -183,6 +186,121 @@ def write_development_artifact_manifest(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return payload
+
+
+def export_development_actor_checkpoint(
+    *,
+    policy: torch.nn.Module,
+    destination: Path,
+    runtime_parent: Path,
+    source_joint_checkpoint: Path,
+    candidate_revision_id: str,
+    parent_binding_id: str,
+    published: bool,
+) -> dict[str, Any]:
+    """Export Actor weights in the same strict package used by production loading."""
+
+    destination = Path(destination)
+    runtime_parent = Path(runtime_parent).resolve()
+    if destination.exists():
+        raise FileExistsError(f"refusing to overwrite Actor export: {destination}")
+    parent_contract = json.loads(
+        (runtime_parent / EMBEDDED_TRAINING_CONTRACT).read_text(encoding="utf-8")
+    )
+    required = [str(value) for value in parent_contract["required_payloads"]]
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(
+        tempfile.mkdtemp(prefix=f".{destination.name}.new.", dir=destination.parent)
+    )
+    try:
+        policy.save_pretrained(temporary)
+        shutil.copy2(runtime_parent / "config.json", temporary / "config.json")
+        for relative in required:
+            if relative in {
+                "config.json",
+                "model.safetensors",
+                EMBEDDED_TRAINING_CONTRACT,
+            }:
+                continue
+            source = runtime_parent / relative
+            target = temporary / relative
+            if source.is_dir():
+                shutil.copytree(source, target)
+            elif source.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+            else:
+                raise FileNotFoundError(f"runtime parent payload missing: {source}")
+
+        model_revision = sha256_file(temporary / "model.safetensors")
+        candidate = {
+            "revision_id": candidate_revision_id,
+            "model_revision": model_revision,
+            "state": "published" if published else "candidate",
+            "published": published,
+            "activated": False,
+            "source_joint_checkpoint": str(Path(source_joint_checkpoint).resolve()),
+            "parent_binding_id": parent_binding_id,
+        }
+        (temporary / "candidate.json").write_text(
+            json.dumps(candidate, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        contract = {
+            "schema_version": parent_contract["schema_version"],
+            "acceptance_status": "development_only",
+            "formal_eligible": False,
+            "artifact_type": "forcesmolvla_training_checkpoint",
+            "training_stage": parent_contract["training_stage"],
+            "strict_loader_container_only": True,
+            "artifact_purpose": "stage3_development_candidate_actor",
+            "deployment_release": published,
+            "training_parent_allowed": False,
+            "online_update_allowed": False,
+            "robot_execution_authorized": False,
+            "critic_exported": False,
+            "optimizer_exported": False,
+            "scheduler_exported": False,
+            "rng_exported": False,
+            "sampler_exported": False,
+            "required_payloads": [*required, "candidate.json"],
+            "runtime_parent": str(runtime_parent),
+            "weight_source": str(
+                Path(source_joint_checkpoint).resolve()
+                / "candidate_policy/model.safetensors"
+            ),
+            "candidate_revision_id": candidate_revision_id,
+            "model_revision": model_revision,
+            "parent_binding": {
+                "binding_id": parent_binding_id,
+                "runtime_parent": str(runtime_parent),
+            },
+        }
+        contract_path = temporary / EMBEDDED_TRAINING_CONTRACT
+        contract_path.parent.mkdir(parents=True, exist_ok=True)
+        contract_path.write_text(
+            json.dumps(contract, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        manifest = write_development_artifact_manifest(
+            temporary,
+            artifact_type="forcesmolvla_training_checkpoint",
+            metadata={
+                "artifact_purpose": "stage3_development_candidate_actor",
+                "candidate_revision_id": candidate_revision_id,
+                "model_revision": model_revision,
+                "published": published,
+                "activated": False,
+                "source_joint_checkpoint": str(Path(source_joint_checkpoint).resolve()),
+                "parent_binding_id": parent_binding_id,
+                "strict_load": {"missing_keys": 0, "unexpected_keys": 0},
+            },
+        )
+        validate_force_artifact_manifest(temporary, artifact_use="development")
+        validate_training_payload_contract(temporary)
+        os.replace(temporary, destination)
+        return manifest
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
 
 
 def validate_force_artifact_manifest(

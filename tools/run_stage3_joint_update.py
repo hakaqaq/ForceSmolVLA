@@ -449,6 +449,8 @@ def save_joint_checkpoint(
     runtime_state: Mapping[str, Any],
     parent_binding: Mapping[str, Any],
 ) -> None:
+    from forcesmolvla.checkpoint import export_development_actor_checkpoint
+
     require(not path.exists(), "STAGE3_JOINT_CHECKPOINT_EXISTS")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=path.name + ".tmp-", dir=path.parent))
@@ -457,21 +459,16 @@ def save_joint_checkpoint(
         (temporary / "optimizers").mkdir()
         (temporary / "state").mkdir()
         candidate = temporary / "candidate_policy"
-        actor.save_pretrained(candidate)
-        (candidate / "candidate.json").write_text(
-            json.dumps(
-                {
-                    "revision_id": CANDIDATE_REVISION_ID,
-                    "state": "candidate",
-                    "activated": False,
-                    "published": False,
-                    "source_joint_checkpoint": str(path),
-                },
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
+        export_development_actor_checkpoint(
+            policy=actor,
+            destination=candidate,
+            runtime_parent=Path(
+                parent_binding["actor_parent"]["architecture_binding"]["container_path"]
+            ),
+            source_joint_checkpoint=path,
+            candidate_revision_id=CANDIDATE_REVISION_ID,
+            parent_binding_id=parent_binding["binding_id"],
+            published=False,
         )
         for name, module in modules.items():
             torch.save(module.state_dict(), temporary / "models" / f"{name}_state.pt")
@@ -757,6 +754,7 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
             "activated": False,
             "published": False,
         },
+        "step_metrics": {"critic_td_loss": list(td_losses)},
     }
     save_joint_checkpoint(
         checkpoint,

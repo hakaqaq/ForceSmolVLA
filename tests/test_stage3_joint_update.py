@@ -85,7 +85,24 @@ def test_optimizer_ownership_is_disjoint() -> None:
     )
 
 
-def test_joint_checkpoint_round_trip(tmp_path: Path) -> None:
+def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
+    def export_tiny_actor(**kwargs) -> None:
+        kwargs["policy"].save_pretrained(kwargs["destination"])
+        (kwargs["destination"] / "candidate.json").write_text(
+            json.dumps(
+                {
+                    "revision_id": kwargs["candidate_revision_id"],
+                    "state": "candidate",
+                    "published": False,
+                    "activated": False,
+                }
+            )
+        )
+
+    monkeypatch.setattr(
+        "forcesmolvla.checkpoint.export_development_actor_checkpoint",
+        export_tiny_actor,
+    )
     actor = TinyPolicy()
     modules = {
         "q1": torch.nn.Linear(3, 1),
@@ -112,8 +129,14 @@ def test_joint_checkpoint_round_trip(tmp_path: Path) -> None:
             "d_rng": random.Random(2).getstate(),
         },
         "counters": {"joint_cycles": 10},
+        "step_metrics": {"critic_td_loss": [float(index) for index in range(20)]},
     }
-    binding = {"binding_id": "approved_hybrid_cycle210_actor_g7a_r2_twin_q.v1"}
+    binding = {
+        "binding_id": "approved_hybrid_cycle210_actor_g7a_r2_twin_q.v1",
+        "actor_parent": {
+            "architecture_binding": {"container_path": str(tmp_path / "unused")}
+        },
+    }
     checkpoint = tmp_path / "joint"
 
     save_joint_checkpoint(
@@ -137,6 +160,9 @@ def test_joint_checkpoint_round_trip(tmp_path: Path) -> None:
     )
 
     assert restored["counters"]["joint_cycles"] == 10
+    assert restored["step_metrics"]["critic_td_loss"] == [
+        float(index) for index in range(20)
+    ]
     candidate = json.loads((checkpoint / "candidate_policy/candidate.json").read_text())
     assert candidate["state"] == "candidate"
     assert candidate["activated"] is False
