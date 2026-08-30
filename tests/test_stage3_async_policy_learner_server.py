@@ -16,6 +16,8 @@ from run_stage3_async_policy_learner_server import (  # noqa: E402
     AsyncPolicyLearnerRuntime,
     RequestHandler,
 )
+from run_stage3_async_actor_learner import reconcile_post_checkpoint_replay  # noqa: E402
+from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
 
 
 class FakeMachine:
@@ -92,6 +94,40 @@ def _identity() -> dict[str, str]:
         "episode_id": "episode_000000",
         "policy_revision": "model-cycle10",
     }
+
+
+def test_resume_reconciles_append_only_replay_and_credits_once() -> None:
+    credits = UpdateCreditLedger(
+        credits_per_transition=1, credits_per_joint_cycle=1,
+    )
+    checkpoint_uids = [f"checkpoint-{index:03d}" for index in range(618)]
+    post_checkpoint_uids = [f"episode-006-{index:03d}" for index in range(202)]
+    for uid in checkpoint_uids:
+        assert credits.mint_for_unique_online_transition(uid)
+    for _ in range(122):
+        credits.consume_joint_cycle()
+    rows = [
+        {
+            "identity": {
+                "transition_uid": uid,
+                "episode_id": (
+                    "episode_006" if uid.startswith("episode-006-")
+                    else "checkpoint_episode"
+                ),
+            }
+        }
+        for uid in checkpoint_uids + post_checkpoint_uids
+    ]
+
+    assert reconcile_post_checkpoint_replay(credits, rows) == 202
+    assert credits.snapshot().credited_transition_count == 820
+    assert credits.snapshot().available == 698
+    assert {
+        row["identity"]["transition_uid"]
+        for row in rows if row["identity"]["episode_id"] == "episode_006"
+    } == set(post_checkpoint_uids)
+    assert reconcile_post_checkpoint_replay(credits, rows) == 0
+    assert credits.snapshot().available == 698
 
 
 def test_runtime_pins_actor_and_runs_one_learner_cycle() -> None:

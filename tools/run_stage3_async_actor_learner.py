@@ -131,6 +131,20 @@ def _load_actor(device: torch.device):
     return actor
 
 
+def reconcile_post_checkpoint_replay(credits, all_r) -> int:
+    """Mint credit once for live replay UIDs admitted after the checkpoint."""
+
+    uids = [str(row["identity"]["transition_uid"]) for row in all_r]
+    require(len(set(uids)) == len(uids), "STAGE3_ASYNC_LIVE_REPLAY_UID_DUPLICATE")
+    minted = sum(credits.mint_for_unique_online_transition(uid) for uid in uids)
+    require(
+        credits.snapshot().credited_transition_count == len(uids)
+        and credits.snapshot().available > 0,
+        "STAGE3_ASYNC_REPLAY_OR_CREDIT_MISMATCH",
+    )
+    return minted
+
+
 def _prepare_learner(
     device: torch.device,
     all_r,
@@ -203,12 +217,7 @@ def _prepare_learner(
         "STAGE3_ASYNC_LEARNER_EXACT_RESUME_INVALID",
     )
     credits = UpdateCreditLedger.from_state_dict(runtime["sample_credit"])
-    require(
-        len(all_r) == 618
-        and credits.snapshot().credited_transition_count == 618
-        and credits.snapshot().available > 0,
-        "STAGE3_ASYNC_REPLAY_OR_CREDIT_MISMATCH",
-    )
+    new_r_transition_count = reconcile_post_checkpoint_replay(credits, all_r)
 
     random.setstate(runtime["rng_state"]["python"])
     np.random.set_state(runtime["rng_state"]["numpy"])
@@ -274,6 +283,7 @@ def _prepare_learner(
         "actor_scheduler": actor_scheduler,
         "runtime": runtime,
         "credits": credits,
+        "new_r_transition_count": new_r_transition_count,
         "critic_noise": critic_noise,
         "r_rng": r_rng,
         "d_rng": d_rng,
