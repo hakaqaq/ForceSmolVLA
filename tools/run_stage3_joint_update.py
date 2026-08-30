@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 from copy import deepcopy
 import json
 import math
@@ -206,70 +207,114 @@ def critic_step(
     noise_generator,
     delta_mean,
     delta_std,
+    microbatch_size: int | None = None,
+    microbatch_slot=None,
 ) -> dict[str, Any]:
     from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
     from forcesmolvla.rft.stage3.losses import compute_online_twin_q_td_loss
     from forcesmolvla.rft.throughput_v2 import fast_polyak_update, index_actor_batch
 
     device = batch["reward"].device
-    nonterminal_count = int((~batch["terminated"]).sum())
-    next_actor_batch = index_actor_batch(batch["next_actor_batch"], list(range(nonterminal_count)))
+    batch_size = int(batch["reward"].numel())
+    microbatch_size = batch_size if microbatch_size is None else int(microbatch_size)
+    require(
+        1 <= microbatch_size <= batch_size and batch_size % microbatch_size == 0,
+        "STAGE3_JOINT_CRITIC_MICROBATCH",
+    )
+    slot = microbatch_slot or (lambda _kind: nullcontext())
     optimizer.zero_grad(set_to_none=True)
     actor.eval()
-
-    def next_action(_observation) -> torch.Tensor:
-        noise = torch.randn(
-            nonterminal_count, 50, 7,
-            dtype=torch.float32, device=device, generator=noise_generator,
-        )
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            chunk = flow.sample(
-                actor, next_actor_batch, noise,
-                call_id=f"stage3-joint-critic-{step:03d}", purpose="td_next",
+    loss = 0.0
+    q1_values: list[torch.Tensor] = []
+    q2_values: list[torch.Tensor] = []
+    for start in range(0, batch_size, microbatch_size):
+        with slot("critic_microbatch"):
+            positions = list(range(start, start + microbatch_size))
+            index = torch.tensor(positions, dtype=torch.long, device=device)
+            local_terminated = batch["terminated"][index]
+            local_next_actor = index_actor_batch(
+                batch["next_actor_batch"], positions
             )
-        return critic_action_for_q_guidance_v2(
-            chunk, delta_action_mean7=delta_mean, delta_action_std7=delta_std,
-        ).detach().float()
+            nonterminal_positions = torch.nonzero(
+                ~local_terminated, as_tuple=False
+            ).flatten().tolist()
+            next_actor_batch = index_actor_batch(
+                local_next_actor, nonterminal_positions
+            )
 
-    result = compute_online_twin_q_td_loss(
-        q1=q1,
-        q2=q2,
-        q1_target=q1_target,
-        q2_target=q2_target,
-        observation=batch["current_observation"],
-        next_observation=batch["next_observation"],
-        ack_behavior_action_k7=batch["behavior_action"],
-        behavior_mask=batch["behavior_mask"],
-        reward=batch["reward"],
-        discount=batch["discount"],
-        terminated=batch["terminated"],
-        bootstrap_mask=batch["bootstrap"],
-        next_policy_action_fn=next_action,
-    )
-    require(
-        result.calql_candidate_calls == result.random_candidate_calls == result.mc_return_reads == 0,
-        "STAGE3_JOINT_CRITIC_NOT_PURE_TD",
-    )
-    result.total.backward()
+            def next_action(_observation) -> torch.Tensor:
+                count = len(nonterminal_positions)
+                noise = torch.randn(
+                    count, 50, 7,
+                    dtype=torch.float32, device=device, generator=noise_generator,
+                )
+                with torch.no_grad(), torch.autocast(
+                    device_type="cuda", dtype=torch.bfloat16
+                ):
+                    chunk = flow.sample(
+                        actor, next_actor_batch, noise,
+                        call_id=(
+                            f"stage3-joint-critic-{step:03d}"
+                            f"-micro={start}:{start + microbatch_size}"
+                        ),
+                        purpose="td_next",
+                    )
+                return critic_action_for_q_guidance_v2(
+                    chunk,
+                    delta_action_mean7=delta_mean,
+                    delta_action_std7=delta_std,
+                ).detach().float()
+
+            result = compute_online_twin_q_td_loss(
+                q1=q1,
+                q2=q2,
+                q1_target=q1_target,
+                q2_target=q2_target,
+                observation=batch["current_observation"].index(index),
+                next_observation=batch["next_observation"].index(index),
+                ack_behavior_action_k7=batch["behavior_action"][index],
+                behavior_mask=batch["behavior_mask"][index],
+                reward=batch["reward"][index],
+                discount=batch["discount"][index],
+                terminated=local_terminated,
+                bootstrap_mask=batch["bootstrap"][index],
+                next_policy_action_fn=next_action,
+            )
+            require(
+                result.calql_candidate_calls
+                == result.random_candidate_calls
+                == result.mc_return_reads
+                == 0,
+                "STAGE3_JOINT_CRITIC_NOT_PURE_TD",
+            )
+            weight = microbatch_size / batch_size
+            (result.total * weight).backward()
+            loss += float(result.total.detach().cpu()) * weight
+            q1_values.append(result.q1_value.detach())
+            q2_values.append(result.q2_value.detach())
+
     parameters = [
         parameter for module in (q1, q2) for parameter in module.parameters()
         if parameter.requires_grad
     ]
-    require(
-        all(parameter.grad is None for parameter in actor.parameters())
-        and all(parameter.grad is None for target in (q1_target, q2_target) for parameter in target.parameters())
-        and all(parameter.grad is None or bool(torch.isfinite(parameter.grad).all()) for parameter in parameters),
-        "STAGE3_JOINT_CRITIC_GRADIENT_OWNERSHIP",
-    )
-    torch.nn.utils.clip_grad_norm_(parameters, 10.0)
-    optimizer.step()
-    optimizer.zero_grad(set_to_none=True)
-    fast_polyak_update(q1, q1_target, tau=0.005, target_name="q1_target")
-    fast_polyak_update(q2, q2_target, tau=0.005, target_name="q2_target")
+    with slot("critic_optimizer"):
+        require(
+            all(parameter.grad is None for parameter in actor.parameters())
+            and all(parameter.grad is None for target in (q1_target, q2_target) for parameter in target.parameters())
+            and all(parameter.grad is None or bool(torch.isfinite(parameter.grad).all()) for parameter in parameters),
+            "STAGE3_JOINT_CRITIC_GRADIENT_OWNERSHIP",
+        )
+        torch.nn.utils.clip_grad_norm_(parameters, 10.0)
+        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+        fast_polyak_update(q1, q1_target, tau=0.005, target_name="q1_target")
+        fast_polyak_update(q2, q2_target, tau=0.005, target_name="q2_target")
+        q1_value = torch.cat(q1_values)
+        q2_value = torch.cat(q2_values)
     return {
-        "loss": float(result.total.detach().cpu()),
-        "q1": result.q1_value.detach(),
-        "q2": result.q2_value.detach(),
+        "loss": loss,
+        "q1": q1_value,
+        "q2": q2_value,
     }
 
 
@@ -288,6 +333,7 @@ def actor_step(
     delta_mean,
     delta_std,
     config,
+    microbatch_slot=None,
 ) -> dict[str, Any]:
     from forcesmolvla.force_token import RouterState
     from forcesmolvla.rft.frozen_vlm_trainability import FROZEN_PREFIXES, frozen_prefix_flow_matching_terms
@@ -300,13 +346,15 @@ def actor_step(
     microbatch = int(config["batching"]["flow_inference_subbatch"])
     require(batch_size == 24 and microbatch == 4, "STAGE3_JOINT_ACTOR_BATCH")
     parameters = [parameter for parameter in actor.parameters() if parameter.requires_grad]
-    optimizer.zero_grad(set_to_none=True)
-    for critic in (q1, q2, q1_target, q2_target):
-        critic.zero_grad(set_to_none=True)
-    valid = batch["current_actor_batch"]["action_valid_mask"].bool()
-    expert_rows = batch["expert_rows"]
-    total_expert_features = int((valid & expert_rows[:, None]).sum()) * 7
-    require(total_expert_features > 0, "STAGE3_JOINT_NO_EXPERT_FM")
+    slot = microbatch_slot or (lambda _kind: nullcontext())
+    with slot("actor_setup"):
+        optimizer.zero_grad(set_to_none=True)
+        for critic in (q1, q2, q1_target, q2_target):
+            critic.zero_grad(set_to_none=True)
+        valid = batch["current_actor_batch"]["action_valid_mask"].bool()
+        expert_rows = batch["expert_rows"]
+        total_expert_features = int((valid & expert_rows[:, None]).sum()) * 7
+        require(total_expert_features > 0, "STAGE3_JOINT_NO_EXPERT_FM")
     fm_total = q_total = 0.0
     q1_values: list[torch.Tensor] = []
     q2_values: list[torch.Tensor] = []
@@ -317,127 +365,131 @@ def actor_step(
     actor.train(True)
 
     for start in range(0, batch_size, microbatch):
-        positions = list(range(start, start + microbatch))
-        actor_micro = index_actor_batch(batch["current_actor_batch"], positions)
-        index = torch.tensor(positions, dtype=torch.long, device=device)
-        observation = batch["current_observation"].index(index)
-        local_valid = valid[start : start + microbatch]
-        local_expert = expert_rows[start : start + microbatch]
-        expert_mask = local_expert[:, None, None].expand(-1, 50, 7)
-        fm_noise = torch.randn(microbatch, 50, 7, dtype=torch.float32, device=device)
-        fm_time = torch.rand(microbatch, dtype=torch.float32, device=device)
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            flow_losses, feature_mask, router_state, _contract = frozen_prefix_flow_matching_terms(
-                actor,
-                actor_micro,
-                noise=fm_noise,
-                time=fm_time,
-                call_id=f"stage3-joint-cycle={cycle}-fm={start}",
+        with slot("actor_microbatch"):
+            positions = list(range(start, start + microbatch))
+            actor_micro = index_actor_batch(batch["current_actor_batch"], positions)
+            index = torch.tensor(positions, dtype=torch.long, device=device)
+            observation = batch["current_observation"].index(index)
+            local_valid = valid[start : start + microbatch]
+            local_expert = expert_rows[start : start + microbatch]
+            expert_mask = local_expert[:, None, None].expand(-1, 50, 7)
+            fm_noise = torch.randn(microbatch, 50, 7, dtype=torch.float32, device=device)
+            fm_time = torch.rand(microbatch, dtype=torch.float32, device=device)
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                flow_losses, feature_mask, router_state, _contract = frozen_prefix_flow_matching_terms(
+                    actor,
+                    actor_micro,
+                    noise=fm_noise,
+                    time=fm_time,
+                    call_id=f"stage3-joint-cycle={cycle}-fm={start}",
+                )
+            detached_router = RouterState(
+                logits_fp32=router_state.logits_fp32.detach(),
+                probabilities_fp32=router_state.probabilities_fp32.detach(),
+                route_ids=router_state.route_ids.detach(),
+                valid_mask=router_state.valid_mask.detach(),
             )
-        detached_router = RouterState(
-            logits_fp32=router_state.logits_fp32.detach(),
-            probabilities_fp32=router_state.probabilities_fp32.detach(),
-            route_ids=router_state.route_ids.detach(),
-            valid_mask=router_state.valid_mask.detach(),
-        )
-        auxiliary = microbatch_two_pass_terms(
-            flow_losses, router_state,
-            collect_pass_a_statistics([detached_router], [feature_mask]),
-        )
-        flow7 = flow_losses[..., :7]
+            auxiliary = microbatch_two_pass_terms(
+                flow_losses, router_state,
+                collect_pass_a_statistics([detached_router], [feature_mask]),
+            )
+            flow7 = flow_losses[..., :7]
 
-        q_noise = torch.randn(microbatch, 50, 7, dtype=torch.float32, device=device)
-        actor.eval()
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            chunk = flow.sample(
-                actor,
-                actor_micro,
-                q_noise,
-                call_id=f"stage3-joint-cycle={cycle}-actor-q={start}",
-                purpose="actor_guidance",
+            q_noise = torch.randn(microbatch, 50, 7, dtype=torch.float32, device=device)
+            actor.eval()
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                chunk = flow.sample(
+                    actor,
+                    actor_micro,
+                    q_noise,
+                    call_id=f"stage3-joint-cycle={cycle}-actor-q={start}",
+                    purpose="actor_guidance",
+                )
+                chunk.retain_grad()
+                q_contract_loss, q1_value, q2_value, _q_action = compute_stage3_min_twin_q_actor_loss(
+                    q1=q1,
+                    q2=q2,
+                    observation=observation,
+                    normalized_flow_action_chunk7=chunk,
+                    delta_action_mean7=delta_mean,
+                    delta_action_std7=delta_std,
+                )
+            actor.train(True)
+            expert_count = int((local_valid & local_expert[:, None]).sum()) * 7
+            fm_weight = expert_count / total_expert_features
+            q_weight = microbatch / batch_size
+            terms = compute_stage3_actor_objective(
+                per_feature_flow_loss=flow7,
+                action_valid_mask_h50=local_valid,
+                expert_feature_mask_h50x7=expert_mask,
+                q1_actor_value=q1_value,
+                q2_actor_value=q2_value,
+                actor_q_valid=torch.ones(microbatch, dtype=torch.bool, device=device),
+                balance_loss=auxiliary.balance,
+                z_loss=auxiliary.z,
+                beta=float(config["loss"]["beta_expert_flow_matching"]) * fm_weight,
+                eta=float(config["loss"]["eta_actor_q"]) * q_weight,
+                balance_weight=float(config["loss"]["balance_weight"]) / (batch_size / microbatch),
+                z_weight=float(config["loss"]["z_weight"]) / (batch_size / microbatch),
             )
-            chunk.retain_grad()
-            q_contract_loss, q1_value, q2_value, _q_action = compute_stage3_min_twin_q_actor_loss(
-                q1=q1,
-                q2=q2,
-                observation=observation,
-                normalized_flow_action_chunk7=chunk,
-                delta_action_mean7=delta_mean,
-                delta_action_std7=delta_std,
+            require(torch.equal(q_contract_loss, terms.actor_q), "STAGE3_JOINT_ACTOR_Q_NOT_MIN_TWIN")
+            q_gradient = torch.autograd.grad(q_contract_loss, chunk, retain_graph=True)[0]
+            tcp_q_gradient_square += float(q_gradient[:, :3, :6].float().square().sum().cpu())
+            gripper_q_gradient_max = max(
+                gripper_q_gradient_max,
+                float(q_gradient[:, :3, 6].float().abs().max().cpu()),
             )
-        actor.train(True)
-        expert_count = int((local_valid & local_expert[:, None]).sum()) * 7
-        fm_weight = expert_count / total_expert_features
-        q_weight = microbatch / batch_size
-        terms = compute_stage3_actor_objective(
-            per_feature_flow_loss=flow7,
-            action_valid_mask_h50=local_valid,
-            expert_feature_mask_h50x7=expert_mask,
-            q1_actor_value=q1_value,
-            q2_actor_value=q2_value,
-            actor_q_valid=torch.ones(microbatch, dtype=torch.bool, device=device),
-            balance_loss=auxiliary.balance,
-            z_loss=auxiliary.z,
-            beta=float(config["loss"]["beta_expert_flow_matching"]) * fm_weight,
-            eta=float(config["loss"]["eta_actor_q"]) * q_weight,
-            balance_weight=float(config["loss"]["balance_weight"]) / (batch_size / microbatch),
-            z_weight=float(config["loss"]["z_weight"]) / (batch_size / microbatch),
-        )
-        require(torch.equal(q_contract_loss, terms.actor_q), "STAGE3_JOINT_ACTOR_Q_NOT_MIN_TWIN")
-        q_gradient = torch.autograd.grad(q_contract_loss, chunk, retain_graph=True)[0]
-        tcp_q_gradient_square += float(q_gradient[:, :3, :6].float().square().sum().cpu())
-        gripper_q_gradient_max = max(
-            gripper_q_gradient_max,
-            float(q_gradient[:, :3, 6].float().abs().max().cpu()),
-        )
-        fm_gradient = torch.autograd.grad(terms.expert_flow_matching, flow7, retain_graph=True)[0]
-        if bool((~local_expert).any()):
-            online_fm_gradient_max = max(
-                online_fm_gradient_max,
-                float(fm_gradient[~local_expert].abs().max().cpu()),
-            )
-        if bool(local_expert.any()):
-            expert_gripper_fm_square += float(
-                fm_gradient[local_expert, :, 6].float().square().sum().cpu()
-            )
-        terms.total.backward()
-        fm_total += fm_weight * float(terms.expert_flow_matching.detach().cpu())
-        q_total += q_weight * float(terms.actor_q.detach().cpu())
-        q1_values.append(q1_value.detach())
-        q2_values.append(q2_value.detach())
+            fm_gradient = torch.autograd.grad(terms.expert_flow_matching, flow7, retain_graph=True)[0]
+            if bool((~local_expert).any()):
+                online_fm_gradient_max = max(
+                    online_fm_gradient_max,
+                    float(fm_gradient[~local_expert].abs().max().cpu()),
+                )
+            if bool(local_expert.any()):
+                expert_gripper_fm_square += float(
+                    fm_gradient[local_expert, :, 6].float().square().sum().cpu()
+                )
+            terms.total.backward()
+            fm_total += fm_weight * float(terms.expert_flow_matching.detach().cpu())
+            q_total += q_weight * float(terms.actor_q.detach().cpu())
+            q1_values.append(q1_value.detach())
+            q2_values.append(q2_value.detach())
 
-    require(online_fm_gradient_max == 0.0, "STAGE3_JOINT_ONLINE_SELF_IMITATION")
-    require(expert_gripper_fm_square > 0.0, "STAGE3_JOINT_EXPERT_GRIPPER_FM_MISSING")
-    require(gripper_q_gradient_max == 0.0 and tcp_q_gradient_square > 0.0, "STAGE3_JOINT_Q_GRADIENT_SEMANTICS")
-    require(
-        all(parameter.grad is None for critic in (q1, q2, q1_target, q2_target) for parameter in critic.parameters()),
-        "STAGE3_JOINT_ACTOR_BACKWARD_TOUCHED_CRITIC",
-    )
-    frozen_gradient_max = max(
-        (
-            float(parameter.grad.detach().abs().max().cpu())
-            for name, parameter in actor.named_parameters()
-            if name.startswith(FROZEN_PREFIXES) and parameter.grad is not None
-        ),
-        default=0.0,
-    )
-    actor_gradient = _gradient_norm(parameters)
-    require(
-        frozen_gradient_max == 0.0
-        and math.isfinite(actor_gradient)
-        and all(parameter.grad is None or bool(torch.isfinite(parameter.grad).all()) for parameter in parameters),
-        "STAGE3_JOINT_ACTOR_GRADIENT_INVALID",
-    )
-    torch.nn.utils.clip_grad_norm_(parameters, 10.0)
-    optimizer.step()
-    scheduler.step()
-    optimizer.zero_grad(set_to_none=True)
+    with slot("actor_optimizer"):
+        require(online_fm_gradient_max == 0.0, "STAGE3_JOINT_ONLINE_SELF_IMITATION")
+        require(expert_gripper_fm_square > 0.0, "STAGE3_JOINT_EXPERT_GRIPPER_FM_MISSING")
+        require(gripper_q_gradient_max == 0.0 and tcp_q_gradient_square > 0.0, "STAGE3_JOINT_Q_GRADIENT_SEMANTICS")
+        require(
+            all(parameter.grad is None for critic in (q1, q2, q1_target, q2_target) for parameter in critic.parameters()),
+            "STAGE3_JOINT_ACTOR_BACKWARD_TOUCHED_CRITIC",
+        )
+        frozen_gradient_max = max(
+            (
+                float(parameter.grad.detach().abs().max().cpu())
+                for name, parameter in actor.named_parameters()
+                if name.startswith(FROZEN_PREFIXES) and parameter.grad is not None
+            ),
+            default=0.0,
+        )
+        actor_gradient = _gradient_norm(parameters)
+        require(
+            frozen_gradient_max == 0.0
+            and math.isfinite(actor_gradient)
+            and all(parameter.grad is None or bool(torch.isfinite(parameter.grad).all()) for parameter in parameters),
+            "STAGE3_JOINT_ACTOR_GRADIENT_INVALID",
+        )
+        torch.nn.utils.clip_grad_norm_(parameters, 10.0)
+        optimizer.step()
+        scheduler.step()
+        optimizer.zero_grad(set_to_none=True)
+        q1_value = torch.cat(q1_values)
+        q2_value = torch.cat(q2_values)
     actor.eval()
     return {
         "fm_loss": fm_total,
         "actor_q_loss": q_total,
-        "q1": torch.cat(q1_values),
-        "q2": torch.cat(q2_values),
+        "q1": q1_value,
+        "q2": q2_value,
         "actor_gradient_norm": actor_gradient,
         "tcp6_q_gradient_norm": math.sqrt(tcp_q_gradient_square),
         "gripper_q_gradient_max": gripper_q_gradient_max,
@@ -557,7 +609,11 @@ def load_joint_checkpoint_once(
 
 
 def load_resume_modules(
-    checkpoint: Path, actor_package: Path, device: torch.device
+    checkpoint: Path,
+    actor_package: Path,
+    device: torch.device,
+    *,
+    allow_checkpoint_candidate: bool = False,
 ):
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
     from forcesmolvla.rft.critic import build_twin_q
@@ -567,11 +623,22 @@ def load_resume_modules(
     candidate = json.loads(
         (actor_package / "candidate.json").read_text(encoding="utf-8")
     )
+    source_matches = (
+        Path(candidate["source_joint_checkpoint"]).resolve() == checkpoint.resolve()
+    )
+    published = (
+        candidate.get("state") == "published"
+        and candidate.get("published") is True
+    )
+    internal_checkpoint_candidate = (
+        allow_checkpoint_candidate
+        and actor_package.resolve() == (checkpoint / "candidate_policy").resolve()
+        and candidate.get("state") == "candidate"
+        and candidate.get("published") is False
+        and candidate.get("activated") is False
+    )
     require(
-        Path(candidate["source_joint_checkpoint"]).resolve()
-        == checkpoint.resolve()
-        and candidate.get("state") == "published"
-        and candidate.get("published") is True,
+        source_matches and (published or internal_checkpoint_candidate),
         "STAGE3_JOINT_RESUME_ACTOR_PACKAGE_MISMATCH",
     )
     actor = ForceSmolVLAPolicy.from_pretrained(
