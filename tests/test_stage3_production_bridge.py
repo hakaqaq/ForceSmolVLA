@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from forcesmolvla.rft.stage3 import production_bridge as bridge_module
 from forcesmolvla.raw_to_lerobot_v3 import PreparedEpisode
 from forcesmolvla.rft.detector_reward_transitions import (
     causal_detection_trace,
@@ -450,6 +451,519 @@ def _integrated_shadow_fixture(episode: Path) -> None:
     )
 
 
+def _integrated_policy_execution_fixture(episode: Path) -> None:
+    dataset = episode.parent.parent
+    native_root = episode / "streams"
+    revision = "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
+    identity = {
+        "session_id": "stage3-policy-execute-fixture",
+        "episode_id": episode.name,
+        "clock_domain_id": "upper_host_monotonic",
+        "policy_revision": revision,
+        "policy_epoch": 0,
+        "reset_generation": 0,
+        "takeover_generation": 0,
+    }
+    _write_json(
+        dataset / "session.json",
+        {
+            "primary_alignment_clock": "upper_host_receive_monotonic_ns",
+            "tool_config_hash": "tool-profile-fixture",
+            "force_status": (
+                "notch-filtered measurement-frame wrench retained; calibration, "
+                "gravity compensation and TCP moment shift applied offline"
+            ),
+            "cameras": {
+                "observation.image": {"role": "external", "model": "D435"},
+                "observation.wrist_image": {"role": "wrist", "model": "D405"},
+            },
+        },
+    )
+    _write_json(
+        dataset / "integrated_capture_session.json",
+        {
+            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "contract": {
+                "schema": "forcesmolvla-stage3-integrated-capture-v1",
+                "mode": "policy-execute",
+                "identity": identity,
+                "actual_action_source": "policy",
+                "policy_inference": True,
+                "policy_execution": True,
+                "formal_replay": False,
+                "real_online_r": False,
+                "development_policy_execution_smoke": True,
+                "controller_owner": "recorder",
+                "controller_process_count": 1,
+                "recorder_controller": True,
+                "deploy_controller": False,
+            },
+            "clock_binding": {
+                "native_primary_alignment_clock": "upper_host_receive_monotonic_ns",
+                "policy_request_clock_domain_id": "upper_host_monotonic_ns",
+                "same_upper_host_monotonic_epoch": True,
+                "stage3_clock_domain_id": "upper_host_monotonic",
+            },
+            "controller_owner": "recorder",
+            "controller_process_count": 1,
+            "deploy_controller_started": False,
+            "formal_replay_writer_started": False,
+            "learner_started": False,
+            "policy_action_publisher_created": True,
+            "policy_revision_publisher_started": False,
+            "policy_metadata": {
+                "model_sha256": revision,
+                "dataset_repo_id": "local/task2_lerobotv3",
+                "tool_profile_sha256": "tool-profile-fixture",
+                "calibration_id": "calibration-fixture",
+            },
+        },
+    )
+
+    raw_rows = [json.loads(line) for line in (native_root / "raw_action.jsonl").read_text().splitlines()]
+    safe_rows = [json.loads(line) for line in (native_root / "safe_action.jsonl").read_text().splitlines()]
+    requested_rows = [
+        json.loads(line)
+        for line in (native_root / "requested_equilibrium.jsonl").read_text().splitlines()
+    ]
+    accepted_rows = [
+        json.loads(line)
+        for line in (native_root / "accepted_reference.jsonl").read_text().splitlines()
+    ]
+    ack_rows = [json.loads(line) for line in (native_root / "reference_ack.jsonl").read_text().splitlines()]
+
+    lineage_by_sequence = {
+        1: {
+            "request_id": "request-a",
+            "result_id": "policy-result:request-a",
+            "chunk_id": "live-request-a",
+            "proposal_id": "policy-proposal:request-a",
+            "policy_revision": revision,
+            "policy_epoch": 0,
+            "reset_generation": 0,
+            "takeover_generation": 0,
+            "t_ref_ns": 1_101_000_000,
+        },
+        3: {
+            "request_id": "request-b",
+            "result_id": "policy-result:request-b",
+            "chunk_id": "live-request-b",
+            "proposal_id": "policy-proposal:request-b",
+            "policy_revision": revision,
+            "policy_epoch": 1,
+            "reset_generation": 0,
+            "takeover_generation": 1,
+            "t_ref_ns": 1_301_000_000,
+        },
+    }
+    selected_action7 = [0.5, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085]
+    for sequence, lineage in lineage_by_sequence.items():
+        raw = raw_rows[sequence]["payload"]
+        raw.update(
+            {
+                "source": "policy",
+                "policy_epoch": lineage["policy_epoch"],
+                "observation_id": (
+                    f"{episode.name}:observation:{0 if sequence == 1 else 2:06d}"
+                ),
+                "intervention": False,
+            }
+        )
+        safe = safe_rows[sequence]["payload"]
+        safe["arbitration"].update(
+            {
+                "accepted": True,
+                "event": "policy_action",
+                "owner": "policy",
+                "policy_epoch": lineage["policy_epoch"],
+                "reason": "accepted_policy",
+                "raw_action": raw,
+            }
+        )
+        safe["forcesmolvla_chunk_selection"] = {
+            **lineage,
+            "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "request_clock_domain_id": "upper_host_monotonic_ns",
+            "request_recorded_monotonic_ns": lineage["t_ref_ns"] + 1_000_000,
+            "result_recorded_monotonic_ns": lineage["t_ref_ns"] + 2_000_000,
+            "action_index": 0,
+            "sequence": sequence,
+            "normalized_action7": [0.0] * 7,
+            "selected_post_adapter_absolute7": selected_action7,
+        }
+        requested_rows[sequence]["source"] = "policy"
+        ack_rows[sequence]["payload"]["request_frame_id"] = "fr3_link0"
+
+    takeover_raw = raw_rows[2]["payload"]
+    takeover_raw.update({"intervention": True, "policy_epoch": 0})
+    takeover_safe = safe_rows[2]["payload"]
+    takeover_safe["arbitration"].update(
+        {
+            "accepted": True,
+            "event": "intervention_start",
+            "owner": "human",
+            "policy_epoch": 1,
+            "reason": "accepted_human",
+            "raw_action": takeover_raw,
+        }
+    )
+    override_raw = {
+        **deepcopy(raw_rows[1]["payload"]),
+        "source": "policy",
+        "sequence": 99,
+        "policy_epoch": 0,
+        "observation_id": f"{episode.name}:observation:000001",
+    }
+    override_safe = {
+        **deepcopy(safe_rows[1]["payload"]),
+        "decision_id": 99,
+        "arbitration": {
+            "accepted": False,
+            "event": "rejected",
+            "owner": "human",
+            "policy_epoch": 1,
+            "reason": "human_override",
+            "raw_action": override_raw,
+        },
+        "equilibrium_published": False,
+        "equilibrium_source_stamp_ns": None,
+        "requested_equilibrium": None,
+        "reject_reason": "human_override",
+    }
+    release_raw = {
+        **deepcopy(raw_rows[2]["payload"]),
+        "sequence": 50,
+        "source_monotonic_ns": 1_248_000_000,
+        "intervention": False,
+        "phase": "release",
+        "policy_epoch": 1,
+    }
+    release_safe = {
+        **deepcopy(safe_rows[2]["payload"]),
+        "accept_monotonic_ns": 1_250_000_000,
+        "decision_id": 50,
+        "arbitration": {
+            "accepted": True,
+            "event": "intervention_end",
+            "owner": "none",
+            "policy_epoch": 1,
+            "reason": "accepted_human_hold",
+            "raw_action": release_raw,
+        },
+        "equilibrium_published": False,
+        "equilibrium_source_stamp_ns": None,
+        "requested_equilibrium": None,
+    }
+    raw_rows.extend(
+        [
+            {"receive_monotonic_ns": 1_201_000_000, "payload": override_raw},
+            {"receive_monotonic_ns": 1_250_000_000, "payload": release_raw},
+        ]
+    )
+    safe_rows.extend(
+        [
+            {"receive_monotonic_ns": 1_201_000_000, "payload": override_safe},
+            {"receive_monotonic_ns": 1_250_000_000, "payload": release_safe},
+        ]
+    )
+    _write_jsonl(native_root / "raw_action.jsonl", raw_rows)
+    _write_jsonl(native_root / "safe_action.jsonl", safe_rows)
+    _write_jsonl(native_root / "requested_equilibrium.jsonl", requested_rows)
+    _write_jsonl(native_root / "reference_ack.jsonl", ack_rows)
+
+    native_result = json.loads((episode / "episode_result.json").read_text())
+    native_result["stream_counts"]["raw_action"] = len(raw_rows)
+    native_result["stream_counts"]["safe_action"] = len(safe_rows)
+    _write_json(episode / "episode_result.json", native_result)
+
+    stream_root = dataset / "integrated_capture" / episode.name / "streams"
+    sensor_rows = {
+        name: [json.loads(line) for line in (native_root / f"{name}.jsonl").read_text().splitlines()]
+        for name in ("measured_tcp_pose", "wrench_notch_sensor", "gripper_state")
+    }
+    camera_rows = {
+        role: [json.loads(line) for line in (native_root / f"{role}_camera.jsonl").read_text().splitlines()]
+        for role in ("external", "wrist")
+    }
+    observations = []
+    observation_indices = (1, 2, 3, 4)
+    for index, native_index in enumerate(observation_indices):
+        generation = 0 if index < 2 else 1
+        t_ref_ns = 1_101_000_000 + index * 100_000_000
+        observations.append(
+            {
+                "schema": "forcesmolvla-stage3-integrated-capture-v1",
+                **identity,
+                "policy_epoch": generation,
+                "takeover_generation": generation,
+                "observation_id": f"{episode.name}:observation:{index:06d}",
+                "t_ref_ns": t_ref_ns,
+                "stream_timestamps_ns": {
+                    **{
+                        name: sensor_rows[name][native_index]["receive_monotonic_ns"]
+                        for name in sensor_rows
+                    },
+                    **{
+                        f"{role}_camera": camera_rows[role][native_index]["receive_monotonic_ns"]
+                        for role in camera_rows
+                    },
+                },
+                "stream_ids": {
+                    **{
+                        name: (
+                            f"source:{sensor_rows[name][native_index]['source_stamp_ns']}"
+                            f"@receive:{sensor_rows[name][native_index]['receive_monotonic_ns']}"
+                        )
+                        for name in sensor_rows
+                    },
+                    **{
+                        f"{role}_camera": camera_rows[role][native_index]["rgb_path"]
+                        for role in camera_rows
+                    },
+                },
+            }
+        )
+    _write_jsonl(stream_root / "policy_execute_observation.jsonl", observations)
+
+    requests, results, proposals, chunks = [], [], [], []
+    for sequence, lineage in lineage_by_sequence.items():
+        observation_index = 0 if sequence == 1 else 2
+        request = {
+            "schema": "forcesmolvla-stage3-policy-lineage-v1",
+            **identity,
+            **lineage,
+            "observation_id": f"{episode.name}:observation:{observation_index:06d}",
+            "request_clock_domain_id": "upper_host_monotonic_ns",
+            "request_recorded_monotonic_ns": lineage["t_ref_ns"] + 1_000_000,
+        }
+        result = {
+            **request,
+            "result_id": lineage["result_id"],
+            "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "result_recorded_monotonic_ns": lineage["t_ref_ns"] + 2_000_000,
+            "policy_execution_candidate": True,
+            "shadow_proposal": False,
+            "executed": False,
+        }
+        proposal = {
+            **result,
+            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "actual_action_source": "policy",
+            "policy_inference": True,
+            "policy_execution": True,
+            "formal_replay": False,
+            "real_online_r": False,
+            "invalidated_by_takeover": False,
+            "action_semantics": "absolute7",
+            "valid_horizon": 1,
+            "actions_absolute7": [selected_action7],
+        }
+        chunk = {
+            **result,
+            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "executed_action_source": "policy",
+            "formal_replay": False,
+            "real_online_r": False,
+            "action_semantics": "absolute7",
+            "valid_horizon": 1,
+            "actions_absolute7": [selected_action7],
+        }
+        requests.append(request)
+        results.append(result)
+        proposals.append(proposal)
+        chunks.append(chunk)
+    _write_jsonl(stream_root / "policy_execute_request.jsonl", requests)
+    _write_jsonl(stream_root / "policy_execute_result.jsonl", results)
+    _write_jsonl(stream_root / "policy_execute_proposal.jsonl", proposals)
+    _write_jsonl(stream_root / "policy_execute_chunk.jsonl", chunks)
+
+    gripper_authorities, transitions = [], []
+    for offset, sequence in enumerate((1, 3)):
+        lineage = lineage_by_sequence[sequence]
+        observation_index = offset * 2
+        selection = safe_rows[sequence]["payload"]["forcesmolvla_chunk_selection"]
+        feedback = sensor_rows["gripper_state"][observation_indices[observation_index]]
+        gripper = {
+            **lineage,
+            "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "request_clock_domain_id": "upper_host_monotonic_ns",
+            "request_recorded_monotonic_ns": lineage["t_ref_ns"] + 1_000_000,
+            "result_recorded_monotonic_ns": lineage["t_ref_ns"] + 2_000_000,
+            "sequence": sequence,
+            "action_index": 0,
+            "command_required": False,
+            "requested_state": "OPEN",
+            "requested_width_m": 0.085,
+            "feedback_width_m": 0.085,
+            "feedback_monotonic_ns": feedback["receive_monotonic_ns"],
+            "authority": "existing_accepted_gripper_state",
+        }
+        native_safe = safe_rows[sequence]["payload"]
+        native_ack = ack_rows[sequence]
+        integrated_ack_receive_ns = native_ack["receive_monotonic_ns"] - 100_000
+        integrated_pose_ack = {
+            **native_ack["payload"],
+            "upper_receive_monotonic_ns": integrated_ack_receive_ns,
+        }
+        transition = {
+            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            **identity,
+            **lineage,
+            "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "request_clock_domain_id": "upper_host_monotonic_ns",
+            "request_recorded_monotonic_ns": lineage["t_ref_ns"] + 1_000_000,
+            "result_recorded_monotonic_ns": lineage["t_ref_ns"] + 2_000_000,
+            "observation_id": f"{episode.name}:observation:{observation_index:06d}",
+            "current_observation_id": f"{episode.name}:observation:{observation_index:06d}",
+            "next_observation_id": f"{episode.name}:observation:{observation_index + 1:06d}",
+            "ack_id": (
+                f"policy-ack:{sequence}:"
+                f"{native_safe['equilibrium_source_stamp_ns']}"
+            ),
+            "receive_monotonic_ns": integrated_ack_receive_ns,
+            "actual_action_source": "policy",
+            "executed_action_source": "policy",
+            "policy_executed_transition": True,
+            "intervention": False,
+            "formal_replay": False,
+            "real_online_r": False,
+            "policy_result_id": lineage["result_id"],
+            "accepted_absolute7": selected_action7,
+            "selection": selection,
+            "safety_arbitration": native_safe["arbitration"],
+            "pose_command": {
+                "position_m": requested_rows[sequence]["pose"]["position_m"],
+                "quaternion_xyzw": requested_rows[sequence]["pose"][
+                    "quaternion_xyzw"
+                ],
+            },
+            "pose_ack": integrated_pose_ack,
+            "gripper_authority": gripper,
+        }
+        gripper_authorities.append(gripper)
+        transitions.append(transition)
+    _write_jsonl(stream_root / "policy_execute_gripper_authority.jsonl", gripper_authorities)
+    _write_jsonl(stream_root / "policy_execute_transition.jsonl", transitions)
+
+    intervention_rows = [
+        {
+            "schema": "forcesmolvla-stage3-integrated-capture-v1",
+            **identity,
+            "policy_epoch": 1,
+            "takeover_generation": 1,
+            "receive_monotonic_ns": 1_202_000_000,
+            "event": "intervention_start",
+            "actual_action_source": "human",
+            "policy_execution": True,
+            "invalidated_chunk_id": "live-request-a",
+            "old_policy_chunk_invalidated": True,
+            "safe_action": takeover_safe,
+        },
+        {
+            "schema": "forcesmolvla-stage3-integrated-capture-v1",
+            **identity,
+            "policy_epoch": 1,
+            "takeover_generation": 1,
+            "receive_monotonic_ns": 1_251_000_000,
+            "event": "intervention_end",
+            "actual_action_source": "human",
+            "policy_execution": True,
+            "invalidated_chunk_id": None,
+            "old_policy_chunk_invalidated": False,
+            "safe_action": release_safe,
+        },
+    ]
+    _write_jsonl(stream_root / "policy_execute_intervention.jsonl", intervention_rows)
+
+    lease = InitialGripperAuthority(
+        episode_id=episode.name,
+        origin_local_goal_sequence=9,
+        origin_action_goal_id="integrated-startup-open",
+        origin_accepted_monotonic_ns=800_000_000,
+        requested_state="OPEN",
+        requested_width_m=0.085,
+        terminal_outcome="reached",
+        terminal_finished_monotonic_ns=850_000_000,
+        feedback_width_m=0.085,
+        feedback_state="OPEN",
+        feedback_monotonic_ns=990_000_000,
+        captured_monotonic_ns=995_000_000,
+        feedback_age_ns=5_000_000,
+        clock_domain_id="upper_host_monotonic",
+        generation=GripperGeneration(
+            episode_id=episode.name,
+            reset_generation=0,
+            takeover_generation=0,
+            policy_revision=revision,
+            policy_epoch=0,
+        ),
+    ).validate(max_feedback_age_ns=100_000_000).to_dict()
+    _write_json(stream_root / "policy_execute_initial_gripper_lease.json", lease)
+    camera_records = []
+    for observation, native_index in zip(observations, observation_indices, strict=True):
+        for role in ("external", "wrist"):
+            native_camera = camera_rows[role][native_index]
+            camera_records.append(
+                {
+                    "clock_domain_id": "upper_host_monotonic",
+                    "native_receive_monotonic_ns": native_camera["receive_monotonic_ns"],
+                    "observation_id": observation["observation_id"],
+                    "policy_receive_monotonic_ns": native_camera["receive_monotonic_ns"],
+                    "rgb_path": native_camera["rgb_path"],
+                    "role": role,
+                    "same_recorder_jpeg": True,
+                }
+            )
+    _write_json(
+        stream_root / "policy_execute_camera_reconciliation.json",
+        {
+            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "native_episode": str(episode),
+            "records": camera_records,
+        },
+    )
+    _write_json(
+        stream_root / "policy_execute_episode_seal.json",
+        {
+            "schema": "forcesmolvla-stage3-integrated-capture-v1",
+            **identity,
+            "backend_schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "technical_seal": "complete",
+            "seal_id": "policy-execute-seal:fixture",
+            "sealed_monotonic_ns": 1_600_000_000,
+            "terminal_observation_id": observations[-1]["observation_id"],
+            "observation_count": len(observations),
+            "policy_request_count": len(requests),
+            "policy_result_count": len(results),
+            "policy_chunk_count": len(chunks),
+            "policy_action_ack_count": len(transitions),
+            "human_action_ack_count": 0,
+            "intervention_count": len(intervention_rows),
+            "camera_records_reconciled": len(camera_records),
+            "actual_action_source": "policy",
+            "executed_action_source": "policy",
+            "policy_inference": True,
+            "policy_execution": True,
+            "formal_replay": False,
+            "real_online_r": False,
+            "formal_training_replay_written": False,
+            "learner_started": False,
+            "actor_updates": 0,
+            "critic_updates": 0,
+            "checkpoint_written": False,
+            "policy_revision_published": False,
+            "controller_owner": "recorder",
+            "controller_process_count": 1,
+            "deploy_controller_started": False,
+            "policy_action_publisher_created": True,
+            "detector_approval_scope": "single_episode_cycle210_policy_execution_smoke",
+            "native_episode": str(episode),
+            "native_episode_result": native_result,
+            "initial_gripper_lease": lease,
+        },
+    )
+
+
 def _fake_materialization(episode: Path, *, trigger_frame: int = 9) -> EpisodeMaterialization:
     count = max(10, trigger_frame + 1)
     grid = np.asarray(
@@ -615,6 +1129,104 @@ def test_integrated_shadow_dry_run_is_read_only_and_rejects_ack_rebinding(
     assert report.status == "SEALED_QUARANTINED"
     assert report.classification == "recorded_live_policy_shadow"
     assert report.quarantine_reasons == ("BRIDGE_SHADOW_HUMAN_ACK_INVALID",)
+    assert not state.exists()
+
+
+def test_integrated_policy_execution_smoke_is_read_only_and_not_shadow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    observation_path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_observation.jsonl"
+    )
+    observation_rows = [
+        json.loads(line) for line in observation_path.read_text().splitlines()
+    ]
+    pose_path = episode / "streams/measured_tcp_pose.jsonl"
+    pose_rows = [json.loads(line) for line in pose_path.read_text().splitlines()]
+    source_ns = int(
+        observation_rows[0]["stream_ids"]["measured_tcp_pose"]
+        .split("source:", 1)[1]
+        .split("@receive:", 1)[0]
+    )
+    policy_receive_ns = observation_rows[0]["t_ref_ns"] - 100_000
+    observation_rows[0]["stream_timestamps_ns"]["measured_tcp_pose"] = (
+        policy_receive_ns
+    )
+    observation_rows[0]["stream_ids"]["measured_tcp_pose"] = (
+        f"source:{source_ns}@receive:{policy_receive_ns}"
+    )
+    next(
+        row for row in pose_rows if int(row["source_stamp_ns"]) == source_ns
+    )["receive_monotonic_ns"] = observation_rows[0]["t_ref_ns"] + 100_000
+    _write_jsonl(observation_path, observation_rows)
+    _write_jsonl(pose_path, pose_rows)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+    state = tmp_path / "dry-run-state"
+
+    report = _bridge(state).process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "DRY_RUN_READY"
+    assert report.classification == "recorded_live_policy_execution_smoke"
+    assert report.executed_action_source == "policy"
+    assert report.policy_execution is True
+    assert report.policy_lineage_complete is True
+    assert report.policy_action_ack_count == 2
+    assert report.human_override_count == 1
+    assert report.human_override_executed_count == 0
+    assert report.quarantined_count == 0
+    assert report.operator_task_outcome == "success"
+    assert report.training_replay_eligible is False
+    assert report.formal_training_replay_written is False
+    assert report.real_online_r_used is False
+    assert report.model_update_count == 0
+    assert not state.exists()
+
+
+def test_policy_execution_generation_mismatch_is_quarantined_without_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+    path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_transition.jsonl"
+    )
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[-1]["takeover_generation"] = 0
+    _write_jsonl(path, rows)
+    state = tmp_path / "dry-run-state"
+
+    report = _bridge(state).process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "SEALED_QUARANTINED"
+    assert report.classification == "recorded_live_policy_execution_smoke"
+    assert report.quarantine_reasons == (
+        "BRIDGE_POLICY_EXECUTION_GENERATION_INVALID",
+    )
     assert not state.exists()
 
 

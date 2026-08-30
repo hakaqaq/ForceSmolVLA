@@ -195,7 +195,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--operator-task-outcome",
         choices=("success", "failure"),
-        help="Required operator semantic label for an integrated shadow episode.",
+        help="Required operator semantic label for an integrated capture episode.",
     )
     parser.add_argument("--detector-worker-request", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--detector-worker-output", type=Path, help=argparse.SUPPRESS)
@@ -220,10 +220,23 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run and args.state_root is None:
         raise SystemExit("--state-root is required unless --dry-run is used")
     state_root = args.state_root or Path("/tmp/forcesmolvla_stage3_bridge_dry_run")
+    policy_execution_smoke = (
+        args.dry_run
+        and (
+            episode.parent.parent
+            / "integrated_capture"
+            / episode.name
+            / "streams/policy_execute_episode_seal.json"
+        ).is_file()
+    )
     report = Stage3ProductionBridge(
         config=config,
         state_root=state_root,
-        episode_materializer=frozen_episode_materializer(OneShotFrozenG1Detector()),
+        episode_materializer=(
+            None
+            if policy_execution_smoke
+            else frozen_episode_materializer(OneShotFrozenG1Detector())
+        ),
     ).process_episode(
         episode,
         dry_run=args.dry_run,

@@ -12,6 +12,7 @@
     "reward_pending_logging_allowed": true,
     "development_policy_execution_smoke": {
       "approved": true,
+      "status": "PASS",
       "scope": "single_episode_cycle210_policy_execution_smoke",
       "basis": {
         "episode": "task2_shadow_stage3_cycle210_20260829_003/episode_000000",

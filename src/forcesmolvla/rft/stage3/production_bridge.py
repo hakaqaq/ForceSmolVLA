@@ -51,6 +51,10 @@ SCHEMA_VERSION = "forcesmolvla_stage3_production_bridge_transition.v1"
 REPORT_VERSION = "forcesmolvla_stage3_production_bridge_report.v1"
 INTEGRATED_CAPTURE_SCHEMA = "forcesmolvla-stage3-integrated-capture-v1"
 INTEGRATED_SHADOW_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
+INTEGRATED_POLICY_EXECUTION_SCHEMA = (
+    "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
+)
+POLICY_EXECUTION_SMOKE_CLASSIFICATION = "recorded_live_policy_execution_smoke"
 UPPER_CLOCK = "upper_host_monotonic"
 POLICY_LINEAGE_FIELDS = frozenset(
     {
@@ -83,6 +87,9 @@ REQUIRED_STREAMS = (
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_PARENT_BINDING = REPO_ROOT / "configs/stage3_parent_binding.v1.development.json"
 DEFAULT_G1_CONFIG = REPO_ROOT / "configs/stage2_g1_frozen_detector_transition_view.development.json"
+DEFAULT_REWARD_CONTRACT = (
+    REPO_ROOT / "configs/stage3_reward_terminal_contract.v1.development.json"
+)
 
 
 class ProductionBridgeError(RuntimeError):
@@ -137,6 +144,29 @@ class EpisodeMaterialization:
 
 EpisodeMaterializer = Callable[[Path], EpisodeMaterialization]
 FrozenDetector = Callable[[PreparedEpisode], FrozenDetectorScores]
+
+
+def _prepare_native_episode(
+    episode_dir: Path,
+    *,
+    parent_binding_path: Path = DEFAULT_PARENT_BINDING,
+) -> PreparedEpisode:
+    """Materialize calibrated observations without loading the reward model."""
+
+    parent = _read_json(Path(parent_binding_path))
+    calibration_payload = _read_json(
+        Path(parent["calibration_binding"]["absolute_path"])
+    )
+    runtime_contract = RuntimeContract.from_development_json(
+        Path(parent["runtime_contract_binding"]["absolute_path"])
+    )
+    episode_dir = Path(episode_dir)
+    return prepare_episode(
+        episode_dir,
+        session=_read_json(episode_dir.parent.parent / "session.json"),
+        calibration_payload=calibration_payload,
+        contract=runtime_contract,
+    )
 
 
 def frozen_episode_materializer(
@@ -372,6 +402,13 @@ class BridgeReport:
     shadow_policy_result_count: int = 0
     shadow_policy_proposal_count: int = 0
     shadow_human_ack_count: int = 0
+    training_replay_eligible: bool = False
+    policy_lineage_complete: bool = False
+    policy_chunk_count: int = 0
+    policy_action_ack_count: int = 0
+    human_override_count: int = 0
+    human_override_executed_count: int = 0
+    model_update_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -576,6 +613,1102 @@ class Stage3ProductionBridge:
                 raise ProductionBridgeError(
                     f"BRIDGE_SHADOW_IDENTITY_MISMATCH:{field}"
                 )
+
+    @staticmethod
+    def _policy_execution_generation(
+        row: Mapping[str, Any], identity: Mapping[str, Any]
+    ) -> tuple[int, int, int]:
+        for field in (
+            "session_id",
+            "episode_id",
+            "clock_domain_id",
+            "policy_revision",
+        ):
+            if row.get(field) != identity.get(field):
+                raise ProductionBridgeError(
+                    f"BRIDGE_POLICY_EXECUTION_IDENTITY_MISMATCH:{field}"
+                )
+        try:
+            generation = (
+                int(row["policy_epoch"]),
+                int(row["reset_generation"]),
+                int(row["takeover_generation"]),
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_GENERATION_MISSING"
+            ) from error
+        if (
+            min(generation) < 0
+            or generation[1] != int(identity.get("reset_generation", -1))
+            or generation[0] != generation[2]
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_GENERATION_INVALID"
+            )
+        return generation
+
+    def _load_integrated_policy_execution(
+        self,
+        *,
+        episode_dir: Path,
+        native_result: Mapping[str, Any],
+        streams: Mapping[str, list[dict[str, Any]]],
+        operator_task_outcome: str | None,
+    ) -> dict[str, Any]:
+        dataset_root = episode_dir.parent.parent
+        manifest = _read_json(dataset_root / "integrated_capture_session.json")
+        contract = manifest.get("contract")
+        identity = contract.get("identity") if isinstance(contract, Mapping) else None
+        if operator_task_outcome != "success":
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_OPERATOR_SUCCESS_REQUIRED"
+            )
+        if (
+            manifest.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
+            or not isinstance(contract, Mapping)
+            or contract.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+            or not isinstance(identity, Mapping)
+            or identity.get("episode_id") != episode_dir.name
+            or identity.get("clock_domain_id") != UPPER_CLOCK
+            or contract.get("mode") != "policy-execute"
+            or contract.get("actual_action_source") != "policy"
+            or contract.get("policy_inference") is not True
+            or contract.get("policy_execution") is not True
+            or contract.get("formal_replay") is not False
+            or contract.get("real_online_r") is not False
+            or contract.get("development_policy_execution_smoke") is not True
+            or contract.get("controller_owner") != "recorder"
+            or contract.get("controller_process_count") != 1
+            or contract.get("recorder_controller") is not True
+            or contract.get("deploy_controller") is not False
+            or manifest.get("controller_owner") != "recorder"
+            or manifest.get("controller_process_count") != 1
+            or manifest.get("deploy_controller_started") is not False
+            or manifest.get("policy_action_publisher_created") is not True
+            or manifest.get("formal_replay_writer_started") is not False
+            or manifest.get("learner_started") is not False
+            or manifest.get("policy_revision_publisher_started") is not False
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_INTEGRATED_POLICY_EXECUTION_CONTRACT_INVALID"
+            )
+        clock = manifest.get("clock_binding")
+        if (
+            not isinstance(clock, Mapping)
+            or clock.get("stage3_clock_domain_id") != UPPER_CLOCK
+            or clock.get("policy_request_clock_domain_id")
+            != "upper_host_monotonic_ns"
+            or clock.get("native_primary_alignment_clock")
+            != "upper_host_receive_monotonic_ns"
+            or clock.get("same_upper_host_monotonic_epoch") is not True
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_INTEGRATED_POLICY_EXECUTION_CLOCK_INVALID"
+            )
+        session = _read_json(dataset_root / "session.json")
+        metadata = manifest.get("policy_metadata")
+        cameras = session.get("cameras")
+        external_camera = (
+            cameras.get("observation.image") if isinstance(cameras, Mapping) else None
+        )
+        wrist_camera = (
+            cameras.get("observation.wrist_image")
+            if isinstance(cameras, Mapping)
+            else None
+        )
+        if (
+            not isinstance(metadata, Mapping)
+            or metadata.get("model_sha256") != identity.get("policy_revision")
+            or not str(metadata.get("dataset_repo_id", ""))
+            or metadata.get("tool_profile_sha256")
+            != session.get("tool_config_hash")
+            or not str(metadata.get("calibration_id", ""))
+            or not isinstance(external_camera, Mapping)
+            or external_camera.get("model") != "D435"
+            or external_camera.get("role") != "external"
+            or not isinstance(wrist_camera, Mapping)
+            or wrist_camera.get("model") != "D405"
+            or wrist_camera.get("role") != "wrist"
+            or "applied offline" not in str(session.get("force_status", ""))
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_INTEGRATED_POLICY_EXECUTION_OBSERVATION_BINDING_INVALID"
+            )
+
+        stream_root = (
+            dataset_root / "integrated_capture" / episode_dir.name / "streams"
+        )
+        names = {
+            "observations": "policy_execute_observation.jsonl",
+            "requests": "policy_execute_request.jsonl",
+            "results": "policy_execute_result.jsonl",
+            "proposals": "policy_execute_proposal.jsonl",
+            "chunks": "policy_execute_chunk.jsonl",
+            "transitions": "policy_execute_transition.jsonl",
+            "gripper_authorities": "policy_execute_gripper_authority.jsonl",
+            "interventions": "policy_execute_intervention.jsonl",
+        }
+        if any(not (stream_root / name).is_file() for name in names.values()):
+            raise ProductionBridgeError(
+                "BRIDGE_INTEGRATED_POLICY_EXECUTION_STREAM_MISSING"
+            )
+        rows = {
+            key: _read_jsonl(stream_root / name) for key, name in names.items()
+        }
+        observations = rows["observations"]
+        requests = rows["requests"]
+        results = rows["results"]
+        proposals = rows["proposals"]
+        chunks = rows["chunks"]
+        transitions = rows["transitions"]
+        gripper_authorities = rows["gripper_authorities"]
+        interventions = rows["interventions"]
+        if (
+            not observations
+            or not requests
+            or not transitions
+            or not (
+                len(requests) == len(results) == len(proposals) == len(chunks)
+            )
+            or len(transitions) != len(gripper_authorities)
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_LINEAGE_COUNT_MISMATCH"
+            )
+
+        native_by_source: dict[str, dict[int, dict[str, Any]]] = {}
+        for name in ("measured_tcp_pose", "wrench_notch_sensor", "gripper_state"):
+            native_by_source[name] = {
+                int(item.get("source_stamp_ns", 0)): item for item in streams[name]
+            }
+        observation_by_id: dict[str, dict[str, Any]] = {}
+        previous_t_ref = 0
+        previous_generation = (0, 0, 0)
+        required_observation_streams = set(native_by_source) | {
+            "external_camera",
+            "wrist_camera",
+        }
+        receive_skew_limits = {
+            "measured_tcp_pose": self.config.max_pose_age_ns,
+            "wrench_notch_sensor": self.config.max_wrench_age_ns,
+            "gripper_state": self.config.max_gripper_feedback_age_ns,
+        }
+        for index, observation in enumerate(observations):
+            generation = self._policy_execution_generation(observation, identity)
+            observation_id = str(observation.get("observation_id", ""))
+            timestamps = observation.get("stream_timestamps_ns")
+            stream_ids = observation.get("stream_ids")
+            t_ref = int(observation.get("t_ref_ns", 0))
+            if (
+                observation.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+                or observation_id != f"{episode_dir.name}:observation:{index:06d}"
+                or observation_id in observation_by_id
+                or t_ref <= previous_t_ref
+                or generation < previous_generation
+                or not isinstance(timestamps, Mapping)
+                or not isinstance(stream_ids, Mapping)
+                or set(timestamps) != required_observation_streams
+                or set(stream_ids) != required_observation_streams
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_OBSERVATION_INVALID"
+                )
+            for name, native_index in native_by_source.items():
+                policy_receive_ns = int(timestamps.get(name, 0))
+                stream_id = str(stream_ids.get(name, ""))
+                if not stream_id.startswith("source:") or "@receive:" not in stream_id:
+                    raise ProductionBridgeError(
+                        f"BRIDGE_POLICY_EXECUTION_NATIVE_STREAM_ID_INVALID:{name}"
+                    )
+                source_text, receive_text = stream_id[len("source:") :].split(
+                    "@receive:", 1
+                )
+                try:
+                    source_ns = int(source_text)
+                    identity_receive_ns = int(receive_text)
+                except ValueError as error:
+                    raise ProductionBridgeError(
+                        f"BRIDGE_POLICY_EXECUTION_NATIVE_STREAM_ID_INVALID:{name}"
+                    ) from error
+                native = native_index.get(source_ns)
+                native_receive_ns = int(
+                    0 if native is None else native.get("receive_monotonic_ns", 0)
+                )
+                if (
+                    native is None
+                    or policy_receive_ns > t_ref
+                    or identity_receive_ns != policy_receive_ns
+                    or abs(native_receive_ns - policy_receive_ns)
+                    > receive_skew_limits[name]
+                ):
+                    raise ProductionBridgeError(
+                        f"BRIDGE_POLICY_EXECUTION_NATIVE_STREAM_MISSING:{name}"
+                    )
+                if name == "measured_tcp_pose":
+                    _pose_tcp6(native.get("pose", {}))
+                elif name == "wrench_notch_sensor":
+                    _finite_vector(
+                        native.get("force_xyz_n_torque_xyz_nm"),
+                        6,
+                        "BRIDGE_POLICY_EXECUTION_WRENCH6_INVALID",
+                    )
+                else:
+                    width = float(native.get("width_m", -1.0))
+                    if not math.isfinite(width) or not 0.0 <= width <= 0.1:
+                        raise ProductionBridgeError(
+                            "BRIDGE_POLICY_EXECUTION_STATE7_INVALID"
+                        )
+            observation_by_id[observation_id] = observation
+            previous_t_ref = t_ref
+            previous_generation = generation
+
+        request_by_id: dict[str, dict[str, Any]] = {}
+        result_by_request: dict[str, dict[str, Any]] = {}
+        proposal_by_request: dict[str, dict[str, Any]] = {}
+        chunk_by_request: dict[str, dict[str, Any]] = {}
+        lineage_fields = (
+            "request_id",
+            "chunk_id",
+            "proposal_id",
+            "policy_revision",
+            "policy_epoch",
+            "reset_generation",
+            "takeover_generation",
+            "t_ref_ns",
+            "request_clock_domain_id",
+            "clock_domain_id",
+            "request_recorded_monotonic_ns",
+        )
+        for request, result, proposal, chunk in zip(
+            requests, results, proposals, chunks, strict=True
+        ):
+            generations = {
+                self._policy_execution_generation(row, identity)
+                for row in (request, result, proposal, chunk)
+            }
+            request_id = str(request.get("request_id", ""))
+            result_id = str(result.get("result_id", ""))
+            observation = observation_by_id.get(str(request.get("observation_id", "")))
+            actions = proposal.get("actions_absolute7")
+            valid_horizon = int(proposal.get("valid_horizon", 0))
+            if (
+                len(generations) != 1
+                or request.get("schema") != POLICY_LINEAGE_SCHEMA
+                or result.get("schema") != POLICY_LINEAGE_SCHEMA
+                or proposal.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
+                or chunk.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
+                or not request_id
+                or request_id in request_by_id
+                or result_id != f"policy-result:{request_id}"
+                or request.get("chunk_id") != f"live-{request_id}"
+                or request.get("proposal_id") != f"policy-proposal:{request_id}"
+                or observation is None
+                or self._policy_execution_generation(observation, identity)
+                != next(iter(generations))
+                or int(request.get("t_ref_ns", 0))
+                != int(observation.get("t_ref_ns", 0))
+                or int(request.get("request_recorded_monotonic_ns", 0))
+                < int(observation.get("t_ref_ns", 0))
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_REQUEST_INVALID"
+                )
+            for field in lineage_fields:
+                if (
+                    result.get(field) != request.get(field)
+                    or proposal.get(field) != result.get(field)
+                    or chunk.get(field) != result.get(field)
+                ):
+                    raise ProductionBridgeError(
+                        f"BRIDGE_POLICY_EXECUTION_LINEAGE_MISMATCH:{field}"
+                    )
+            if (
+                result.get("result_id") != result_id
+                or proposal.get("result_id") != result_id
+                or chunk.get("result_id") != result_id
+                or result.get("lineage_schema") != POLICY_LINEAGE_SCHEMA
+                or proposal.get("lineage_schema") != POLICY_LINEAGE_SCHEMA
+                or chunk.get("lineage_schema") != POLICY_LINEAGE_SCHEMA
+                or result.get("policy_execution_candidate") is not True
+                or proposal.get("policy_execution_candidate") is not True
+                or chunk.get("policy_execution_candidate") is not True
+                or result.get("executed") is not False
+                or proposal.get("executed") is not False
+                or chunk.get("executed") is not False
+                or result.get("shadow_proposal") is not False
+                or proposal.get("shadow_proposal") is not False
+                or chunk.get("shadow_proposal") is not False
+                or proposal.get("actual_action_source") != "policy"
+                or proposal.get("policy_inference") is not True
+                or proposal.get("policy_execution") is not True
+                or proposal.get("formal_replay") is not False
+                or proposal.get("real_online_r") is not False
+                or proposal.get("action_semantics") != "absolute7"
+                or chunk.get("action_semantics") != "absolute7"
+                or not isinstance(proposal.get("invalidated_by_takeover"), bool)
+                or not isinstance(actions, list)
+                or valid_horizon <= 0
+                or len(actions) != valid_horizon
+                or chunk.get("actions_absolute7") != actions
+                or int(chunk.get("valid_horizon", 0)) != valid_horizon
+                or int(result.get("result_recorded_monotonic_ns", 0))
+                < int(request.get("request_recorded_monotonic_ns", 0))
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_PROPOSAL_INVALID"
+                )
+            for action in actions:
+                _finite_vector(
+                    action, 7, "BRIDGE_POLICY_EXECUTION_PROPOSAL_ACTION7_INVALID"
+                )
+            request_by_id[request_id] = request
+            result_by_request[request_id] = result
+            proposal_by_request[request_id] = proposal
+            chunk_by_request[request_id] = chunk
+
+        raw_by_identity = {
+            (
+                str(item.get("payload", {}).get("source", "")),
+                int(item.get("payload", {}).get("sequence", -1)),
+            ): item.get("payload", {})
+            for item in streams["raw_action"]
+        }
+        safe_by_identity = {
+            (
+                str(
+                    item.get("payload", {})
+                    .get("arbitration", {})
+                    .get("raw_action", {})
+                    .get("source", "")
+                ),
+                int(
+                    item.get("payload", {})
+                    .get("arbitration", {})
+                    .get("raw_action", {})
+                    .get("sequence", -1)
+                ),
+            ): item.get("payload", {})
+            for item in streams["safe_action"]
+        }
+        requested_by_identity = {
+            (str(item.get("source", "")), int(item.get("sequence", -1))): item
+            for item in streams["requested_equilibrium"]
+        }
+        ack_by_stamp = {
+            int(item.get("payload", {}).get("request_stamp_ns", 0)): item
+            for item in streams["reference_ack"]
+        }
+        gripper_by_sequence: dict[int, dict[str, Any]] = {}
+        for row in gripper_authorities:
+            sequence = int(row.get("sequence", -1))
+            if sequence < 0 or sequence in gripper_by_sequence:
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_GRIPPER_AUTHORITY_DUPLICATE"
+                )
+            gripper_by_sequence[sequence] = row
+
+        transition_sequences: set[int] = set()
+        transition_by_chunk: dict[str, list[dict[str, Any]]] = {}
+        transition_by_request: dict[str, list[dict[str, Any]]] = {}
+        lineage_keys = (
+            "request_id",
+            "result_id",
+            "chunk_id",
+            "proposal_id",
+            "policy_revision",
+            "policy_epoch",
+            "reset_generation",
+            "takeover_generation",
+            "t_ref_ns",
+        )
+        for transition in transitions:
+            generation = self._policy_execution_generation(transition, identity)
+            request_id = str(transition.get("request_id", ""))
+            request = request_by_id.get(request_id)
+            result = result_by_request.get(request_id)
+            proposal = proposal_by_request.get(request_id)
+            chunk = chunk_by_request.get(request_id)
+            selection = transition.get("selection")
+            gripper = transition.get("gripper_authority")
+            arbitration = transition.get("safety_arbitration")
+            if not all(
+                isinstance(value, Mapping)
+                for value in (request, result, proposal, chunk, selection, gripper, arbitration)
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_TRANSITION_LINEAGE_MISSING"
+                )
+            sequence = int(selection.get("sequence", -1))
+            action_index = int(selection.get("action_index", -1))
+            native_safe = safe_by_identity.get(("policy", sequence))
+            native_raw = raw_by_identity.get(("policy", sequence))
+            native_request = requested_by_identity.get(("policy", sequence))
+            stamp = int(
+                0
+                if native_safe is None
+                else native_safe.get("equilibrium_source_stamp_ns", 0)
+            )
+            native_ack = ack_by_stamp.get(stamp)
+            sidecar_gripper = gripper_by_sequence.get(sequence)
+            current_observation = observation_by_id.get(
+                str(transition.get("current_observation_id", ""))
+            )
+            next_observation = observation_by_id.get(
+                str(transition.get("next_observation_id", ""))
+            )
+            integrated_pose_ack = transition.get("pose_ack")
+            native_pose_ack = (
+                native_ack.get("payload", {})
+                if isinstance(native_ack, Mapping)
+                else {}
+            )
+            pose_command = transition.get("pose_command")
+            native_pose_command = (
+                native_request.get("pose", {})
+                if isinstance(native_request, Mapping)
+                else {}
+            )
+            pose_ack_fields = (
+                "schema",
+                "accepted",
+                "request_stamp_ns",
+                "request_sequence",
+                "request_receive_monotonic_ns",
+                "ack_monotonic_ns",
+                "request_frame_id",
+                "accepted_pose",
+                "reject_reason",
+            )
+            pose_ack_identity_valid = (
+                isinstance(integrated_pose_ack, Mapping)
+                and all(
+                    integrated_pose_ack.get(field) == native_pose_ack.get(field)
+                    for field in pose_ack_fields
+                )
+                and integrated_pose_ack.get("accepted") is True
+            )
+            pose_ack_receive_ns = int(
+                integrated_pose_ack.get("upper_receive_monotonic_ns", 0)
+                if isinstance(integrated_pose_ack, Mapping)
+                else 0
+            )
+            pose_ack_receive_valid = (
+                native_ack is not None
+                and pose_ack_receive_ns > 0
+                and int(transition.get("receive_monotonic_ns", 0))
+                == pose_ack_receive_ns
+                and abs(
+                    int(native_ack.get("receive_monotonic_ns", 0))
+                    - pose_ack_receive_ns
+                )
+                <= self.config.max_pose_ack_latency_ns
+            )
+            pose_command_valid = (
+                isinstance(pose_command, Mapping)
+                and isinstance(native_pose_command, Mapping)
+                and pose_command.get("position_m")
+                == native_pose_command.get("position_m")
+                and pose_command.get("quaternion_xyzw")
+                == native_pose_command.get("quaternion_xyzw")
+                and native_pose_command.get("frame_id")
+                == native_pose_ack.get("request_frame_id")
+            )
+            if not pose_ack_identity_valid:
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_POSE_ACK_IDENTITY_INVALID"
+                )
+            if not pose_ack_receive_valid:
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_POSE_ACK_RECEIVE_INVALID"
+                )
+            if not pose_command_valid:
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_POSE_COMMAND_INVALID"
+                )
+            if (
+                transition.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
+                or transition.get("actual_action_source") != "policy"
+                or transition.get("executed_action_source") != "policy"
+                or transition.get("policy_executed_transition") is not True
+                or transition.get("intervention") is not False
+                or transition.get("formal_replay") is not False
+                or transition.get("real_online_r") is not False
+                or sequence < 0
+                or sequence in transition_sequences
+                or action_index < 0
+                or action_index >= int(proposal.get("valid_horizon", 0))
+                or self._policy_execution_generation(request, identity) != generation
+                or current_observation is None
+                or next_observation is None
+                or transition.get("observation_id")
+                != transition.get("current_observation_id")
+                or int(next_observation.get("t_ref_ns", 0))
+                <= int(current_observation.get("t_ref_ns", 0))
+                or native_safe is None
+                or native_raw is None
+                or native_request is None
+                or native_ack is None
+                or arbitration != native_safe.get("arbitration")
+                or arbitration.get("accepted") is not True
+                or arbitration.get("reason") != "accepted_policy"
+                or arbitration.get("raw_action") != native_raw
+                or native_safe.get("equilibrium_published") is not True
+                or transition.get("ack_id") != f"policy-ack:{sequence}:{stamp}"
+                or sidecar_gripper is None
+                or gripper != sidecar_gripper
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_ACTION_ACK_INVALID"
+                )
+            for field in lineage_keys:
+                expected = (
+                    result.get(field)
+                    if field == "result_id"
+                    else request.get(field)
+                )
+                if (
+                    transition.get(field) != expected
+                    or selection.get(field) != expected
+                    or gripper.get(field) != expected
+                ):
+                    raise ProductionBridgeError(
+                        f"BRIDGE_POLICY_EXECUTION_TRANSITION_LINEAGE_MISMATCH:{field}"
+                    )
+            selected = proposal["actions_absolute7"][action_index]
+            if (
+                selection.get("selected_post_adapter_absolute7") != selected
+                or transition.get("accepted_absolute7") != selected
+                or int(gripper.get("action_index", -1)) != action_index
+                or gripper.get("requested_state") not in {"OPEN", "CLOSED"}
+                or float(gripper.get("requested_width_m", -1.0))
+                not in {self.config.gripper_closed_width_m, self.config.gripper_open_width_m}
+                or gripper.get("authority")
+                not in {"existing_accepted_gripper_state", "policy_execution_backend"}
+                or bool(gripper.get("command_required"))
+                != (gripper.get("authority") == "policy_execution_backend")
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_ACTION7_AUTHORITY_INVALID"
+                )
+            _finite_vector(
+                transition.get("accepted_absolute7"),
+                7,
+                "BRIDGE_POLICY_EXECUTION_ACCEPTED_ACTION7_INVALID",
+            )
+            transition_sequences.add(sequence)
+            transition_by_chunk.setdefault(str(transition["chunk_id"]), []).append(
+                transition
+            )
+            transition_by_request.setdefault(request_id, []).append(transition)
+
+        accepted_policy_sequences = {
+            sequence
+            for (source, sequence), safe in safe_by_identity.items()
+            if source == "policy"
+            and safe.get("arbitration", {}).get("accepted") is True
+            and safe.get("equilibrium_published") is True
+        }
+        if transition_sequences != accepted_policy_sequences:
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_ACTION_ACK_COVERAGE_MISMATCH"
+            )
+
+        override_sequences: set[int] = set()
+        for (source, sequence), safe in safe_by_identity.items():
+            arbitration = safe.get("arbitration", {})
+            if source != "policy" or arbitration.get("accepted") is not False:
+                continue
+            if (
+                arbitration.get("reason") != "human_override"
+                or safe.get("reject_reason") != "human_override"
+                or safe.get("equilibrium_published") is not False
+                or safe.get("equilibrium_source_stamp_ns") is not None
+                or (source, sequence) in requested_by_identity
+                or sequence in transition_sequences
+                or sequence in gripper_by_sequence
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_REJECTED_ACTION_INVALID"
+                )
+            override_sequences.add(sequence)
+
+        active_intervention: dict[str, Any] | None = None
+        completed_takeovers: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        previous_intervention_ns = 0
+        previous_takeover_generation = int(identity.get("takeover_generation", 0))
+        for intervention in interventions:
+            generation = self._policy_execution_generation(intervention, identity)
+            event = str(intervention.get("event", ""))
+            receive_ns = int(intervention.get("receive_monotonic_ns", 0))
+            safe = intervention.get("safe_action")
+            raw = (
+                safe.get("arbitration", {}).get("raw_action", {})
+                if isinstance(safe, Mapping)
+                else {}
+            )
+            if (
+                intervention.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+                or intervention.get("actual_action_source") != "human"
+                or intervention.get("policy_execution") is not True
+                or event not in {"intervention_start", "human_action", "intervention_end"}
+                or receive_ns <= previous_intervention_ns
+                or not isinstance(safe, Mapping)
+                or raw.get("source") != "human"
+                or safe_by_identity.get(("human", int(raw.get("sequence", -1))))
+                != safe
+                or int(safe.get("arbitration", {}).get("policy_epoch", -1))
+                != generation[0]
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_INTERVENTION_INVALID"
+                )
+            if event == "intervention_start":
+                invalidated_chunk = str(intervention.get("invalidated_chunk_id", ""))
+                invalidated = next(
+                    (
+                        chunk
+                        for chunk in chunks
+                        if chunk.get("chunk_id") == invalidated_chunk
+                    ),
+                    None,
+                )
+                if (
+                    active_intervention is not None
+                    or generation[2] != previous_takeover_generation + 1
+                    or intervention.get("old_policy_chunk_invalidated") is not True
+                    or invalidated is None
+                    or self._policy_execution_generation(invalidated, identity)[2]
+                    >= generation[2]
+                    or any(
+                        int(row.get("receive_monotonic_ns", 0)) >= receive_ns
+                        for row in transition_by_chunk.get(invalidated_chunk, ())
+                    )
+                ):
+                    raise ProductionBridgeError(
+                        "BRIDGE_POLICY_EXECUTION_TAKEOVER_INVALIDATION_INVALID"
+                    )
+                active_intervention = intervention
+            elif event == "human_action":
+                if (
+                    active_intervention is None
+                    or generation
+                    != self._policy_execution_generation(active_intervention, identity)
+                ):
+                    raise ProductionBridgeError(
+                        "BRIDGE_POLICY_EXECUTION_TAKEOVER_GENERATION_INVALID"
+                    )
+            else:
+                if (
+                    active_intervention is None
+                    or generation
+                    != self._policy_execution_generation(active_intervention, identity)
+                    or intervention.get("old_policy_chunk_invalidated") is not False
+                    or intervention.get("invalidated_chunk_id") is not None
+                ):
+                    raise ProductionBridgeError(
+                        "BRIDGE_POLICY_EXECUTION_TAKEOVER_END_INVALID"
+                    )
+                completed_takeovers.append((active_intervention, intervention))
+                previous_takeover_generation = generation[2]
+                active_intervention = None
+            previous_intervention_ns = receive_ns
+        if active_intervention is not None:
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_TAKEOVER_UNSEALED"
+            )
+        for start, end in completed_takeovers:
+            start_ns = int(start["receive_monotonic_ns"])
+            end_ns = int(end["receive_monotonic_ns"])
+            generation = self._policy_execution_generation(end, identity)
+            if any(
+                start_ns <= int(row.get("receive_monotonic_ns", 0)) <= end_ns
+                for row in transitions
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_ACTION_DURING_TAKEOVER"
+                )
+            following = [
+                row
+                for row in transitions
+                if int(row.get("receive_monotonic_ns", 0)) > end_ns
+            ]
+            if (
+                following
+                and self._policy_execution_generation(following[0], identity)
+                != generation
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_POST_TAKEOVER_GENERATION_INVALID"
+                )
+        for proposal in proposals:
+            if proposal.get("invalidated_by_takeover") is True and transition_by_request.get(
+                str(proposal.get("request_id", ""))
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_INVALIDATED_PROPOSAL_EXECUTED"
+                )
+
+        lease_payload = _read_json(
+            stream_root / "policy_execute_initial_gripper_lease.json"
+        )
+        try:
+            lease = InitialGripperAuthority.from_mapping(lease_payload).validate(
+                max_feedback_age_ns=self.config.max_gripper_feedback_age_ns
+            )
+        except GripperProvenanceError as error:
+            raise ProductionBridgeError(
+                f"BRIDGE_POLICY_EXECUTION_INITIAL_GRIPPER_LEASE_INVALID:{error}"
+            ) from error
+        lease_generation = lease.generation
+        if (
+            lease.episode_id != identity.get("episode_id")
+            or lease_generation.policy_revision != identity.get("policy_revision")
+            or lease_generation.policy_epoch != identity.get("policy_epoch")
+            or lease_generation.reset_generation != identity.get("reset_generation")
+            or lease_generation.takeover_generation
+            != identity.get("takeover_generation")
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_INITIAL_GRIPPER_LEASE_IDENTITY_MISMATCH"
+            )
+
+        targets = {
+            int(row.get("local_goal_sequence", -1)): row
+            for row in streams["gripper_target"]
+        }
+        statuses = {
+            int(row.get("local_goal_sequence", -1)): row
+            for row in streams["gripper_goal_status"]
+        }
+        if set(targets) != set(statuses):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_GRIPPER_TERMINAL_COVERAGE_MISMATCH"
+            )
+        accepted_gripper_states = [
+            (
+                lease.terminal_finished_monotonic_ns,
+                lease.requested_state,
+                lease.requested_width_m,
+            )
+        ]
+        stalled_contact_count = 0
+        quality = (
+            native_result.get("native_stream_quality", {})
+            .get("gripper_state", {})
+            .get("goal_aware_validation", {})
+        )
+        quality_goals = {
+            int(row.get("local_goal_sequence", -1)): row
+            for row in quality.get("goals", ())
+        }
+        for sequence, target in targets.items():
+            status = statuses[sequence]
+            outcome = str(status.get("outcome", ""))
+            requested_state = str(target.get("requested_state", ""))
+            requested_width = float(target.get("target_width_m", -1.0))
+            if (
+                sequence < 0
+                or target.get("action_goal_id") != status.get("action_goal_id")
+                or outcome not in VALID_TERMINAL_OUTCOMES
+                or requested_state not in {"OPEN", "CLOSED"}
+                or not 0.0 <= requested_width <= 0.1
+                or int(target.get("accepted_monotonic_ns", 0))
+                != int(status.get("accepted_monotonic_ns", -1))
+                or int(status.get("finished_monotonic_ns", 0))
+                < int(status.get("accepted_monotonic_ns", 0))
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_GRIPPER_TERMINAL_INVALID"
+                )
+            accepted_gripper_states.append(
+                (
+                    int(status["finished_monotonic_ns"]),
+                    requested_state,
+                    requested_width,
+                )
+            )
+            if requested_state == "CLOSED" and outcome == "stalled":
+                diagnostic = quality_goals.get(sequence)
+                if (
+                    not isinstance(diagnostic, Mapping)
+                    or diagnostic.get("requested_state") != "CLOSED"
+                    or diagnostic.get("outcome") != "stalled"
+                    or diagnostic.get("direction") != "closing"
+                    or not math.isfinite(float(diagnostic.get("settled_width_m", math.nan)))
+                ):
+                    raise ProductionBridgeError(
+                        "BRIDGE_POLICY_EXECUTION_STALLED_CONTACT_PROVENANCE_INVALID"
+                    )
+                stalled_contact_count += 1
+        if quality.get("violations") not in (None, []):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_GRIPPER_QUALITY_INVALID"
+            )
+        for authority in gripper_authorities:
+            feedback_ns = int(authority.get("feedback_monotonic_ns", 0))
+            applicable = [
+                state for state in accepted_gripper_states if state[0] <= feedback_ns
+            ]
+            if not applicable:
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_GRIPPER_ORIGIN_MISSING"
+                )
+            _, state, width = max(applicable)
+            if authority.get("command_required") is False and (
+                authority.get("requested_state") != state
+                or float(authority.get("requested_width_m", -1.0)) != width
+                or not 0.0 <= float(authority.get("feedback_width_m", -1.0)) <= 0.1
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_GRIPPER_ORIGIN_INVALID"
+                )
+            if authority.get("command_required") is True:
+                local_sequence = int(authority.get("local_goal_sequence", -1))
+                target = targets.get(local_sequence)
+                status = statuses.get(local_sequence)
+                if (
+                    target is None
+                    or status is None
+                    or authority.get("action_goal_id")
+                    != target.get("action_goal_id")
+                    or authority.get("outcome") != status.get("outcome")
+                    or authority.get("outcome") not in VALID_TERMINAL_OUTCOMES
+                ):
+                    raise ProductionBridgeError(
+                        "BRIDGE_POLICY_EXECUTION_POLICY_GRIPPER_ACK_INVALID"
+                    )
+
+        reconciliation = _read_json(
+            stream_root / "policy_execute_camera_reconciliation.json"
+        )
+        camera_records = reconciliation.get("records")
+        if (
+            reconciliation.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
+            or Path(str(reconciliation.get("native_episode", ""))).resolve()
+            != episode_dir.resolve()
+            or not isinstance(camera_records, list)
+            or len(camera_records) != 2 * len(observations)
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_CAMERA_RECONCILIATION_INVALID"
+            )
+        native_cameras = {
+            role: {
+                str(item.get("rgb_path", "")): item
+                for item in streams[f"{role}_camera"]
+            }
+            for role in ("external", "wrist")
+        }
+        reconciled: set[tuple[str, str]] = set()
+        for record in camera_records:
+            observation = observation_by_id.get(str(record.get("observation_id", "")))
+            role = str(record.get("role", ""))
+            key = (str(record.get("observation_id", "")), role)
+            stream_name = f"{role}_camera"
+            path = str(record.get("rgb_path", ""))
+            native = native_cameras.get(role, {}).get(path)
+            if (
+                observation is None
+                or role not in {"external", "wrist"}
+                or key in reconciled
+                or record.get("clock_domain_id") != UPPER_CLOCK
+                or record.get("same_recorder_jpeg") is not True
+                or observation["stream_ids"].get(stream_name) != path
+                or int(observation["stream_timestamps_ns"].get(stream_name, 0))
+                != int(record.get("policy_receive_monotonic_ns", 0))
+                or native is None
+                or int(native.get("receive_monotonic_ns", 0))
+                != int(record.get("native_receive_monotonic_ns", 0))
+                or not (episode_dir / path).is_file()
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_CAMERA_BINDING_INVALID"
+                )
+            reconciled.add(key)
+
+        seal = _read_json(stream_root / "policy_execute_episode_seal.json")
+        model_update_count = (
+            int(seal.get("actor_updates", -1))
+            + int(seal.get("critic_updates", -1))
+            + int(bool(seal.get("checkpoint_written")))
+            + int(bool(seal.get("policy_revision_published")))
+        )
+        latest_lineage_ns = max(
+            int(observations[-1].get("t_ref_ns", 0)),
+            max(int(row.get("result_recorded_monotonic_ns", 0)) for row in results),
+            max(int(row.get("receive_monotonic_ns", 0)) for row in transitions),
+            max(
+                (int(row.get("receive_monotonic_ns", 0)) for row in interventions),
+                default=0,
+            ),
+        )
+        if (
+            seal.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+            or seal.get("backend_schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
+            or seal.get("technical_seal") != "complete"
+            or seal.get("actual_action_source") != "policy"
+            or seal.get("executed_action_source") != "policy"
+            or seal.get("policy_inference") is not True
+            or seal.get("policy_execution") is not True
+            or seal.get("formal_replay") is not False
+            or seal.get("real_online_r") is not False
+            or seal.get("formal_training_replay_written") is not False
+            or seal.get("learner_started") is not False
+            or seal.get("policy_revision_published") is not False
+            or seal.get("checkpoint_written") is not False
+            or model_update_count != 0
+            or seal.get("controller_owner") != "recorder"
+            or seal.get("controller_process_count") != 1
+            or seal.get("deploy_controller_started") is not False
+            or seal.get("policy_action_publisher_created") is not True
+            or Path(str(seal.get("native_episode", ""))).resolve()
+            != episode_dir.resolve()
+            or seal.get("native_episode_result") != native_result
+            or seal.get("initial_gripper_lease") != lease_payload
+            or seal.get("terminal_observation_id")
+            != observations[-1].get("observation_id")
+            or int(seal.get("observation_count", -1)) != len(observations)
+            or int(seal.get("policy_request_count", -1)) != len(requests)
+            or int(seal.get("policy_result_count", -1)) != len(results)
+            or int(seal.get("policy_chunk_count", -1)) != len(chunks)
+            or int(seal.get("policy_action_ack_count", -1)) != len(transitions)
+            or int(seal.get("human_action_ack_count", -1)) != 0
+            or int(seal.get("intervention_count", -1)) != len(interventions)
+            or int(seal.get("camera_records_reconciled", -1))
+            != len(camera_records)
+            or int(seal.get("sealed_monotonic_ns", 0)) < latest_lineage_ns
+            or int(seal.get("sealed_monotonic_ns", 0))
+            < int(native_result.get("finished_monotonic_ns", 0))
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_INTEGRATED_POLICY_EXECUTION_SEAL_INVALID"
+            )
+        self._policy_execution_generation(seal, identity)
+
+        approval = _read_json(DEFAULT_REWARD_CONTRACT).get("reward_gate", {}).get(
+            "development_policy_execution_smoke", {}
+        )
+        basis = approval.get("basis") if isinstance(approval, Mapping) else None
+        if (
+            not isinstance(approval, Mapping)
+            or approval.get("approved") is not True
+            or approval.get("scope") != seal.get("detector_approval_scope")
+            or not isinstance(basis, Mapping)
+            or basis.get("technical_seal") != "complete"
+            or basis.get("operator_task_outcome") != "success"
+            or basis.get("detector_outcome") != "success"
+            or basis.get("executed_action_source") != "human"
+            or basis.get("policy_execution") is not False
+            or basis.get("formal_replay") is not False
+            or basis.get("real_online_r") is not False
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_DETECTOR_SCOPE_NOT_APPROVED"
+            )
+
+        try:
+            prepared = _prepare_native_episode(episode_dir)
+        except Exception as error:
+            raise ProductionBridgeError(
+                f"BRIDGE_POLICY_EXECUTION_OBSERVATION_MATERIALIZATION_FAILED:"
+                f"{type(error).__name__}:{error}"
+            ) from error
+        if (
+            prepared.raw_episode_id != episode_dir.name
+            or prepared.task != str(native_result.get("task", ""))
+            or prepared.state7.ndim != 2
+            or prepared.state7.shape[1] != 7
+            or prepared.wrench6.ndim != 2
+            or prepared.wrench6.shape[1] != 6
+            or len(prepared.state7) != len(prepared.wrench6)
+            or len(prepared.camera1_paths) != len(prepared.state7)
+            or len(prepared.camera2_paths) != len(prepared.state7)
+            or not np.all(np.isfinite(prepared.state7))
+            or not np.all(np.isfinite(prepared.wrench6))
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_MATERIALIZED_OBSERVATION_INVALID"
+            )
+
+        return {
+            "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
+            "initial_gripper_lease": lease,
+            "summary": {
+                "schema": INTEGRATED_POLICY_EXECUTION_SCHEMA,
+                "session_id": identity["session_id"],
+                "episode_id": identity["episode_id"],
+                "policy_revision": identity["policy_revision"],
+                "observation_count": len(observations),
+                "policy_request_count": len(requests),
+                "policy_result_count": len(results),
+                "policy_proposal_count": len(proposals),
+                "policy_chunk_count": len(chunks),
+                "policy_action_ack_count": len(transitions),
+                "human_override_count": len(override_sequences),
+                "human_override_executed_count": 0,
+                "intervention_count": len(interventions),
+                "stalled_contact_count": stalled_contact_count,
+                "camera_reconciliation_count": len(camera_records),
+                "terminal_observation_id": observations[-1]["observation_id"],
+                "actual_action_source": "policy",
+                "executed_action_source": "policy",
+                "policy_execution": True,
+                "formal_replay": False,
+                "real_online_r": False,
+                "training_replay_eligible": False,
+                "policy_lineage_complete": True,
+                "action7_authority_complete": True,
+                "state7_complete": True,
+                "calibrated_tcp_wrench6_complete": True,
+                "camera_models": ["D435", "D405"],
+                "technical_seal": "complete",
+                "operator_task_outcome": operator_task_outcome,
+                "detector_outcome": "success",
+                "detector_outcome_source": (
+                    "approved_development_policy_execution_smoke_scope"
+                ),
+                "model_update_count": model_update_count,
+            },
+        }
+
+    def _load_integrated_capture(
+        self,
+        *,
+        episode_dir: Path,
+        native_result: Mapping[str, Any],
+        streams: Mapping[str, list[dict[str, Any]]],
+        operator_task_outcome: str | None,
+    ) -> dict[str, Any] | None:
+        manifest_path = episode_dir.parent.parent / "integrated_capture_session.json"
+        stream_root = (
+            episode_dir.parent.parent
+            / "integrated_capture"
+            / episode_dir.name
+            / "streams"
+        )
+        if not manifest_path.exists() and not stream_root.exists():
+            return self._load_integrated_shadow(
+                episode_dir=episode_dir,
+                native_result=native_result,
+                streams=streams,
+                operator_task_outcome=operator_task_outcome,
+            )
+        if not manifest_path.is_file() or not stream_root.is_dir():
+            raise ProductionBridgeError("BRIDGE_INTEGRATED_CAPTURE_INCOMPLETE")
+        if _read_json(manifest_path).get("schema") == INTEGRATED_POLICY_EXECUTION_SCHEMA:
+            return self._load_integrated_policy_execution(
+                episode_dir=episode_dir,
+                native_result=native_result,
+                streams=streams,
+                operator_task_outcome=operator_task_outcome,
+            )
+        return self._load_integrated_shadow(
+            episode_dir=episode_dir,
+            native_result=native_result,
+            streams=streams,
+            operator_task_outcome=operator_task_outcome,
+        )
 
     def _load_integrated_shadow(
         self,
@@ -1992,9 +3125,18 @@ class Stage3ProductionBridge:
             idempotent_count=0,
             quarantine_reasons=(str(error),),
             recorded_offline_production_bridge="FAIL",
-            policy_fixture=classification == "recorded_live_policy_shadow",
+            policy_fixture=classification
+            in {"recorded_live_policy_shadow", POLICY_EXECUTION_SMOKE_CLASSIFICATION},
             classification=classification,
             operator_task_outcome=operator_task_outcome,
+            executed_action_source=(
+                "policy"
+                if classification == POLICY_EXECUTION_SMOKE_CLASSIFICATION
+                else "human"
+            ),
+            policy_execution=(
+                classification == POLICY_EXECUTION_SMOKE_CLASSIFICATION
+            ),
             detector_outcome=detector_outcome,
         )
 
@@ -2049,14 +3191,20 @@ class Stage3ProductionBridge:
         episode_id = self._episode_id(episode_dir, start)
         episode_key = episode_id.replace("/", "__")
         result_path = episode_dir / "episode_result.json"
-        integrated_present = (
-            episode_dir.parent.parent / "integrated_capture" / episode_dir.name / "streams"
-        ).is_dir()
-        classification = (
-            "recorded_live_policy_shadow"
-            if integrated_present
-            else "recorded_offline_shadow"
+        integrated_root = (
+            episode_dir.parent.parent
+            / "integrated_capture"
+            / episode_dir.name
+            / "streams"
         )
+        integrated_present = integrated_root.is_dir()
+        classification = "recorded_offline_shadow"
+        if integrated_present:
+            classification = (
+                POLICY_EXECUTION_SMOKE_CLASSIFICATION
+                if (integrated_root / "policy_execute_episode_seal.json").is_file()
+                else "recorded_live_policy_shadow"
+            )
         if not result_path.is_file():
             cursors: dict[str, dict[str, int]] = {}
             candidate_count = 0
@@ -2106,23 +3254,69 @@ class Stage3ProductionBridge:
                 policy_fixture=False,
             )
         result = _read_json(result_path)
-        integrated_shadow: dict[str, Any] | None = None
+        integrated_capture: dict[str, Any] | None = None
         try:
             streams = self._load_streams(episode_dir)
             self._validate_seal(result, streams)
-            integrated_shadow = self._load_integrated_shadow(
+            integrated_capture = self._load_integrated_capture(
                 episode_dir=episode_dir,
                 native_result=result,
                 streams=streams,
                 operator_task_outcome=operator_task_outcome,
             )
+            if (
+                integrated_capture is not None
+                and integrated_capture.get("classification")
+                == POLICY_EXECUTION_SMOKE_CLASSIFICATION
+            ):
+                summary = integrated_capture["summary"]
+                return BridgeReport(
+                    status=(
+                        "DRY_RUN_READY"
+                        if dry_run
+                        else "SEALED_VALIDATED_NO_REPLAY"
+                    ),
+                    episode_id=episode_id,
+                    sealed=True,
+                    dry_run=dry_run,
+                    candidate_count=int(summary["policy_action_ack_count"]),
+                    outbox_eligible_count=0,
+                    quarantined_count=0,
+                    wal_written_count=0,
+                    outbox_written_count=0,
+                    idempotent_count=0,
+                    quarantine_reasons=(),
+                    recorded_offline_production_bridge="BLOCKED",
+                    policy_fixture=True,
+                    real_online_r_used=False,
+                    formal_training_replay_written=False,
+                    classification=POLICY_EXECUTION_SMOKE_CLASSIFICATION,
+                    technical_seal=str(summary["technical_seal"]),
+                    operator_task_outcome=str(summary["operator_task_outcome"]),
+                    executed_action_source="policy",
+                    policy_execution=True,
+                    detector_outcome=str(summary["detector_outcome"]),
+                    shadow_observation_count=int(summary["observation_count"]),
+                    shadow_policy_request_count=int(summary["policy_request_count"]),
+                    shadow_policy_result_count=int(summary["policy_result_count"]),
+                    shadow_policy_proposal_count=int(summary["policy_proposal_count"]),
+                    training_replay_eligible=False,
+                    policy_lineage_complete=bool(summary["policy_lineage_complete"]),
+                    policy_chunk_count=int(summary["policy_chunk_count"]),
+                    policy_action_ack_count=int(summary["policy_action_ack_count"]),
+                    human_override_count=int(summary["human_override_count"]),
+                    human_override_executed_count=int(
+                        summary["human_override_executed_count"]
+                    ),
+                    model_update_count=int(summary["model_update_count"]),
+                )
             goals = self._goals(
                 streams,
                 episode_id=episode_id,
                 integrated_initial_lease=(
                     None
-                    if integrated_shadow is None
-                    else integrated_shadow["initial_gripper_lease"]
+                    if integrated_capture is None
+                    else integrated_capture["initial_gripper_lease"]
                 ),
             )
             if self.episode_materializer is None:
@@ -2217,9 +3411,9 @@ class Stage3ProductionBridge:
         used_new: set[int] = set()
         transitions: list[dict[str, Any]] = []
         quarantines: list[dict[str, Any]] = []
-        policy_fixture = integrated_shadow is not None
+        policy_fixture = integrated_capture is not None
         shadow_evidence = (
-            None if integrated_shadow is None else integrated_shadow["summary"]
+            None if integrated_capture is None else integrated_capture["summary"]
         )
         task = str(result.get("task", start.get("task", "")))
         for macro in materialization.macros:
