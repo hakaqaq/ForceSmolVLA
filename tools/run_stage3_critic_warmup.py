@@ -59,28 +59,44 @@ def _generation(row: Mapping[str, Any]) -> tuple[int, int, int]:
 def build_ack_macros(rows: Iterable[Mapping[str, Any]]) -> tuple[tuple[Mapping[str, Any], ...], ...]:
     """Build full K=3 macros without crossing an override/takeover boundary."""
 
-    ordered = sorted(rows, key=lambda row: int(row["identity"]["decision_id"]))
     macros: list[tuple[Mapping[str, Any], ...]] = []
-    for stop in range(2, len(ordered)):
-        window = tuple(ordered[stop - 2 : stop + 1])
-        decisions = [int(row["identity"]["decision_id"]) for row in window]
-        sequences = [int(row["policy_lineage"]["selection"]["sequence"]) for row in window]
-        if (
-            len({_generation(row) for row in window}) == 1
-            and decisions == list(range(decisions[0], decisions[0] + 3))
-            and sequences == list(range(sequences[0], sequences[0] + 3))
-        ):
-            macros.append(window)
+    episodes: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        episodes.setdefault(str(row["identity"].get("episode_id", "single")), []).append(row)
+    for episode_rows in episodes.values():
+        ordered = sorted(
+            episode_rows, key=lambda row: int(row["identity"]["decision_id"])
+        )
+        for stop in range(2, len(ordered)):
+            window = tuple(ordered[stop - 2 : stop + 1])
+            decisions = [int(row["identity"]["decision_id"]) for row in window]
+            sequences = [int(row["policy_lineage"]["selection"]["sequence"]) for row in window]
+            if (
+                len({_generation(row) for row in window}) == 1
+                and decisions == list(range(decisions[0], decisions[0] + 3))
+                and sequences == list(range(sequences[0], sequences[0] + 3))
+            ):
+                macros.append(window)
     return tuple(macros)
 
 
-def load_formal_online_r(root: Path) -> tuple[list[dict[str, Any]], tuple[tuple[Mapping[str, Any], ...], ...], Path]:
-    admission_files = tuple((root / "admissions").glob("*.json"))
-    require(len(admission_files) == 1, "STAGE3_WARMUP_ADMISSION_RECORD_COUNT")
-    admission = json.loads(admission_files[0].read_text(encoding="utf-8"))
-    require(admission.get("policy_execution_smoke_bridge") == "PASS", "STAGE3_WARMUP_BRIDGE_NOT_PASS")
-    require(admission.get("source_episode_semantics") == {"formal_replay": False, "real_online_r": False}, "STAGE3_WARMUP_SOURCE_SEMANTICS")
-    expected = int(admission["accepted_unique_r_transition_count"])
+def load_formal_online_r(root: Path) -> tuple[
+    list[dict[str, Any]],
+    tuple[tuple[Mapping[str, Any], ...], ...],
+    dict[str, Path],
+]:
+    admission_files = tuple(sorted((root / "admissions").glob("*.json")))
+    require(admission_files, "STAGE3_WARMUP_ADMISSION_RECORD_COUNT")
+    expected = 0
+    source_episodes: dict[str, Path] = {}
+    for path in admission_files:
+        admission = json.loads(path.read_text(encoding="utf-8"))
+        require(admission.get("policy_execution_smoke_bridge") == "PASS", "STAGE3_WARMUP_BRIDGE_NOT_PASS")
+        require(admission.get("source_episode_semantics") == {"formal_replay": False, "real_online_r": False}, "STAGE3_WARMUP_SOURCE_SEMANTICS")
+        episode_id = str(admission["episode_id"])
+        require(episode_id not in source_episodes, "STAGE3_WARMUP_ADMISSION_EPISODE_DUPLICATE")
+        source_episodes[episode_id] = Path(admission["source_episode"])
+        expected += int(admission["accepted_unique_r_transition_count"])
 
     rows = []
     for path in (root / "replay").glob("*.json"):
@@ -97,12 +113,16 @@ def load_formal_online_r(root: Path) -> tuple[list[dict[str, Any]], tuple[tuple[
             },
             "STAGE3_WARMUP_R_MEMBERSHIP",
         )
+        require(
+            str(row["identity"]["episode_id"]) in source_episodes,
+            "STAGE3_WARMUP_R_SOURCE_EPISODE_MISSING",
+        )
         rows.append(row)
     require(len(rows) == expected >= 100, "STAGE3_WARMUP_TRAINING_STARTS")
     require(len({row["identity"]["transition_uid"] for row in rows}) == len(rows), "STAGE3_WARMUP_R_UID_DUPLICATE")
     macros = build_ack_macros(rows)
     require(macros and any(macro[-1]["outcome"]["terminated"] for macro in macros), "STAGE3_WARMUP_R_MACRO_TERMINAL_MISSING")
-    return rows, macros, Path(admission["source_episode"])
+    return rows, macros, source_episodes
 
 
 @lru_cache(maxsize=512)
@@ -125,15 +145,18 @@ def _decode_bytes(payload: bytes) -> np.ndarray:
 
 
 class FormalReplay:
-    def __init__(self, macros, source_episode: Path, normalizer) -> None:
+    def __init__(self, macros, source_episodes: Mapping[str, Path], normalizer) -> None:
         self.macros = tuple(macros)
-        self.source_episode = source_episode
+        self.source_episodes = dict(source_episodes)
         self.normalizer = normalizer
 
-    def _sample(self, observation: Mapping[str, Any], identity: str) -> dict[str, Any]:
+    def _sample(
+        self, observation: Mapping[str, Any], identity: str, episode_id: str
+    ) -> dict[str, Any]:
+        source_episode = self.source_episodes[episode_id]
         return {
-            "camera1": _decode_path(str(self.source_episode / observation["camera_external"]["blob_reference"])),
-            "camera2": _decode_path(str(self.source_episode / observation["camera_wrist"]["blob_reference"])),
+            "camera1": _decode_path(str(source_episode / observation["camera_external"]["blob_reference"])),
+            "camera2": _decode_path(str(source_episode / observation["camera_wrist"]["blob_reference"])),
             "state7": self.normalizer.state7.apply(np.asarray(observation["state7_absolute"], dtype=np.float64)).astype(np.float32),
             "wrench6": self.normalizer.wrench6.apply(np.asarray(observation["wrench6_calibrated_tcp"], dtype=np.float64)).astype(np.float32),
             "task": TASK,
@@ -158,9 +181,10 @@ class FormalReplay:
             ActionDeltaProcessor.to_delta(absolute, state)
         ).astype(np.float32)
         uid = str(final["identity"]["transition_uid"])
+        episode_id = str(final["identity"]["episode_id"])
         return {
-            "current": self._sample(first["observation"], f"R:{uid}:current"),
-            "next": self._sample(final["next_observation"], f"R:{uid}:next"),
+            "current": self._sample(first["observation"], f"R:{uid}:current", episode_id),
+            "next": self._sample(final["next_observation"], f"R:{uid}:next", episode_id),
             "behavior_action": action,
             "reward": float(final["outcome"]["reward"]),
             "terminated": bool(final["outcome"]["terminated"]),
@@ -419,10 +443,10 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
     random.seed(SEED)
     torch.cuda.manual_seed_all(SEED)
 
-    all_r, r_macros, source_episode = load_formal_online_r(FORMAL_R_ROOT)
+    all_r, r_macros, source_episodes = load_formal_online_r(FORMAL_R_ROOT)
     actor, q1, q2, q1_target, q2_target, binding, config = load_parents(device)
     normalizer = load_normalizer_manifest(Path(binding["normalizer_binding"]["absolute_path"]))
-    r_replay = FormalReplay(r_macros, source_episode, normalizer)
+    r_replay = FormalReplay(r_macros, source_episodes, normalizer)
     d_replay = DemoReplay(normalizer)
 
     r_rng = random.Random(SEED + 1)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import random
 import sys
 
@@ -12,15 +13,25 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from run_stage3_critic_warmup import (  # noqa: E402
     build_ack_macros,
+    load_formal_online_r,
     load_checkpoint_once,
     save_checkpoint,
 )
 from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger  # noqa: E402
 
 
-def _row(decision: int, *, generation: int, terminated: bool = False) -> dict:
+def _row(
+    decision: int,
+    *,
+    generation: int,
+    terminated: bool = False,
+    episode_id: str | None = None,
+) -> dict:
     return {
-        "identity": {"decision_id": decision},
+        "identity": {
+            "decision_id": decision,
+            **({"episode_id": episode_id} if episode_id is not None else {}),
+        },
         "generation": {
             "policy_epoch": generation,
             "takeover_generation": generation,
@@ -48,6 +59,57 @@ def test_ack_macros_do_not_cross_override_or_takeover() -> None:
         [5, 6, 7],
     ]
     assert macros[-1][-1]["outcome"]["terminated"] is True
+
+
+def test_formal_replay_loads_multiple_admitted_episodes(tmp_path: Path) -> None:
+    for episode_index in range(2):
+        episode_id = f"session_{episode_index}/episode_000000"
+        source = tmp_path / f"source_{episode_index}"
+        admission = {
+            "episode_id": episode_id,
+            "source_episode": str(source),
+            "policy_execution_smoke_bridge": "PASS",
+            "source_episode_semantics": {
+                "formal_replay": False,
+                "real_online_r": False,
+            },
+            "accepted_unique_r_transition_count": 50,
+        }
+        path = tmp_path / "admissions" / f"episode_{episode_index}.json"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps(admission), encoding="utf-8")
+        for decision in range(50):
+            row = _row(
+                decision,
+                generation=episode_index,
+                terminated=decision == 49,
+                episode_id=episode_id,
+            )
+            row["identity"]["transition_uid"] = f"{episode_index}-{decision}"
+            row.update(
+                {
+                    "classification": "recorded_live_policy_execution_smoke",
+                    "action_authority": {"executed_action_source": "policy"},
+                    "eligibility": {
+                        "formal_replay": True,
+                        "formal_training_replay_eligible": True,
+                        "real_online_r": True,
+                        "replay_membership": "R_online",
+                    },
+                }
+            )
+            replay = tmp_path / "replay" / f"{episode_index}-{decision}.json"
+            replay.parent.mkdir(exist_ok=True)
+            replay.write_text(json.dumps({"payload": row}), encoding="utf-8")
+
+    rows, macros, sources = load_formal_online_r(tmp_path)
+
+    assert len(rows) == 100
+    assert len(macros) == 96
+    assert set(sources) == {
+        "session_0/episode_000000",
+        "session_1/episode_000000",
+    }
 
 
 def test_critic_only_checkpoint_round_trip(tmp_path: Path) -> None:

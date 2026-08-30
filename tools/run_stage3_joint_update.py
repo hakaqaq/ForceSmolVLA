@@ -28,9 +28,16 @@ for path in (SRC, ROOT / "tools"):
 import run_stage3_critic_warmup as warmup  # noqa: E402
 
 
-WARMUP_CHECKPOINT = warmup.CHECKPOINT
-JOINT_CHECKPOINT = warmup.FORMAL_R_ROOT / "checkpoints/stage3_joint_cycle_000010"
-CANDIDATE_REVISION_ID = "stage3-online-r-joint-cycle-000010-candidate"
+RESUME_CHECKPOINT = (
+    warmup.FORMAL_R_ROOT / "checkpoints/stage3_joint_cycle_000010"
+)
+RESUME_ACTOR_PACKAGE = (
+    ROOT
+    / "artifacts/development/stage3/published"
+    / "stage3_joint_cycle_000010_candidate.v1"
+)
+JOINT_CHECKPOINT = warmup.FORMAL_R_ROOT / "checkpoints/stage3_joint_cycle_000020"
+CANDIDATE_REVISION_ID = "stage3-online-r-joint-cycle-000020-candidate"
 
 
 def require(condition: bool, message: str) -> None:
@@ -448,6 +455,9 @@ def save_joint_checkpoint(
     actor_scheduler,
     runtime_state: Mapping[str, Any],
     parent_binding: Mapping[str, Any],
+    source_checkpoint: Path,
+    total_joint_cycles: int,
+    candidate_revision_id: str,
 ) -> None:
     from forcesmolvla.checkpoint import export_development_actor_checkpoint
 
@@ -466,7 +476,7 @@ def save_joint_checkpoint(
                 parent_binding["actor_parent"]["architecture_binding"]["container_path"]
             ),
             source_joint_checkpoint=path,
-            candidate_revision_id=CANDIDATE_REVISION_ID,
+            candidate_revision_id=candidate_revision_id,
             parent_binding_id=parent_binding["binding_id"],
             published=False,
         )
@@ -479,15 +489,15 @@ def save_joint_checkpoint(
         metadata = {
             "kind": "stage3_formal_online_r_joint_update",
             "complete": True,
-            "source_warmup_checkpoint": str(WARMUP_CHECKPOINT),
-            "joint_cycles": 10,
+            "source_checkpoint": str(source_checkpoint),
+            "joint_cycles": total_joint_cycles,
             "critic_ready": True,
             "actor_q_guidance_enabled": True,
             "parent_binding_id": parent_binding["binding_id"],
             "critic_optimizer_restored": True,
-            "actor_optimizer_fresh": True,
+            "actor_optimizer_restored": True,
             "candidate_policy_revision": {
-                "revision_id": CANDIDATE_REVISION_ID,
+                "revision_id": candidate_revision_id,
                 "path": "candidate_policy",
                 "state": "candidate",
                 "activated": False,
@@ -546,7 +556,55 @@ def load_joint_checkpoint_once(
     return runtime
 
 
-def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
+def load_resume_modules(
+    checkpoint: Path, actor_package: Path, device: torch.device
+):
+    from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
+    from forcesmolvla.rft.critic import build_twin_q
+
+    binding = json.loads(warmup.PARENT_BINDING.read_text(encoding="utf-8"))
+    config = warmup.yaml.safe_load(warmup.GPU_CONFIG.read_text(encoding="utf-8"))
+    candidate = json.loads(
+        (actor_package / "candidate.json").read_text(encoding="utf-8")
+    )
+    require(
+        Path(candidate["source_joint_checkpoint"]).resolve()
+        == checkpoint.resolve()
+        and candidate.get("state") == "published"
+        and candidate.get("published") is True,
+        "STAGE3_JOINT_RESUME_ACTOR_PACKAGE_MISMATCH",
+    )
+    actor = ForceSmolVLAPolicy.from_pretrained(
+        actor_package,
+        local_files_only=True,
+        force_download=False,
+        strict=True,
+        artifact_use="development",
+    ).to(device)
+    data = config["data"]
+    q1, q2, q1_target, q2_target, _conversion = build_twin_q(
+        warmup._resolve(data["critic_backbone_npz"]),
+        warmup._resolve(data["critic_backbone_manifest"]),
+        seed=0,
+    )
+    q1.train(True)
+    q2.train(True)
+    q1_target.make_permanent_eval_target()
+    q2_target.make_permanent_eval_target()
+    q1, q2, q1_target, q2_target = (
+        module.to(device) for module in (q1, q2, q1_target, q2_target)
+    )
+    return actor, q1, q2, q1_target, q2_target, binding, config
+
+
+def run(
+    *,
+    cycles: int,
+    checkpoint: Path,
+    resume_checkpoint: Path,
+    resume_actor_package: Path,
+    candidate_revision_id: str,
+) -> dict[str, Any]:
     from forcesmolvla.rft.critic import frozen_task_feature
     from forcesmolvla.rft.frozen_vlm_trainability import FROZEN_PREFIXES, apply_frozen_vlm_trainability, build_frozen_vlm_actor_optimizer
     from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
@@ -556,8 +614,13 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
     require(cycles == 10, "STAGE3_JOINT_REQUIRES_10_CYCLES")
     require(torch.cuda.is_available(), "STAGE3_JOINT_CUDA_UNAVAILABLE")
     device = torch.device("cuda:0")
-    all_r, r_macros, source_episode = warmup.load_formal_online_r(warmup.FORMAL_R_ROOT)
-    actor, q1, q2, q1_target, q2_target, binding, config = warmup.load_parents(device)
+    all_r, r_macros, source_episodes = warmup.load_formal_online_r(
+        warmup.FORMAL_R_ROOT
+    )
+    actor, q1, q2, q1_target, q2_target, binding, config = load_resume_modules(
+        resume_checkpoint, resume_actor_package, device
+    )
+    trainability = apply_frozen_vlm_trainability(actor)
     critic_parameters = [
         parameter for module in (q1, q2) for parameter in module.parameters()
         if parameter.requires_grad
@@ -566,37 +629,54 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
         critic_parameters, lr=3e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0,
     )
     modules = {"q1": q1, "q2": q2, "q1_target": q1_target, "q2_target": q2_target}
-    warmup_runtime = warmup.load_checkpoint_once(
-        WARMUP_CHECKPOINT,
-        modules=modules,
-        optimizer=critic_optimizer,
-        device=device,
-    )
-    require(
-        warmup_runtime["counters"]["critic_warmup_steps"] == 100
-        and critic_optimizer.state
-        and {int(state["step"].item()) for state in critic_optimizer.state.values()} == {100},
-        "STAGE3_JOINT_CRITIC_OPTIMIZER_NOT_RESTORED",
-    )
-    credits = UpdateCreditLedger.from_state_dict(warmup_runtime["sample_credit"])
-    require(credits.snapshot().available == 123, "STAGE3_JOINT_WARMUP_CREDITS_DRIFT")
-
-    random.setstate(warmup_runtime["rng_state"]["python"])
-    np.random.set_state(warmup_runtime["rng_state"]["numpy"])
-    torch.set_rng_state(warmup_runtime["rng_state"]["torch_cpu"])
-    torch.cuda.set_rng_state_all(warmup_runtime["rng_state"]["torch_cuda"])
-    critic_noise = torch.Generator(device=device)
-    critic_noise.set_state(warmup_runtime["rng_state"]["noise_generator"])
-    r_rng = random.Random()
-    d_rng = random.Random()
-    r_rng.setstate(warmup_runtime["sampler_state"]["r_rng"])
-    d_rng.setstate(warmup_runtime["sampler_state"]["d_rng"])
-
-    trainability = apply_frozen_vlm_trainability(actor)
     actor_optimizer, actor_scheduler, actor_ownership = build_frozen_vlm_actor_optimizer(
         actor, lr=float(config["optimizer"]["actor"]["lr"]),
     )
-    require(not actor_optimizer.state, "STAGE3_JOINT_ACTOR_OPTIMIZER_NOT_FRESH")
+    resume_runtime = load_joint_checkpoint_once(
+        resume_checkpoint,
+        actor=actor,
+        modules=modules,
+        critic_optimizer=critic_optimizer,
+        actor_optimizer=actor_optimizer,
+        actor_scheduler=actor_scheduler,
+        device=device,
+    )
+    previous = resume_runtime["counters"]
+    require(
+        previous["joint_cycles"] == 10
+        and previous["critic_optimizer_steps"] == 20
+        and previous["actor_optimizer_steps"] == 10
+        and previous["target_polyak_steps"] == 20
+        and critic_optimizer.state
+        and actor_optimizer.state
+        and actor_scheduler.last_epoch == 10,
+        "STAGE3_JOINT_EXACT_RESUME_INVALID",
+    )
+    credits = UpdateCreditLedger.from_state_dict(resume_runtime["sample_credit"])
+    new_r_transition_count = sum(
+        credits.mint_for_unique_online_transition(
+            row["identity"]["transition_uid"]
+        )
+        for row in all_r
+    )
+    require(
+        credits.snapshot().credited_transition_count == len(all_r),
+        "STAGE3_JOINT_REPLAY_CREDIT_MISMATCH",
+    )
+
+    random.setstate(resume_runtime["rng_state"]["python"])
+    np.random.set_state(resume_runtime["rng_state"]["numpy"])
+    torch.set_rng_state(resume_runtime["rng_state"]["torch_cpu"])
+    torch.cuda.set_rng_state_all(resume_runtime["rng_state"]["torch_cuda"])
+    critic_noise = torch.Generator(device=device)
+    critic_noise.set_state(
+        resume_runtime["rng_state"]["critic_noise_generator"]
+    )
+    r_rng = random.Random()
+    d_rng = random.Random()
+    r_rng.setstate(resume_runtime["sampler_state"]["r_rng"])
+    d_rng.setstate(resume_runtime["sampler_state"]["d_rng"])
+
     frozen_parameters = [
         parameter for name, parameter in actor.named_parameters()
         if name.startswith(FROZEN_PREFIXES)
@@ -611,7 +691,7 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
     )
 
     normalizer = load_normalizer_manifest(Path(binding["normalizer_binding"]["absolute_path"]))
-    r_replay = warmup.FormalReplay(r_macros, source_episode, normalizer)
+    r_replay = warmup.FormalReplay(r_macros, source_episodes, normalizer)
     d_replay = JointDemoReplay(normalizer)
     critic_r_schedule, critic_d_schedule, actor_r_schedule, actor_d_schedule = make_schedules(
         r_rng,
@@ -638,6 +718,8 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
     nonfinite_count = 0
     oom_count = 0
     critic_steps = actor_steps = target_steps = 0
+    cycle_offset = int(previous["joint_cycles"])
+    critic_step_offset = int(previous["critic_optimizer_steps"])
 
     for cycle in range(cycles):
         credits.consume_joint_cycle()
@@ -648,7 +730,7 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
             batch = warmup.build_batch(rows, actor, feature, device)
             try:
                 record = critic_step(
-                    step=critic_steps,
+                    step=critic_step_offset + critic_steps,
                     actor=actor,
                     q1=q1,
                     q2=q2,
@@ -678,7 +760,7 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
         actor_batch = build_actor_training_batch(actor_rows, actor, feature, device)
         try:
             actor_record = actor_step(
-                cycle=cycle,
+                cycle=cycle_offset + cycle,
                 actor=actor,
                 q1=q1,
                 q2=q2,
@@ -720,18 +802,29 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
         and frozen_vlm_gradient_max == 0.0,
         "STAGE3_JOINT_COMPLETION_CONTRACT",
     )
+    total_joint_cycles = cycle_offset + cycles
+    total_critic_steps = critic_step_offset + critic_steps
+    total_actor_steps = int(previous["actor_optimizer_steps"]) + actor_steps
+    total_target_steps = int(previous["target_polyak_steps"]) + target_steps
     runtime_state = {
-        "source_warmup_checkpoint": str(WARMUP_CHECKPOINT),
+        "source_checkpoint": str(resume_checkpoint),
         "flags": {"critic_ready": True, "actor_q_guidance_enabled": True},
         "counters": {
-            "joint_cycles": cycles,
-            "critic_optimizer_steps": critic_steps,
-            "actor_optimizer_steps": actor_steps,
-            "target_polyak_steps": target_steps,
+            "joint_cycles": total_joint_cycles,
+            "critic_optimizer_steps": total_critic_steps,
+            "actor_optimizer_steps": total_actor_steps,
+            "target_polyak_steps": total_target_steps,
+        },
+        "replay": {
+            "formal_r_root": str(warmup.FORMAL_R_ROOT),
+            "unique_r_transition_count": len(all_r),
+            "new_r_transition_count": new_r_transition_count,
+            "eligible_ack_macro_count": len(r_macros),
+            "mix": {"R": 32, "D": 32},
         },
         "sample_credit": credits.state_dict(),
         "sampler_state": {
-            "cycle": cycles,
+            "cycle": total_joint_cycles,
             "r_rng": r_rng.getstate(),
             "d_rng": d_rng.getstate(),
         },
@@ -745,11 +838,11 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
         "optimizer_ownership": {
             "overlap": 0,
             "frozen_vlm_or_state_prefix_in_actor_optimizer": 0,
-            "critic_optimizer_restored_from_warmup": True,
-            "actor_optimizer_fresh": True,
+            "critic_optimizer_restored_from_joint_checkpoint": True,
+            "actor_optimizer_restored_from_joint_checkpoint": True,
         },
         "candidate_policy_revision": {
-            "revision_id": CANDIDATE_REVISION_ID,
+            "revision_id": candidate_revision_id,
             "state": "candidate",
             "activated": False,
             "published": False,
@@ -765,6 +858,9 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
         actor_scheduler=actor_scheduler,
         runtime_state=runtime_state,
         parent_binding=binding,
+        source_checkpoint=resume_checkpoint,
+        total_joint_cycles=total_joint_cycles,
+        candidate_revision_id=candidate_revision_id,
     )
     restored = load_joint_checkpoint_once(
         checkpoint,
@@ -775,12 +871,17 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
         actor_scheduler=actor_scheduler,
         device=device,
     )
-    require(restored["counters"]["joint_cycles"] == cycles, "STAGE3_JOINT_CHECKPOINT_LOAD")
+    require(
+        restored["counters"] == runtime_state["counters"],
+        "STAGE3_JOINT_CHECKPOINT_LOAD",
+    )
     return {
-        "JOINT_CYCLES": cycles,
-        "CRITIC_OPTIMIZER_STEPS": critic_steps,
-        "ACTOR_OPTIMIZER_STEPS": actor_steps,
-        "TARGET_POLYAK_STEPS": target_steps,
+        "NEW_R_TRANSITION_COUNT": new_r_transition_count,
+        "TOTAL_R_TRANSITION_COUNT": len(all_r),
+        "JOINT_CYCLES_COMPLETED": cycles,
+        "CRITIC_OPTIMIZER_TOTAL_STEPS": total_critic_steps,
+        "ACTOR_OPTIMIZER_TOTAL_STEPS": total_actor_steps,
+        "TARGET_POLYAK_TOTAL_STEPS": total_target_steps,
         "TD_LOSS_FIRST_LAST": [td_losses[0], td_losses[-1]],
         "FM_LOSS_FIRST_LAST": [fm_losses[0], fm_losses[-1]],
         "ACTOR_MIN_TWIN_Q_LOSS_FIRST_LAST": [actor_q_losses[0], actor_q_losses[-1]],
@@ -796,7 +897,7 @@ def run(*, cycles: int, checkpoint: Path) -> dict[str, Any]:
         "STAGE3_JOINT_CHECKPOINT_PATH": str(checkpoint),
         "CRITIC_READY": True,
         "ACTOR_Q_GUIDANCE_ENABLED": True,
-        "CANDIDATE_POLICY_REVISION_ID": CANDIDATE_REVISION_ID,
+        "NEW_CANDIDATE_ID": candidate_revision_id,
         "CANDIDATE_POLICY_REVISION_PATH": str(checkpoint / "candidate_policy"),
         "CANDIDATE_POLICY_REVISION_STATE": "candidate",
         "REVISION_ACTIVATED": False,
@@ -807,12 +908,29 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cycles", type=int, default=10)
     parser.add_argument("--checkpoint", type=Path, default=JOINT_CHECKPOINT)
+    parser.add_argument("--resume-checkpoint", type=Path, default=RESUME_CHECKPOINT)
+    parser.add_argument(
+        "--resume-actor-package", type=Path, default=RESUME_ACTOR_PACKAGE
+    )
+    parser.add_argument("--candidate-id", default=CANDIDATE_REVISION_ID)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    print(json.dumps(run(cycles=args.cycles, checkpoint=args.checkpoint), indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            run(
+                cycles=args.cycles,
+                checkpoint=args.checkpoint,
+                resume_checkpoint=args.resume_checkpoint,
+                resume_actor_package=args.resume_actor_package,
+                candidate_revision_id=args.candidate_id,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
     return 0
 
 

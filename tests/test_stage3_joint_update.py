@@ -148,6 +148,9 @@ def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
         actor_scheduler=actor_scheduler,
         runtime_state=runtime,
         parent_binding=binding,
+        source_checkpoint=tmp_path / "cycle_000010",
+        total_joint_cycles=20,
+        candidate_revision_id="stage3-online-r-joint-cycle-000020-candidate",
     )
     restored = load_joint_checkpoint_once(
         checkpoint,
@@ -164,5 +167,10 @@ def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
         float(index) for index in range(20)
     ]
     candidate = json.loads((checkpoint / "candidate_policy/candidate.json").read_text())
+    assert candidate["revision_id"] == "stage3-online-r-joint-cycle-000020-candidate"
     assert candidate["state"] == "candidate"
     assert candidate["activated"] is False
+    metadata = json.loads((checkpoint / "metadata.json").read_text())
+    assert metadata["source_checkpoint"].endswith("cycle_000010")
+    assert metadata["joint_cycles"] == 20
+    assert metadata["actor_optimizer_restored"] is True
