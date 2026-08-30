@@ -89,8 +89,14 @@ def main() -> None:
     )
     from forcesmolvla.rft.training_cycle import module_state_sha256
     from forcesmolvla.rft.training_cycle import (
-        FORBIDDEN_OPENS, FlowCounter, R5, SAFE_MANIFEST, SAFE_NPZ, TrainData,
-        install_open_audit, repeat_actor_batch,
+        FORBIDDEN_OPENS,
+        FlowCounter,
+        PARENT_ACTOR_CHECKPOINT,
+        REWARD_BACKBONE_MANIFEST,
+        REWARD_BACKBONE_PARAMETERS,
+        TrainData,
+        install_open_audit,
+        repeat_actor_batch,
     )
     from forcesmolvla.rft.critic_training import (
         attach_distance, configure_runtime, environment_audit, identity,
@@ -106,10 +112,15 @@ def main() -> None:
     validation_data = split_data(data, validation_rows)
     with redirect_stdout(__import__("sys").stderr):
         policy = ForceSmolVLAPolicy.from_pretrained(
-            R5, local_files_only=True, force_download=False, strict=True,
+            PARENT_ACTOR_CHECKPOINT,
+            local_files_only=True,
+            force_download=False,
+            strict=True,
             artifact_use="development",
         ).to(device).eval()
-    q1, _q2, _t1, _t2, _conversion = build_twin_q(SAFE_NPZ, SAFE_MANIFEST, seed=0)
+    q1, _q2, _t1, _t2, _conversion = build_twin_q(
+        REWARD_BACKBONE_PARAMETERS, REWARD_BACKBONE_MANIFEST, seed=0
+    )
     q1 = q1.to(device).eval()
     actor_before = module_state_sha256(policy)
     q_before = module_state_sha256(q1)

@@ -22,7 +22,7 @@ from forcesmolvla.rft.losses import (
     compute_twin_q_critic_loss,
     derive_loss_masks,
     evaluate_calql_candidates,
-    load_authorized_g4_train_transitions,
+    load_authorized_reward_train_transitions,
     validate_mc_return_recurrence,
 )
 
@@ -293,8 +293,7 @@ def test_mc_return_and_authorized_loader(tmp_path):
         {"episode_id": "e", "reward": 1.0, "discount": 0.0, "mc_return": 1.0, "terminated": True, "reward_source": "frozen_classifier_detector"},
     ]
     assert validate_mc_return_recurrence(rows)["maximum_absolute_error"] == 0.0
-    table = load_authorized_g4_train_transitions()
+    table = load_authorized_reward_train_transitions()
     assert table.num_rows == 10075 and set(table.column("split").to_pylist()) == {"train"}
     with pytest.raises(RuntimeError, match="BEFORE_OPEN"):
-        load_authorized_g4_train_transitions(tmp_path / "manual")
-
+        load_authorized_reward_train_transitions(tmp_path / "manual")

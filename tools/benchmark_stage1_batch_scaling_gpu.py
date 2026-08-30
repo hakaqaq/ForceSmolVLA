@@ -102,7 +102,7 @@ def configure_runtime() -> torch.device:
 def worker(candidate: dict) -> dict:
     from forcesmolvla.dataset_v3 import load_dataset_split
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
-    from forcesmolvla.router_training import MoEMicrobatch, build_p7_optimizer_and_scheduler, single_pass_optimizer_update
+    from forcesmolvla.router_training import MoEMicrobatch, build_sft_optimizer_and_scheduler, single_pass_optimizer_update
     from forcesmolvla.training_data import load_runtime_artifacts, prepare_training_sample
     from forcesmolvla.training_runtime import build_training_batch as _make_batch
 
@@ -115,7 +115,7 @@ def worker(candidate: dict) -> dict:
         R5, local_files_only=True, force_download=False, strict=True, artifact_use="development"
     ).to(device)
     require(all(parameter.requires_grad for parameter in policy.parameters()), "STAGE1_BENCHMARK_FULL_TRAINABILITY_REQUIRED")
-    optimizer, scheduler, ownership = build_p7_optimizer_and_scheduler(policy, derived_optimizer_updates=10000)
+    optimizer, scheduler, ownership = build_sft_optimizer_and_scheduler(policy, derived_optimizer_updates=10000)
     conversion = json.loads((DATASET / "conversion_manifest.json").read_text())
     repo_id = conversion["repo_id"]
     dataset = load_dataset_split(

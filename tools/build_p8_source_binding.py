@@ -100,7 +100,7 @@ def main() -> None:
         "configs/calibration_bundle.development.json",
         "configs/p5_force_token_dense_compute.development.json",
         "configs/p6_dense_param_moe.development.json",
-        "configs/p7_training_recipe.development.yaml",
+        "configs/forcesmolvla_sft_recipe.development.yaml",
         "configs/p8_checkpoint_contract.development.json",
         "configs/p8_parity_acceptance.development.json",
         "configs/training_stage.development.json",

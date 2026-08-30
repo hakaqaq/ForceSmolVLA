@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Loopback-only ForceSmolVLA model inference service.
+"""ForceSmolVLA model inference service.
 
 This process owns PyTorch/LeRobot/checkpoint loading only.  It never imports
 ROS, opens cameras, connects to Franky, or sends robot commands.

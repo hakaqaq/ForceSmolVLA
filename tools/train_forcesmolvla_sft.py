@@ -59,10 +59,10 @@ def _load_config(path: Path) -> dict:
         "data_scope",
         "dataset_validation",
         "converter_runtime_spec",
-        "p8",
+        "training_readiness",
         "logging",
     }
-    p8 = config.get("p8")
+    training_readiness = config.get("training_readiness")
     logging = config.get("logging")
     if (
         config.get("schema_version") != "1.0"
@@ -80,9 +80,9 @@ def _load_config(path: Path) -> dict:
                 "converter_runtime_spec",
             )
         )
-        or not isinstance(p8, dict)
-        or not isinstance(p8.get("gate_report"), str)
-        or not isinstance(p8.get("source_binding"), str)
+        or not isinstance(training_readiness, dict)
+        or not isinstance(training_readiness.get("gate_report"), str)
+        or not isinstance(training_readiness.get("source_binding"), str)
         or not isinstance(logging, dict)
         or not isinstance(logging.get("interval_samples"), int)
         or logging["interval_samples"] <= 0
@@ -191,8 +191,8 @@ def _source_binding(
     config_path: Path,
     config: dict,
     *,
-    p8_gate_report: Path,
-    p8_source_binding: Path,
+    readiness_report: Path,
+    readiness_source_binding: Path,
 ) -> dict:
     configured_files = [
         config_path,
@@ -218,7 +218,7 @@ def _source_binding(
         "tools/action_target_population_parity_gate.py",
         "tools/train_forcesmolvla_sft.py",
         "artifacts/development/action_target_population_parity_r1.json",
-        "configs/p7_training_recipe.development.yaml",
+        "configs/forcesmolvla_sft_recipe.development.yaml",
         "configs/training_checkpoint_contract.development.json",
         "ForceSmolVLA_Implementation_Spec_v4_2.md",
     ] + configured_relative
@@ -269,8 +269,10 @@ def _source_binding(
             root / "assets/base_checkpoint/config.json"
         ),
         "constructor_assets_tree_sha256": _tree_sha256(root / "assets/smolvlm_constructor"),
-        "p8_gate_report_sha256": _sha256(p8_gate_report),
-        "p8_source_binding_sha256": _sha256(p8_source_binding),
+        "training_readiness_report_sha256": _sha256(readiness_report),
+        "training_readiness_source_binding_sha256": _sha256(
+            readiness_source_binding
+        ),
         "lerobot_commit": lerobot_commit,
         "lerobot_dirty_worktree": False,
         "lerobot_file_sha256": {
@@ -330,7 +332,7 @@ def _resolved_config(
         },
         "loss": "L_flow + 0.01*L_balance + 0.001*L_z; single shared full forward",
         "training_update_algorithm": "single_pass_batch_local",
-        "p7_exact_two_pass_role": "gate_only",
+        "exact_two_pass_validation_role": "validation_only",
         "checkpoint_interval_samples": budget["checkpoint_interval_samples"],
         "derived_checkpoint_interval_updates": budget[
             "derived_checkpoint_interval_updates"
@@ -347,13 +349,15 @@ def _resolved_config(
         "best_metric_tracking": "fixed single-pass validation L_flow; metrics only",
         "seeds": {"initialization": 42, "validation": 43, "training": 44},
         "source_binding_sha256": binding_sha256,
-        "p8_gate_report_sha256": _sha256(
-            _resolve_path(root, config["p8"]["gate_report"])
+        "training_readiness_report_sha256": _sha256(
+            _resolve_path(root, config["training_readiness"]["gate_report"])
         ),
-        "p8_source_binding_sha256": _sha256(
-            _resolve_path(root, config["p8"]["source_binding"])
+        "training_readiness_source_binding_sha256": _sha256(
+            _resolve_path(root, config["training_readiness"]["source_binding"])
         ),
-        "p8_gate_contract_version": "v4.2-b4x1-single-pass-exact-resume",
+        "training_readiness_contract_version": (
+            "v4.2-b4x1-single-pass-exact-resume"
+        ),
         "cpu_fallback": "forbidden",
         "robot_actions_sent": 0,
         "detached_signature": None,
@@ -405,8 +409,8 @@ def _copy_checkpoint_payloads(
         / "configs/calibration_bundle.development.json",
         "manifests/training_stage.development.json": root
         / "configs/training_stage.development.json",
-        "manifests/p7_training_recipe.development.yaml": root
-        / "configs/p7_training_recipe.development.yaml",
+        "manifests/forcesmolvla_sft_recipe.development.yaml": root
+        / "configs/forcesmolvla_sft_recipe.development.yaml",
         "manifests/offline_sft_training_recipe.development.yaml": recipe_path,
         "manifests/parity_acceptance.development.json": root
         / "configs/parity_acceptance.development.json",
@@ -446,7 +450,7 @@ def _save_checkpoint(
     repo_id: str,
 ) -> Path:
     from forcesmolvla.checkpoint import (
-        save_p8_training_state,
+        save_sft_training_state,
         validate_force_artifact_manifest,
         validate_training_payload_contract,
         write_development_artifact_manifest,
@@ -488,7 +492,7 @@ def _save_checkpoint(
             or trainability["frozen_parameters"] != 0
         ):
             raise RuntimeError("FULL_FINETUNE_TRAINABILITY_DRIFT")
-        save_p8_training_state(
+        save_sft_training_state(
             temporary,
             step=step,
             policy=policy,
@@ -570,13 +574,13 @@ def main() -> None:
     import numpy as np
     import torch
 
-    from forcesmolvla.checkpoint import load_offline_base_policy, load_p8_training_state
+    from forcesmolvla.checkpoint import load_offline_base_policy, load_sft_training_state
     from forcesmolvla.configuration_forcesmolvla import FORCE_TOKEN_MOE, OFFLINE_FULL_FINETUNE
     from forcesmolvla.dataset_v3 import load_dataset_split
     from forcesmolvla.router_training import (
         MoEMicrobatch,
         SerializableUniformSampler,
-        build_p7_optimizer_and_scheduler,
+        build_sft_optimizer_and_scheduler,
         derive_optimizer_updates,
         single_pass_optimizer_update,
     )
@@ -603,24 +607,36 @@ def main() -> None:
         or len(conversion.get("episodes", ())) < 3
     ):
         raise RuntimeError("CONVERSION_MANIFEST_GATE_FAILED")
-    p8_gate_path = _resolve_path(root, config["p8"]["gate_report"])
-    p8_gate = json.loads(p8_gate_path.read_text(encoding="utf-8"))
-    p8_binding_path = _resolve_path(root, config["p8"]["source_binding"])
-    checkpoint_path = Path(p8_gate.get("checkpoint", {}).get("path", ""))
+    readiness_report_path = _resolve_path(
+        root, config["training_readiness"]["gate_report"]
+    )
+    readiness_report = json.loads(
+        readiness_report_path.read_text(encoding="utf-8")
+    )
+    readiness_binding_path = _resolve_path(
+        root, config["training_readiness"]["source_binding"]
+    )
+    checkpoint_path = Path(
+        readiness_report.get("checkpoint", {}).get("path", "")
+    )
     if (
-        p8_gate.get("gate") != "P8"
-        or p8_gate.get("gate_status") != "pass"
-        or p8_gate.get("acceptance_status") != "development_only"
-        or p8_gate.get("formal_eligible") is not False
-        or p8_gate.get("gate_contract_version")
+        readiness_report.get("gate") != "P8"  # persisted artifact ABI
+        or readiness_report.get("gate_status") != "pass"
+        or readiness_report.get("acceptance_status") != "development_only"
+        or readiness_report.get("formal_eligible") is not False
+        or readiness_report.get("gate_contract_version")
         != "v4.2-b4x1-single-pass-exact-resume"
-        or p8_gate.get("exact_resume_dry_run") is not True
-        or p8_gate.get("long_development_sft_unlocked") is not True
-        or set(p8_gate.get("force_full_parity", {})) != {"fp32", "bf16"}
-        or p8_gate.get("real_data", {}).get("repo_id") != repo_id
-        or p8_gate.get("real_data", {}).get("batch_per_gpu") != BATCH_SIZE
-        or p8_gate.get("real_data", {}).get("microbatches") != MICROBATCHES
-        or p8_gate.get("source_binding_sha256") != _sha256(p8_binding_path)
+        or readiness_report.get("exact_resume_dry_run") is not True
+        or readiness_report.get("long_development_sft_unlocked") is not True
+        or set(readiness_report.get("force_full_parity", {}))
+        != {"fp32", "bf16"}
+        or readiness_report.get("real_data", {}).get("repo_id") != repo_id
+        or readiness_report.get("real_data", {}).get("batch_per_gpu")
+        != BATCH_SIZE
+        or readiness_report.get("real_data", {}).get("microbatches")
+        != MICROBATCHES
+        or readiness_report.get("source_binding_sha256")
+        != _sha256(readiness_binding_path)
         or not checkpoint_path.is_dir()
         or not (checkpoint_path / "artifact_manifest.json").is_file()
     ):
@@ -635,8 +651,8 @@ def main() -> None:
         repo_id,
         config_path,
         config,
-        p8_gate_report=p8_gate_path,
-        p8_source_binding=p8_binding_path,
+        readiness_report=readiness_report_path,
+        readiness_source_binding=readiness_binding_path,
     )
     binding_path = run_root / "source_binding.json"
     if binding_path.exists():
@@ -763,8 +779,9 @@ def main() -> None:
         or offline_recipe["optimizer"].get("parameter_partition")
         != "each_trainable_parameter_exactly_once"
         or "learned_action_slot" not in offline_recipe["optimizer"].get("no_decay", ())
-        or offline_recipe["p7_exact_two_pass"]["active_sft_loop"] is not False
-        or offline_recipe["p7_exact_two_pass"]["long_running_sft_allowed"] is not False
+        or offline_recipe["exact_two_pass_validation"]["active_sft_loop"] is not False
+        or offline_recipe["exact_two_pass_validation"]["long_running_sft_allowed"]
+        is not False
     ):
         raise RuntimeError("OFFLINE_SINGLE_PASS_SAMPLE_BUDGET_CONTRACT_DRIFT")
     resolved = _resolved_config(
@@ -812,14 +829,14 @@ def main() -> None:
         parameter.requires_grad for parameter in policy.parameters()
     ):
         raise RuntimeError("OFFLINE_FULL_FINETUNE_PARAMETER_GATE_FAILED")
-    optimizer, scheduler, optimizer_groups = build_p7_optimizer_and_scheduler(
+    optimizer, scheduler, optimizer_groups = build_sft_optimizer_and_scheduler(
         policy, derived_optimizer_updates=max_updates
     )
     scaler = torch.amp.GradScaler("cuda", enabled=False)
     start_step = 0
     resume_contract = {}
     if args.resume is not None:
-        start_step, resume_contract = load_p8_training_state(
+        start_step, resume_contract = load_sft_training_state(
             args.resume.resolve(),
             policy=policy,
             optimizer=optimizer,

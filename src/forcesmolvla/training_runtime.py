@@ -422,7 +422,9 @@ def build_validation_fixture(
             f"episode_{int(sample['episode_index']):06d}/frame_{int(sample['frame_index']):06d}"
             for sample in raw_samples
         ],
-        "chunk_id": [f"p7-validation-{index}" for index in range(len(raw_samples))],
+        "chunk_id": [
+            f"sft-validation-{index}" for index in range(len(raw_samples))
+        ],
         "action_valid_mask": action_mask.tolist(),
         "suffix_valid_mask": action_mask.tolist(),
         "calibration_bundle_hash": [calibration_sha] * len(raw_samples),
@@ -552,9 +554,9 @@ def validate_training_recipe(recipe: dict) -> None:
     ):
         raise RuntimeError("P7_TRAIN_RECIPE_DRIFT")
     if (
-        recipe["p7_phase_boundary"]["checkpoint_strict_reload"]
-        != "not_accepted_until_P8"
-        or recipe["p7_phase_boundary"]["long_development_sft"]
-        != "blocked_until_P8_exact_resume_and_force_parity"
+        recipe["training_phase_boundary"]["checkpoint_strict_reload"]
+        != "requires_exact_resume_validation"
+        or recipe["training_phase_boundary"]["long_development_sft"]
+        != "requires_exact_resume_and_force_parity"
     ):
         raise RuntimeError("P7_TO_P8_BOUNDARY_DRIFT")

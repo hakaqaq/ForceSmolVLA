@@ -17,10 +17,10 @@ import torch.nn.functional as F
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-AUTHORIZED_G1_ROOT = (
+AUTHORIZED_REWARD_TRANSITION_ROOT = (
     PROJECT_ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
 )
-AUTHORIZED_G1_MANIFEST_SHA256 = (
+AUTHORIZED_REWARD_TRANSITION_MANIFEST_SHA256 = (
     "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
 )
 SAFE_RESNET10_SHA256 = "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5"
@@ -434,13 +434,18 @@ def polyak_blend_state(
     return blended
 
 
-def load_authorized_g2_train_transitions(root: Path = AUTHORIZED_G1_ROOT):
-    """Fail before opening anything unless the sole detector-G1 root is requested."""
+def load_authorized_critic_train_transitions(
+    root: Path = AUTHORIZED_REWARD_TRANSITION_ROOT,
+):
+    """Open the hash-bound reward-transition view used to train the Critic."""
 
     root = Path(root).resolve()
-    if root != AUTHORIZED_G1_ROOT.resolve():
+    if root != AUTHORIZED_REWARD_TRANSITION_ROOT.resolve():
         raise RuntimeError("G2_REJECTED_NONAUTHORIZED_G1_ROOT_BEFORE_OPEN")
-    if _sha256_file(root / "g1_manifest.json") != AUTHORIZED_G1_MANIFEST_SHA256:
+    if (
+        _sha256_file(root / "g1_manifest.json")
+        != AUTHORIZED_REWARD_TRANSITION_MANIFEST_SHA256
+    ):
         raise RuntimeError("G2_AUTHORIZED_G1_MANIFEST_SHA_DRIFT")
     from forcesmolvla.rft.detector_reward_transitions import load_training_transitions
 

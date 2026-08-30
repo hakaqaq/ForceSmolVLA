@@ -308,7 +308,7 @@ def main() -> None:
     from forcesmolvla.checkpoint import (
         sha256_file,
         validate_force_artifact_manifest,
-        validate_p8_payload_contract,
+        validate_sft_payload_contract,
     )
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
     from forcesmolvla.shadow import (
@@ -434,7 +434,7 @@ def main() -> None:
     ):
         raise RuntimeError("P8_GATE_NOT_PASS_P9_FORBIDDEN")
     checkpoint_manifest = validate_force_artifact_manifest(checkpoint, artifact_use="development")
-    validate_p8_payload_contract(checkpoint)
+    validate_sft_payload_contract(checkpoint)
 
     rules_path = (root / config["rulespec_test_only"]).resolve()
     clock_path = (root / config["clock_map_test_only"]).resolve()

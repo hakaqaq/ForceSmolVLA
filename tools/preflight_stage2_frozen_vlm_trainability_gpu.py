@@ -233,8 +233,10 @@ def main() -> None:
     require(forward_parity, "FROZEN_VLM_FORWARD_PARITY_FAILED")
 
     actor_optimizer, actor_scheduler, actor_ownership = build_frozen_vlm_actor_optimizer(policy)
-    g5_config = yaml.safe_load((ROOT / "configs/stage2_g5_single_cycle.v2.development.yaml").read_text())
-    generators = g7a.warmup_generators(yaml.safe_load((ROOT / "configs/stage2_g7a_r2_critic_warmup.development.yaml").read_text()))
+    training_cycle_config = yaml.safe_load(
+        (ROOT / "configs/forcerft_training_cycle.development.yaml").read_text()
+    )
+    generators = g7a.warmup_generators(yaml.safe_load((ROOT / "configs/twin_q_critic_warmup.development.yaml").read_text()))
     samplers = g7a.warmup_samplers(data, generators)
     td_indices = samplers["td"].draw(16)
     calql_indices = samplers["calql"].draw(16)
@@ -247,7 +249,8 @@ def main() -> None:
         optimizer=context["optimizer"], scheduler=context["scheduler"],
         td_batch=td_batch, calql_batch=calql_batch, train_data=data,
         proposal_sampler=samplers["empirical_random_proposal"], generators=generators,
-        flow_counter=g5.FlowCounter(inference_batch_size=4), config=g5_config,
+        flow_counter=g5.FlowCounter(inference_batch_size=4),
+        config=training_cycle_config,
     )
     require(module_state_sha256(policy) == actor_before_critic, "FROZEN_VLM_ACTOR_CHANGED_DURING_CRITIC")
     q_before_actor = {name: module_state_sha256(context[name]) for name in ("q1", "q2", "q1_target", "q2_target")}

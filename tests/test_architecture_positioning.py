@@ -19,8 +19,9 @@ def test_v42_freezes_inheritance_innovation_and_online_scope():
         assert statement in text
 
 
-def test_readme_does_not_claim_online_completion():
+def test_readme_describes_development_online_scope_without_production_claim():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     normalized = " ".join(text.split())
-    assert "当前工程不声称已实现或验收在线训练" in text
+    assert "真机采集与持续 Actor/Learner 循环" in text
+    assert "不等同于 formal detector validation" in normalized
     assert "Action Expert 内部仍有 H 个 action suffix hidden" in normalized

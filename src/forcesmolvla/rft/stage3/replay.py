@@ -39,7 +39,7 @@ def memberships_for_transition(payload: Mapping, *, origin: Origin) -> tuple[str
 
 
 class Stage3Replay:
-    """In-memory G2 replay; persistence and WAL transactions are deferred to G3+."""
+    """In-memory replay core; persistence is owned by the durable replay layer."""
 
     def __init__(
         self,

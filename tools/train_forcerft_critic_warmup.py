@@ -37,7 +37,7 @@ CHECKPOINT = FORMAL_R_ROOT / "checkpoints/stage3_critic_warmup_step_000100"
 PARENT_BINDING = ROOT / "configs/stage3_parent_binding.v1.development.json"
 TRAINING_CONFIG = ROOT / "configs/forcerft_actor_critic_training.development.yaml"
 DATASET = ROOT / "datasets/task2_lerobotv3"
-G1_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
+REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
 SEED = 4404
 TASK = "Pick up the purple ring and place it onto the red peg."
 
@@ -205,9 +205,11 @@ class DemoReplay:
     )
 
     def __init__(self, normalizer) -> None:
-        from forcesmolvla.rft.losses import load_authorized_g4_train_transitions
+        from forcesmolvla.rft.losses import load_authorized_reward_train_transitions
 
-        self.rows = load_authorized_g4_train_transitions(G1_ROOT).to_pylist()
+        self.rows = load_authorized_reward_train_transitions(
+            REWARD_TRANSITION_ROOT
+        ).to_pylist()
         self.population = tuple(
             index for index, row in enumerate(self.rows)
             if all(row["executed_action_mask"])
@@ -589,7 +591,7 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
             "formal_r_root": str(FORMAL_R_ROOT),
             "unique_r_transition_count": len(all_r),
             "eligible_ack_macro_count": len(r_macros),
-            "demo_transition_root": str(G1_ROOT),
+            "demo_transition_root": str(REWARD_TRANSITION_ROOT),
             "mix": {"R": 32, "D": 32},
         },
         "sample_credit": credits.state_dict(),

@@ -1,4 +1,4 @@
-"""Append-only Stage-3 G1/G2 contracts and CPU primitives."""
+"""Append-only Stage-3 online-training contracts and CPU primitives."""
 
 from importlib import import_module
 from typing import Any

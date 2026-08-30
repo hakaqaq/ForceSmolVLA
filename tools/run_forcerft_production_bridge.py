@@ -18,11 +18,11 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "configs/stage3_production_bridge.v1.development.yaml"
-G1_CHECKPOINT = (
+REWARD_DETECTOR_CHECKPOINT = (
     ROOT
     / "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack"
 )
-G1_TRAINING_TOOL = ROOT / "tools/reward_classifier/train_reward_classifier.py"
+REWARD_CLASSIFIER_TOOL = ROOT / "tools/reward_classifier/train_reward_classifier.py"
 CONRFT_RUNTIME_ROOT = Path("/home/rlc123/conrft/serl_launcher")
 CAMERA_KEYS = ("d435_third_person", "d405_wrist")
 IMAGE_SHAPE = (480, 640, 3)
@@ -40,13 +40,15 @@ def _import_path(name: str, path: Path):
 
 
 def _detector_worker(request_path: Path, output_path: Path) -> None:
-    """Run exactly one frozen G1 inference job and exit; no server loop."""
+    """Run one frozen reward-detector inference job and exit."""
 
     request = json.loads(request_path.read_text(encoding="utf-8"))
     batches = request.get("batches", [])
     if not batches:
         raise RuntimeError("BRIDGE_DETECTOR_BATCHES_MISSING")
-    training_tool = _import_path("stage3_g1_training_tool", G1_TRAINING_TOOL)
+    training_tool = _import_path(
+        "stage3_reward_classifier_tool", REWARD_CLASSIFIER_TOOL
+    )
     training_tool.install_type_only_octo_shim()
     sys.path.insert(0, str(CONRFT_RUNTIME_ROOT))
     from flax import serialization
@@ -69,9 +71,11 @@ def _detector_worker(request_path: Path, output_path: Path) -> None:
             pretrained_encoder_path=str(bridge),
             n_way=2,
         )
-    state = serialization.from_bytes(target, G1_CHECKPOINT.read_bytes())
+    state = serialization.from_bytes(
+        target, REWARD_DETECTOR_CHECKPOINT.read_bytes()
+    )
     if int(state.step) != 150:
-        raise RuntimeError("BRIDGE_FROZEN_G1_CHECKPOINT_STEP_DRIFT")
+        raise RuntimeError("BRIDGE_REWARD_DETECTOR_CHECKPOINT_STEP_DRIFT")
 
     @jax.jit
     def infer(observations):
@@ -118,7 +122,7 @@ def _detector_worker(request_path: Path, output_path: Path) -> None:
     )
 
 
-class OneShotFrozenG1Detector:
+class OneShotFrozenRewardDetector:
     def __call__(self, prepared):
         from forcesmolvla.rft.stage3.production_bridge import FrozenDetectorScores
         from PIL import Image
@@ -242,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
         episode_materializer=(
             None
             if policy_execution_smoke
-            else frozen_episode_materializer(OneShotFrozenG1Detector())
+            else frozen_episode_materializer(OneShotFrozenRewardDetector())
         ),
     )
     if args.admit_formal_online_r:

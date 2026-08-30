@@ -33,9 +33,9 @@ from forcesmolvla.rft.critic_action_adapter_v2 import (
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CONFIG = ROOT / "configs/stage2_g7a_r2_critic_warmup.development.yaml"
+CONFIG = ROOT / "configs/twin_q_critic_warmup.development.yaml"
 SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v10_g7a_r2.json"
-G1_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
+REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
 ACTION_CONTRACT_DIAGNOSTIC = {
     "raw_gripper_values": 0,
     "raw_gripper_out_of_public_tolerance": 0,
@@ -151,9 +151,11 @@ def configure_runtime() -> torch.device:
 
 
 def verify_config() -> tuple[dict, dict]:
-    from forcesmolvla.rft.training_cycle import verify_config as verify_g5_config
+    from forcesmolvla.rft.training_cycle import (
+        verify_config as verify_training_cycle_config,
+    )
 
-    g5 = verify_g5_config()
+    training_cycle = verify_training_cycle_config()
     config = yaml.safe_load(CONFIG.read_text())
     warmup = config["warmup"]
     require(
@@ -172,13 +174,15 @@ def verify_config() -> tuple[dict, dict]:
     )
     require(config["initialization"]["g5_or_g6_checkpoint_parent"] is False, "G7A_SMOKE_PARENT_FORBIDDEN")
     require(
-        g5["loss"]["alpha_calql"] == warmup["calql_alpha"]
-        and g5["loss"]["cql_candidates_per_source_M"] == warmup["calql_candidates_per_source"]
-        and g5["loss"]["cql_temperature"] == warmup["calql_temperature"]
-        and g5["targets"]["polyak_tau"] == warmup["polyak_tau"],
+        training_cycle["loss"]["alpha_calql"] == warmup["calql_alpha"]
+        and training_cycle["loss"]["cql_candidates_per_source_M"]
+        == warmup["calql_candidates_per_source"]
+        and training_cycle["loss"]["cql_temperature"]
+        == warmup["calql_temperature"]
+        and training_cycle["targets"]["polyak_tau"] == warmup["polyak_tau"],
         "G7A_G4_G5_LOSS_SEMANTICS_DRIFT",
     )
-    return config, g5
+    return config, training_cycle
 
 
 def named_generator(device: str, seed: int) -> torch.Generator:
@@ -194,7 +198,7 @@ def load_split_rows(split: str) -> list[dict]:
     require(split in {"train", "val"}, "G7A_TEST_SPLIT_FORBIDDEN")
     columns = list(AUTHORIZED_G4_COLUMNS) + ["detector_terminal_frame"]
     table = pq.read_table(
-        G1_ROOT / "transition_index.parquet", columns=columns,
+        REWARD_TRANSITION_ROOT / "transition_index.parquet", columns=columns,
         filters=[("split", "=", split)],
     )
     require(set(table.column("split").to_pylist()) == {split}, "G7A_SPLIT_FILTER_LEAK")
@@ -763,7 +767,12 @@ def initialize_fresh(*, device: torch.device, with_data: bool) -> dict:
         build_twin_q, modules_storage_independent, state_exact,
     )
     from forcesmolvla.rft.training_cycle import module_state_sha256
-    from forcesmolvla.rft.training_cycle import R5, SAFE_MANIFEST, SAFE_NPZ, TrainData
+    from forcesmolvla.rft.training_cycle import (
+        PARENT_ACTOR_CHECKPOINT,
+        REWARD_BACKBONE_MANIFEST,
+        REWARD_BACKBONE_PARAMETERS,
+        TrainData,
+    )
 
     data = None
     if with_data:
@@ -778,12 +787,15 @@ def initialize_fresh(*, device: torch.device, with_data: bool) -> dict:
         attach_distance(data.rows)
     with redirect_stdout(sys.stderr):
         policy = ForceSmolVLAPolicy.from_pretrained(
-            R5, local_files_only=True, force_download=False, strict=True,
+            PARENT_ACTOR_CHECKPOINT,
+            local_files_only=True,
+            force_download=False,
+            strict=True,
             artifact_use="development",
         ).to(device)
     policy.eval()
     q1, q2, q1_target, q2_target, conversion = build_twin_q(
-        SAFE_NPZ, SAFE_MANIFEST, seed=0
+        REWARD_BACKBONE_PARAMETERS, REWARD_BACKBONE_MANIFEST, seed=0
     )
     q1, q2, q1_target, q2_target = (
         module.to(device) for module in (q1, q2, q1_target, q2_target)
@@ -879,7 +891,11 @@ def run_warmup(args) -> None:
         optimizer_state_storage_independent,
     )
     from forcesmolvla.rft.training_cycle import (
-        FORBIDDEN_OPENS, FlowCounter, R5, capture_rng_states, critic_update,
+        FORBIDDEN_OPENS,
+        FlowCounter,
+        PARENT_ACTOR_CHECKPOINT,
+        capture_rng_states,
+        critic_update,
         install_open_audit,
     )
 
@@ -1039,7 +1055,7 @@ def run_warmup(args) -> None:
     rng_final = capture_rng_states(generators)
     protected = json.loads(args.protected_snapshot.read_text())
     actor_binding = {
-        "r5_path": R5.relative_to(ROOT).as_posix(),
+        "parent_actor_path": PARENT_ACTOR_CHECKPOINT.relative_to(ROOT).as_posix(),
         "r5_tree": protected["trees"]["r5_checkpoint"],
         "state_initial": actor_initial, "state_final": module_component_digests(policy),
         "bitwise_unchanged": True, "optimizer_created": False,
@@ -1050,7 +1066,9 @@ def run_warmup(args) -> None:
         "g7a/stage2_g7a_critic_warmup.development.yaml": CONFIG.read_bytes(),
         "g7a/critic_training.py": Path(__file__).read_bytes(),
         "g7a/protected_snapshot.json": args.protected_snapshot.read_bytes(),
-        "g1/g1_manifest.json": (G1_ROOT / "g1_manifest.json").read_bytes(),
+        "reward_transitions/g1_manifest.json": (
+            REWARD_TRANSITION_ROOT / "g1_manifest.json"
+        ).read_bytes(),
     }
     rng_before_save = canonical_digest(rng_final)
     checkpoint_manifest = save_critic_warmup_checkpoint(
@@ -1103,13 +1121,18 @@ def run_warmup(args) -> None:
             "train_transition_reads": 10075,
             "validation_transition_reads": len(validation_rows),
             "test_transition_reads": 0, "test_image_reads": 0,
-            "manual_g1_files_opened": 0, "manual_label_files_opened": 0,
+            "manual_reward_transition_files_opened": 0,
+            "manual_label_files_opened": 0,
             "reward_classifier_inference_calls": 0,
             "reward_classifier_optimizer_updates": 0,
         },
         "research_limits": config["research_limits"],
     }
-    require(not FORBIDDEN_OPENS["manual_g1"] and not FORBIDDEN_OPENS["manual_labels"], "G7A_FORBIDDEN_MANUAL_READ")
+    require(
+        not FORBIDDEN_OPENS["manual_reward_transitions"]
+        and not FORBIDDEN_OPENS["manual_labels"],
+        "CRITIC_WARMUP_FORBIDDEN_MANUAL_READ",
+    )
     atomic_json(args.result, result)
 
 
@@ -1240,7 +1263,8 @@ def run_verify(args) -> None:
         "actor_loaded_from_r5_not_checkpoint": True, "actor_optimizer_created": 0,
         "actor_scheduler_created": 0, "parameter_updates": 0,
         "sampler_draws_after_load": 0, "data_transition_reads": 0,
-        "test_transition_reads": 0, "manual_g1_files_opened": 0,
+        "test_transition_reads": 0,
+        "manual_reward_transition_files_opened": 0,
         "manual_label_files_opened": 0, "reward_classifier_calls": 0,
     }
     atomic_json(args.result, result)

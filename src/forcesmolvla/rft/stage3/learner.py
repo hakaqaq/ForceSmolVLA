@@ -59,7 +59,7 @@ class TinyActor(nn.Module):
 
 
 class TinyTwinQ(nn.Module):
-    """Small force-aware Twin-Q stand-in with the real G2 call signature."""
+    """Small force-aware Twin-Q stand-in with the production call signature."""
 
     def __init__(self, *, offset: float) -> None:
         super().__init__()

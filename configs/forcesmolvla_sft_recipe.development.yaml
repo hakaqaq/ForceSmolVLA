@@ -7,7 +7,7 @@
   "training_stage": "offline_full_finetune",
   "variants": ["force_token_moe", "force_token_moe_additive"],
   "all_existing_parameters_require_grad": true,
-  "p6_prerequisite": {
+  "model_architecture_prerequisite": {
     "static_spec": {
       "path": "configs/p6_dense_param_moe.development.json",
       "sha256": "b3988b12665d1c9668da27dde3256ae47042996f55cd81384d4f32a5a7e27681"
@@ -117,11 +117,11 @@
     "parameter_state_and_initialization_must_match_at_step_zero": true,
     "optimizer_data_precision_noise_time_valid_budget_must_match": true
   },
-  "p7_phase_boundary": {
+  "training_phase_boundary": {
     "development_checkpoint_save": "permitted_but_not_created_by_preflight",
-    "checkpoint_strict_reload": "not_accepted_until_P8",
-    "long_development_sft": "blocked_until_P8_exact_resume_and_force_parity",
-    "shadow": "not_implemented_until_P9"
+    "checkpoint_strict_reload": "requires_exact_resume_validation",
+    "long_development_sft": "requires_exact_resume_and_force_parity",
+    "shadow": "not_implemented"
   },
   "detached_signature": null,
   "approval": null

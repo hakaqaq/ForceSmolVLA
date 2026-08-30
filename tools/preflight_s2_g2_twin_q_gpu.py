@@ -23,7 +23,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs/stage2_g2_force_aware_twin_q.development.yaml"
+CONFIG = ROOT / "configs/twin_q_critic.development.yaml"
 G1_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
 DATASET = ROOT / "datasets/task2_lerobotv3"
 SAFE_NPZ = ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
@@ -214,10 +214,13 @@ def real_train_batch(limit: int = 16) -> tuple[dict[str, torch.Tensor], dict]:
     import pyarrow.parquet as pq
 
     sys.path.insert(0, str(ROOT / "src"))
-    from forcesmolvla.rft.critic import frozen_task_feature, load_authorized_g2_train_transitions
+    from forcesmolvla.rft.critic import (
+        frozen_task_feature,
+        load_authorized_critic_train_transitions,
+    )
     from forcesmolvla.training_data import load_runtime_artifacts
 
-    table = load_authorized_g2_train_transitions(G1_ROOT)
+    table = load_authorized_critic_train_transitions(G1_ROOT)
     require(table.num_rows == 10075 and set(table.column("split").to_pylist()) == {"train"}, "G2_G1_TRAIN_LOADER_DRIFT")
     rows = table.to_pylist()
     by_steps = {step: [row for row in rows if row["executed_steps"] == step] for step in (1, 2, 3)}

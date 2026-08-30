@@ -44,11 +44,11 @@
     "z_weight": 0.001,
     "num_experts": 4
   },
-  "p7_exact_two_pass": {
+  "exact_two_pass_validation": {
     "role": "acceptance_oracle_for_routing_gradients_and_numerics",
     "active_sft_loop": false,
     "long_running_sft_allowed": false,
-    "recipe": "p7_training_recipe.development.yaml"
+    "recipe": "forcesmolvla_sft_recipe.development.yaml"
   },
   "precision": {
     "autocast": "bfloat16",

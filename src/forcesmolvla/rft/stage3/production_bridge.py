@@ -87,7 +87,9 @@ REQUIRED_STREAMS = (
 )
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_PARENT_BINDING = REPO_ROOT / "configs/stage3_parent_binding.v1.development.json"
-DEFAULT_G1_CONFIG = REPO_ROOT / "configs/stage2_g1_frozen_detector_transition_view.development.json"
+DEFAULT_REWARD_TRANSITION_CONFIG = (
+    REPO_ROOT / "configs/reward_transition_materialization.development.json"
+)
 DEFAULT_REWARD_CONTRACT = (
     REPO_ROOT / "configs/stage3_reward_terminal_contract.v1.development.json"
 )
@@ -112,12 +114,12 @@ class FrozenDetectorScores:
     probabilities: tuple[float, ...]
     validity: tuple[bool, ...]
     detector_id: str = CHECKPOINT_SHA256
-    config_identity: str = "stage2_g1_frozen_detector_transition_view.development"
+    config_identity: str = "reward_transition_materialization.development"
 
 
 @dataclass(frozen=True)
 class EpisodeMaterialization:
-    """Calibrated 30 Hz episode plus its causally detected G1 boundary."""
+    """Calibrated 30 Hz episode plus its causally detected reward boundary."""
 
     prepared: PreparedEpisode
     detector_scores: FrozenDetectorScores
@@ -174,9 +176,9 @@ def frozen_episode_materializer(
     detector: FrozenDetector,
     *,
     parent_binding_path: Path = DEFAULT_PARENT_BINDING,
-    detector_config_path: Path = DEFAULT_G1_CONFIG,
+    detector_config_path: Path = DEFAULT_REWARD_TRANSITION_CONFIG,
 ) -> EpisodeMaterializer:
-    """Bind the existing single-episode converter and frozen G1 detector."""
+    """Bind the single-episode converter and frozen reward detector."""
 
     parent = _read_json(Path(parent_binding_path))
     detector_config = _read_json(Path(detector_config_path))

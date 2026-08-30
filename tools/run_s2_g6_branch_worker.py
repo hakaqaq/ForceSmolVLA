@@ -236,7 +236,12 @@ def initialize_context(*, restore_checkpoint: bool) -> dict:
         build_stage2_optimizers,
     )
     from forcesmolvla.rft.training_cycle import (
-        R5, SAFE_MANIFEST, SAFE_NPZ, TrainData, named_generator, verify_config,
+        PARENT_ACTOR_CHECKPOINT,
+        REWARD_BACKBONE_MANIFEST,
+        REWARD_BACKBONE_PARAMETERS,
+        TrainData,
+        named_generator,
+        verify_config,
     )
 
     require(torch.cuda.is_available(), "G6_CUDA_REQUIRED_NO_CPU_FALLBACK")
@@ -282,11 +287,14 @@ def initialize_context(*, restore_checkpoint: bool) -> dict:
     }
     with redirect_stdout(sys.stderr):
         actor = ForceSmolVLAPolicy.from_pretrained(
-            R5, local_files_only=True, force_download=False, strict=True,
+            PARENT_ACTOR_CHECKPOINT,
+            local_files_only=True,
+            force_download=False,
+            strict=True,
             artifact_use="development",
         ).to(device)
     q1, q2, q1_target, q2_target, _conversion = build_twin_q(
-        SAFE_NPZ, SAFE_MANIFEST, seed=0
+        REWARD_BACKBONE_PARAMETERS, REWARD_BACKBONE_MANIFEST, seed=0
     )
     q1, q2, q1_target, q2_target = (
         module.to(device) for module in (q1, q2, q1_target, q2_target)

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""CPU-only coordinator for G7-A warm-up and fresh strict-load verification."""
+"""CPU-only Twin-Q warmup coordinator with fresh strict-load verification."""
 
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -12,22 +11,16 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import time
 from typing import Any
 
 import torch
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CONFIG = ROOT / "configs/stage2_g7a_r2_critic_warmup.development.yaml"
-SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v10_g7a_r2.json"
+CONFIG = ROOT / "configs/twin_q_critic_warmup.development.yaml"
 WORKER_MODULE = "forcesmolvla.rft.critic_training"
 OUTPUT = ROOT / "artifacts/development/stage2/g7a_r2_critic_warmup"
 CHECKPOINT = ROOT / "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint"
-ARTIFACT = ROOT / "artifacts/development/stage2/s2_g7a_r2_critic_warmup_preflight.json"
-REPORT = ROOT / "docs/s2_g7a_r2_critic_warmup_report.md"
-G5_CHECKPOINT = ROOT / "artifacts/development/stage2/g5_single_cycle_checkpoint.v2.development"
-G6_OUTPUT = ROOT / "artifacts/development/stage2/g6_exact_resume.v2"
 
 
 def require(condition: bool, message: str) -> None:
@@ -59,45 +52,25 @@ def atomic_json(path: Path, value: Any) -> None:
     os.replace(temporary, path)
 
 
-def atomic_text(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as stream:
-        stream.write(value); stream.flush(); os.fsync(stream.fileno())
-        temporary = Path(stream.name)
-    os.replace(temporary, path)
-
-
 def protected_snapshot() -> dict:
     from forcesmolvla.rft.exact_resume import checkpoint_tree
-    from forcesmolvla.rft.training_cycle_runtime import protected_snapshot as g5_protected
+    from forcesmolvla.rft.training_cycle_runtime import protected_snapshot
 
-    g5 = g5_protected()
+    training_inputs = protected_snapshot()
     files = {
-        "g7a_config": CONFIG,
-        "g7a_worker": ROOT / "src/forcesmolvla/rft/critic_training.py",
+        "critic_warmup_config": CONFIG,
+        "critic_worker": ROOT / "src/forcesmolvla/rft/critic_training.py",
     }
     return {
-        "g5_protected": g5,
+        "training_inputs": training_inputs,
         "files": {name: binding(path) for name, path in files.items()},
         "trees": {
-            "r5_checkpoint": g5["r5_checkpoint_tree"],
-            "stage1_dataset": g5["p8_storage_tree"],
+            "parent_actor_checkpoint": training_inputs[
+                "parent_actor_checkpoint_tree"
+            ],
+            "offline_dataset": training_inputs["dataset_storage_tree"],
         },
     }
-
-
-def run_tests() -> dict:
-    environment = os.environ.copy()
-    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-    environment["PYTHONPATH"] = f"{ROOT / 'src'}:{ROOT / 'vendor/lerobot/src'}"
-    command = [
-        sys.executable, "-m", "pytest", "-q",
-        "tests/test_rft_g7a.py", "tests/test_rft_training_cycle.py", "tests/test_rft_losses.py",
-    ]
-    result = subprocess.run(command, cwd=ROOT, env=environment, capture_output=True, text=True)
-    output = (result.stdout + result.stderr).strip()
-    require(result.returncode == 0 and "passed" in output, f"G7A_UNIT_TEST_FAILED:{output[-3000:]}")
-    return {"command": " ".join(command), "exit_code": 0, "output": output}
 
 
 def wait_process(process: subprocess.Popen, log_path: Path, label: str, timeout: float = 14400) -> None:
@@ -105,9 +78,12 @@ def wait_process(process: subprocess.Popen, log_path: Path, label: str, timeout:
         return_code = process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         process.kill(); process.wait()
-        raise RuntimeError(f"G7A_{label}_TIMEOUT")
+        raise RuntimeError(f"CRITIC_WARMUP_{label}_TIMEOUT")
     if return_code:
-        raise RuntimeError(f"G7A_{label}_FAILED:{return_code}\n{log_path.read_text(errors='replace')[-12000:]}")
+        raise RuntimeError(
+            f"CRITIC_WARMUP_{label}_FAILED:{return_code}\n"
+            f"{log_path.read_text(errors='replace')[-12000:]}"
+        )
 
 
 def worker_environment() -> dict:
@@ -115,8 +91,8 @@ def worker_environment() -> dict:
     environment.update({
         "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1", "HF_DATASETS_OFFLINE": "1",
         "PYTHONHASHSEED": "42", "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
-        "HF_HOME": "/tmp/forcesmolvla_g7a_hf_cache",
-        "HF_DATASETS_CACHE": "/tmp/forcesmolvla_g7a_hf_cache/datasets",
+        "HF_HOME": "/tmp/forcesmolvla_critic_warmup_hf_cache",
+        "HF_DATASETS_CACHE": "/tmp/forcesmolvla_critic_warmup_hf_cache/datasets",
         "PYTHONPATH": f"{ROOT / 'src'}:{ROOT / 'vendor/lerobot/src'}:{ROOT / 'tools'}",
     })
     return environment

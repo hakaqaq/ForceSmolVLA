@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G1 builder scaffold, blocked until an external frozen reward-label sidecar exists."""
+"""Materialize offline demo replay from a frozen reward-label sidecar."""
 
 from __future__ import annotations
 

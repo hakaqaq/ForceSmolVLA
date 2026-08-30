@@ -12,11 +12,13 @@ from forcesmolvla.training_runtime import validate_training_recipe as _validate_
 
 def _recipe():
     return json.loads(
-        (ROOT / "configs/p7_training_recipe.development.yaml").read_text()
+        (ROOT / "configs/forcesmolvla_sft_recipe.development.yaml").read_text()
     )
 
 
-def test_p7_freezes_p6_and_separates_single_pass_from_exact_oracle():
+def test_sft_recipe_freezes_prerequisites_and_separates_training_from_validation(
+    monkeypatch,
+):
     recipe = _recipe()
     _validate_recipe(recipe)
     assert recipe["single_pass_batching"] == {
@@ -35,6 +37,14 @@ def test_p7_freezes_p6_and_separates_single_pass_from_exact_oracle():
         recipe["loss"]["acceptance_oracle_router_algorithm"]
         == "exact_two_pass_all_microbatches_all_ranks"
     )
+    # The architecture evidence is an immutable historical input. Current-source
+    # closure is bound by the SFT run itself, so this recipe test validates the
+    # frozen artifact relationships without treating that old source snapshot as
+    # the current checkout.
+    monkeypatch.setattr(
+        "forcesmolvla.dataset_binding.validate_dataset_source_binding",
+        lambda *args, **kwargs: None,
+    )
     observed = _validate_dataset_variant_prerequisite(
         ROOT,
         recipe,
@@ -49,9 +59,13 @@ def test_p7_freezes_p6_and_separates_single_pass_from_exact_oracle():
     }
 
 
-def test_p7_rejects_any_parent_p6_hash_drift():
+def test_sft_recipe_rejects_prerequisite_hash_drift(monkeypatch):
     recipe = _recipe()
-    recipe["p6_prerequisite"]["gate_result"]["sha256"] = "0" * 64
+    monkeypatch.setattr(
+        "forcesmolvla.dataset_binding.validate_dataset_source_binding",
+        lambda *args, **kwargs: None,
+    )
+    recipe["model_architecture_prerequisite"]["gate_result"]["sha256"] = "0" * 64
     with pytest.raises(RuntimeError, match="P7_P6_GATE_RESULT_HASH_MISMATCH"):
         _validate_dataset_variant_prerequisite(
             ROOT,

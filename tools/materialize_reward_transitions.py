@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build append-only G1 transitions from a frozen causal reward detector."""
+"""Build append-only transitions from a frozen causal reward detector."""
 
 from __future__ import annotations
 
@@ -22,11 +22,15 @@ import numpy as np
 
 
 ROOT = Path(__file__).parents[1].resolve()
-DEFAULT_CONFIG = ROOT / "configs/stage2_g1_frozen_detector_transition_view.development.json"
+DEFAULT_CONFIG = ROOT / "configs/reward_transition_materialization.development.json"
 DEFAULT_DATASET = ROOT / "datasets/task2_lerobotv3"
 DEFAULT_OUTPUT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
-MANUAL_G1_ROOT = ROOT / "artifacts/development/stage2/g1_manual_reward_transition_view.v1"
-MANUAL_G1_DISPOSITION = MANUAL_G1_ROOT / "g1_training_disposition.v1.json"
+MANUAL_REWARD_TRANSITION_ROOT = (
+    ROOT / "artifacts/development/stage2/g1_manual_reward_transition_view.v1"
+)
+MANUAL_REWARD_TRANSITION_DISPOSITION = (
+    MANUAL_REWARD_TRANSITION_ROOT / "g1_training_disposition.v1.json"
+)
 CHECKPOINT_PATH = ROOT / "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack"
 SAFE_ASSET_PATH = ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
 TRAINING_SOURCE = ROOT / "tools/reward_classifier/train_reward_classifier.py"
@@ -164,11 +168,14 @@ def verify_config(config_path: Path, dataset_root: Path, output_root: Path) -> d
             continue
         path = ROOT / item["path"]
         require(path.is_file() and sha256_file(path) == item["sha256"], f"DETECTOR_G1_FROZEN_INPUT_DRIFT:{name}")
-    require(sha256_file(CHECKPOINT_PATH) == EXPECTED_CHECKPOINT_SHA256, "DETECTOR_G1_CHECKPOINT_DRIFT")
+    require(
+        sha256_file(CHECKPOINT_PATH) == EXPECTED_CHECKPOINT_SHA256,
+        "REWARD_DETECTOR_CHECKPOINT_DRIFT",
+    )
     candidate = load_json(ROOT / config["frozen_inputs"]["detector_candidate"]["path"])
     require(candidate["candidate"] == {"consecutive_positive_frames": 5, "probability_threshold": 0.83}, "DETECTOR_G1_CANDIDATE_DRIFT")
     require(sha256_file(ROOT / config["frozen_inputs"]["historical_one_shot_test"]["path"]) == EXPECTED_ONE_SHOT_SHA256, "DETECTOR_G1_HISTORICAL_TEST_DRIFT")
-    disposition = load_json(MANUAL_G1_DISPOSITION)
+    disposition = load_json(MANUAL_REWARD_TRANSITION_DISPOSITION)
     require(
         disposition["artifact_role"] == "historical_manual_audit_only"
         and disposition["training_authorized"] is False
@@ -607,8 +614,10 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
     protected_files = {
         "classifier_checkpoint": CHECKPOINT_PATH,
         "historical_one_shot_test": ROOT / config["frozen_inputs"]["historical_one_shot_test"]["path"],
-        "manual_g1_manifest": MANUAL_G1_ROOT / "g1_manifest.json",
-        "manual_g1_transition_index": MANUAL_G1_ROOT / "transition_index.parquet",
+        "manual_reward_manifest": MANUAL_REWARD_TRANSITION_ROOT / "g1_manifest.json",
+        "manual_reward_transition_index": (
+            MANUAL_REWARD_TRANSITION_ROOT / "transition_index.parquet"
+        ),
     }
     r5_root = ROOT / config["frozen_inputs"]["r5_checkpoint"]
     before = {
@@ -796,7 +805,9 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
         "safe_resnet10_npz": binding(SAFE_ASSET_PATH),
         "detector_candidate": binding(ROOT / config["frozen_inputs"]["detector_candidate"]["path"]),
         "historical_one_shot_test": binding(ROOT / config["frozen_inputs"]["historical_one_shot_test"]["path"]),
-        "manual_g1_disposition": binding(MANUAL_G1_DISPOSITION),
+        "manual_reward_disposition": binding(
+            MANUAL_REWARD_TRANSITION_DISPOSITION
+        ),
         "split_manifest": binding(dataset_root / "split_manifest.json"),
         "conversion_manifest": binding(dataset_root / "conversion_manifest.json"),
         "normalizer_manifest": binding(dataset_root / "normalizer_manifest.json"),
@@ -913,11 +924,11 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
         else:
             raise RuntimeError("DETECTOR_G1_LOADER_ACCEPTED_HELDOUT_SPLIT")
     try:
-        load_training_transitions(MANUAL_G1_ROOT)
+        load_training_transitions(MANUAL_REWARD_TRANSITION_ROOT)
     except RuntimeError:
         pass
     else:
-        raise RuntimeError("DETECTOR_G1_LOADER_ACCEPTED_MANUAL_G1")
+        raise RuntimeError("REWARD_TRANSITION_LOADER_ACCEPTED_MANUAL_SOURCE")
     manifest["loader_contract"]["train_row_count"] = train_table.num_rows
     manifest["manifest_payload_sha256"] = canonical_sha256(manifest)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")

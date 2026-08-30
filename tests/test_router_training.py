@@ -8,7 +8,7 @@ from forcesmolvla.force_token import RouterState
 from forcesmolvla.router_training import (
     MoEMicrobatch,
     SerializableUniformSampler,
-    build_p7_optimizer_and_scheduler,
+    build_sft_optimizer_and_scheduler,
     collect_pass_a_statistics,
     derive_optimizer_updates,
     microbatch_two_pass_terms,
@@ -235,7 +235,7 @@ class _OptimizerGroupingFixture(torch.nn.Module):
 
 def test_p7_optimizer_groups_and_frozen_scheduler_semantics():
     policy = _OptimizerGroupingFixture()
-    optimizer, scheduler, manifest = build_p7_optimizer_and_scheduler(policy)
+    optimizer, scheduler, manifest = build_sft_optimizer_and_scheduler(policy)
     assert [group["weight_decay"] for group in optimizer.param_groups] == [1e-10, 0.0]
     assert manifest["decay_parameter_count"] == policy.weight.numel()
     assert manifest["no_decay_parameter_count"] == sum(

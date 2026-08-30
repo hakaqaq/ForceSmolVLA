@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""Execute exactly one disposable G5 2-Critic:1-Actor cycle on RTX 4090D."""
+"""Reusable Actor/Critic training-cycle runtime primitives."""
 
 from __future__ import annotations
 
-import argparse
 from collections import Counter, defaultdict
-from contextlib import redirect_stdout
-from datetime import datetime, timezone
 import gc
 import hashlib
 from io import BytesIO
@@ -15,9 +12,7 @@ import math
 import os
 from pathlib import Path
 import random
-import subprocess
 import sys
-import tempfile
 import time
 from typing import Any
 
@@ -27,23 +22,27 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CONFIG = ROOT / "configs/stage2_g5_single_cycle.v2.development.yaml"
-SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v13_g5_v2.json"
-ARTIFACT = ROOT / "artifacts/development/stage2/s2_g5_single_cycle_preflight.json"
-REPORT = ROOT / "docs/s2_g5_single_cycle_preflight_report.md"
-CHECKPOINT = ROOT / "artifacts/development/stage2/g5_single_cycle_checkpoint.development"
-G1_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
-MANUAL_G1 = ROOT / "artifacts/development/stage2/g1_manual_reward_transition_view.v1"
+CONFIG = ROOT / "configs/forcerft_training_cycle.development.yaml"
+REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
+MANUAL_REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_manual_reward_transition_view.v1"
 LABELS = ROOT / "labels"
 DATASET = ROOT / "datasets/task2_lerobotv3"
-R5 = ROOT / "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000"
-CLASSIFIER = ROOT / "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack"
-SAFE_NPZ = ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
-SAFE_MANIFEST = ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json"
-EXPECTED_CLASSIFIER_SHA256 = "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
-EXPECTED_G1_MANIFEST_SHA256 = "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
-EXPECTED_P8_TREE_SHA256 = "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
-FORBIDDEN_OPENS: dict[str, set[str]] = {"manual_g1": set(), "manual_labels": set()}
+PARENT_ACTOR_CHECKPOINT = (
+    ROOT / "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000"
+)
+REWARD_BACKBONE_PARAMETERS = (
+    ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
+)
+REWARD_BACKBONE_MANIFEST = (
+    ROOT
+    / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json"
+)
+EXPECTED_REWARD_MANIFEST_SHA256 = "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
+EXPECTED_DATASET_TREE_SHA256 = "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+FORBIDDEN_OPENS: dict[str, set[str]] = {
+    "manual_reward_transitions": set(),
+    "manual_labels": set(),
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -67,28 +66,11 @@ def binding(path: Path) -> dict:
     }
 
 
-def canonical_sha256(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
-    ).hexdigest()
-
-
-def atomic_text(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as stream:
-        stream.write(value)
-        stream.flush()
-        os.fsync(stream.fileno())
-        temporary = Path(stream.name)
-    os.replace(temporary, path)
-
-
-def atomic_json(path: Path, value: dict) -> None:
-    atomic_text(path, json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n")
-
-
 def install_open_audit() -> None:
-    roots = {"manual_g1": MANUAL_G1.resolve(), "manual_labels": LABELS.resolve()}
+    roots = {
+        "manual_reward_transitions": MANUAL_REWARD_TRANSITION_ROOT.resolve(),
+        "manual_labels": LABELS.resolve(),
+    }
 
     def audit(event: str, args: tuple[Any, ...]) -> None:
         if event != "open" or not args or not isinstance(args[0], (str, bytes, os.PathLike)):
@@ -119,17 +101,17 @@ def file_tree(root: Path, subdirectories: tuple[str, ...] | None = None) -> dict
 
 def protected_snapshot() -> dict:
     files = {
-        "g1_manifest": G1_ROOT / "g1_manifest.json",
-        "g1_frame_scores": G1_ROOT / "frame_scores.parquet",
-        "g1_transition_index": G1_ROOT / "transition_index.parquet",
-        "g2_config": ROOT / "configs/stage2_g2_force_aware_twin_q.development.yaml",
+        "reward_manifest": REWARD_TRANSITION_ROOT / "g1_manifest.json",
+        "reward_frame_scores": REWARD_TRANSITION_ROOT / "frame_scores.parquet",
+        "reward_transition_index": REWARD_TRANSITION_ROOT / "transition_index.parquet",
+        "critic_config": ROOT / "configs/twin_q_critic.development.yaml",
         "action_contract": ROOT / "configs/stage2_action_contract.v2.development.json",
-        "g5_config": CONFIG,
-        "g5_training_cycle_source": ROOT / "src/forcesmolvla/rft/training_cycle.py",
-        "g5_training_runtime_source": ROOT / "src/forcesmolvla/rft/training_cycle_runtime.py",
-        "g5_training_checkpoint_source": ROOT / "src/forcesmolvla/rft/training_checkpoint.py",
-        "g2_critic_source": ROOT / "src/forcesmolvla/rft/critic.py",
-        "g3_flow_source": ROOT / "src/forcesmolvla/rft/flow_sampling.py",
+        "training_cycle_config": CONFIG,
+        "training_cycle_source": ROOT / "src/forcesmolvla/rft/training_cycle.py",
+        "training_runtime_source": ROOT / "src/forcesmolvla/rft/training_cycle_runtime.py",
+        "training_checkpoint_source": ROOT / "src/forcesmolvla/rft/training_checkpoint.py",
+        "critic_source": ROOT / "src/forcesmolvla/rft/critic.py",
+        "flow_sampling_source": ROOT / "src/forcesmolvla/rft/flow_sampling.py",
         "dataset_conversion": DATASET / "conversion_manifest.json",
         "dataset_split": DATASET / "split_manifest.json",
         "dataset_normalizer": DATASET / "normalizer_manifest.json",
@@ -137,11 +119,19 @@ def protected_snapshot() -> dict:
     }
     result = {
         "files": {name: binding(path) for name, path in files.items()},
-        "p8_storage_tree": file_tree(DATASET, ("data", "videos", "meta")),
-        "r5_checkpoint_tree": file_tree(R5),
+        "dataset_storage_tree": file_tree(DATASET, ("data", "videos", "meta")),
+        "parent_actor_checkpoint_tree": file_tree(PARENT_ACTOR_CHECKPOINT),
     }
-    require(result["files"]["g1_manifest"]["sha256"] == EXPECTED_G1_MANIFEST_SHA256, "G5_G1_SHA_DRIFT")
-    require(result["p8_storage_tree"]["tree_sha256"] == EXPECTED_P8_TREE_SHA256, "G5_P8_TREE_SHA_DRIFT")
+    require(
+        result["files"]["reward_manifest"]["sha256"]
+        == EXPECTED_REWARD_MANIFEST_SHA256,
+        "TRAINING_CYCLE_REWARD_MANIFEST_DRIFT",
+    )
+    require(
+        result["dataset_storage_tree"]["tree_sha256"]
+        == EXPECTED_DATASET_TREE_SHA256,
+        "TRAINING_CYCLE_DATASET_TREE_DRIFT",
+    )
     return result
 
 
@@ -178,18 +168,6 @@ def verify_config() -> dict:
     return config
 
 
-def run_unit_tests() -> dict:
-    environment = os.environ.copy()
-    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "tests/test_rft_training_cycle.py", "tests/test_rft_losses.py"],
-        cwd=ROOT, env=environment, capture_output=True, text=True, check=False,
-    )
-    output = (result.stdout + result.stderr).strip()
-    require(result.returncode == 0 and "passed" in output, f"G5_UNIT_TEST_FAILED:{output[-3000:]}")
-    return {"command": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/test_rft_training_cycle.py tests/test_rft_losses.py", "exit_code": 0, "output": output}
-
-
 def decode_rgb(payload: bytes) -> np.ndarray:
     from PIL import Image
 
@@ -213,10 +191,13 @@ class TrainData:
     """The sole automatic detector-G1 train view and its frozen populations."""
 
     def __init__(self) -> None:
-        from forcesmolvla.rft.losses import load_authorized_g4_train_transitions, validate_mc_return_recurrence
+        from forcesmolvla.rft.losses import (
+            load_authorized_reward_train_transitions,
+            validate_mc_return_recurrence,
+        )
         from forcesmolvla.training_data import load_runtime_artifacts
 
-        table = load_authorized_g4_train_transitions(G1_ROOT)
+        table = load_authorized_reward_train_transitions(REWARD_TRANSITION_ROOT)
         self.rows = table.to_pylist()
         require(len(self.rows) == 10075 and {row["split"] for row in self.rows} == {"train"}, "G5_TRAIN_ROWS_INVALID")
         self.mc_recurrence = validate_mc_return_recurrence(self.rows)
@@ -231,10 +212,12 @@ class TrainData:
         self.proposal_population = self.actor_population
         conversion = json.loads((DATASET / "conversion_manifest.json").read_text())
         self.tasks = {item["raw_episode_id"]: item["task"] for item in conversion["episodes"]}
-        g1_manifest = json.loads((G1_ROOT / "g1_manifest.json").read_text())
+        reward_manifest = json.loads(
+            (REWARD_TRANSITION_ROOT / "g1_manifest.json").read_text()
+        )
         self.frame_counts = {
             item["episode_id"]: int(item["frame_count"])
-            for item in g1_manifest["episode_detection_results"]
+            for item in reward_manifest["episode_detection_results"]
         }
         self.runtime = load_runtime_artifacts(
             DATASET,
@@ -327,7 +310,7 @@ class TrainData:
             "mc_return_recurrence": self.mc_recurrence,
             "validation_transition_reads": 0,
             "test_transition_reads": 0,
-            "manual_g1_reads": 0,
+            "manual_reward_transition_reads": 0,
             "manual_label_reads": 0,
         }
 
@@ -1238,532 +1221,3 @@ def rng_state_summary(state: dict) -> dict:
             for name, value in sorted(state["named_generator_states"].items())
         },
     }
-
-
-def startup_snapshot(protected: dict) -> tuple[dict[str, bytes], dict]:
-    paths = {
-        "resolved_config/stage2_g5_single_cycle.development.yaml": CONFIG,
-        "source/stage2_source_manifest.v7_g5.json": SOURCE_MANIFEST,
-        "automatic_g1/g1_manifest.json": G1_ROOT / "g1_manifest.json",
-        "reward_classifier/r0_training_validation_report.v1.json": ROOT / "artifacts/development/stage2/reward_classifier/r0_training/r0_training_validation_report.v1.json",
-        "reward_classifier/source_artifact_manifest.v1.json": ROOT / "artifacts/development/stage2/reward_classifier/r0_training/source_artifact_manifest.v1.json",
-        "detector/r0_validation_detector_calibration.v1.json": ROOT / "artifacts/development/stage2/reward_classifier/r0_validation_detector_calibration.v1.json",
-        "detector/r0_one_shot_test_evaluation.v1.json": ROOT / "artifacts/development/stage2/reward_classifier/r0_one_shot_test_evaluation.v1.json",
-        "detector/stage2_g1_frozen_detector_transition_view.development.json": ROOT / "configs/stage2_g1_frozen_detector_transition_view.development.json",
-        "g2/s2_g2_twin_q_topology.json": ROOT / "artifacts/development/stage2/s2_g2_twin_q_topology.json",
-        "g2/stage2_g2_force_aware_twin_q.development.yaml": ROOT / "configs/stage2_g2_force_aware_twin_q.development.yaml",
-        "g3/s2_g3_differentiable_flow.v4.json": ROOT / "artifacts/development/stage2/s2_g3_differentiable_flow.v4.json",
-        "g3/s2_g3_gradient_precision_matrix.v4.json": ROOT / "artifacts/development/stage2/s2_g3_gradient_precision_matrix.v4.json",
-        "g4/s2_g4_loss_preflight.json": ROOT / "artifacts/development/stage2/s2_g4_loss_preflight.json",
-        "g4/stage2_g4_losses.development.yaml": ROOT / "configs/stage2_g4_losses.development.yaml",
-        "parent_r5/artifact_manifest.json": R5 / "artifact_manifest.json",
-        "parent_r5/trainability_manifest.json": R5 / "trainability_manifest.json",
-    }
-    values = {relative: path.read_bytes() for relative, path in paths.items()}
-    frozen_bindings = json.dumps(protected, indent=2, sort_keys=True).encode() + b"\n"
-    values["bindings/frozen_inputs_startup.json"] = frozen_bindings
-    manifest = {
-        "captured_before_model_or_optimizer_update": True,
-        "files": {
-            relative: {
-                "source_path": paths[relative].relative_to(ROOT).as_posix(),
-                "sha256": hashlib.sha256(value).hexdigest(),
-                "file_size": len(value),
-            }
-            for relative, value in values.items()
-            if relative in paths
-        },
-        "generated_frozen_binding_sha256": hashlib.sha256(frozen_bindings).hexdigest(),
-        "checkpoint_writer_live_config_or_manifest_rereads": 0,
-    }
-    return values, manifest
-
-
-def checkpoint_tree_binding(root: Path) -> dict:
-    result = file_tree(root)
-    result.update(
-        path=root.relative_to(ROOT).as_posix(),
-        checkpoint_manifest_sha256=sha256_file(root / "checkpoint_manifest.json"),
-    )
-    return result
-
-
-def report_markdown(artifact: dict) -> str:
-    cycle = artifact["single_cycle"]
-    actor = cycle["actor_update"]
-    scale = cycle["gradient_scale_diagnostic"]
-    return f"""# Stage-2 G5 development single-cycle preflight
-
-Status: `PASS_DEVELOPMENT_SINGLE_CYCLE_ONLY` on `{cycle['environment']['device']}`.
-
-Exactly one disposable cycle ran: 2 Critic optimizer updates, 2 Polyak updates per target, and 1 Actor optimizer update. Critic/Actor scheduler steps were 2/1; target-Actor updates were 0. A second cycle, G6/G7, evaluation, export, and robot execution did not run.
-
-## Loss and update evidence
-
-| Critic step | TD Q1/Q2 | Cal-QL Q1/Q2 | Twin-Q total | pre/post clip norm |
-|---:|---|---|---:|---|
-""" + "\n".join(
-        f"| {item['critic_substep']} | {item['loss']['L_TD_Q1']:.6g} / {item['loss']['L_TD_Q2']:.6g} | {item['loss']['L_CalQL_Q1']:.6g} / {item['loss']['L_CalQL_Q2']:.6g} | {item['loss']['L_critic']:.6g} | {item['gradient']['preclip_global_norm']:.6g} / {item['gradient']['postclip_global_norm']:.6g} |"
-        for item in cycle["critic_updates"]
-    ) + f"""
-
-Actor losses: FM `{actor['loss']['L_FM_window']:.6g}`, Actor-Q `{actor['loss']['L_actor_Q_window']:.6g}`, balance `{actor['loss']['L_balance_equal_microbatch_mean']:.6g}`, z `{actor['loss']['L_z_equal_microbatch_mean']:.6g}`, weighted total `{actor['loss']['weighted_actor_total']:.6g}`. TCP6 Actor-Q gradient was nonzero, gripper Actor-Q gradient was exactly `{actor['gradient']['gripper_actor_q_gradient_max_abs']}`, and gripper Flow-Matching gradient was nonzero.
-
-The diagnostic `||eta*grad_Q|| / ||beta*grad_FM||` was `{scale['weighted_eta_grad_q_over_beta_grad_fm']:.6g}` on one fixed train microbatch. It is measurement-only and did not alter eta, beta, or either learning rate.
-
-## Ownership, data, and checkpoint
-
-Only the 10,075 automatic detector-G1 train transitions were available. TD, Cal-QL, Actor, empirical proposal, and every Flow/noise stream had independent serialized state; batch identities were unique. Validation/test reads, manual G1/label opens, Reward Classifier inference/updates, and robot actions were all zero.
-
-The atomic checkpoint is marked `DEVELOPMENT_SINGLE_CYCLE_ONLY`, `NOT_FOR_DEPLOYMENT`, `NOT_FOR_POLICY_EVALUATION`, and `NOT_AN_APPROVED_LONG_TRAIN_PARENT`; exact resume remains untested and reserved for G6.
-
-## Limits
-
-`2 Critic : 1 Actor` is a ConRFT-inspired development recipe, not a proven-optimal update ratio. `M=2`, `eta=0.01`, `alpha=0.1`, and empirical whole-macro proposals are single-cycle mechanics values only. All demonstrations are successes, and Reward Classifier training overlaps automatic-G1 RL train episodes, so this smoke cannot establish failure recovery or policy improvement.
-"""
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--run", action="store_true")
-    args = parser.parse_args()
-    require(args.run, "pass --run for authorized G5 single cycle")
-    require(SOURCE_MANIFEST.is_file(), "G5_SOURCE_MANIFEST_MUST_EXIST_AT_STARTUP")
-    for path in (ARTIFACT, REPORT, CHECKPOINT):
-        require(not path.exists(), f"G5_APPEND_ONLY_TARGET_EXISTS:{path}")
-    install_open_audit()
-    config = verify_config()
-    tests = run_unit_tests()
-    before = protected_snapshot()
-    snapshot_bytes, snapshot_manifest = startup_snapshot(before)
-
-    require(torch.cuda.is_available(), "CUDA_NOT_AVAILABLE_NO_CPU_FALLBACK")
-    gpu_name = torch.cuda.get_device_name(0)
-    require("4090 D" in gpu_name or "4090D" in gpu_name, f"G5_REQUIRES_RTX_4090D:{gpu_name}")
-    require(os.environ.get("PYTHONHASHSEED") == "42", "G5_PYTHONHASHSEED_REQUIRED")
-    require(os.environ.get("CUBLAS_WORKSPACE_CONFIG") == ":4096:8", "G5_CUBLAS_CONFIG_REQUIRED")
-    random.seed(42)
-    np.random.seed(42)
-    torch.manual_seed(42)
-    torch.cuda.manual_seed_all(42)
-    torch.use_deterministic_algorithms(True)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    device = torch.device("cuda:0")
-
-    from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
-    from forcesmolvla.rft.critic import build_twin_q, modules_storage_independent, state_exact
-    from forcesmolvla.rft.training_checkpoint import save_g5_cycle_checkpoint, validate_g5_checkpoint
-    from forcesmolvla.rft.training_cycle import (
-        SerializableReplacementSampler,
-        SerializableUniqueSampler,
-        build_stage2_optimizers,
-        ensure_all_gradients_none,
-        module_state_sha256,
-        optimizer_state_storage_independent,
-    )
-
-    train_data = TrainData()
-    train_data.canonicalize_proposal_gripper_for_runtime(device)
-    seeds = config["rng"]["named_stream_seeds"]
-    generators = {
-        "td_sampler": named_generator("cpu", seeds["td_sampler"]),
-        "calql_sampler": named_generator("cpu", seeds["calql_sampler"]),
-        "actor_sampler": named_generator("cpu", seeds["actor_sampler"]),
-        "empirical_random_proposal": named_generator("cpu", seeds["empirical_random_proposal"]),
-        "td_next_action_flow_noise": named_generator("cuda", seeds["td_next_action_flow_noise"]),
-        "calql_current_policy_flow_noise": named_generator("cuda", seeds["calql_current_policy_flow_noise"]),
-        "calql_next_policy_flow_noise": named_generator("cuda", seeds["calql_next_policy_flow_noise"]),
-        "actor_q_flow_noise": named_generator("cuda", seeds["actor_q_flow_noise"]),
-        "flow_matching_noise": named_generator("cuda", seeds["flow_matching_noise"]),
-        "flow_matching_timestep": named_generator("cuda", seeds["flow_matching_timestep"]),
-        "moe_router_stochastic_state": named_generator("cuda", seeds["moe_router_stochastic_state"]),
-    }
-    td_sampler = SerializableUniqueSampler("TD_sampler", train_data.td_population, generators["td_sampler"])
-    calql_sampler = SerializableUniqueSampler("CalQL_sampler", train_data.calql_population, generators["calql_sampler"])
-    actor_sampler = SerializableUniqueSampler("Actor_sampler", train_data.actor_population, generators["actor_sampler"])
-    proposal_sampler = SerializableReplacementSampler(
-        "empirical_random_proposal", len(train_data.proposal_population),
-        generators["empirical_random_proposal"],
-    )
-    td_draws = [td_sampler.draw(16), td_sampler.draw(16)]
-    calql_draws = [calql_sampler.draw(16), calql_sampler.draw(16)]
-    actor_draw = actor_sampler.draw(4)
-    all_batches = [*td_draws, *calql_draws, actor_draw]
-    require(len({tuple(batch) for batch in all_batches}) == len(all_batches), "G5_SAMPLER_BATCH_REUSE")
-
-    with redirect_stdout(sys.stderr):
-        policy = ForceSmolVLAPolicy.from_pretrained(
-            R5, local_files_only=True, force_download=False, strict=True,
-            artifact_use="development",
-        ).to(device)
-    actor_initial = module_state_sha256(policy)
-    q1, q2, q1_target, q2_target, conversion = build_twin_q(SAFE_NPZ, SAFE_MANIFEST, seed=0)
-    q1, q2, q1_target, q2_target = (
-        module.to(device) for module in (q1, q2, q1_target, q2_target)
-    )
-    require(
-        modules_storage_independent(q1, q2)
-        and modules_storage_independent(q1, q1_target)
-        and modules_storage_independent(q2, q2_target)
-        and state_exact(q1, q1_target)
-        and state_exact(q2, q2_target),
-        "G5_TWIN_Q_INITIALIZATION_OR_STORAGE_INVALID",
-    )
-    require(
-        all(
-            torch.equal(q1.canonical_task_feature, critic.canonical_task_feature)
-            for critic in (q2, q1_target, q2_target)
-        ),
-        "G5_TWIN_Q_CANONICAL_TASK_FEATURE_DRIFT",
-    )
-    q1.train(True)
-    q2.train(True)
-    q1_target.eval()
-    q2_target.eval()
-    optimizers = build_stage2_optimizers(policy, q1, q2)
-    actor_optimizer, critic_optimizer, actor_scheduler, critic_scheduler, ownership = optimizers
-    require(module_state_sha256(policy) == actor_initial, "G5_ACTOR_CHANGED_WHEN_ENTERING_STAGE2_OPTIMIZER")
-    ownership["target_parameter_ids_in_optimizer"] = sum(
-        id(parameter) in {
-            id(value)
-            for optimizer in (actor_optimizer, critic_optimizer)
-            for group in optimizer.param_groups
-            for value in group["params"]
-        }
-        for target in (q1_target, q2_target)
-        for parameter in target.parameters()
-    )
-    require(ownership["target_parameter_ids_in_optimizer"] == 0, "G5_TARGET_IN_OPTIMIZER")
-    trainability = {
-        "actor_all_checkpoint_trainable_parameters_owned": True,
-        "actor_trainable_tensor_count": sum(parameter.requires_grad for parameter in policy.parameters()),
-        "actor_trainable_parameter_count": sum(parameter.numel() for parameter in policy.parameters() if parameter.requires_grad),
-        "lm_head_gradient_required": False,
-        "q1_trainable_parameter_count": sum(parameter.numel() for parameter in q1.parameters() if parameter.requires_grad),
-        "q2_trainable_parameter_count": sum(parameter.numel() for parameter in q2.parameters() if parameter.requires_grad),
-        "target_trainable_parameter_count": 0,
-        "frozen_resnet_in_critic_optimizer": False,
-        "lora_used": False,
-        "vlm_frozen": False,
-        "camera_count": 2,
-        "flow_horizon": 50,
-        "flow_euler_steps": 10,
-        "torch_compile": False,
-    }
-
-    modules = {"actor": policy, "q1": q1, "q2": q2, "q1_target": q1_target, "q2_target": q2_target}
-    state_initial = {name: module_state_sha256(module) for name, module in modules.items()}
-    flow_counter = FlowCounter(inference_batch_size=4)
-    force_calls = {"k": 0, "v": 0, "action_out": 0}
-    hooks = [
-        policy.model.force_adapter.cross_attention.k_proj.register_forward_hook(
-            lambda *_: force_calls.__setitem__("k", force_calls["k"] + 1)
-        ),
-        policy.model.force_adapter.cross_attention.v_proj.register_forward_hook(
-            lambda *_: force_calls.__setitem__("v", force_calls["v"] + 1)
-        ),
-        policy.model.action_out_proj.register_forward_hook(
-            lambda *_: force_calls.__setitem__("action_out", force_calls["action_out"] + 1)
-        ),
-    ]
-    torch.cuda.reset_peak_memory_stats(device)
-    cycle_started = time.perf_counter()
-    critic_reports = []
-    try:
-        for step in (1, 2):
-            td_batch = train_data.build_batch(
-                td_draws[step - 1], policy, device,
-                canonical_task_feature=q1.canonical_task_feature,
-            )
-            calql_batch = train_data.build_batch(
-                calql_draws[step - 1], policy, device,
-                canonical_task_feature=q1.canonical_task_feature,
-            )
-            critic_reports.append(
-                critic_update(
-                    step=step, policy=policy, q1=q1, q2=q2,
-                    q1_target=q1_target, q2_target=q2_target,
-                    optimizer=critic_optimizer, scheduler=critic_scheduler,
-                    td_batch=td_batch, calql_batch=calql_batch,
-                    train_data=train_data, proposal_sampler=proposal_sampler,
-                    generators=generators, flow_counter=flow_counter, config=config,
-                )
-            )
-            del td_batch, calql_batch
-            gc.collect()
-            torch.cuda.empty_cache()
-
-        actor_batch = train_data.build_batch(
-            actor_draw, policy, device,
-            canonical_task_feature=q1.canonical_task_feature,
-            include_flow_actions=True,
-        )
-        first = torch.tensor([True, False, False, False], dtype=torch.bool, device=device)
-        probe_batch = {
-            "reward": actor_batch["reward"][first],
-            "current_observation": actor_batch["current_observation"].index(first),
-            "current_actor_batch": {
-                name: (
-                    value[first]
-                    if isinstance(value, torch.Tensor) and value.ndim and value.shape[0] == 4
-                    else type(value)(item for item, keep in zip(value, first.cpu().tolist(), strict=True) if keep)
-                    if isinstance(value, (tuple, list)) and len(value) == 4
-                    else value
-                )
-                for name, value in actor_batch["current_actor_batch"].items()
-            },
-            "delta_mean": actor_batch["delta_mean"],
-            "delta_std": actor_batch["delta_std"],
-        }
-        scale_probe = actor_gradient_scale_probe(
-            policy=policy, q1=q1, q2=q2, microbatch=probe_batch,
-            generators=generators, flow_counter=flow_counter,
-            eta=config["loss"]["eta_actor_q"],
-        )
-        actor_report = actor_update(
-            policy=policy, q1=q1, q2=q2, q1_target=q1_target, q2_target=q2_target,
-            optimizer=actor_optimizer, scheduler=actor_scheduler,
-            actor_batch=actor_batch, generators=generators,
-            flow_counter=flow_counter, config=config,
-        )
-        del actor_batch, probe_batch
-    finally:
-        for hook in hooks:
-            hook.remove()
-    torch.cuda.synchronize()
-    cycle_latency = time.perf_counter() - cycle_started
-    counters = {
-        "training_cycles": 1,
-        "critic_optimizer_updates": 2,
-        "actor_optimizer_updates": 1,
-        "q1_target_polyak_updates": 2,
-        "q2_target_polyak_updates": 2,
-        "actor_target_updates": 0,
-        "critic_scheduler_steps": 2,
-        "actor_scheduler_steps": 1,
-    }
-    ensure_all_gradients_none(policy, q1, q2, q1_target, q2_target)
-    state_final = {name: module_state_sha256(module) for name, module in modules.items()}
-    require(all(torch.isfinite(parameter).all() for module in modules.values() for parameter in module.parameters()), "G5_NONFINITE_PARAMETER_AFTER_CYCLE")
-    require(optimizer_state_storage_independent(critic_optimizer, q1, q2), "G5_CRITIC_OPTIMIZER_STATE_STORAGE_SHARED")
-    flow = flow_counter.report()
-    fm_forward_count = 5  # one scale probe plus four actual accumulation microbatches
-    flow["flow_matching_forward_count"] = fm_forward_count
-    flow["prefix_prefill_count_including_flow_matching"] = flow["prefix_prefill_count"] + fm_forward_count
-    flow["force_k_projection_calls"] = force_calls["k"]
-    flow["force_v_projection_calls"] = force_calls["v"]
-    flow["action_output_projection_calls"] = force_calls["action_out"]
-    flow["empirical_random_candidate_actions"] = 2 * 16 * 2
-    flow["calql_policy_candidate_actions"] = 2 * 16 * 2 * 2
-    flow["total_calql_candidate_actions"] = 2 * 16 * 2 * 3
-
-    rng_before_checkpoint = capture_rng_states(generators)
-    rng_summary_before = rng_state_summary(rng_before_checkpoint)
-    sampler_states = {
-        "td": td_sampler.state_dict(),
-        "calql": calql_sampler.state_dict(),
-        "actor": actor_sampler.state_dict(),
-        "empirical_random_proposal": proposal_sampler.state_dict(),
-    }
-    checkpoint_manifest = save_g5_cycle_checkpoint(
-        CHECKPOINT,
-        actor=policy, q1=q1, q2=q2, q1_target=q1_target, q2_target=q2_target,
-        actor_optimizer=actor_optimizer, critic_optimizer=critic_optimizer,
-        actor_scheduler=actor_scheduler, critic_scheduler=critic_scheduler,
-        counters=counters, sampler_states=sampler_states,
-        rng_states=rng_before_checkpoint,
-        startup_snapshot_bytes=snapshot_bytes,
-        parameter_ownership_manifest=ownership,
-        trainability_manifest=trainability,
-        proposal_population_manifest=train_data.population_manifest,
-    )
-    rng_after_checkpoint = capture_rng_states(generators)
-    rng_summary_after = rng_state_summary(rng_after_checkpoint)
-    require(rng_summary_before == rng_summary_after, "G5_CHECKPOINT_CONSUMED_TRAINING_RNG")
-    validate_g5_checkpoint(CHECKPOINT)
-
-    after = protected_snapshot()
-    require(before == after, "G5_FROZEN_INPUT_MUTATION")
-    require(not FORBIDDEN_OPENS["manual_g1"] and not FORBIDDEN_OPENS["manual_labels"], f"G5_FORBIDDEN_READ:{FORBIDDEN_OPENS}")
-    change_matrix = {
-        "initial_to_final": {name: state_initial[name] != state_final[name] for name in state_initial},
-        "critic_step_1": {
-            "actor": critic_reports[0]["state"]["actor_before_sha256"] != critic_reports[0]["state"]["actor_after_sha256"],
-            "q1": critic_reports[0]["state"]["online_before"]["q1"] != critic_reports[0]["state"]["online_after_optimizer"]["q1"],
-            "q2": critic_reports[0]["state"]["online_before"]["q2"] != critic_reports[0]["state"]["online_after_optimizer"]["q2"],
-            "q1_target": critic_reports[0]["state"]["targets_before"]["q1"] != critic_reports[0]["state"]["targets_after"]["q1"],
-            "q2_target": critic_reports[0]["state"]["targets_before"]["q2"] != critic_reports[0]["state"]["targets_after"]["q2"],
-        },
-        "critic_step_2": {
-            "actor": critic_reports[1]["state"]["actor_before_sha256"] != critic_reports[1]["state"]["actor_after_sha256"],
-            "q1": critic_reports[1]["state"]["online_before"]["q1"] != critic_reports[1]["state"]["online_after_optimizer"]["q1"],
-            "q2": critic_reports[1]["state"]["online_before"]["q2"] != critic_reports[1]["state"]["online_after_optimizer"]["q2"],
-            "q1_target": critic_reports[1]["state"]["targets_before"]["q1"] != critic_reports[1]["state"]["targets_after"]["q1"],
-            "q2_target": critic_reports[1]["state"]["targets_before"]["q2"] != critic_reports[1]["state"]["targets_after"]["q2"],
-        },
-        "actor_step": {
-            "actor": actor_report["state"]["actor_before_sha256"] != actor_report["state"]["actor_after_sha256"],
-            **{
-                name: actor_report["state"]["critics_before"][name] != actor_report["state"]["critics_after"][name]
-                for name in ("q1", "q2", "q1_target", "q2_target")
-            },
-        },
-    }
-    acceptance = {
-        "exact_update_counts": counters == {
-            "training_cycles": 1, "critic_optimizer_updates": 2,
-            "actor_optimizer_updates": 1, "q1_target_polyak_updates": 2,
-            "q2_target_polyak_updates": 2, "actor_target_updates": 0,
-            "critic_scheduler_steps": 2, "actor_scheduler_steps": 1,
-        },
-        "critic_steps_change_only_online_and_targets": all(
-            not change_matrix[f"critic_step_{step}"]["actor"]
-            and all(change_matrix[f"critic_step_{step}"][name] for name in ("q1", "q2", "q1_target", "q2_target"))
-            for step in (1, 2)
-        ),
-        "actor_step_changes_only_actor": change_matrix["actor_step"] == {
-            "actor": True, "q1": False, "q2": False,
-            "q1_target": False, "q2_target": False,
-        },
-        "polyak_formula_exact": all(
-            report["polyak"][name]["maximum_formula_abs_error"] == 0.0
-            for report in critic_reports for name in ("q1", "q2")
-        ),
-        "optimizer_ownership_and_state_independent": ownership["actor_critic_parameter_id_intersection"] == ownership["q1_q2_parameter_id_intersection"] == ownership["target_parameter_ids_in_optimizer"] == 0 and optimizer_state_storage_independent(critic_optimizer, q1, q2),
-        "targets_backbones_classifier_no_grad": True,
-        "actor_q_tcp_nonzero_gripper_zero": actor_report["gradient"]["tcp6_actor_q_gradient_norm"] > 0 and actor_report["gradient"]["gripper_actor_q_gradient_max_abs"] == 0.0,
-        "flow_matching_gripper_nonzero": actor_report["gradient"]["gripper_flow_matching_gradient_norm"] > 0,
-        "actor_required_module_gradients": all(value > 0 for value in actor_report["gradient"]["module_gradient_norms"].values()),
-        "all_values_and_parameters_finite": all(report["gradient"]["finite_before_and_after"] for report in critic_reports) and actor_report["gradient"]["finite_before_and_after"],
-        "full_architecture_no_fallback": trainability["camera_count"] == 2 and trainability["flow_horizon"] == 50 and trainability["flow_euler_steps"] == 10 and not trainability["lora_used"] and not trainability["vlm_frozen"],
-        "automatic_g1_train_only": train_data.population_audit()["train_transition_count"] == 10075,
-        "heldout_manual_reads_zero": train_data.population_audit()["validation_transition_reads"] == train_data.population_audit()["test_transition_reads"] == len(FORBIDDEN_OPENS["manual_g1"]) == len(FORBIDDEN_OPENS["manual_labels"]) == 0,
-        "reward_classifier_calls_updates_zero": True,
-        "frozen_sha_before_after_exact": before == after,
-        "checkpoint_development_smoke_only": checkpoint_manifest["artifact_status"] == "DEVELOPMENT_SINGLE_CYCLE_ONLY" and not checkpoint_manifest["robot_execution_authorized"] and not checkpoint_manifest["resume_exactness_tested"],
-        "second_cycle_g6_g7_not_run": counters["training_cycles"] == 1,
-        "checkpoint_rng_neutral": rng_summary_before == rng_summary_after,
-    }
-    require(all(acceptance.values()), f"G5_ACCEPTANCE_FAILED:{acceptance}")
-
-    artifact = {
-        "schema_version": "forcesmolvla_s2_g5_single_cycle_preflight.v1",
-        "artifact_status": "PASS_DEVELOPMENT_SINGLE_CYCLE_ONLY",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "pre_execution_fail_closed_history": [{
-            "reason": "G1 CPU-normalized open-gripper endpoint differed by one fp32 ULP from the CUDA runtime endpoint",
-            "critic_optimizer_updates": 0,
-            "actor_optimizer_updates": 0,
-            "checkpoint_created": False,
-            "acceptance_artifact_created": False,
-        }, {
-            "reason": "independently regenerated task feature was rejected by the G2 exact canonical binding; adapter changed to source the frozen critic buffer directly",
-            "critic_optimizer_updates": 0,
-            "actor_optimizer_updates": 0,
-            "checkpoint_created": False,
-            "acceptance_artifact_created": False,
-        }, {
-            "reason": "G2 task binding still rejected before target-Q despite direct canonical-buffer sourcing; added pre/after-Flow and forward-prehook bitwise audits",
-            "critic_optimizer_updates": 0,
-            "actor_optimizer_updates": 0,
-            "checkpoint_created": False,
-            "acceptance_artifact_created": False,
-        }, {
-            "reason": "after one in-memory Critic update, Polyak interpolation of an identical frozen floating task-feature buffer introduced 7.45e-9 rounding drift; frozen buffers are now preserved bitwise",
-            "critic_optimizer_updates": 1,
-            "q1_target_polyak_updates": 1,
-            "q2_target_polyak_updates": 1,
-            "actor_optimizer_updates": 0,
-            "checkpoint_created": False,
-            "acceptance_artifact_created": False,
-        }],
-        "resolved_config": binding(CONFIG),
-        "source_manifest": binding(SOURCE_MANIFEST),
-        "unit_tests": tests,
-        "startup_immutable_snapshot": snapshot_manifest,
-        "protected_inputs_before": before,
-        "protected_inputs_after": after,
-        "data_access_audit": train_data.population_audit(),
-        "sampler_audit": {
-            "td_draws": [train_data.identity_records(values) for values in td_draws],
-            "calql_draws": [train_data.identity_records(values) for values in calql_draws],
-            "actor_draw": train_data.identity_records(actor_draw),
-            "independent_named_samplers": True,
-            "batch_identity_unique": True,
-            "conditional_redraw_count": 0,
-            "sampler_states": {
-                name: {key: value for key, value in state.items() if key != "generator_state"}
-                for name, state in sampler_states.items()
-            },
-        },
-        "proposal_population_manifest": train_data.population_manifest,
-        "rng_audit": {
-            "named_streams": sorted(generators),
-            "before_checkpoint": rng_summary_before,
-            "after_checkpoint": rng_summary_after,
-            "checkpoint_consumed_training_rng": False,
-            "python_numpy_torch_cpu_and_all_cuda_states_saved": True,
-        },
-        "parameter_ownership_manifest": ownership,
-        "trainability_manifest": trainability,
-        "parameter_change_matrix": change_matrix,
-        "single_cycle": {
-            "environment": {
-                "device": gpu_name, "torch": torch.__version__,
-                "precision": "bf16_actor_with_v4_2_fp32_islands_and_fp32_critic",
-                "cuda_fallback": False, "grad_scaler_enabled": False,
-                "data_augmentation": False, "num_workers": 0,
-            },
-            "counters": counters,
-            "critic_updates": critic_reports,
-            "gradient_scale_diagnostic": scale_probe,
-            "actor_update": actor_report,
-            "flow_and_projection_calls": flow,
-            "latency_seconds_total": cycle_latency,
-            "vram": {
-                "peak_allocated_bytes": torch.cuda.max_memory_allocated(device),
-                "peak_reserved_bytes": torch.cuda.max_memory_reserved(device),
-            },
-            "initial_state_sha256": state_initial,
-            "final_state_sha256": state_final,
-        },
-        "checkpoint": checkpoint_tree_binding(CHECKPOINT),
-        "checkpoint_manifest": checkpoint_manifest,
-        "forbidden_activity": {
-            "validation_transition_reads": 0, "test_transition_reads": 0,
-            "manual_g1_files_opened": len(FORBIDDEN_OPENS["manual_g1"]),
-            "manual_label_files_opened": len(FORBIDDEN_OPENS["manual_labels"]),
-            "reward_classifier_inference_calls": 0,
-            "reward_classifier_optimizer_updates": 0,
-            "target_actor_created": 0, "target_actor_updates": 0,
-            "second_cycle_started": 0, "G6_started": 0, "G7_started": 0,
-            "model_selection_runs": 0, "actor_exports": 0, "robot_actions": 0,
-        },
-        "acceptance": acceptance,
-        "development_limits": config["development_limits"],
-        "terminal_status": {
-            "G5_SINGLE_CYCLE": "complete",
-            "TRAINING_CYCLES": 1,
-            "CRITIC_OPTIMIZER_UPDATES": 2,
-            "ACTOR_OPTIMIZER_UPDATES": 1,
-            "POLYAK_UPDATES_PER_TARGET": 2,
-            "ACTOR_TARGET_UPDATES": 0,
-            "G6_G7_STARTED": "no",
-            "NEXT_ALLOWED_ACTION": "request_G6_fresh_process_exact_resume_approval",
-        },
-    }
-    atomic_text(REPORT, report_markdown(artifact))
-    artifact["report"] = binding(REPORT)
-    artifact["artifact_payload_sha256"] = canonical_sha256(artifact)
-    atomic_json(ARTIFACT, artifact)
-    print(json.dumps({
-        "status": artifact["artifact_status"], "device": gpu_name,
-        "training_cycles": 1, "critic_optimizer_updates": 2,
-        "actor_optimizer_updates": 1, "polyak_updates_per_target": 2,
-        "checkpoint": str(CHECKPOINT), "artifact": str(ARTIFACT),
-    }, sort_keys=True))
-
-
-if __name__ == "__main__":
-    main()

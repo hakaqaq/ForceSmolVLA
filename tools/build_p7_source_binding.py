@@ -34,7 +34,7 @@ def main() -> None:
     if output.exists():
         raise FileExistsError(f"refusing to overwrite P7 source binding: {output}")
 
-    recipe_path = root / "configs/p7_training_recipe.development.yaml"
+    recipe_path = root / "configs/forcesmolvla_sft_recipe.development.yaml"
     recipe = json.loads(recipe_path.read_text(encoding="utf-8"))
     _validate_recipe(recipe)
     runtime_imports = _validate_runtime_import_roots(root)
@@ -101,7 +101,7 @@ def main() -> None:
         "configs/offline_sft_training_recipe.development.yaml",
         "configs/p5_force_token_dense_compute.development.json",
         "configs/p6_dense_param_moe.development.json",
-        "configs/p7_training_recipe.development.yaml",
+        "configs/forcesmolvla_sft_recipe.development.yaml",
         "configs/parity_acceptance.development.json",
         "configs/training_stage.development.json",
         "configs/wrench_geometry_spec.development.json",
@@ -122,7 +122,9 @@ def main() -> None:
         "formal_eligible": False,
         "stage": "P7",
         "runtime_imports": runtime_imports,
-        "p6_prerequisite": recipe["p6_prerequisite"],
+        "model_architecture_prerequisite": recipe[
+            "model_architecture_prerequisite"
+        ],
         "lerobot": {
             "repository": "https://github.com/huggingface/lerobot.git",
             "tag": "v0.6.0",

@@ -1,4 +1,4 @@
-"""Frozen Stage-3 G1 contracts and their cross-file consistency checks."""
+"""Frozen Stage-3 runtime contracts and cross-file consistency checks."""
 
 from __future__ import annotations
 

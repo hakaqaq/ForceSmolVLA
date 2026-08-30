@@ -1,4 +1,4 @@
-"""G5-only mechanics for one disposable 2-Critic:1-Actor training cycle."""
+"""Reusable mechanics for one 2-Critic:1-Actor ForceRFT training cycle."""
 
 from __future__ import annotations
 
@@ -343,13 +343,13 @@ def optimizer_state_storage_independent(optimizer: torch.optim.Optimizer, q1: nn
 
 
 # Stable production API for the materialization and update primitives formerly
-# embedded in the one-off G5 runner.
+# embedded in the historical single-cycle runner.
 from forcesmolvla.rft.training_cycle_runtime import (  # noqa: E402
     FORBIDDEN_OPENS,
     DATASET,
-    R5,
-    SAFE_MANIFEST,
-    SAFE_NPZ,
+    PARENT_ACTOR_CHECKPOINT,
+    REWARD_BACKBONE_MANIFEST,
+    REWARD_BACKBONE_PARAMETERS,
     FlowCounter,
     TrainData,
     actor_module_gradient_norms,

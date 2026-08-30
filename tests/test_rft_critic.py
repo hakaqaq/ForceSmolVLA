@@ -9,7 +9,7 @@ from forcesmolvla.rft.critic import (
     PROJECT_ROOT,
     build_twin_q,
     frozen_task_feature,
-    load_authorized_g2_train_transitions,
+    load_authorized_critic_train_transitions,
     modules_storage_independent,
     polyak_blend_state,
     state_exact,
@@ -112,4 +112,4 @@ def test_wrong_shapes_and_non_detector_root_rejected_before_open(topology, tmp_p
     with pytest.raises(ValueError, match="ACTION_K7_SHAPE"):
         topology[0](*values)
     with pytest.raises(RuntimeError, match="BEFORE_OPEN"):
-        load_authorized_g2_train_transitions(tmp_path / "does-not-exist-manual-g1")
+        load_authorized_critic_train_transitions(tmp_path / "does-not-exist-manual-g1")

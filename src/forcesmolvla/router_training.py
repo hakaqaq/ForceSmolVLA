@@ -110,7 +110,7 @@ def _no_decay_parameter_names(policy: nn.Module) -> set[str]:
     return result
 
 
-def build_p7_optimizer_and_scheduler(
+def build_sft_optimizer_and_scheduler(
     policy: nn.Module,
     *,
     derived_optimizer_updates: int = DEFAULT_DERIVED_OPTIMIZER_UPDATES,

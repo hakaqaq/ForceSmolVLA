@@ -42,7 +42,7 @@ def test_manual_g1_loader_is_fail_closed():
 def test_new_sources_have_no_manual_boundary_dependency():
     paths = [
         ROOT / "src/forcesmolvla/rft/detector_reward_transitions.py",
-        ROOT / "configs/stage2_g1_frozen_detector_transition_view.development.json",
+        ROOT / "configs/reward_transition_materialization.development.json",
     ]
     forbidden = ("first_confident_complete_frame", "task2_reward_frame_labels", "reviewed.json")
     for path in paths:

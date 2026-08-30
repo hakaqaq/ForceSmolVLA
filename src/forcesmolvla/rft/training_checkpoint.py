@@ -1,4 +1,4 @@
-"""Atomic, cycle-boundary-only checkpoint writer for the disposable G5 smoke."""
+"""Atomic, cycle-boundary-only ForceRFT training checkpoint writer."""
 
 from __future__ import annotations
 

@@ -72,7 +72,7 @@ def _copy_payloads(
         "manifests/calibration_bundle.development.json": root / "configs/calibration_bundle.development.json",
         "manifests/converter_runtime_spec.development.json": root / "configs/converter_runtime_spec.development.json",
         "manifests/training_stage.development.json": root / "configs/training_stage.development.json",
-        "manifests/p7_training_recipe.development.yaml": root
+        "manifests/forcesmolvla_sft_recipe.development.yaml": root
         / p7["training_recipe"]["path"],
         "manifests/p8_checkpoint_contract.development.json": root / "configs/p8_checkpoint_contract.development.json",
         "manifests/approval_checklist.yaml": root / "configs/approval_checklist.yaml",
@@ -275,10 +275,10 @@ def main() -> None:
 
     from forcesmolvla.checkpoint import (
         load_offline_base_policy,
-        save_p8_training_state,
+        save_sft_training_state,
         sha256_file,
         validate_force_artifact_manifest,
-        validate_p8_payload_contract,
+        validate_sft_payload_contract,
         write_development_artifact_manifest,
         write_trainability_manifest,
     )
@@ -287,7 +287,7 @@ def main() -> None:
     from forcesmolvla.router_training import (
         MoEMicrobatch,
         SerializableUniformSampler,
-        build_p7_optimizer_and_scheduler,
+        build_sft_optimizer_and_scheduler,
         single_pass_optimizer_update,
     )
     from forcesmolvla.training_data import load_runtime_artifacts, prepare_training_sample
@@ -394,7 +394,7 @@ def main() -> None:
         )
     if not all(parameter.requires_grad for parameter in policy.parameters()):
         raise RuntimeError("P8_OFFLINE_FULL_FINETUNE_FROZEN_PARAMETER_DETECTED")
-    optimizer, scheduler, optimizer_groups = build_p7_optimizer_and_scheduler(policy)
+    optimizer, scheduler, optimizer_groups = build_sft_optimizer_and_scheduler(policy)
     scaler = torch.amp.GradScaler("cuda", enabled=False)
     generator = torch.Generator(device=device).manual_seed(44)
     batch = _make_batch(policy, prepared_train, device)
@@ -482,7 +482,7 @@ def main() -> None:
     if trainability["frozen_parameters"] != 0:
         raise RuntimeError("P8_TRAINABILITY_MANIFEST_FROZEN_PARAMETER_DETECTED")
 
-    save_p8_training_state(
+    save_sft_training_state(
         checkpoint,
         step=1,
         policy=policy,
@@ -588,7 +588,7 @@ def main() -> None:
         },
     )
     validate_force_artifact_manifest(checkpoint, artifact_use="development")
-    validate_p8_payload_contract(checkpoint)
+    validate_sft_payload_contract(checkpoint)
     for required in contract["required_payloads"]:
         if not (checkpoint / required).exists():
             raise RuntimeError(f"P8_REQUIRED_PAYLOAD_MISSING_AFTER_SAVE: {required}")

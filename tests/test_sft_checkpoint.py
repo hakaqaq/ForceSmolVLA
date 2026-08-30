@@ -8,11 +8,11 @@ import pytest
 import torch
 
 from forcesmolvla.checkpoint import (
-    load_p8_training_state,
+    load_sft_training_state,
     optimizer_state_sha256,
     parameter_trainability_manifest,
     resolve_local_force_checkpoint_dir,
-    save_p8_training_state,
+    save_sft_training_state,
     validate_force_artifact_manifest,
     validate_training_payload_contract,
     write_development_artifact_manifest,
@@ -141,7 +141,7 @@ def test_resume_restores_optimizer_scheduler_rng_sampler_scaler_and_phase(tmp_pa
     optimizer.step()
     scheduler.step()
     expected_optimizer_hash = optimizer_state_sha256(optimizer)
-    save_p8_training_state(
+    save_sft_training_state(
         tmp_path,
         step=1,
         policy=policy,
@@ -170,7 +170,7 @@ def test_resume_restores_optimizer_scheduler_rng_sampler_scaler_and_phase(tmp_pa
     )
     restored_scaler = torch.amp.GradScaler("cpu", enabled=False)
     restored_sampler = SerializableUniformSampler([1, 3, 5], seed=42)
-    step, contract = load_p8_training_state(
+    step, contract = load_sft_training_state(
         tmp_path,
         policy=restored_policy,
         optimizer=restored_optimizer,
@@ -202,7 +202,7 @@ def test_resume_rejects_cross_training_stage_before_state_restore(tmp_path):
     sampler = SerializableUniformSampler([1], seed=42)
     policy(torch.ones(1, 2)).sum().backward()
     optimizer.step()
-    save_p8_training_state(
+    save_sft_training_state(
         tmp_path,
         step=1,
         policy=policy,
@@ -217,7 +217,7 @@ def test_resume_rejects_cross_training_stage_before_state_restore(tmp_path):
     )
     other = _Policy(stage="online_hil_vlm_frozen")
     with pytest.raises(RuntimeError, match="TRAINING_STAGE"):
-        load_p8_training_state(
+        load_sft_training_state(
             tmp_path,
             policy=other,
             optimizer=torch.optim.AdamW(other.parameters(), lr=1e-3),
@@ -246,7 +246,7 @@ def test_resume_rejects_batching_drift_before_optimizer_restore(
     sampler = SerializableUniformSampler([1], seed=42)
     policy(torch.ones(1, 2)).sum().backward()
     optimizer.step()
-    save_p8_training_state(
+    save_sft_training_state(
         tmp_path,
         step=1,
         policy=policy,
@@ -263,7 +263,7 @@ def test_resume_rejects_batching_drift_before_optimizer_restore(
     restored_optimizer = torch.optim.AdamW(restored.parameters(), lr=1e-3)
     before = optimizer_state_sha256(restored_optimizer)
     with pytest.raises(RuntimeError, match=expected_error):
-        load_p8_training_state(
+        load_sft_training_state(
             tmp_path,
             policy=restored,
             optimizer=restored_optimizer,
@@ -284,7 +284,7 @@ def test_resume_rejects_source_binding_drift_before_optimizer_restore(tmp_path):
     sampler = SerializableUniformSampler([1], seed=42)
     policy(torch.ones(1, 2)).sum().backward()
     optimizer.step()
-    save_p8_training_state(
+    save_sft_training_state(
         tmp_path,
         step=1,
         policy=policy,
@@ -301,7 +301,7 @@ def test_resume_rejects_source_binding_drift_before_optimizer_restore(tmp_path):
     restored_optimizer = torch.optim.AdamW(restored.parameters(), lr=1e-3)
     before = optimizer_state_sha256(restored_optimizer)
     with pytest.raises(RuntimeError, match="P8_RESUME_CONTRACT_MISMATCH"):
-        load_p8_training_state(
+        load_sft_training_state(
             tmp_path,
             policy=restored,
             optimizer=restored_optimizer,

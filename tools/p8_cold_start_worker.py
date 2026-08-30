@@ -85,13 +85,13 @@ def main() -> None:
     lerobot_policy_module.hf_hub_download = deny_hub
 
     from forcesmolvla.checkpoint import (
-        load_p8_training_state,
+        load_sft_training_state,
         optimizer_state_sha256,
         validate_force_artifact_manifest,
     )
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
     from forcesmolvla.router_training import SerializableUniformSampler
-    from forcesmolvla.router_training import build_p7_optimizer_and_scheduler
+    from forcesmolvla.router_training import build_sft_optimizer_and_scheduler
     from forcesmolvla.training_runtime import file_sha256 as _sha256
     from preflight_p8_checkpoint_gpu import (
         _validate_contract,
@@ -118,7 +118,7 @@ def main() -> None:
     )
     if not all(parameter.requires_grad for parameter in policy.parameters()):
         raise RuntimeError("P8_COLD_START_FROZEN_PARAMETER_DETECTED")
-    optimizer, scheduler, optimizer_groups = build_p7_optimizer_and_scheduler(policy)
+    optimizer, scheduler, optimizer_groups = build_sft_optimizer_and_scheduler(policy)
     embedded_binding = json.loads(
         (checkpoint / "manifests/p8_source_binding.json").read_text(encoding="utf-8")
     )
@@ -150,7 +150,7 @@ def main() -> None:
     sampler = SerializableUniformSampler(
         sampler_payload["eligible_indices"], seed=int(sampler_payload["seed"])
     )
-    step, resume_contract = load_p8_training_state(
+    step, resume_contract = load_sft_training_state(
         checkpoint,
         policy=policy,
         optimizer=optimizer,

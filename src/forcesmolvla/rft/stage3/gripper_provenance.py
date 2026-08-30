@@ -662,7 +662,7 @@ def pose_authority_from_g7c1_entry(
     transition_id: str,
     episode_id: str,
 ) -> PoseAcceptedAuthority:
-    """Read pose-only authority without weakening G7C1's gripper ACK checks."""
+    """Read pose-only authority without weakening gripper ACK checks."""
 
     generation = GripperGeneration(
         episode_id=episode_id,

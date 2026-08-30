@@ -219,7 +219,7 @@ def validate_dataset_variant_prerequisite(
 ) -> dict:
     """Validate dataset-variant inputs consumed by the SFT recipe."""
 
-    prerequisite = recipe.get("p6_prerequisite")
+    prerequisite = recipe.get("model_architecture_prerequisite")
     expected_keys = {
         "static_spec",
         "source_binding",
@@ -246,31 +246,39 @@ def validate_dataset_variant_prerequisite(
         if file_sha256(path) != artifact["sha256"]:
             raise RuntimeError(f"P7_P6_{name.upper()}_HASH_MISMATCH")
         payloads[name] = json.loads(path.read_text(encoding="utf-8"))
-    p6_spec = payloads["static_spec"]
-    p6_binding = payloads["source_binding"]
-    p6_resolved = payloads["resolved_config"]
-    p6_result = payloads["gate_result"]
-    validate_variant_spec(p6_spec)
+    architecture_spec = payloads["static_spec"]
+    architecture_binding = payloads["source_binding"]
+    resolved_architecture = payloads["resolved_config"]
+    architecture_validation = payloads["gate_result"]
+    validate_variant_spec(architecture_spec)
     validate_dataset_source_binding(
         root,
-        p6_binding,
+        architecture_binding,
         dataset_root=dataset_root,
         repo_id=repo_id,
-        spec=p6_spec,
+        spec=architecture_spec,
     )
     if (
-        p6_result.get("gate") != "P6"
-        or p6_result.get("gate_status") != "pass"
-        or p6_result.get("acceptance_status") != "development_only"
-        or p6_result.get("formal_eligible") is not False
-        or p6_result.get("source_binding_sha256") != prerequisite["source_binding"]["sha256"]
-        or p6_result.get("resolved_config_sha256") != prerequisite["resolved_config"]["sha256"]
-        or p6_result.get("static_spec_sha256") != prerequisite["static_spec"]["sha256"]
-        or p6_resolved.get("source_binding_sha256") != prerequisite["source_binding"]["sha256"]
-        or p6_resolved.get("static_spec_sha256") != prerequisite["static_spec"]["sha256"]
+        architecture_validation.get("gate") != "P6"  # persisted artifact ABI
+        or architecture_validation.get("gate_status") != "pass"
+        or architecture_validation.get("acceptance_status") != "development_only"
+        or architecture_validation.get("formal_eligible") is not False
+        or architecture_validation.get("source_binding_sha256")
+        != prerequisite["source_binding"]["sha256"]
+        or architecture_validation.get("resolved_config_sha256")
+        != prerequisite["resolved_config"]["sha256"]
+        or architecture_validation.get("static_spec_sha256")
+        != prerequisite["static_spec"]["sha256"]
+        or resolved_architecture.get("source_binding_sha256")
+        != prerequisite["source_binding"]["sha256"]
+        or resolved_architecture.get("static_spec_sha256")
+        != prerequisite["static_spec"]["sha256"]
     ):
         raise RuntimeError("P7_PARENT_P6_GATE_NOT_ELIGIBLE")
-    if binding is not None and binding.get("p6_prerequisite") != prerequisite:
+    if (
+        binding is not None
+        and binding.get("model_architecture_prerequisite") != prerequisite
+    ):
         raise RuntimeError("P7_SOURCE_BINDING_P6_PREREQUISITE_MISMATCH")
     return {
         name: prerequisite[name]["sha256"]

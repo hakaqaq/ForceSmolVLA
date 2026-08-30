@@ -1,4 +1,4 @@
-"""Pure, zero-update Stage-2 G4 loss primitives.
+"""Pure, zero-update ForceRFT Actor/Critic loss primitives.
 
 This module deliberately owns no optimizer, target-Actor, Polyak update, or
 proposal distribution.  Callers must pass every Cal-QL candidate explicitly.
@@ -18,8 +18,8 @@ from torch import Tensor, nn
 from forcesmolvla.rft.critic import (
     ACTION_DIM,
     ACTION_SLOTS,
-    AUTHORIZED_G1_MANIFEST_SHA256,
-    AUTHORIZED_G1_ROOT,
+    AUTHORIZED_REWARD_TRANSITION_MANIFEST_SHA256,
+    AUTHORIZED_REWARD_TRANSITION_ROOT,
     _sha256_file,
 )
 from forcesmolvla.rft.flow_sampling import (
@@ -588,13 +588,18 @@ def validate_mc_return_recurrence(rows: list[dict], *, tolerance: float = 1e-12)
     }
 
 
-def load_authorized_g4_train_transitions(root: Path = AUTHORIZED_G1_ROOT):
-    """Open only the hash-bound automatic detector-G1 train transition view."""
+def load_authorized_reward_train_transitions(
+    root: Path = AUTHORIZED_REWARD_TRANSITION_ROOT,
+):
+    """Open only the hash-bound automatic reward-detector training view."""
 
     root = Path(root).resolve()
-    if root != AUTHORIZED_G1_ROOT.resolve():
+    if root != AUTHORIZED_REWARD_TRANSITION_ROOT.resolve():
         raise RuntimeError("G4_REJECTED_NONAUTHORIZED_G1_ROOT_BEFORE_OPEN")
-    if _sha256_file(root / "g1_manifest.json") != AUTHORIZED_G1_MANIFEST_SHA256:
+    if (
+        _sha256_file(root / "g1_manifest.json")
+        != AUTHORIZED_REWARD_TRANSITION_MANIFEST_SHA256
+    ):
         raise RuntimeError("G4_AUTHORIZED_G1_MANIFEST_SHA_DRIFT")
     from forcesmolvla.rft.detector_reward_transitions import load_training_transitions
 

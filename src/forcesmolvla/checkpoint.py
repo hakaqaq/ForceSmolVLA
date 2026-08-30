@@ -338,7 +338,7 @@ def validate_force_artifact_manifest(
     return manifest
 
 
-def validate_p8_payload_contract(checkpoint_dir: Path) -> dict:
+def validate_sft_payload_contract(checkpoint_dir: Path) -> dict:
     """Validate the frozen P8 payload list embedded in a complete Force checkpoint."""
     try:
         contract = json.loads(
@@ -433,7 +433,7 @@ def resolve_local_force_checkpoint_dir(
 def prepare_strict_force_config(checkpoint_dir: Path, *, artifact_use: str):
     manifest = validate_force_artifact_manifest(checkpoint_dir, artifact_use=artifact_use)
     if manifest["artifact_type"] == "forcesmolvla_p8_checkpoint":
-        validate_p8_payload_contract(checkpoint_dir)
+        validate_sft_payload_contract(checkpoint_dir)
     elif manifest["artifact_type"] == "forcesmolvla_training_checkpoint":
         validate_training_payload_contract(checkpoint_dir)
     else:  # guarded above
@@ -473,7 +473,7 @@ def _tuple_tree(value: Any) -> Any:
     return value
 
 
-def save_p8_training_state(
+def save_sft_training_state(
     checkpoint_dir: Path,
     *,
     step: int,
@@ -534,7 +534,7 @@ def save_p8_training_state(
         raise RuntimeError("P8_TRAINING_STATE_DIRECTORY_MISSING")
 
 
-def load_p8_training_state(
+def load_sft_training_state(
     checkpoint_dir: Path,
     *,
     policy: torch.nn.Module,
