@@ -1,14 +1,14 @@
 {
   "approval": {
     "approval_id": "forcesmolvla-stage3-joint-cycle000010-candidate-20260830-001",
-    "approved_at": "2026-08-30T03:28:29Z",
+    "approved_at": "2026-08-30T07:12:13Z",
     "approver_identity": "rlc123",
     "approver_role": "experiment_lead",
     "status": "approved"
   },
   "artifact_status": "approved",
   "camera_max_age_ms": 250.0,
-  "client_source_sha256": "4ec734a2f1b29871ca18443ad8c639e50836c709214df7203860f2e3b641deca",
+  "client_source_sha256": "a883f40d639e4737a0730cbe66f0d8f34af9b2cbd24025009cd62eba30eb062e",
   "controller_ack_timeout_ms": 20.0,
   "gripper_max_age_ms": 300.0,
   "max_intercamera_skew_ms": 250.0,
