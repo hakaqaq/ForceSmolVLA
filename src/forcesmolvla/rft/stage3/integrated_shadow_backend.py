@@ -128,9 +128,16 @@ def build_native_recorder_command(arguments: Mapping[str, Any]) -> list[str]:
         episodes = int(arguments["episodes"])
         episode_time = float(arguments["episode_time"])
         tool_profile = str(arguments["tool_profile"]).strip()
+        initial_policy_epoch = int(arguments["initial_policy_epoch"])
     except (KeyError, TypeError, ValueError) as error:
         raise IntegratedCaptureError("SHADOW_RECORDER_ARGUMENTS_INVALID") from error
-    if not task or not tool_profile or episodes != 1 or episode_time <= 0.0:
+    if (
+        not task
+        or not tool_profile
+        or episodes != 1
+        or episode_time <= 0.0
+        or initial_policy_epoch < 0
+    ):
         raise IntegratedCaptureError("SHADOW_RECORDER_ARGUMENTS_INVALID")
     return [
         sys.executable,
@@ -145,6 +152,8 @@ def build_native_recorder_command(arguments: Mapping[str, Any]) -> list[str]:
         str(episode_time),
         "--tool-profile",
         tool_profile,
+        "--initial-policy-epoch",
+        str(initial_policy_epoch),
     ]
 
 
@@ -1272,6 +1281,13 @@ class IntegratedShadowBackend:
             _validate_shadow_contract(contract)
         else:
             _validate_policy_execution_contract(contract)
+        if (
+            recorder_arguments.get("initial_policy_epoch")
+            != contract.identity.policy_epoch
+        ):
+            raise IntegratedCaptureError(
+                "INTEGRATED_CAPTURE_INITIAL_POLICY_EPOCH_MISMATCH"
+            )
         command = build_native_recorder_command(recorder_arguments)
         try:
             return self._capture_live(contract, ledger, recorder_arguments, command)

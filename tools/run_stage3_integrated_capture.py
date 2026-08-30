@@ -191,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
             "episodes": args.episodes,
             "episode_time": args.episode_time,
             "tool_profile": args.tool_profile,
+            "initial_policy_epoch": args.policy_epoch,
             "policy_host": args.policy_host,
             "policy_port": args.policy_port,
             "deployment_profile": str(args.deployment_profile.resolve()),

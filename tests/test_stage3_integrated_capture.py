@@ -295,13 +295,14 @@ def test_policy_execute_ack_binds_lineage_current_next_and_takeover() -> None:
         session_id="session-policy-1",
         episode_id="episode_000000",
         policy_revision=BASELINE_POLICY_REVISION,
-        policy_epoch=0,
+        policy_epoch=1,
         reset_generation=0,
         takeover_generation=0,
         deployment_binding=BASELINE_DEPLOYMENT_BINDING,
         allow_development_policy_execution_smoke=True,
     )
     ledger = IntegratedCaptureLedger(contract)
+    assert ledger.current_policy_generation == (1, 0)
     _observation(ledger)
     request = _request()
     request_record = ledger.record_policy_request(
@@ -339,17 +340,31 @@ def test_policy_execute_ack_binds_lineage_current_next_and_takeover() -> None:
     assert ack["policy_executed_transition"] is True
     intervention = ledger.record_intervention(
         event="intervention_start",
-        policy_epoch=1,
+        policy_epoch=2,
         receive_monotonic_ns=1_040_000_000,
         safe_action={"arbitration": {"event": "intervention_start"}},
     )
     assert intervention["old_policy_chunk_invalidated"] is True
+    assert ledger.current_policy_generation == (2, 1)
     with pytest.raises(IntegratedCaptureError, match="POLICY_LINEAGE_STALE_GENERATION"):
         ledger.bind_policy_dispatch(result["result_id"])
     ledger.record_intervention(
         event="intervention_end",
-        policy_epoch=1,
+        policy_epoch=2,
         receive_monotonic_ns=1_050_000_000,
+        safe_action={"arbitration": {"event": "intervention_end"}},
+    )
+    ledger.record_intervention(
+        event="intervention_start",
+        policy_epoch=3,
+        receive_monotonic_ns=1_055_000_000,
+        safe_action={"arbitration": {"event": "intervention_start"}},
+    )
+    assert ledger.current_policy_generation == (3, 2)
+    ledger.record_intervention(
+        event="intervention_end",
+        policy_epoch=3,
+        receive_monotonic_ns=1_057_000_000,
         safe_action={"arbitration": {"event": "intervention_end"}},
     )
     seal = ledger.seal_episode(
@@ -463,6 +478,8 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
         "episode_000000",
         "--policy-revision",
         revision,
+        "--policy-epoch",
+        "1",
         "--deployment-profile",
         str(profile),
     ]
@@ -489,6 +506,7 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
     assert payload["contract"]["deploy_controller"] is False
     assert payload["contract"]["deployment_binding"] == str(binding.resolve())
     assert payload["recorder_arguments"]["async_learner"] is True
+    assert payload["recorder_arguments"]["initial_policy_epoch"] == 1
 
     other_binding = _development_binding(tmp_path, revision, "other-binding")
     mismatch = subprocess.run(

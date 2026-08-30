@@ -56,6 +56,7 @@ def _arguments(tmp_path: Path) -> dict:
         "episodes": 1,
         "episode_time": 60.0,
         "tool_profile": "onrobot_robotiq",
+        "initial_policy_epoch": 2,
     }
 
 
@@ -87,6 +88,7 @@ def test_backend_owns_exactly_one_native_recorder_control_chain(tmp_path: Path) 
     assert "deploy_forcesmolvla.py" not in " ".join(command)
     assert "--execute" not in command
     assert command[command.index("--episodes") + 1] == "1"
+    assert command[command.index("--initial-policy-epoch") + 1] == "2"
 
 
 def test_policy_publisher_is_a_fail_closed_non_dds_sentinel() -> None:
