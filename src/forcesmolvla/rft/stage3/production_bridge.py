@@ -1040,6 +1040,7 @@ class Stage3ProductionBridge:
             gripper_by_sequence[sequence] = row
 
         transition_sequences: set[int] = set()
+        transition_generation_by_sequence: dict[int, tuple[int, int, int]] = {}
         transition_by_chunk: dict[str, list[dict[str, Any]]] = {}
         transition_by_request: dict[str, list[dict[str, Any]]] = {}
         lineage_keys = (
@@ -1228,6 +1229,7 @@ class Stage3ProductionBridge:
                 "BRIDGE_POLICY_EXECUTION_ACCEPTED_ACTION7_INVALID",
             )
             transition_sequences.add(sequence)
+            transition_generation_by_sequence[sequence] = generation
             transition_by_chunk.setdefault(str(transition["chunk_id"]), []).append(
                 transition
             )
@@ -1425,6 +1427,11 @@ class Stage3ProductionBridge:
                 "origin_local_goal_sequence": lease.origin_local_goal_sequence,
                 "origin_action_goal_id": lease.origin_action_goal_id,
                 "terminal_outcome": lease.terminal_outcome,
+                "generation": {
+                    "session_id": identity["session_id"],
+                    "clock_domain_id": identity["clock_domain_id"],
+                    **asdict(lease_generation),
+                },
             }
         ]
         stalled_contact_count = 0
@@ -1467,6 +1474,7 @@ class Stage3ProductionBridge:
                     "origin_local_goal_sequence": sequence,
                     "origin_action_goal_id": target["action_goal_id"],
                     "terminal_outcome": outcome,
+                    "generation": None,
                 }
             )
             if requested_state == "CLOSED" and outcome == "stalled":
@@ -1486,18 +1494,102 @@ class Stage3ProductionBridge:
             raise ProductionBridgeError(
                 "BRIDGE_POLICY_EXECUTION_GRIPPER_QUALITY_INVALID"
             )
+        command_origins: dict[tuple[int, str], dict[str, Any]] = {}
+        for authority in gripper_authorities:
+            if authority.get("command_required") is not True:
+                continue
+            sequence = int(authority.get("sequence", -1))
+            generation = self._policy_execution_generation(
+                {**identity, **authority}, identity
+            )
+            if transition_generation_by_sequence.get(sequence) != generation:
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_GRIPPER_GENERATION_MISMATCH"
+                )
+            local_sequence = int(authority.get("local_goal_sequence", -1))
+            target = targets.get(local_sequence)
+            status = statuses.get(local_sequence)
+            key = (local_sequence, str(authority.get("action_goal_id", "")))
+            if (
+                target is None
+                or status is None
+                or key in command_origins
+                or key[1] != target.get("action_goal_id")
+                or authority.get("outcome") != status.get("outcome")
+                or authority.get("outcome") not in VALID_TERMINAL_OUTCOMES
+                or int(authority.get("accepted_monotonic_ns", 0))
+                != int(target.get("accepted_monotonic_ns", -1))
+                or int(authority.get("finished_monotonic_ns", 0))
+                != int(status.get("finished_monotonic_ns", -1))
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_POLICY_GRIPPER_ACK_INVALID"
+                )
+            origin = next(
+                (
+                    item
+                    for item in accepted_gripper_states
+                    if item["origin_local_goal_sequence"] == local_sequence
+                    and item["origin_action_goal_id"] == key[1]
+                ),
+                None,
+            )
+            if origin is None:
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_POLICY_GRIPPER_ACK_INVALID"
+                )
+            command_origin = dict(origin)
+            command_origin["generation"] = {
+                **{
+                    field: identity[field]
+                    for field in (
+                        "session_id",
+                        "episode_id",
+                        "clock_domain_id",
+                        "policy_revision",
+                    )
+                },
+                "policy_epoch": generation[0],
+                "reset_generation": generation[1],
+                "takeover_generation": generation[2],
+            }
+            command_origins[key] = command_origin
+        accepted_gripper_states.extend(command_origins.values())
+
         gripper_origin_by_sequence: dict[int, dict[str, Any]] = {}
         for authority in gripper_authorities:
+            sequence = int(authority.get("sequence", -1))
+            generation = self._policy_execution_generation(
+                {**identity, **authority}, identity
+            )
+            if transition_generation_by_sequence.get(sequence) != generation:
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_GRIPPER_GENERATION_MISMATCH"
+                )
+            if authority.get("command_required") is True:
+                origin = command_origins.get(
+                    (
+                        int(authority.get("local_goal_sequence", -1)),
+                        str(authority.get("action_goal_id", "")),
+                    )
+                )
+                if origin is None:
+                    raise ProductionBridgeError(
+                        "BRIDGE_POLICY_EXECUTION_POLICY_GRIPPER_ACK_INVALID"
+                    )
+                gripper_origin_by_sequence[sequence] = dict(origin)
+                continue
             feedback_ns = int(authority.get("feedback_monotonic_ns", 0))
             applicable = [
                 state
                 for state in accepted_gripper_states
                 if int(state["terminal_finished_monotonic_ns"]) <= feedback_ns
+                and isinstance(state.get("generation"), Mapping)
+                and self._policy_execution_generation(state["generation"], identity)
+                == generation
             ]
             if not applicable:
-                raise ProductionBridgeError(
-                    "BRIDGE_POLICY_EXECUTION_GRIPPER_ORIGIN_MISSING"
-                )
+                continue
             origin = max(
                 applicable,
                 key=lambda item: int(item["terminal_finished_monotonic_ns"]),
@@ -1512,28 +1604,14 @@ class Stage3ProductionBridge:
                 raise ProductionBridgeError(
                     "BRIDGE_POLICY_EXECUTION_GRIPPER_ORIGIN_INVALID"
                 )
-            if authority.get("command_required") is True:
-                local_sequence = int(authority.get("local_goal_sequence", -1))
-                target = targets.get(local_sequence)
-                status = statuses.get(local_sequence)
-                if (
-                    target is None
-                    or status is None
-                    or authority.get("action_goal_id")
-                    != target.get("action_goal_id")
-                    or authority.get("outcome") != status.get("outcome")
-                    or authority.get("outcome") not in VALID_TERMINAL_OUTCOMES
-                ):
-                    raise ProductionBridgeError(
-                        "BRIDGE_POLICY_EXECUTION_POLICY_GRIPPER_ACK_INVALID"
-                    )
-                origin = next(
-                    item
-                    for item in accepted_gripper_states
-                    if item["origin_local_goal_sequence"] == local_sequence
-                    and item["origin_action_goal_id"] == target["action_goal_id"]
-                )
-            gripper_origin_by_sequence[int(authority["sequence"])] = dict(origin)
+            gripper_origin_by_sequence[sequence] = dict(origin)
+
+        accepted_transitions = tuple(
+            transition
+            for transition in transitions
+            if int(transition.get("selection", {}).get("sequence", -1))
+            in gripper_origin_by_sequence
+        )
 
         reconciliation = _read_json(
             stream_root / "policy_execute_camera_reconciliation.json"
@@ -1696,7 +1774,7 @@ class Stage3ProductionBridge:
             "results": result_by_request,
             "proposals": proposal_by_request,
             "chunks": chunk_by_request,
-            "transitions": tuple(transitions),
+            "transitions": accepted_transitions,
             "gripper_origins": gripper_origin_by_sequence,
             "seal": seal,
             "summary": {
@@ -3838,7 +3916,7 @@ class Stage3ProductionBridge:
                     episode_id=episode_id,
                     sealed=True,
                     dry_run=dry_run,
-                    candidate_count=int(summary["policy_action_ack_count"]),
+                    candidate_count=len(integrated_capture["transitions"]),
                     outbox_eligible_count=0,
                     quarantined_count=0,
                     wal_written_count=0,

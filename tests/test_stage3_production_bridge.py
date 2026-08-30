@@ -798,6 +798,42 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
             "feedback_monotonic_ns": feedback["receive_monotonic_ns"],
             "authority": "existing_accepted_gripper_state",
         }
+        if sequence == 3:
+            target_path = native_root / "gripper_target.jsonl"
+            status_path = native_root / "gripper_goal_status.jsonl"
+            target = json.loads(target_path.read_text().splitlines()[0])
+            status = json.loads(status_path.read_text().splitlines()[0])
+            target.update(
+                {
+                    "started_monotonic_ns": 1_305_000_000,
+                    "accepted_monotonic_ns": 1_306_000_000,
+                    "receive_monotonic_ns": 1_306_100_000,
+                }
+            )
+            status.update(
+                {
+                    "accepted_monotonic_ns": 1_306_000_000,
+                    "finished_monotonic_ns": 1_320_000_000,
+                    "receive_monotonic_ns": 1_320_100_000,
+                }
+            )
+            _write_jsonl(target_path, [target])
+            _write_jsonl(status_path, [status])
+            gripper.update(
+                {
+                    "command_required": True,
+                    "authority": "policy_execution_backend",
+                    "command_id": "policy-gripper:1",
+                    "local_goal_sequence": 1,
+                    "action_goal_id": "real-goal-1",
+                    "started_monotonic_ns": 1_305_000_000,
+                    "accepted_monotonic_ns": 1_306_000_000,
+                    "finished_monotonic_ns": 1_320_000_000,
+                    "outcome": "reached",
+                }
+            )
+            gripper.pop("feedback_width_m")
+            gripper.pop("feedback_monotonic_ns")
         native_safe = safe_rows[sequence]["payload"]
         native_ack = ack_rows[sequence]
         integrated_ack_receive_ns = native_ack["receive_monotonic_ns"] - 100_000
@@ -1184,6 +1220,7 @@ def test_integrated_policy_execution_smoke_is_read_only_and_not_shadow(
     assert report.policy_execution is True
     assert report.policy_lineage_complete is True
     assert report.policy_action_ack_count == 2
+    assert report.candidate_count == 2
     assert report.human_override_count == 1
     assert report.human_override_executed_count == 0
     assert report.quarantined_count == 0
@@ -1193,6 +1230,65 @@ def test_integrated_policy_execution_smoke_is_read_only_and_not_shadow(
     assert report.real_online_r_used is False
     assert report.model_update_count == 0
     assert not state.exists()
+
+
+def test_policy_execution_excludes_held_action_after_takeover_until_new_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+    path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_gripper_authority.jsonl"
+    )
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[-1] = {
+        key: value
+        for key, value in rows[-1].items()
+        if key
+        not in {
+            "command_id",
+            "local_goal_sequence",
+            "action_goal_id",
+            "started_monotonic_ns",
+            "accepted_monotonic_ns",
+            "finished_monotonic_ns",
+            "outcome",
+        }
+    }
+    rows[-1].update(
+        {
+            "command_required": False,
+            "authority": "existing_accepted_gripper_state",
+            "feedback_width_m": 0.085,
+            "feedback_monotonic_ns": 1_300_000_000,
+        }
+    )
+    _write_jsonl(path, rows)
+    transition_path = path.with_name("policy_execute_transition.jsonl")
+    transitions = [
+        json.loads(line) for line in transition_path.read_text().splitlines()
+    ]
+    transitions[-1]["gripper_authority"] = rows[-1]
+    _write_jsonl(transition_path, transitions)
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "DRY_RUN_READY"
+    assert report.policy_action_ack_count == 2
+    assert report.candidate_count == 1
+    assert report.quarantined_count == 0
 
 
 def _admission_prepared(episode: Path) -> PreparedEpisode:
