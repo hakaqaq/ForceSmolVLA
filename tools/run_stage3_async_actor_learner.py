@@ -131,7 +131,14 @@ def _load_actor(device: torch.device):
     return actor
 
 
-def _prepare_learner(device: torch.device, all_r, r_macros, source_episodes):
+def _prepare_learner(
+    device: torch.device,
+    all_r,
+    r_macros,
+    source_episodes,
+    *,
+    resume_checkpoint: Path = RESUME_CHECKPOINT,
+):
     from forcesmolvla.rft.critic import frozen_task_feature
     from forcesmolvla.rft.frozen_vlm_trainability import (
         FROZEN_PREFIXES,
@@ -142,9 +149,9 @@ def _prepare_learner(device: torch.device, all_r, r_macros, source_episodes):
     from forcesmolvla.rft.throughput_v2 import FrozenPrefixFlowCounter
     from forcesmolvla.training_data import load_normalizer_manifest
 
-    actor_package = RESUME_CHECKPOINT / "candidate_policy"
+    actor_package = resume_checkpoint / "candidate_policy"
     actor, q1, q2, q1_target, q2_target, binding, config = joint.load_resume_modules(
-        RESUME_CHECKPOINT,
+        resume_checkpoint,
         actor_package,
         device,
         allow_checkpoint_candidate=True,
@@ -173,7 +180,7 @@ def _prepare_learner(device: torch.device, all_r, r_macros, source_episodes):
         "q2_target": q2_target,
     }
     runtime = joint.load_joint_checkpoint_once(
-        RESUME_CHECKPOINT,
+        resume_checkpoint,
         actor=actor,
         modules=modules,
         critic_optimizer=critic_optimizer,
@@ -181,23 +188,25 @@ def _prepare_learner(device: torch.device, all_r, r_macros, source_episodes):
         actor_scheduler=actor_scheduler,
         device=device,
     )
+    counters = runtime["counters"]
+    joint_cycles = int(counters["joint_cycles"])
     require(
-        runtime["counters"] == {
-            "joint_cycles": 21,
-            "critic_optimizer_steps": 42,
-            "actor_optimizer_steps": 21,
-            "target_polyak_steps": 42,
+        counters == {
+            "joint_cycles": joint_cycles,
+            "critic_optimizer_steps": joint_cycles * 2,
+            "actor_optimizer_steps": joint_cycles,
+            "target_polyak_steps": joint_cycles * 2,
         }
         and critic_optimizer.state
         and actor_optimizer.state
-        and actor_scheduler.last_epoch == 21,
+        and actor_scheduler.last_epoch == joint_cycles,
         "STAGE3_ASYNC_LEARNER_EXACT_RESUME_INVALID",
     )
     credits = UpdateCreditLedger.from_state_dict(runtime["sample_credit"])
     require(
         len(all_r) == 618
         and credits.snapshot().credited_transition_count == 618
-        and credits.snapshot().available == 497,
+        and credits.snapshot().available > 0,
         "STAGE3_ASYNC_REPLAY_OR_CREDIT_MISMATCH",
     )
 
@@ -279,6 +288,7 @@ def _prepare_learner(device: torch.device, all_r, r_macros, source_episodes):
         "delta_std": delta_std,
         "flow": flow,
         "normalizer": normalizer,
+        "resume_checkpoint": resume_checkpoint,
     }
 
 

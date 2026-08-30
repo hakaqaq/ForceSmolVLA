@@ -66,6 +66,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-force-n", type=float, default=25.0)
     parser.add_argument("--max-torque-nm", type=float, default=2.0)
     parser.add_argument(
+        "--async-learner",
+        action="store_true",
+        help="require the unified Stage-3 inference/Learner runtime",
+    )
+    parser.add_argument(
         "--launch",
         action="store_true",
         help="Invoke one bound integrated backend; omitted means contract validation only.",
@@ -156,6 +161,8 @@ def main(argv: list[str] | None = None) -> int:
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_BACKEND_ARGUMENTS_INVALID")
         if not 0 < args.policy_queue_low_watermark < args.policy_replan_steps <= 50:
             raise IntegratedCaptureError("POLICY_EXECUTE_RUNTIME_LIMITS_INVALID")
+        if args.async_learner and args.mode != "policy-execute":
+            raise IntegratedCaptureError("ASYNC_LEARNER_REQUIRES_POLICY_EXECUTE")
         deployment_binding = args.deployment_binding
         if args.mode == "policy-execute":
             if not args.allow_development_policy_execution_smoke:
@@ -194,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
             "policy_queue_low_watermark": args.policy_queue_low_watermark,
             "max_force_n": args.max_force_n,
             "max_torque_nm": args.max_torque_nm,
+            "async_learner": args.async_learner,
         }
         if args.launch:
             result = run_integrated_capture(

@@ -474,7 +474,11 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
     assert "POLICY_EXECUTE_EXPLICIT_FLAG_REQUIRED" in blocked.stdout
     assert json.loads(blocked.stdout)["requested_mode_semantics"]["policy_execution"] is True
     enabled = subprocess.run(
-        [*policy_command, "--allow-development-policy-execution-smoke"],
+        [
+            *policy_command,
+            "--allow-development-policy-execution-smoke",
+            "--async-learner",
+        ],
         cwd=ROOT, text=True, capture_output=True, check=False,
     )
     assert enabled.returncode == 0, enabled.stdout + enabled.stderr
@@ -484,6 +488,7 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
     assert payload["contract"]["policy_execution"] is True
     assert payload["contract"]["deploy_controller"] is False
     assert payload["contract"]["deployment_binding"] == str(binding.resolve())
+    assert payload["recorder_arguments"]["async_learner"] is True
 
     other_binding = _development_binding(tmp_path, revision, "other-binding")
     mismatch = subprocess.run(

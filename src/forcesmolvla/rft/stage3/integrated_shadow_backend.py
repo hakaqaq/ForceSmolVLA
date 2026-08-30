@@ -47,6 +47,68 @@ DEFAULT_DEPLOYMENT_PROFILE = Path(
 )
 
 
+def _async_runtime_identity(
+    metadata: Mapping[str, Any], contract: IntegratedCaptureContract
+) -> dict[str, Any]:
+    if (
+        metadata.get("stage3_async_actor_learner") is not True
+        or metadata.get("runtime_session_id") != contract.identity.session_id
+        or metadata.get("runtime_episode_id") != contract.identity.episode_id
+        or metadata.get("active_actor_model_revision")
+        != contract.identity.policy_revision
+        or not isinstance(metadata.get("active_actor_revision"), str)
+        or not metadata["active_actor_revision"]
+        or not isinstance(metadata.get("learner_resume_checkpoint"), str)
+        or not metadata["learner_resume_checkpoint"]
+        or not isinstance(metadata.get("pending_candidate_id"), str)
+        or not metadata["pending_candidate_id"]
+        or metadata.get("pending_candidate_published") is not False
+        or metadata.get("pending_candidate_activated") is not False
+        or metadata.get("learner_started") is not False
+    ):
+        raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_RUNTIME_MISMATCH")
+    return {
+        "session_id": contract.identity.session_id,
+        "episode_id": contract.identity.episode_id,
+        "policy_revision": contract.identity.policy_revision,
+    }
+
+
+def _complete_async_runtime(
+    client: Any,
+    identity: Mapping[str, Any],
+    *,
+    deadline: float,
+) -> dict[str, Any]:
+    client._request("POST", "/runtime/episode-end", dict(identity))
+    while True:
+        status = client._request("GET", "/runtime/status")
+        state = status.get("learner_state")
+        if state == "failed":
+            raise IntegratedCaptureError(
+                f"ASYNC_POLICY_LEARNER_FAILED:{status.get('learner_error')}"
+            )
+        if state == "complete":
+            break
+        if time.monotonic() >= deadline:
+            raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_COMPLETION_TIMEOUT")
+        time.sleep(0.05)
+    if (
+        status.get("learner_started") is not True
+        or int(status.get("learner_critic_steps", -1)) != 2
+        or int(status.get("learner_actor_steps", -1)) != 1
+        or int(status.get("learner_polyak_steps", -1)) != 2
+        or status.get("current_episode_sampled") is not False
+        or status.get("pending_candidate_published") is not False
+        or status.get("pending_candidate_activated") is not False
+        or int(status.get("nonfinite_count", -1)) != 0
+        or int(status.get("oom_count", -1)) != 0
+        or status.get("actor_and_learner_concurrently_alive") is not True
+    ):
+        raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_COMPLETION_INVALID")
+    return status
+
+
 class ForbiddenPolicyPublisher:
     """Sentinel used instead of creating a DDS policy-action publisher."""
 
@@ -1258,6 +1320,12 @@ class IntegratedShadowBackend:
         if metadata.get("model_sha256") != contract.identity.policy_revision:
             raise IntegratedCaptureError("SHADOW_POLICY_REVISION_MISMATCH")
 
+        async_runtime_identity = None
+        if bool(arguments.get("async_learner", False)):
+            if contract.mode != "policy-execute":
+                raise IntegratedCaptureError("ASYNC_LEARNER_REQUIRES_POLICY_EXECUTE")
+            async_runtime_identity = _async_runtime_identity(metadata, contract)
+
         recorder_args = _parse_recorder_arguments(recorder, command)
         start_timeout = float(arguments.get("backend_start_timeout", 180.0))
         inference_period = float(arguments.get("shadow_inference_period", 0.1))
@@ -1268,7 +1336,13 @@ class IntegratedShadowBackend:
         observation = executor = executor_thread = cameras = None
         executor_stop = threading.Event()
         rclpy_started = False
+        async_runtime_started = False
         try:
+            if async_runtime_identity is not None:
+                client._request(
+                    "POST", "/runtime/episode-start", async_runtime_identity
+                )
+                async_runtime_started = True
             process = subprocess.Popen(command, cwd=EXTERNAL_SCRIPTS)
             deadline = time.monotonic() + start_timeout
             session_path = root / "session.json"
@@ -1328,7 +1402,12 @@ class IntegratedShadowBackend:
                 "deploy_controller_started": False,
                 "policy_server_started_by_backend": False,
                 "policy_action_publisher_created": contract.mode == "policy-execute",
-                "learner_started": False,
+                "learner_started": bool(metadata.get("learner_started", False)),
+                "learner_resume_checkpoint": metadata.get(
+                    "learner_resume_checkpoint"
+                ),
+                "active_actor_revision": metadata.get("active_actor_revision"),
+                "pending_candidate_id": metadata.get("pending_candidate_id"),
                 "formal_replay_writer_started": False,
                 "policy_revision_publisher_started": False,
                 "clock_binding": {
@@ -1384,7 +1463,7 @@ class IntegratedShadowBackend:
             store.write(initial_lease_name, authority)
 
             if contract.mode == "policy-execute":
-                return self._capture_policy_execution_episode(
+                result = self._capture_policy_execution_episode(
                     deploy=deploy,
                     process=process,
                     client=client,
@@ -1404,6 +1483,8 @@ class IntegratedShadowBackend:
                     start_timeout=start_timeout,
                     arguments=arguments,
                 )
+                async_runtime_started = False
+                return result
 
             observations: list[dict[str, Any]] = []
             processed_acks: set[int] = set()
@@ -1611,6 +1692,15 @@ class IntegratedShadowBackend:
             artifact_work.rename(artifact_final)
             return seal
         finally:
+            if async_runtime_started and async_runtime_identity is not None:
+                try:
+                    client._request(
+                        "POST",
+                        "/runtime/episode-abort",
+                        async_runtime_identity,
+                    )
+                except Exception:
+                    pass
             recorder_shutdown_requested = process is not None and process.poll() is None
             if recorder_shutdown_requested:
                 process.send_signal(signal.SIGINT)
@@ -2079,6 +2169,17 @@ class IntegratedShadowBackend:
                 "records": reconciliation,
             },
         )
+        async_status = None
+        if bool(arguments.get("async_learner", False)):
+            async_status = _complete_async_runtime(
+                client,
+                {
+                    "session_id": contract.identity.session_id,
+                    "episode_id": contract.identity.episode_id,
+                    "policy_revision": contract.identity.policy_revision,
+                },
+                deadline=time.monotonic() + start_timeout,
+            )
         seal = ledger.seal_episode(
             seal_id=(
                 f"policy-execute-seal:{contract.identity.session_id}:"
@@ -2107,6 +2208,38 @@ class IntegratedShadowBackend:
                 "checkpoint_written": False,
             }
         )
+        if async_status is not None:
+            seal.update(
+                {
+                    "learner_started": True,
+                    "learner_resume_checkpoint": async_status[
+                        "learner_resume_checkpoint"
+                    ],
+                    "active_actor_revision": async_status[
+                        "active_actor_revision"
+                    ],
+                    "active_actor_model_revision": async_status[
+                        "active_actor_model_revision"
+                    ],
+                    "learner_critic_steps": int(
+                        async_status["learner_critic_steps"]
+                    ),
+                    "learner_actor_steps": int(
+                        async_status["learner_actor_steps"]
+                    ),
+                    "actor_updates": int(async_status["learner_actor_steps"]),
+                    "critic_updates": int(async_status["learner_critic_steps"]),
+                    "pending_checkpoint_path": async_status[
+                        "pending_checkpoint_path"
+                    ],
+                    "pending_candidate_id": async_status[
+                        "pending_candidate_id"
+                    ],
+                    "pending_candidate_published": False,
+                    "pending_candidate_activated": False,
+                    "current_episode_sampled_by_learner": False,
+                }
+            )
         store.write("policy_execute_episode_seal.json", seal)
         artifact_final = root / "integrated_capture/episode_000000"
         artifact_work.rename(artifact_final)

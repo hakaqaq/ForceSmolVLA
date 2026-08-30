@@ -679,3 +679,65 @@ def test_integrated_cli_passes_shadow_runtime_binding_without_launch(
     assert arguments["policy_port"] == 8123
     assert arguments["shadow_inference_period"] == 0.2
     assert arguments["deployment_profile"] == str(profile.resolve())
+
+
+def test_async_runtime_binding_requires_exact_capture_identity() -> None:
+    contract = _policy_contract()
+    metadata = {
+        "stage3_async_actor_learner": True,
+        "runtime_session_id": contract.identity.session_id,
+        "runtime_episode_id": contract.identity.episode_id,
+        "active_actor_revision": "stage3-cycle10",
+        "active_actor_model_revision": contract.identity.policy_revision,
+        "learner_resume_checkpoint": "/tmp/cycle20",
+        "learner_started": False,
+        "pending_candidate_id": "stage3-cycle21",
+        "pending_candidate_published": False,
+        "pending_candidate_activated": False,
+    }
+    assert shadow_backend._async_runtime_identity(metadata, contract) == {
+        "session_id": contract.identity.session_id,
+        "episode_id": contract.identity.episode_id,
+        "policy_revision": contract.identity.policy_revision,
+    }
+    with pytest.raises(IntegratedCaptureError, match="RUNTIME_MISMATCH"):
+        shadow_backend._async_runtime_identity(
+            {**metadata, "runtime_episode_id": "wrong"}, contract
+        )
+
+
+def test_async_runtime_completion_records_only_pending_candidate() -> None:
+    class Client:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def _request(self, method, path, payload=None):
+            self.calls.append((method, path, payload))
+            if path == "/runtime/status":
+                return {
+                    "learner_state": "complete",
+                    "learner_started": True,
+                    "learner_critic_steps": 2,
+                    "learner_actor_steps": 1,
+                    "learner_polyak_steps": 2,
+                    "current_episode_sampled": False,
+                    "pending_candidate_published": False,
+                    "pending_candidate_activated": False,
+                    "actor_and_learner_concurrently_alive": True,
+                    "nonfinite_count": 0,
+                    "oom_count": 0,
+                }
+            return {}
+
+    client = Client()
+    status = shadow_backend._complete_async_runtime(
+        client,
+        {
+            "session_id": "session-1",
+            "episode_id": "episode_000000",
+            "policy_revision": "model-1",
+        },
+        deadline=1e100,
+    )
+    assert status["learner_critic_steps"] == 2
+    assert client.calls[0][1] == "/runtime/episode-end"
