@@ -1257,6 +1257,25 @@ def _record_live_observation(
     return request, record
 
 
+def _policy_context_is_current(
+    ledger: IntegratedCaptureLedger,
+    current_observation: Mapping[str, Any] | None,
+    *,
+    policy_epoch: int,
+    takeover_generation: int,
+    human_takeover_active: bool,
+    observation_id: str | None = None,
+) -> bool:
+    if current_observation is None or human_takeover_active:
+        return False
+    if ledger.current_policy_generation != (policy_epoch, takeover_generation):
+        return False
+    return (
+        observation_id is None
+        or current_observation.get("observation_id") == observation_id
+    )
+
+
 class IntegratedShadowBackend:
     """One native recorder with shadow inference or explicit policy smoke."""
 
@@ -1780,7 +1799,7 @@ class IntegratedShadowBackend:
         chunk_count = 0
         submitted: set[str] = set()
         outstanding: dict[str, dict[str, Any]] = {}
-        gripper_invalidated_requests: set[str] = set()
+        invalidated_requests: set[str] = set()
         processed_decisions: set[int] = set()
         current_request: dict[str, Any] | None = None
         current_observation: dict[str, Any] | None = None
@@ -1847,6 +1866,7 @@ class IntegratedShadowBackend:
                 store.append("policy_execute_intervention.jsonl", intervention)
                 if event == "intervention_start":
                     human_takeover_active = True
+                    invalidated_requests.update(outstanding)
                     current_chunk = None
                     current_request = None
                     current_observation = None
@@ -1855,7 +1875,7 @@ class IntegratedShadowBackend:
 
         def yield_to_human_gripper() -> None:
             nonlocal current_chunk, current_request, current_observation
-            gripper_invalidated_requests.update(outstanding)
+            invalidated_requests.update(outstanding)
             current_chunk = None
             current_request = None
             current_observation = None
@@ -1916,13 +1936,24 @@ class IntegratedShadowBackend:
                     }
                     store.append("policy_execute_chunk.jsonl", chunk_record)
                     chunk_count += 1
-                    generation = ledger.current_policy_generation
-                    fresh = (
-                        int(result_record["policy_epoch"]) == generation[0]
-                        and int(result_record["takeover_generation"]) == generation[1]
-                        and not human_takeover_active
-                        and request_id not in gripper_invalidated_requests
+                    current_result = (
+                        request_id == result_record["request_id"]
+                        and request_id not in invalidated_requests
+                        and any(
+                            row["observation_id"] == result_record["observation_id"]
+                            for row in observations
+                        )
+                        and _policy_context_is_current(
+                            ledger,
+                            current_observation,
+                            policy_epoch=int(result_record["policy_epoch"]),
+                            takeover_generation=int(
+                                result_record["takeover_generation"]
+                            ),
+                            human_takeover_active=human_takeover_active,
+                        )
                     )
+                    fresh = current_result
                     proposal = {
                         **result_record,
                         "schema": POLICY_EXECUTION_BACKEND_SCHEMA,
@@ -2012,11 +2043,21 @@ class IntegratedShadowBackend:
                     recorder_args.hilserl_translation_action_scale_m,
                     recorder_args.hilserl_rotation_action_scale_rad,
                 )
+                if current_observation is None:
+                    current_chunk = None
+                    continue
                 try:
+                    dispatch_observation_id = str(
+                        current_observation["observation_id"]
+                    )
+                    dispatch_generation = (
+                        int(lineage["policy_epoch"]),
+                        int(lineage["takeover_generation"]),
+                    )
                     sequence = observation.publish_policy_action(
                         normalized,
                         policy_epoch=lineage["policy_epoch"],
-                        observation_id=current_observation["observation_id"],
+                        observation_id=dispatch_observation_id,
                     )
                 except IntegratedCaptureError as error:
                     if str(error) == "POLICY_EXECUTE_EPISODE_END":
@@ -2027,7 +2068,14 @@ class IntegratedShadowBackend:
                     sequence, int(lineage["policy_epoch"]), 0.50
                 )
                 consume_interventions()
-                if decision is None:
+                if decision is None or not _policy_context_is_current(
+                    ledger,
+                    current_observation,
+                    policy_epoch=dispatch_generation[0],
+                    takeover_generation=dispatch_generation[1],
+                    human_takeover_active=human_takeover_active,
+                    observation_id=dispatch_observation_id,
+                ):
                     current_chunk = None
                     continue
                 arbitration = decision.get("arbitration", {})
@@ -2038,7 +2086,7 @@ class IntegratedShadowBackend:
                     or int(raw_action.get("policy_epoch", -1))
                     != int(lineage["policy_epoch"])
                     or raw_action.get("observation_id")
-                    != current_observation["observation_id"]
+                    != dispatch_observation_id
                     or not deploy.np.array_equal(
                         deploy.np.asarray(raw_action.get("action"), dtype=deploy.np.float64),
                         deploy.np.asarray(normalized, dtype=deploy.np.float64),

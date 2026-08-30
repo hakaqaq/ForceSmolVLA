@@ -889,3 +889,160 @@ def test_async_runtime_completion_records_only_pending_candidate() -> None:
     )
     assert status["learner_critic_steps"] == 2
     assert client.calls[0][1] == "/runtime/episode-end"
+
+
+def test_takeover_between_request_and_decision_invalidates_old_context() -> None:
+    ledger = IntegratedCaptureLedger(_policy_contract())
+    streams = (
+        "measured_tcp_pose",
+        "wrench_notch_sensor",
+        "gripper_state",
+        "external_camera",
+        "wrist_camera",
+    )
+
+    def observation(observation_id: str, t_ref_ns: int) -> dict:
+        return ledger.record_observation(
+            observation_id=observation_id,
+            t_ref_ns=t_ref_ns,
+            stream_timestamps_ns={
+                name: t_ref_ns - 1 for name in streams
+            },
+            stream_ids={
+                name: f"{name}:{observation_id}" for name in streams
+            },
+        )
+
+    def request(request_id: str, t_ref_ns: int) -> dict:
+        return {
+            "request_id": request_id,
+            "chunk_id": f"chunk-{request_id}",
+            "clock_domain_id": "upper_host_monotonic_ns",
+            "provenance": {"t_ref_ns": t_ref_ns},
+        }
+
+    old_observation = observation("observation-old", 1_000_000_000)
+    old_request = request("old-decision", 1_000_000_000)
+    ledger.record_policy_request(
+        old_request,
+        observation_id=old_observation["observation_id"],
+        recorded_monotonic_ns=1_000_000_010,
+    )
+    old_result = ledger.record_policy_result(
+        old_request,
+        {
+            "request_id": "old-decision",
+            "chunk_id": "chunk-old-decision",
+            "t_ref_ns": 1_000_000_000,
+        },
+        recorded_monotonic_ns=1_100_000_000,
+    )
+    inflight_observation = observation("observation-inflight", 1_200_000_000)
+    inflight_request = request("old-inflight", 1_200_000_000)
+    ledger.record_policy_request(
+        inflight_request,
+        observation_id=inflight_observation["observation_id"],
+        recorded_monotonic_ns=1_200_000_010,
+    )
+
+    ledger.record_intervention(
+        event="intervention_start",
+        policy_epoch=1,
+        receive_monotonic_ns=1_300_000_000,
+        safe_action={},
+    )
+    invalidated_requests = {"old-decision", "old-inflight"}
+    current_observation = None
+    old_decision_dispatch_count = int(
+        shadow_backend._policy_context_is_current(
+            ledger,
+            current_observation,
+            policy_epoch=0,
+            takeover_generation=0,
+            human_takeover_active=True,
+            observation_id=old_observation["observation_id"],
+        )
+    )
+    inflight_result = ledger.record_policy_result(
+        inflight_request,
+        {
+            "request_id": "old-inflight",
+            "chunk_id": "chunk-old-inflight",
+            "t_ref_ns": 1_200_000_000,
+        },
+        recorded_monotonic_ns=1_400_000_000,
+    )
+    old_result_adopt_count = int(
+        inflight_result["request_id"] not in invalidated_requests
+        and shadow_backend._policy_context_is_current(
+            ledger,
+            current_observation,
+            policy_epoch=inflight_result["policy_epoch"],
+            takeover_generation=inflight_result["takeover_generation"],
+            human_takeover_active=True,
+        )
+    )
+
+    assert old_decision_dispatch_count == 0
+    assert old_result_adopt_count == 0
+    old_proposal = {
+        **inflight_result,
+        "invalidated_by_takeover": not bool(old_result_adopt_count),
+    }
+    assert old_proposal["invalidated_by_takeover"] is True
+    with pytest.raises(IntegratedCaptureError, match="STALE_GENERATION"):
+        ledger.bind_policy_dispatch(old_result["result_id"])
+
+    ledger.record_intervention(
+        event="intervention_end",
+        policy_epoch=1,
+        receive_monotonic_ns=1_500_000_000,
+        safe_action={},
+    )
+    fresh_observation = observation("observation-fresh", 1_600_000_000)
+    fresh_request = request("fresh-request", 1_600_000_000)
+    fresh_request_record = ledger.record_policy_request(
+        fresh_request,
+        observation_id=fresh_observation["observation_id"],
+        recorded_monotonic_ns=1_600_000_010,
+    )
+    assert (
+        fresh_request_record["policy_epoch"],
+        fresh_request_record["takeover_generation"],
+    ) == (1, 1)
+    assert shadow_backend._policy_context_is_current(
+        ledger,
+        fresh_observation,
+        policy_epoch=1,
+        takeover_generation=1,
+        human_takeover_active=False,
+        observation_id=fresh_observation["observation_id"],
+    )
+    fresh_result = ledger.record_policy_result(
+        fresh_request,
+        {
+            "request_id": "fresh-request",
+            "chunk_id": "chunk-fresh-request",
+            "t_ref_ns": 1_600_000_000,
+        },
+        recorded_monotonic_ns=1_700_000_000,
+    )
+    assert fresh_result["request_id"] not in invalidated_requests
+    assert shadow_backend._policy_context_is_current(
+        ledger,
+        fresh_observation,
+        policy_epoch=fresh_result["policy_epoch"],
+        takeover_generation=fresh_result["takeover_generation"],
+        human_takeover_active=False,
+    )
+
+    toggle = _toggle_authority()
+    assert _complete_toggle_command(
+        toggle,
+        command_id="policy-close",
+        requested_closed=True,
+        start_width_m=0.085,
+        end_width_m=0.04456,
+        outcome="stalled",
+    )
+    assert toggle.next_target_closed(current_generation=1, now_monotonic_ns=140) is False
