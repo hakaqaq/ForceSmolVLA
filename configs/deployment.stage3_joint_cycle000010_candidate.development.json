@@ -3,7 +3,7 @@
   "checkpoint": "artifacts/development/stage3/published/stage3_joint_cycle_000010_candidate.v1",
   "dataset_manifest": "datasets/task2_lerobotv3/conversion_manifest.json",
   "deployment_binding": "artifacts/development/live/task2_stage3_joint_cycle000010_candidate_deployment_binding.v1.json",
-  "deployment_binding_sha256": "44599103b6e9a878bd0202a11d8dbd8416e0d378e63445234cca0eb8bf831e1e",
+  "deployment_binding_sha256": "80d5c1fb6a6edf8da9b87b5043e3b2ddb8984f90dfce2a055e00935f0215cd96",
   "deployment_id": "task2-stage3-joint-cycle000010-candidate",
   "raw_session": "/home/rlc123/fr3_client_ws/datasets/task2/session.json",
   "rulespec": "configs/live_action_safety.task2.development.yaml",
