@@ -59,6 +59,8 @@ def _deployment_artifacts(
     model_revision: str,
     profile_path: Path,
     binding_path: Path,
+    deployment_id: str,
+    approval_id: str,
 ) -> tuple[Path, Path]:
     from forcesmolvla.checkpoint import sha256_file
     from export_stage2b_cycle210_evaluation_smoke import client_source_sha256
@@ -85,7 +87,7 @@ def _deployment_artifacts(
         "controller_ack_timeout_ms": base_binding["controller_ack_timeout_ms"],
         "approval": {
             "status": "approved",
-            "approval_id": "forcesmolvla-stage3-joint-cycle000010-candidate-20260830-001",
+            "approval_id": approval_id,
             "approver_identity": "rlc123",
             "approver_role": "experiment_lead",
             "approved_at": datetime.now(timezone.utc)
@@ -109,7 +111,7 @@ def _deployment_artifacts(
     profile = {
         "schema_version": "forcesmolvla-deployment-profile-v1",
         "artifact_status": "development_only",
-        "deployment_id": "task2-stage3-joint-cycle000010-candidate",
+        "deployment_id": deployment_id,
         "checkpoint": str(checkpoint.relative_to(ROOT)),
         "rulespec": str(RULESPEC.relative_to(ROOT)),
         "deployment_binding": str(binding_path.relative_to(ROOT)),
@@ -134,6 +136,9 @@ def run(
     destination: Path,
     profile_path: Path,
     binding_path: Path,
+    candidate_revision_id: str = validator.EXPECTED_REVISION,
+    deployment_id: str = "task2-stage3-joint-cycle000010-candidate",
+    approval_id: str = "forcesmolvla-stage3-joint-cycle000010-candidate-20260830-001",
 ) -> dict[str, Any]:
     from forcesmolvla.checkpoint import export_development_actor_checkpoint
 
@@ -156,13 +161,17 @@ def run(
             destination=staging,
             runtime_parent=parent_path,
             source_joint_checkpoint=joint_checkpoint,
-            candidate_revision_id=validator.EXPECTED_REVISION,
+            candidate_revision_id=candidate_revision_id,
             parent_binding_id=parent_binding["binding_id"],
             published=True,
         )
         del actor
         torch.cuda.empty_cache()
-        validation = validator.run(joint_checkpoint, staging)
+        validation = validator.run(
+            joint_checkpoint,
+            staging,
+            expected_revision=candidate_revision_id,
+        )
         require(
             validation["CANDIDATE_OFFLINE_VALIDATION"] == "PASS",
             f"STAGE3_CANDIDATE_OFFLINE_VALIDATION:{validation['HARD_ERRORS']}",
@@ -174,6 +183,8 @@ def run(
             model_revision=model_revision,
             profile_path=profile_path,
             binding_path=binding_path,
+            deployment_id=deployment_id,
+            approval_id=approval_id,
         )
         validation.update(
             {
@@ -197,6 +208,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--destination", type=Path, default=DESTINATION)
     parser.add_argument("--deployment-profile", type=Path, default=PROFILE)
     parser.add_argument("--deployment-binding", type=Path, default=BINDING)
+    parser.add_argument("--candidate-revision-id", default=validator.EXPECTED_REVISION)
+    parser.add_argument(
+        "--deployment-id", default="task2-stage3-joint-cycle000010-candidate"
+    )
+    parser.add_argument(
+        "--approval-id",
+        default="forcesmolvla-stage3-joint-cycle000010-candidate-20260830-001",
+    )
     return parser.parse_args()
 
 
@@ -207,6 +226,9 @@ def main() -> int:
         destination=args.destination,
         profile_path=args.deployment_profile,
         binding_path=args.deployment_binding,
+        candidate_revision_id=args.candidate_revision_id,
+        deployment_id=args.deployment_id,
+        approval_id=args.approval_id,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0

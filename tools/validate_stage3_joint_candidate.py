@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline, zero-update validation for the first Stage-3 joint candidate."""
+"""Offline, zero-update validation for a Stage-3 joint candidate."""
 
 from __future__ import annotations
 
@@ -45,6 +45,9 @@ EXECUTION_BINDING = (
     ROOT / "artifacts/development/live/task2_cycle210_policy_execution_smoke_binding.v1.json"
 )
 EXPECTED_REVISION = "stage3-online-r-joint-cycle-000010-candidate"
+FIXED_EPISODE_ID = (
+    "task2_policy_execute_stage3_cycle210_smoke_20260829_001/episode_000000"
+)
 FIXED_OBSERVATION_COUNT = 8
 FLOW_NOISE_SEED = 20260830
 
@@ -270,7 +273,13 @@ def _validate_existing_action_contract(absolute, raw_state) -> None:
     )
 
 
-def run(checkpoint: Path, packaged_checkpoint: Path) -> dict[str, Any]:
+def run(
+    checkpoint: Path,
+    packaged_checkpoint: Path,
+    *,
+    expected_revision: str = EXPECTED_REVISION,
+    fixed_episode_id: str = FIXED_EPISODE_ID,
+) -> dict[str, Any]:
     from preflight_s2_g4_losses_gpu import actor_batch
     from forcesmolvla.rft.critic import frozen_task_feature
     from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
@@ -298,16 +307,17 @@ def run(checkpoint: Path, packaged_checkpoint: Path) -> dict[str, Any]:
     candidate_meta = json.loads(
         (packaged_checkpoint / "candidate.json").read_text(encoding="utf-8")
     )
-    require(candidate_meta["revision_id"] == EXPECTED_REVISION, "STAGE3_OFFLINE_CANDIDATE_REVISION")
+    require(candidate_meta["revision_id"] == expected_revision, "STAGE3_OFFLINE_CANDIDATE_REVISION")
     require(candidate_meta["activated"] is False, "STAGE3_OFFLINE_CANDIDATE_ALREADY_ACTIVATED")
 
-    rows, _macros, source_episode = warmup.load_formal_online_r(warmup.FORMAL_R_ROOT)
-    require(
-        str(source_episode).endswith(
-            "task2_policy_execute_stage3_cycle210_smoke_20260829_001/episodes/episode_000000"
-        ),
-        "STAGE3_OFFLINE_FIXED_EPISODE_MISMATCH",
-    )
+    rows, _macros, source_episodes = warmup.load_formal_online_r(warmup.FORMAL_R_ROOT)
+    require(fixed_episode_id in source_episodes, "STAGE3_OFFLINE_FIXED_EPISODE_MISMATCH")
+    rows = [
+        row for row in rows
+        if str(row["identity"]["episode_id"]) == fixed_episode_id
+    ]
+    require(rows, "STAGE3_OFFLINE_FIXED_EPISODE_EMPTY")
+    source_episode = source_episodes[fixed_episode_id]
     normalizer = load_normalizer_manifest(Path(parent_binding["normalizer_binding"]["absolute_path"]))
     samples, raw_state, decisions, ledger = _fixed_samples(rows, source_episode, normalizer)
 
@@ -451,12 +461,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--packaged-checkpoint", type=Path, default=PACKAGED_CHECKPOINT
     )
+    parser.add_argument("--expected-revision", default=EXPECTED_REVISION)
+    parser.add_argument("--fixed-episode-id", default=FIXED_EPISODE_ID)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    result = run(args.checkpoint, args.packaged_checkpoint)
+    result = run(
+        args.checkpoint,
+        args.packaged_checkpoint,
+        expected_revision=args.expected_revision,
+        fixed_episode_id=args.fixed_episode_id,
+    )
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["CANDIDATE_OFFLINE_VALIDATION"] == "PASS" else 2
 

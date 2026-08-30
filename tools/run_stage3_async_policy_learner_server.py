@@ -224,7 +224,7 @@ class OneCycleLearner:
             "replay": {
                 "formal_r_root": str(warmup.FORMAL_R_ROOT),
                 "unique_r_transition_count": self.unique_r_count,
-                "new_r_transition_count": 0,
+                "new_r_transition_count": learner["new_r_transition_count"],
                 "eligible_ack_macro_count": self.r_macro_count,
                 "mix": {"R": 32, "D": 32},
                 "current_episode_sampled": False,
@@ -544,11 +544,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     require(torch.cuda.is_available(), "STAGE3_ASYNC_CUDA_UNAVAILABLE")
-    require(
-        args.learner_resume_checkpoint.resolve()
-        == DEFAULT_RESUME_CHECKPOINT.resolve(),
-        "STAGE3_ASYNC_CYCLE20_EXACT_RESUME_REQUIRED",
-    )
     profile = serve_policy.load_deployment_profile(args.deployment_profile, ROOT)
     binding_path = (
         Path(profile["deployment_binding"])
@@ -572,10 +567,17 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     )
     machine = load_revision_registry(async_runner.REVISION_REGISTRY, fresh_process=False)
     active = machine.record(machine.active_revision_id)
+    deployed = json.loads(
+        (Path(profile["checkpoint"]) / "candidate.json").read_text(
+            encoding="utf-8"
+        )
+    )
     require(
-        active.revision_id == async_runner.ACTIVE_REVISION_ID
+        deployed.get("state") == "published"
+        and deployed.get("published") is True
+        and active.revision_id == deployed.get("revision_id")
         and active.model_sha256 == engine.model_sha256
-        and active.model_sha256 == async_runner.ACTIVE_MODEL_REVISION,
+        and active.model_sha256 == deployed.get("model_revision"),
         "STAGE3_ASYNC_ACTIVE_DEPLOYMENT_MISMATCH",
     )
     learner = OneCycleLearner(
