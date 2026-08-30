@@ -1028,6 +1028,75 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
     )
 
 
+def _add_canceled_policy_request(
+    episode: Path, *, completed_request_count: int = 0
+) -> str:
+    stream_root = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams"
+    )
+    paths = {
+        name: stream_root / f"policy_execute_{name}.jsonl"
+        for name in ("request", "result", "proposal", "chunk")
+    }
+    rows = {
+        name: [json.loads(line) for line in path.read_text().splitlines()]
+        for name, path in paths.items()
+    }
+
+    def rebound(row: dict, request_id: str) -> dict:
+        value = deepcopy(row)
+        value.update(
+            {
+                "request_id": request_id,
+                "result_id": f"policy-result:{request_id}",
+                "chunk_id": f"live-{request_id}",
+                "proposal_id": f"policy-proposal:{request_id}",
+            }
+        )
+        if value.get("schema") == "forcesmolvla-stage3-policy-lineage-v1" and (
+            "result_recorded_monotonic_ns" not in value
+        ):
+            value.pop("result_id")
+        return value
+
+    for index in range(completed_request_count):
+        request_id = f"completed-extra-{index:03d}"
+        for name in rows:
+            rows[name].append(rebound(rows[name][-1], request_id))
+
+    canceled_request_id = "canceled-request"
+    canceled_request = rebound(rows["request"][-1], canceled_request_id)
+    rows["request"].append(canceled_request)
+    for name, path in paths.items():
+        _write_jsonl(path, rows[name])
+    _write_jsonl(
+        stream_root / "policy_execute_request_canceled.jsonl",
+        [
+            {
+                **canceled_request,
+                "canceled_monotonic_ns": 1_500_000_000,
+                "cancel_reason": "episode_sealed_before_inference_result",
+                "executed": False,
+            }
+        ],
+    )
+    seal_path = stream_root / "policy_execute_episode_seal.json"
+    seal = json.loads(seal_path.read_text())
+    seal.update(
+        {
+            "policy_request_count": len(rows["request"]),
+            "policy_result_count": len(rows["result"]),
+            "policy_chunk_count": len(rows["chunk"]),
+            "policy_request_canceled_count": 1,
+        }
+    )
+    _write_json(seal_path, seal)
+    return canceled_request_id
+
+
 def _make_policy_execution_fixture_async(episode: Path) -> Path:
     dataset = episode.parent.parent
     manifest_path = dataset / "integrated_capture_session.json"
@@ -1332,6 +1401,162 @@ def test_integrated_async_policy_execution_seal_is_read_only(
     assert report.quarantined_count == 0
     assert report.model_update_count == 0
     assert not state.exists()
+
+
+def test_policy_execution_request_cancellation_partitions_63_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _add_canceled_policy_request(episode, completed_request_count=60)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "DRY_RUN_READY"
+    assert report.shadow_policy_request_count == 63
+    assert report.shadow_policy_result_count == 62
+    assert report.policy_chunk_count == 62
+    assert report.quarantined_count == 0
+
+
+def test_policy_execution_request_cancellation_rejects_result_overlap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    request_id = _add_canceled_policy_request(episode)
+    stream_root = episode.parent.parent / "integrated_capture" / episode.name / "streams"
+    for name in ("result", "proposal", "chunk"):
+        path = stream_root / f"policy_execute_{name}.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        overlap = deepcopy(rows[-1])
+        overlap.update(
+            {
+                "request_id": request_id,
+                "result_id": f"policy-result:{request_id}",
+                "chunk_id": f"live-{request_id}",
+                "proposal_id": f"policy-proposal:{request_id}",
+            }
+        )
+        rows.append(overlap)
+        _write_jsonl(path, rows)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "SEALED_QUARANTINED"
+    assert report.quarantine_reasons == (
+        "BRIDGE_POLICY_EXECUTION_LINEAGE_COUNT_MISMATCH",
+    )
+
+
+@pytest.mark.parametrize("artifact", ["proposal", "chunk", "ack"])
+def test_policy_execution_request_cancellation_rejects_execution_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    artifact: str,
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    request_id = _add_canceled_policy_request(episode)
+    stream_root = episode.parent.parent / "integrated_capture" / episode.name / "streams"
+    if artifact in {"proposal", "chunk"}:
+        path = stream_root / f"policy_execute_{artifact}.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        executed = deepcopy(rows[-1])
+        executed.update(
+            {
+                "request_id": request_id,
+                "result_id": f"policy-result:{request_id}",
+                "chunk_id": f"live-{request_id}",
+                "proposal_id": f"policy-proposal:{request_id}",
+            }
+        )
+        rows.append(executed)
+        _write_jsonl(path, rows)
+    else:
+        path = episode / "streams/safe_action.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        override = next(
+            row
+            for row in rows
+            if row.get("payload", {}).get("arbitration", {}).get("reason")
+            == "human_override"
+        )
+        override["payload"]["forcesmolvla_chunk_selection"] = {
+            "request_id": request_id
+        }
+        _write_jsonl(path, rows)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "SEALED_QUARANTINED"
+
+
+@pytest.mark.parametrize("invalid", ["unknown_request", "generation_mismatch"])
+def test_policy_execution_request_cancellation_rejects_invalid_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid: str,
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _add_canceled_policy_request(episode)
+    path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_request_canceled.jsonl"
+    )
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    if invalid == "unknown_request":
+        rows[0]["request_id"] = "unknown-request"
+    else:
+        rows[0]["policy_epoch"] += 1
+        rows[0]["takeover_generation"] += 1
+    _write_jsonl(path, rows)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "SEALED_QUARANTINED"
+    assert report.quarantine_reasons == (
+        "BRIDGE_POLICY_EXECUTION_CANCELED_REQUEST_INVALID",
+    )
 
 
 @pytest.mark.parametrize(

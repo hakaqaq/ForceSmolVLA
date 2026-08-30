@@ -822,11 +822,16 @@ class Stage3ProductionBridge:
         rows = {
             key: _read_jsonl(stream_root / name) for key, name in names.items()
         }
+        canceled_path = stream_root / "policy_execute_request_canceled.jsonl"
+        rows["canceled_requests"] = (
+            _read_jsonl(canceled_path) if canceled_path.is_file() else []
+        )
         observations = rows["observations"]
         requests = rows["requests"]
         results = rows["results"]
         proposals = rows["proposals"]
         chunks = rows["chunks"]
+        canceled_requests = rows["canceled_requests"]
         transitions = rows["transitions"]
         gripper_authorities = rows["gripper_authorities"]
         interventions = rows["interventions"]
@@ -834,9 +839,7 @@ class Stage3ProductionBridge:
             not observations
             or not requests
             or not transitions
-            or not (
-                len(requests) == len(results) == len(proposals) == len(chunks)
-            )
+            or not (len(results) == len(proposals) == len(chunks))
             or len(transitions) != len(gripper_authorities)
         ):
             raise ProductionBridgeError(
@@ -948,36 +951,97 @@ class Stage3ProductionBridge:
             "clock_domain_id",
             "request_recorded_monotonic_ns",
         )
-        for request, result, proposal, chunk in zip(
-            requests, results, proposals, chunks, strict=True
-        ):
-            generations = {
-                self._policy_execution_generation(row, identity)
-                for row in (request, result, proposal, chunk)
-            }
+        for request in requests:
             request_id = str(request.get("request_id", ""))
-            result_id = str(result.get("result_id", ""))
             observation = observation_by_id.get(str(request.get("observation_id", "")))
-            actions = proposal.get("actions_absolute7")
-            valid_horizon = int(proposal.get("valid_horizon", 0))
+            generation = self._policy_execution_generation(request, identity)
             if (
-                len(generations) != 1
-                or request.get("schema") != POLICY_LINEAGE_SCHEMA
-                or result.get("schema") != POLICY_LINEAGE_SCHEMA
-                or proposal.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
-                or chunk.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
+                request.get("schema") != POLICY_LINEAGE_SCHEMA
                 or not request_id
                 or request_id in request_by_id
-                or result_id != f"policy-result:{request_id}"
                 or request.get("chunk_id") != f"live-{request_id}"
                 or request.get("proposal_id") != f"policy-proposal:{request_id}"
                 or observation is None
                 or self._policy_execution_generation(observation, identity)
-                != next(iter(generations))
+                != generation
                 or int(request.get("t_ref_ns", 0))
                 != int(observation.get("t_ref_ns", 0))
                 or int(request.get("request_recorded_monotonic_ns", 0))
                 < int(observation.get("t_ref_ns", 0))
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_REQUEST_INVALID"
+                )
+            request_by_id[request_id] = request
+
+        for row, index, error in (
+            (results, result_by_request, "BRIDGE_POLICY_EXECUTION_RESULT_INVALID"),
+            (proposals, proposal_by_request, "BRIDGE_POLICY_EXECUTION_PROPOSAL_INVALID"),
+            (chunks, chunk_by_request, "BRIDGE_POLICY_EXECUTION_CHUNK_INVALID"),
+        ):
+            for item in row:
+                request_id = str(item.get("request_id", ""))
+                if not request_id or request_id in index:
+                    raise ProductionBridgeError(error)
+                index[request_id] = item
+
+        canceled_by_request: dict[str, dict[str, Any]] = {}
+        for canceled in canceled_requests:
+            request_id = str(canceled.get("request_id", ""))
+            request = request_by_id.get(request_id)
+            if (
+                request is None
+                or request_id in canceled_by_request
+                or canceled.get("schema") != POLICY_LINEAGE_SCHEMA
+                or canceled.get("executed") is not False
+                or not str(canceled.get("cancel_reason", ""))
+                or int(canceled.get("canceled_monotonic_ns", 0))
+                < int(request.get("request_recorded_monotonic_ns", 0))
+                or self._policy_execution_generation(canceled, identity)
+                != self._policy_execution_generation(request, identity)
+                or any(
+                    canceled.get(field) != request.get(field)
+                    for field in lineage_fields
+                )
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_CANCELED_REQUEST_INVALID"
+                )
+            canceled_by_request[request_id] = canceled
+
+        request_ids = set(request_by_id)
+        result_request_ids = set(result_by_request)
+        proposal_request_ids = set(proposal_by_request)
+        chunk_request_ids = set(chunk_by_request)
+        canceled_request_ids = set(canceled_by_request)
+        if (
+            result_request_ids & canceled_request_ids
+            or result_request_ids != proposal_request_ids
+            or result_request_ids != chunk_request_ids
+            or request_ids != result_request_ids | canceled_request_ids
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_LINEAGE_COUNT_MISMATCH"
+            )
+
+        for request_id in result_by_request:
+            request = request_by_id[request_id]
+            result = result_by_request[request_id]
+            proposal = proposal_by_request[request_id]
+            chunk = chunk_by_request[request_id]
+            generations = {
+                self._policy_execution_generation(row, identity)
+                for row in (request, result, proposal, chunk)
+            }
+            result_id = str(result.get("result_id", ""))
+            actions = proposal.get("actions_absolute7")
+            valid_horizon = int(proposal.get("valid_horizon", 0))
+            if (
+                len(generations) != 1
+                or result.get("schema") != POLICY_LINEAGE_SCHEMA
+                or proposal.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
+                or chunk.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
+                or result_id != f"policy-result:{request_id}"
             ):
                 raise ProductionBridgeError(
                     "BRIDGE_POLICY_EXECUTION_REQUEST_INVALID"
@@ -1030,10 +1094,6 @@ class Stage3ProductionBridge:
                 _finite_vector(
                     action, 7, "BRIDGE_POLICY_EXECUTION_PROPOSAL_ACTION7_INVALID"
                 )
-            request_by_id[request_id] = request
-            result_by_request[request_id] = result
-            proposal_by_request[request_id] = proposal
-            chunk_by_request[request_id] = chunk
 
         raw_by_identity = {
             (
@@ -1067,6 +1127,18 @@ class Stage3ProductionBridge:
             int(item.get("payload", {}).get("request_stamp_ns", 0)): item
             for item in streams["reference_ack"]
         }
+        if any(
+            str(
+                (safe.get("forcesmolvla_chunk_selection") or {}).get(
+                    "request_id", ""
+                )
+            )
+            in canceled_request_ids
+            for safe in safe_by_identity.values()
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_CANCELED_REQUEST_EXECUTED"
+            )
         gripper_by_sequence: dict[int, dict[str, Any]] = {}
         for row in gripper_authorities:
             sequence = int(row.get("sequence", -1))
@@ -1417,6 +1489,29 @@ class Stage3ProductionBridge:
                 raise ProductionBridgeError(
                     "BRIDGE_POLICY_EXECUTION_POST_TAKEOVER_GENERATION_INVALID"
                 )
+        initial_generation = self._policy_execution_generation(identity, identity)
+        for request_id, canceled in canceled_by_request.items():
+            request = request_by_id[request_id]
+            generation = self._policy_execution_generation(request, identity)
+            request_ns = int(request["request_recorded_monotonic_ns"])
+            canceled_ns = int(canceled["canceled_monotonic_ns"])
+            if generation != initial_generation and not any(
+                self._policy_execution_generation(end, identity) == generation
+                and int(end["receive_monotonic_ns"]) <= request_ns <= canceled_ns
+                for _, end in completed_takeovers
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_CANCELLATION_GENERATION_INVALID"
+                )
+            if "takeover" in str(canceled["cancel_reason"]).lower() and not any(
+                request_ns <= int(start["receive_monotonic_ns"]) <= canceled_ns
+                and self._policy_execution_generation(start, identity)
+                == (generation[0] + 1, generation[1], generation[2] + 1)
+                for start, _ in completed_takeovers
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_POLICY_EXECUTION_CANCELLATION_GENERATION_INVALID"
+                )
         for proposal in proposals:
             if proposal.get("invalidated_by_takeover") is True and transition_by_request.get(
                 str(proposal.get("request_id", ""))
@@ -1736,6 +1831,13 @@ class Stage3ProductionBridge:
         latest_lineage_ns = max(
             int(observations[-1].get("t_ref_ns", 0)),
             max(int(row.get("result_recorded_monotonic_ns", 0)) for row in results),
+            max(
+                (
+                    int(row.get("canceled_monotonic_ns", 0))
+                    for row in canceled_requests
+                ),
+                default=0,
+            ),
             max(int(row.get("receive_monotonic_ns", 0)) for row in transitions),
             max(
                 (int(row.get("receive_monotonic_ns", 0)) for row in interventions),
@@ -1769,6 +1871,8 @@ class Stage3ProductionBridge:
             or int(seal.get("observation_count", -1)) != len(observations)
             or int(seal.get("policy_request_count", -1)) != len(requests)
             or int(seal.get("policy_result_count", -1)) != len(results)
+            or int(seal.get("policy_request_canceled_count", 0))
+            != len(canceled_requests)
             or int(seal.get("policy_chunk_count", -1)) != len(chunks)
             or int(seal.get("policy_action_ack_count", -1)) != len(transitions)
             or int(seal.get("human_action_ack_count", -1)) != 0
