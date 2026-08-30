@@ -1610,16 +1610,7 @@ def test_integrated_async_policy_execution_rejects_invalid_runtime_seal(
     assert not state.exists()
 
 
-def test_policy_execution_excludes_held_action_after_takeover_until_new_origin(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    episode = _fixture(tmp_path)
-    _integrated_policy_execution_fixture(episode)
-    monkeypatch.setattr(
-        bridge_module,
-        "_prepare_native_episode",
-        lambda path: _fake_materialization(path).prepared,
-    )
+def _replace_post_takeover_gripper_command_with_held(episode: Path) -> None:
     path = (
         episode.parent.parent
         / "integrated_capture"
@@ -1656,6 +1647,175 @@ def test_policy_execution_excludes_held_action_after_takeover_until_new_origin(
     ]
     transitions[-1]["gripper_authority"] = rows[-1]
     _write_jsonl(transition_path, transitions)
+
+
+def _takeover_gripper_transfer_inputs() -> dict:
+    identity = {
+        "session_id": "session",
+        "episode_id": "episode_000000",
+        "clock_domain_id": "upper_host_monotonic",
+        "policy_revision": "revision",
+        "policy_epoch": 1,
+        "reset_generation": 0,
+        "takeover_generation": 0,
+    }
+    return {
+        "origin": {
+            "terminal_finished_monotonic_ns": 80,
+            "requested_state": "OPEN",
+            "requested_width_m": 0.085,
+            "origin_kind": "native_gripper_terminal",
+            "origin_local_goal_sequence": 7,
+            "origin_action_goal_id": "real-goal-7",
+            "origin_accepted_monotonic_ns": 70,
+            "terminal_outcome": "reached",
+            "generation": dict(identity),
+        },
+        "sync_event": {
+            **identity,
+            "policy_epoch": 2,
+            "takeover_generation": 1,
+            "event": "intervention_start",
+            "receive_monotonic_ns": 100,
+            "safe_action": {
+                "arbitration": {"raw_action": {"action": [0.0] * 6 + [-1.0]}}
+            },
+        },
+        "feedback": {"width_m": 0.085, "receive_monotonic_ns": 110},
+        "new_generation": (2, 0, 1),
+        "identity": identity,
+        "conflicting_pending_command": False,
+        "stalled_settled_width_m": None,
+        "settled_width_tolerance_m": 0.001,
+    }
+
+
+def test_takeover_gripper_held_authority_transfer_preserves_real_origin(
+    tmp_path: Path,
+) -> None:
+    bridge = _bridge(tmp_path / "state")
+    transfer = bridge._transfer_takeover_gripper_held_authority(
+        **_takeover_gripper_transfer_inputs()
+    )
+
+    assert transfer is not None
+    assert transfer["authority_kind"] == "HELD_FROM_ACCEPTED_COMMAND"
+    assert transfer["origin_local_goal_sequence"] == 7
+    assert transfer["origin_action_goal_id"] == "real-goal-7"
+    assert transfer["origin_accepted_monotonic_ns"] == 70
+    assert transfer["terminal_outcome"] == "reached"
+    assert transfer["generation"]["policy_epoch"] == 2
+    assert transfer["generation"]["takeover_generation"] == 1
+    assert not set(transfer) & {"ack_id", "action_goal_ack", "terminal_ack"}
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "missing_sync",
+        "stale_feedback",
+        "mismatched_state",
+        "mismatched_width",
+        "pending_command",
+        "invalid_terminal",
+    ],
+)
+def test_takeover_gripper_held_authority_transfer_rejects_invalid_evidence(
+    tmp_path: Path, invalid: str
+) -> None:
+    values = _takeover_gripper_transfer_inputs()
+    if invalid == "missing_sync":
+        values["sync_event"] = None
+    elif invalid == "stale_feedback":
+        values["feedback"]["receive_monotonic_ns"] = 100_000_101
+    elif invalid == "mismatched_state":
+        values["sync_event"]["safe_action"]["arbitration"]["raw_action"][
+            "action"
+        ][-1] = 1.0
+    elif invalid == "mismatched_width":
+        values["feedback"]["width_m"] = 0.04
+    elif invalid == "pending_command":
+        values["conflicting_pending_command"] = True
+    else:
+        values["origin"]["terminal_outcome"] = "rejected"
+
+    transfer = _bridge(
+        tmp_path / "state"
+    )._transfer_takeover_gripper_held_authority(**values)
+
+    assert transfer is None
+
+
+def test_repeated_takeover_gripper_transfers_bind_each_new_generation(
+    tmp_path: Path,
+) -> None:
+    bridge = _bridge(tmp_path / "state")
+    first = bridge._transfer_takeover_gripper_held_authority(
+        **_takeover_gripper_transfer_inputs()
+    )
+    assert first is not None
+    values = _takeover_gripper_transfer_inputs()
+    values.update(
+        {
+            "origin": first,
+            "new_generation": (3, 0, 2),
+            "sync_event": {
+                **values["sync_event"],
+                "policy_epoch": 3,
+                "takeover_generation": 2,
+                "receive_monotonic_ns": 200,
+            },
+            "feedback": {"width_m": 0.085, "receive_monotonic_ns": 210},
+        }
+    )
+
+    second = bridge._transfer_takeover_gripper_held_authority(**values)
+
+    assert second is not None
+    assert first["generation"]["takeover_generation"] == 1
+    assert second["generation"]["takeover_generation"] == 2
+    assert second["origin_action_goal_id"] == first["origin_action_goal_id"]
+
+
+def test_policy_execution_accepts_explicit_takeover_gripper_held_transfer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _replace_post_takeover_gripper_command_with_held(episode)
+    original_ack = (episode / "streams/reference_ack.jsonl").read_bytes()
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "DRY_RUN_READY"
+    assert report.candidate_count == 2
+    assert (episode / "streams/reference_ack.jsonl").read_bytes() == original_ack
+
+
+def test_policy_execution_excludes_held_action_after_takeover_until_new_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _replace_post_takeover_gripper_command_with_held(episode)
+    target_path = episode / "streams/gripper_target.jsonl"
+    target_rows = [json.loads(line) for line in target_path.read_text().splitlines()]
+    target_rows[0]["started_monotonic_ns"] = 1_190_000_000
+    _write_jsonl(target_path, target_rows)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
 
     report = _bridge(tmp_path / "dry-run-state").process_episode(
         episode,

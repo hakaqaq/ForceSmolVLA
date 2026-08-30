@@ -701,6 +701,105 @@ class Stage3ProductionBridge:
                 "BRIDGE_POLICY_EXECUTION_GENERATION_INVALID"
             )
 
+    def _transfer_takeover_gripper_held_authority(
+        self,
+        *,
+        origin: Mapping[str, Any],
+        sync_event: Mapping[str, Any] | None,
+        feedback: Mapping[str, Any] | None,
+        new_generation: tuple[int, int, int],
+        identity: Mapping[str, Any],
+        conflicting_pending_command: bool,
+        stalled_settled_width_m: float | None,
+        settled_width_tolerance_m: float,
+    ) -> dict[str, Any] | None:
+        if sync_event is None or feedback is None or conflicting_pending_command:
+            return None
+        origin_generation = origin.get("generation")
+        safe = sync_event.get("safe_action")
+        raw = (
+            safe.get("arbitration", {}).get("raw_action", {})
+            if isinstance(safe, Mapping)
+            else {}
+        )
+        action = raw.get("action")
+        if (
+            not isinstance(origin_generation, Mapping)
+            or sync_event.get("event") != "intervention_start"
+            or not isinstance(action, list)
+            or len(action) != 7
+            or self._policy_execution_generation(sync_event, identity)
+            != new_generation
+            or self._policy_execution_generation(origin_generation, identity)
+            != (new_generation[0] - 1, new_generation[1], new_generation[2] - 1)
+            or origin.get("terminal_outcome") not in VALID_TERMINAL_OUTCOMES
+            or int(origin.get("terminal_finished_monotonic_ns", 0))
+            > int(sync_event.get("receive_monotonic_ns", 0))
+        ):
+            return None
+        gripper_action = float(action[-1])
+        synchronized_state = (
+            "OPEN"
+            if math.isclose(gripper_action, -1.0, abs_tol=1.0e-9)
+            else "CLOSED"
+            if math.isclose(gripper_action, 1.0, abs_tol=1.0e-9)
+            else None
+        )
+        state = str(origin.get("requested_state", ""))
+        width = float(origin.get("requested_width_m", -1.0))
+        feedback_width = float(feedback.get("width_m", math.nan))
+        sync_ns = int(sync_event.get("receive_monotonic_ns", 0))
+        feedback_ns = int(feedback.get("receive_monotonic_ns", 0))
+        expected_width = (
+            self.config.gripper_open_width_m
+            if state == "OPEN"
+            else self.config.gripper_closed_width_m
+        )
+        feedback_matches = (
+            feedback_width >= self.config.gripper_open_threshold_m
+            if state == "OPEN"
+            else feedback_width <= self.config.gripper_close_threshold_m
+            if origin.get("terminal_outcome") == "reached"
+            else stalled_settled_width_m is not None
+            and math.isfinite(stalled_settled_width_m)
+            and abs(feedback_width - stalled_settled_width_m)
+            <= settled_width_tolerance_m
+        )
+        if (
+            synchronized_state != state
+            or state not in {"OPEN", "CLOSED"}
+            or not math.isfinite(width)
+            or abs(width - expected_width) > self.config.requested_width_tolerance_m
+            or not math.isfinite(feedback_width)
+            or not 0.0 <= feedback_width <= 0.1
+            or feedback_ns < sync_ns
+            or feedback_ns - sync_ns > self.config.max_gripper_feedback_age_ns
+            or not feedback_matches
+        ):
+            return None
+        return {
+            **origin,
+            "origin_kind": "takeover_held_authority_transfer",
+            "authority_kind": "HELD_FROM_ACCEPTED_COMMAND",
+            "generation": {
+                **{
+                    field: identity[field]
+                    for field in (
+                        "session_id",
+                        "episode_id",
+                        "clock_domain_id",
+                        "policy_revision",
+                    )
+                },
+                "policy_epoch": new_generation[0],
+                "reset_generation": new_generation[1],
+                "takeover_generation": new_generation[2],
+            },
+            "transfer_monotonic_ns": sync_ns,
+            "feedback_width_m": feedback_width,
+            "feedback_monotonic_ns": feedback_ns,
+        }
+
     def _load_integrated_policy_execution(
         self,
         *,
@@ -1556,6 +1655,33 @@ class Stage3ProductionBridge:
             raise ProductionBridgeError(
                 "BRIDGE_POLICY_EXECUTION_GRIPPER_TERMINAL_COVERAGE_MISMATCH"
             )
+
+        def generation_mapping(generation: tuple[int, int, int]) -> dict[str, Any]:
+            return {
+                **{
+                    field: identity[field]
+                    for field in (
+                        "session_id",
+                        "episode_id",
+                        "clock_domain_id",
+                        "policy_revision",
+                    )
+                },
+                "policy_epoch": generation[0],
+                "reset_generation": generation[1],
+                "takeover_generation": generation[2],
+            }
+
+        initial_generation = self._policy_execution_generation(identity, identity)
+
+        def generation_at(timestamp_ns: int) -> tuple[int, int, int]:
+            generation = initial_generation
+            for start, _ in completed_takeovers:
+                if int(start["receive_monotonic_ns"]) > timestamp_ns:
+                    break
+                generation = self._policy_execution_generation(start, identity)
+            return generation
+
         accepted_gripper_states = [
             {
                 "terminal_finished_monotonic_ns": lease.terminal_finished_monotonic_ns,
@@ -1612,7 +1738,9 @@ class Stage3ProductionBridge:
                     "origin_local_goal_sequence": sequence,
                     "origin_action_goal_id": target["action_goal_id"],
                     "terminal_outcome": outcome,
-                    "generation": None,
+                    "generation": generation_mapping(
+                        generation_at(int(target["accepted_monotonic_ns"]))
+                    ),
                 }
             )
             if requested_state == "CLOSED" and outcome == "stalled":
@@ -1632,6 +1760,68 @@ class Stage3ProductionBridge:
             raise ProductionBridgeError(
                 "BRIDGE_POLICY_EXECUTION_GRIPPER_QUALITY_INVALID"
             )
+        settled_width_tolerance_m = float(
+            quality.get("static_width_tolerance_m", 0.0)
+        )
+        for start, _ in completed_takeovers:
+            generation = self._policy_execution_generation(start, identity)
+            sync_ns = int(start["receive_monotonic_ns"])
+            prior = [
+                state
+                for state in accepted_gripper_states
+                if int(state["terminal_finished_monotonic_ns"]) <= sync_ns
+                and isinstance(state.get("generation"), Mapping)
+                and self._policy_execution_generation(state["generation"], identity)
+                == (generation[0] - 1, generation[1], generation[2] - 1)
+            ]
+            feedback = next(
+                (
+                    row
+                    for row in streams["gripper_state"]
+                    if int(row.get("receive_monotonic_ns", 0)) >= sync_ns
+                ),
+                None,
+            )
+            pending = any(
+                int(target.get("started_monotonic_ns", 0))
+                <= sync_ns
+                < int(statuses[sequence].get("finished_monotonic_ns", 0))
+                for sequence, target in targets.items()
+            )
+            origin = (
+                max(
+                    prior,
+                    key=lambda item: int(item["terminal_finished_monotonic_ns"]),
+                )
+                if prior
+                else None
+            )
+            diagnostic = (
+                quality_goals.get(int(origin["origin_local_goal_sequence"]))
+                if origin is not None
+                else None
+            )
+            transfer = (
+                self._transfer_takeover_gripper_held_authority(
+                    origin=origin,
+                    sync_event=start,
+                    feedback=feedback,
+                    new_generation=generation,
+                    identity=identity,
+                    conflicting_pending_command=pending,
+                    stalled_settled_width_m=(
+                        float(diagnostic["settled_width_m"])
+                        if isinstance(diagnostic, Mapping)
+                        and "settled_width_m" in diagnostic
+                        else None
+                    ),
+                    settled_width_tolerance_m=settled_width_tolerance_m,
+                )
+                if origin is not None
+                else None
+            )
+            if transfer is not None:
+                accepted_gripper_states.append(transfer)
         command_origins: dict[tuple[int, str], dict[str, Any]] = {}
         for authority in gripper_authorities:
             if authority.get("command_required") is not True:
