@@ -12,8 +12,6 @@
     "actor_source_role": "cycle210_evaluation_checkpoint_stage3_initial_actor",
     "critic_source_role": "g7a_r2_online_and_target_twin_q"
   },
-  "created_from_inventory_sha256": "62fdbfc3c36f45767d983b65aaa55f269a59d83b14a5998f52c734696dfdc9f6",
-  "created_from_inventory_manifest_sha256": "c624d32781bf576f927e5bba351aad304cff83fabe503bce3d3be8b5111ae205",
   "actor_parent": {
     "logical_role": "Stage-3 initial Actor from cycle210 evaluation export",
     "selected": true,
@@ -252,18 +250,6 @@
     "unlock_requires_independent_critic_gate": true
   },
   "compatibility_evidence": {
-    "inventory": {
-      "path": "artifacts/development/stage3/stage3_parent_inventory.v1.json",
-      "sha256": "62fdbfc3c36f45767d983b65aaa55f269a59d83b14a5998f52c734696dfdc9f6"
-    },
-    "inventory_manifest": {
-      "path": "artifacts/development/stage3/stage3_parent_inventory_manifest.v1.json",
-      "sha256": "c624d32781bf576f927e5bba351aad304cff83fabe503bce3d3be8b5111ae205"
-    },
-    "inventory_report": {
-      "path": "docs/stage3_parent_inventory_report.v1.md",
-      "sha256": "d97e1d545b852ae2522d53fe86702944556ae5f986289cfe125b320221159bab"
-    },
     "g7a_r2_checkpoint": {
       "checkpoint_manifest_path": "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/checkpoint_manifest.json",
       "checkpoint_manifest_sha256": "2e0902076cb12a1391613230679730d035155528c9be01bd17dce960d5e707f7",
@@ -294,9 +280,9 @@
       "sha256": "9e46bf75e2c478c9071caeef2185970588350382d56b688d1c5e5003af1a125c"
     },
     "actor_image_adapter_source": {
-      "path": "tools/preflight_s2_g4_losses_gpu.py",
-      "sha256": "4e7e948a23e30209dfe7da7d605663d276511d0bad942e8cc8ac71b5efb146ad",
-      "symbol": "actor_batch"
+      "path": "src/forcesmolvla/rft/batch.py",
+      "sha256": "2a35d5edf3142759fec54e56be7750945a4748ed1a7feb718fbc8fb602746975",
+      "symbol": "build_actor_batch"
     },
     "cross_component_contract": {
       "data_grid_hz": 30,
@@ -311,15 +297,7 @@
       "task_features": 256,
       "tcp_q_gradient_dims": [0, 1, 2, 3, 4, 5],
       "gripper_q_gradient": false
-    },
-    "unselected_parent_candidates": [
-      {
-        "logical_id": "G7A-r5-Actor",
-        "selected": false,
-        "path": "/home/rlc123/ForceSmolVLA/outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000",
-        "tree_sha256": "01665f899ad34e4ba048a46bcffe3a0f819fc0f7e42c6d0c9a2db662a3665379"
-      }
-    ]
+    }
   },
   "unverified_items": [
     "full Actor tensor load and real Actor forward on GPU",
@@ -330,11 +308,6 @@
     "independent Critic warmup and stability gate",
     "recorded-live temporal parity and robot execution",
     "formal calibration/runtime approval fields"
-  ],
-  "protected_paths": [
-    "artifacts/development/stage3/stage3_parent_inventory.v1.json",
-    "artifacts/development/stage3/stage3_parent_inventory_manifest.v1.json",
-    "docs/stage3_parent_inventory_report.v1.md"
   ],
   "authorization": {
     "gpu_model_load": false,

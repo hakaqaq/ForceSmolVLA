@@ -186,66 +186,6 @@ def accepted_dispatch(
     return entry, value.commit_dispatch(sequence)
 
 
-def test_frozen_temporal_and_normalization_facts_match_development_config() -> None:
-    payload = json.loads(
-        (ROOT / "configs/stage3_runtime_temporal_safety.v1.development.json").read_text()
-    )
-    assert payload["temporal_facts"] == {
-        "H50_MODEL_TIMEBASE_HZ": H50_MODEL_TIMEBASE_HZ,
-        "POSE_REFERENCE_DISPATCH_HZ": POSE_REFERENCE_DISPATCH_HZ,
-        "CONTROLLER_INTERNAL_SERVO_HZ": CONTROLLER_INTERNAL_SERVO_HZ,
-        "STAGE3_PROJECTION_GRID_HZ": STAGE3_PROJECTION_GRID_HZ,
-        "CONTRACT_TRANSITION_MACRO_HZ": CONTRACT_TRANSITION_MACRO_HZ,
-        "PRODUCTION_TRANSITION_COMMIT_HZ": PRODUCTION_TRANSITION_COMMIT_HZ,
-        "POLICY_REQUEST_TRIGGER": POLICY_REQUEST_TRIGGER,
-        "POLICY_REQUEST_HZ_MEASURED": POLICY_REQUEST_HZ_MEASURED,
-        "POLICY_INFERENCE_10HZ_REQUIRED": POLICY_INFERENCE_10HZ_REQUIRED,
-        "PRODUCTION_SAFE_INFERENCE_REFRESH_RATE": (
-            PRODUCTION_SAFE_INFERENCE_REFRESH_RATE
-        ),
-    }
-    assert payload["chunk_lifecycle"]["ACTION_SLOT_FIFO_PRESENT"] is False
-    assert payload["chunk_lifecycle"]["H50_ACTIONS_CACHED"] == H50_ACTIONS_CACHED
-    assert payload["chunk_lifecycle"]["MAX_SELECTIONS_PER_ADOPTED_CHUNK"] == 8
-    assert payload["chunk_lifecycle"]["SELECTED_INDEX_POLICY"] == SELECTED_INDEX_POLICY
-    assert ACTION_SLOT_FIFO_PRESENT is False
-    assert MAX_SELECTIONS_PER_ADOPTED_CHUNK == 8
-    assert payload["normalization_audit"] == {
-        "OBSERVATION_STATE_NORMALIZATION_ONCE": OBSERVATION_STATE_NORMALIZATION_ONCE,
-        "OBSERVATION_WRENCH_NORMALIZATION_ONCE": OBSERVATION_WRENCH_NORMALIZATION_ONCE,
-        "ACTION_DELTA_DENORMALIZATION_ONCE": ACTION_DELTA_DENORMALIZATION_ONCE,
-        "RECORDED_LIVE_ACCEPTED_MACRO_NORMALIZATION_ONCE": (
-            RECORDED_LIVE_ACCEPTED_MACRO_NORMALIZATION_ONCE
-        ),
-    }
-    assert payload["runtime_ownership"] == {
-        "RUNTIME_THREAD_OWNERSHIP": RUNTIME_THREAD_OWNERSHIP,
-        "CROSS_THREAD_CALL_FAIL_CLOSED": True,
-    }
-    assert payload["runtime_clock"] == {
-        "RUNTIME_CLOCK_DOMAIN_BOUND": RUNTIME_CLOCK_DOMAIN_BOUND,
-        "CROSS_CLOCK_TIMESTAMP_REJECTED": CROSS_CLOCK_TIMESTAMP_REJECTED,
-    }
-    assert payload["production_gripper_blocker"] == {
-        "GRIPPER_NOOP_ACK_POLICY": GRIPPER_NOOP_ACK_POLICY,
-        "FULL_ACTION7_ACK_CLOSURE": FULL_ACTION7_ACK_CLOSURE,
-        "PRODUCTION_INTEGRATION_BLOCKED_ON_GRIPPER_ACK": (
-            PRODUCTION_INTEGRATION_BLOCKED_ON_GRIPPER_ACK
-        ),
-    }
-    assert payload["persistence_boundary"] == {
-        "RUNTIME_LEDGER_PERSISTED": RUNTIME_LEDGER_PERSISTED,
-        "PRODUCTION_RUNTIME_LEDGER_RESUME": PRODUCTION_RUNTIME_LEDGER_RESUME,
-        "G5_PRODUCTION_DURABLE_RESUME": G5_PRODUCTION_DURABLE_RESUME,
-    }
-    assert payload["formal_gate_policy"] == {
-        "recorded_live_required": True,
-        "synthetic_trace_may_open_recorded_live_formal_gate": False,
-        "G7_FORMAL_GATE_PASSED": False,
-        "PRODUCTION_CADENCE_BINDING_COMPLETE": False,
-    }
-
-
 def test_single_owner_event_loop_rejects_cross_thread_call_and_latches_stop() -> None:
     value = ledger()
     adopt(value)

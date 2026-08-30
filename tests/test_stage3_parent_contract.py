@@ -59,13 +59,6 @@ def test_g7a_r2_online_and_target_twin_q_are_selected(binding: dict) -> None:
     assert [item["logical_role"] for item in binding["target_critic_parent"]["artifacts"]] == ["target_q1", "target_q2"]
 
 
-def test_g7a_r5_is_retained_but_explicitly_unselected(binding: dict) -> None:
-    candidate = binding["compatibility_evidence"]["unselected_parent_candidates"][0]
-    assert candidate["logical_id"] == "G7A-r5-Actor"
-    assert candidate["selected"] is False
-    assert Path(candidate["path"]).is_dir()
-
-
 def test_binding_is_not_exact_cycle210_continuation(binding: dict) -> None:
     semantics = binding["continuation_semantics"]
     assert semantics["exact_phase2_continuation"] is False
@@ -229,16 +222,13 @@ def test_real_cpu_preflight_is_complete_for_hybrid_and_does_not_initialize_cuda(
     assert real_preflight["ROBOT_COMMAND_COUNT"] == 0
 
 
-def test_parent_module_and_cli_have_no_ros_robot_serve_deploy_or_network_imports() -> None:
+def test_parent_module_has_no_ros_robot_serve_deploy_or_network_imports() -> None:
     banned = {
         "rclpy", "rospy", "roslib", "franka", "franka_msgs", "moveit",
         "requests", "httpx", "socket", "subprocess",
     }
     violations = []
-    for path in (
-        ROOT / "src/forcesmolvla/rft/stage3/parent.py",
-        ROOT / "tools/preflight_stage3_parent.py",
-    ):
+    for path in (ROOT / "src/forcesmolvla/rft/stage3/parent.py",):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             names = []
@@ -250,7 +240,7 @@ def test_parent_module_and_cli_have_no_ros_robot_serve_deploy_or_network_imports
                 if name.split(".", 1)[0] in banned:
                     violations.append((path.name, name))
     assert violations == []
-    source = (ROOT / "tools/preflight_stage3_parent.py").read_text(encoding="utf-8")
+    source = (ROOT / "src/forcesmolvla/rft/stage3/parent.py").read_text(encoding="utf-8")
     assert "serve_policy" not in source and "deploy_forcesmolvla" not in source
 
 

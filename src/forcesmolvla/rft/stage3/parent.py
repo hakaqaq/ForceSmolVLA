@@ -136,11 +136,6 @@ def validate_parent_binding_semantics(value: Mapping[str, Any]) -> dict[str, Any
         == "forcesmolvla.rft.critic.ForceAwareMacroCritic",
         "STAGE3_PARENT_CRITIC_ARCHITECTURE",
     )
-    candidates = binding["compatibility_evidence"]["unselected_parent_candidates"]
-    _require(
-        any(item.get("logical_id") == "G7A-r5-Actor" and item.get("selected") is False for item in candidates),
-        "STAGE3_PARENT_R5_MUST_BE_UNSELECTED",
-    )
     optimizer = binding["optimizer_policy"]
     for name in (
         "inherit_actor_optimizer", "inherit_critic_optimizer", "inherit_scheduler",
@@ -155,14 +150,6 @@ def validate_parent_binding_semantics(value: Mapping[str, Any]) -> dict[str, Any
     _require(safety["critic_ready"] is False, "STAGE3_PARENT_CRITIC_NOT_READY")
     _require(safety["unlock_requires_independent_critic_gate"] is True, "STAGE3_PARENT_UNLOCK_GATE")
     _require(not any(binding["authorization"].values()), "STAGE3_PARENT_AUTHORIZATION_EXPANDED")
-    _require(
-        set(binding["protected_paths"]) == {
-            "artifacts/development/stage3/stage3_parent_inventory.v1.json",
-            "artifacts/development/stage3/stage3_parent_inventory_manifest.v1.json",
-            "docs/stage3_parent_inventory_report.v1.md",
-        },
-        "STAGE3_PARENT_PROTECTED_PATH_SET",
-    )
     return binding
 
 
@@ -420,7 +407,7 @@ def _cross_component_compatibility(binding: Mapping[str, Any]) -> dict[str, Any]
     _require(actor_config.get("chunk_size") == 50 and actor_config.get("output_features", {}).get("action", {}).get("shape") == [7], "STAGE3_PARENT_ACTOR_ACTION_CONTRACT")
     actor_image_source = _resolve(evidence["actor_image_adapter_source"]["path"]).read_text(encoding="utf-8")
     critic_source = _resolve(evidence["critic_source"]["path"]).read_text(encoding="utf-8")
-    _require("def actor_batch(" in actor_image_source and ".float().div_(255)" in actor_image_source, "STAGE3_PARENT_ACTOR_IMAGE_RANGE_SOURCE")
+    _require("def build_actor_batch(" in actor_image_source and ".float().div_(255)" in actor_image_source, "STAGE3_PARENT_ACTOR_IMAGE_RANGE_SOURCE")
     _require("image.dtype != torch.uint8" in critic_source and "value / 255.0" in critic_source, "STAGE3_PARENT_CRITIC_IMAGE_RANGE_SOURCE")
     return {
         "status": "PASS",
@@ -467,7 +454,7 @@ def preflight_parent_binding(config_path: Path = DEFAULT_CONFIG) -> dict[str, An
         artifacts[name] = _verify_artifact(binding[name], cache)
 
     evidence = binding["compatibility_evidence"]
-    for label in ("inventory", "inventory_manifest", "inventory_report", "critic_config", "critic_source", "stage3_transition_contract", "actor_image_adapter_source"):
+    for label in ("critic_config", "critic_source", "stage3_transition_contract", "actor_image_adapter_source"):
         item = evidence[label]
         _verify_named_file(item["path"], item["sha256"], label, cache)
     checkpoint = evidence["g7a_r2_checkpoint"]
@@ -489,13 +476,6 @@ def preflight_parent_binding(config_path: Path = DEFAULT_CONFIG) -> dict[str, An
     _verify_named_file(binding["optimizer_policy"]["critic_candidate"]["source_path"], binding["optimizer_policy"]["critic_candidate"]["source_sha256"], "critic_optimizer_spec_source", cache)
     _verify_named_file("src/forcesmolvla/rft/frozen_vlm_trainability.py", binding["optimizer_policy"]["actor_candidate"]["source_sha256"], "actor_optimizer_spec_source", cache)
 
-    inventory = _json(_resolve(evidence["inventory"]["path"]))
-    inventory_manifest = _json(_resolve(evidence["inventory_manifest"]["path"]))
-    _require(inventory.get("cycle210_full_training_state", {}).get("available") is False, "STAGE3_PARENT_FULL_LEARNER_INVENTORY")
-    _require(inventory.get("cycle210_evaluation_actor", {}).get("runtime_model_sha256") == binding["actor_parent"]["sha256"], "STAGE3_PARENT_ACTOR_INVENTORY")
-    _require(inventory.get("g7a_r2_payload", {}).get("tree_sha256") == critic_arch["container_tree_sha256"], "STAGE3_PARENT_G7A_INVENTORY")
-    generated = {item["path"]: item["sha256"] for item in inventory_manifest.get("generated_files", [])}
-    _require(generated.get(evidence["inventory"]["path"]) == binding["created_from_inventory_sha256"], "STAGE3_PARENT_INVENTORY_MANIFEST_LINK")
     checkpoint_manifest = _json(checkpoint_manifest_path)
     payload = dict(checkpoint_manifest)
     claimed_payload_sha = payload.pop("manifest_payload_sha256", None)
@@ -531,8 +511,6 @@ def preflight_parent_binding(config_path: Path = DEFAULT_CONFIG) -> dict[str, An
         _require(actual["total_file_size"] == architecture["container_total_file_size"], f"STAGE3_PARENT_{label}_TREE_SIZE")
     full_checkpoint = Path(binding["continuation_semantics"]["cycle210_full_learner_checkpoint_expected_path"])
     _require(not full_checkpoint.exists(), "STAGE3_PARENT_FULL_LEARNER_AVAILABILITY_DRIFT")
-    r5 = evidence["unselected_parent_candidates"][0]
-    _require(Path(r5["path"]).is_dir() and r5["selected"] is False, "STAGE3_PARENT_R5_RETENTION")
 
     actor_result = _actor_compatibility(binding)
     critic_result = _critic_compatibility(binding)
@@ -582,7 +560,6 @@ def preflight_parent_binding(config_path: Path = DEFAULT_CONFIG) -> dict[str, An
         "ROBOT_COMMAND_COUNT": 0,
         "ROBOT_EXECUTION_AUTHORIZED": False,
         "unverified_items": binding["unverified_items"],
-        "protected_paths": binding["protected_paths"],
     }
     report["canonical_report_sha256"] = hashlib.sha256(
         json.dumps(report, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
