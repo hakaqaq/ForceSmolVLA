@@ -665,19 +665,41 @@ class Stage3ProductionBridge:
                 int(row["reset_generation"]),
                 int(row["takeover_generation"]),
             )
+            initial_generation = (
+                int(identity["policy_epoch"]),
+                int(identity["reset_generation"]),
+                int(identity["takeover_generation"]),
+            )
         except (KeyError, TypeError, ValueError) as error:
             raise ProductionBridgeError(
                 "BRIDGE_POLICY_EXECUTION_GENERATION_MISSING"
             ) from error
+        policy_delta = generation[0] - initial_generation[0]
+        takeover_delta = generation[2] - initial_generation[2]
         if (
             min(generation) < 0
-            or generation[1] != int(identity.get("reset_generation", -1))
-            or generation[0] != generation[2]
+            or min(initial_generation) < 0
+            or generation[1] != initial_generation[1]
+            or policy_delta < 0
+            or takeover_delta < 0
+            or policy_delta != takeover_delta
         ):
             raise ProductionBridgeError(
                 "BRIDGE_POLICY_EXECUTION_GENERATION_INVALID"
             )
         return generation
+
+    @staticmethod
+    def _validate_policy_execution_generation_step(
+        previous: tuple[int, int, int], current: tuple[int, int, int]
+    ) -> None:
+        if current not in {
+            previous,
+            (previous[0] + 1, previous[1], previous[2] + 1),
+        }:
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_GENERATION_INVALID"
+            )
 
     def _load_integrated_policy_execution(
         self,
@@ -691,6 +713,12 @@ class Stage3ProductionBridge:
         manifest = _read_json(dataset_root / "integrated_capture_session.json")
         contract = manifest.get("contract")
         identity = contract.get("identity") if isinstance(contract, Mapping) else None
+        async_metadata = (
+            manifest.get("learner_resume_checkpoint"),
+            manifest.get("active_actor_revision"),
+            manifest.get("pending_candidate_id"),
+        )
+        async_learner = any(value is not None for value in async_metadata)
         if operator_task_outcome != "success":
             raise ProductionBridgeError(
                 "BRIDGE_POLICY_EXECUTION_OPERATOR_SUCCESS_REQUIRED"
@@ -720,6 +748,13 @@ class Stage3ProductionBridge:
             or manifest.get("formal_replay_writer_started") is not False
             or manifest.get("learner_started") is not False
             or manifest.get("policy_revision_publisher_started") is not False
+            or (
+                async_learner
+                and not all(
+                    isinstance(value, str) and bool(value)
+                    for value in async_metadata
+                )
+            )
         ):
             raise ProductionBridgeError(
                 "BRIDGE_INTEGRATED_POLICY_EXECUTION_CONTRACT_INVALID"
@@ -815,7 +850,7 @@ class Stage3ProductionBridge:
             }
         observation_by_id: dict[str, dict[str, Any]] = {}
         previous_t_ref = 0
-        previous_generation = (0, 0, 0)
+        previous_generation = self._policy_execution_generation(identity, identity)
         required_observation_streams = set(native_by_source) | {
             "external_camera",
             "wrist_camera",
@@ -827,6 +862,9 @@ class Stage3ProductionBridge:
         }
         for index, observation in enumerate(observations):
             generation = self._policy_execution_generation(observation, identity)
+            self._validate_policy_execution_generation_step(
+                previous_generation, generation
+            )
             observation_id = str(observation.get("observation_id", ""))
             timestamps = observation.get("stream_timestamps_ns")
             stream_ids = observation.get("stream_ids")
@@ -836,7 +874,6 @@ class Stage3ProductionBridge:
                 or observation_id != f"{episode_dir.name}:observation:{index:06d}"
                 or observation_id in observation_by_id
                 or t_ref <= previous_t_ref
-                or generation < previous_generation
                 or not isinstance(timestamps, Mapping)
                 or not isinstance(stream_ids, Mapping)
                 or set(timestamps) != required_observation_streams
@@ -1366,10 +1403,16 @@ class Stage3ProductionBridge:
                 for row in transitions
                 if int(row.get("receive_monotonic_ns", 0)) > end_ns
             ]
+            following_generations = [
+                self._policy_execution_generation(row, identity)
+                for row in following
+            ]
             if (
                 following
-                and self._policy_execution_generation(following[0], identity)
-                != generation
+                and (
+                    following_generations[0] != generation
+                    or any(item < generation for item in following_generations)
+                )
             ):
                 raise ProductionBridgeError(
                     "BRIDGE_POLICY_EXECUTION_POST_TAKEOVER_GENERATION_INVALID"
@@ -1662,11 +1705,33 @@ class Stage3ProductionBridge:
             reconciled.add(key)
 
         seal = _read_json(stream_root / "policy_execute_episode_seal.json")
-        model_update_count = (
-            int(seal.get("actor_updates", -1))
-            + int(seal.get("critic_updates", -1))
-            + int(bool(seal.get("checkpoint_written")))
-            + int(bool(seal.get("policy_revision_published")))
+        learner_critic_steps = int(seal.get("learner_critic_steps", -1))
+        learner_actor_steps = int(seal.get("learner_actor_steps", -1))
+        sync_learner_seal_valid = (
+            not async_learner
+            and seal.get("learner_started") is False
+            and int(seal.get("actor_updates", -1)) == 0
+            and int(seal.get("critic_updates", -1)) == 0
+        )
+        async_learner_seal_valid = (
+            async_learner
+            and seal.get("learner_started") is True
+            and seal.get("learner_resume_checkpoint") == async_metadata[0]
+            and seal.get("active_actor_revision") == async_metadata[1]
+            and seal.get("active_actor_model_revision")
+            == identity.get("policy_revision")
+            and seal.get("active_actor_model_revision")
+            == manifest.get("policy_metadata", {}).get("model_sha256")
+            and learner_critic_steps == 2
+            and learner_actor_steps == 1
+            and int(seal.get("critic_updates", -1)) == learner_critic_steps
+            and int(seal.get("actor_updates", -1)) == learner_actor_steps
+            and seal.get("current_episode_sampled_by_learner") is False
+            and isinstance(seal.get("pending_checkpoint_path"), str)
+            and bool(seal.get("pending_checkpoint_path"))
+            and seal.get("pending_candidate_id") == async_metadata[2]
+            and seal.get("pending_candidate_published") is False
+            and seal.get("pending_candidate_activated") is False
         )
         latest_lineage_ns = max(
             int(observations[-1].get("t_ref_ns", 0)),
@@ -1688,10 +1753,9 @@ class Stage3ProductionBridge:
             or seal.get("formal_replay") is not False
             or seal.get("real_online_r") is not False
             or seal.get("formal_training_replay_written") is not False
-            or seal.get("learner_started") is not False
             or seal.get("policy_revision_published") is not False
             or seal.get("checkpoint_written") is not False
-            or model_update_count != 0
+            or not (sync_learner_seal_valid or async_learner_seal_valid)
             or seal.get("controller_owner") != "recorder"
             or seal.get("controller_process_count") != 1
             or seal.get("deploy_controller_started") is not False
@@ -1811,7 +1875,7 @@ class Stage3ProductionBridge:
                 "detector_outcome_source": (
                     "approved_development_policy_execution_smoke_scope"
                 ),
-                "model_update_count": model_update_count,
+                "model_update_count": 0,
             },
         }
 

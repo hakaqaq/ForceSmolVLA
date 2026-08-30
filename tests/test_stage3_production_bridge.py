@@ -45,6 +45,34 @@ def _write_jsonl(path: Path, values: list[dict]) -> None:
     path.write_text("".join(json.dumps(value) + "\n" for value in values), encoding="utf-8")
 
 
+def _offset_policy_epoch(value, offset: int):
+    if isinstance(value, dict):
+        return {
+            key: (
+                int(item) + offset
+                if key == "policy_epoch"
+                else _offset_policy_epoch(item, offset)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_offset_policy_epoch(item, offset) for item in value]
+    return value
+
+
+def _offset_episode_policy_epoch(episode: Path, offset: int) -> None:
+    dataset = episode.parent.parent
+    paths = [dataset / "integrated_capture_session.json"]
+    paths.extend((dataset / "integrated_capture" / episode.name / "streams").glob("*.json*"))
+    paths.extend((episode / "streams").glob("*.jsonl"))
+    for path in paths:
+        if path.suffix == ".jsonl":
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            _write_jsonl(path, [_offset_policy_epoch(row, offset) for row in rows])
+        else:
+            _write_json(path, _offset_policy_epoch(json.loads(path.read_text()), offset))
+
+
 def _pose() -> dict:
     return {
         "frame_id": "fr3_link0",
@@ -1000,6 +1028,52 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
     )
 
 
+def _make_policy_execution_fixture_async(episode: Path) -> Path:
+    dataset = episode.parent.parent
+    manifest_path = dataset / "integrated_capture_session.json"
+    manifest = json.loads(manifest_path.read_text())
+    resume = "/tmp/stage3_joint_cycle_000020"
+    active = "stage3-online-r-joint-cycle-000010-candidate"
+    pending = "stage3-online-r-real-async-joint-cycle-000021-pending"
+    manifest.update(
+        {
+            "learner_resume_checkpoint": resume,
+            "active_actor_revision": active,
+            "pending_candidate_id": pending,
+        }
+    )
+    _write_json(manifest_path, manifest)
+
+    seal_path = (
+        dataset
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_episode_seal.json"
+    )
+    seal = json.loads(seal_path.read_text())
+    seal.update(
+        {
+            "learner_started": True,
+            "learner_resume_checkpoint": resume,
+            "active_actor_revision": active,
+            "active_actor_model_revision": manifest["contract"]["identity"][
+                "policy_revision"
+            ],
+            "learner_critic_steps": 2,
+            "learner_actor_steps": 1,
+            "critic_updates": 2,
+            "actor_updates": 1,
+            "current_episode_sampled_by_learner": False,
+            "pending_checkpoint_path": "/tmp/stage3_joint_cycle_000021_pending",
+            "pending_candidate_id": pending,
+            "pending_candidate_published": False,
+            "pending_candidate_activated": False,
+        }
+    )
+    _write_json(seal_path, seal)
+    return seal_path
+
+
 def _fake_materialization(episode: Path, *, trigger_frame: int = 9) -> EpisodeMaterialization:
     count = max(10, trigger_frame + 1)
     grid = np.asarray(
@@ -1229,6 +1303,85 @@ def test_integrated_policy_execution_smoke_is_read_only_and_not_shadow(
     assert report.formal_training_replay_written is False
     assert report.real_online_r_used is False
     assert report.model_update_count == 0
+    assert not state.exists()
+
+
+def test_integrated_async_policy_execution_seal_is_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _offset_episode_policy_epoch(episode, 1)
+    _make_policy_execution_fixture_async(episode)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+    state = tmp_path / "dry-run-state"
+
+    report = _bridge(state).process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "DRY_RUN_READY"
+    assert report.policy_action_ack_count == 2
+    assert report.human_override_count == 1
+    assert report.quarantined_count == 0
+    assert report.model_update_count == 0
+    assert not state.exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("learner_resume_checkpoint", None),
+        ("current_episode_sampled_by_learner", True),
+        ("active_actor_revision", "changed-active-revision"),
+        ("pending_candidate_published", True),
+        ("pending_candidate_activated", True),
+    ],
+)
+def test_integrated_async_policy_execution_rejects_invalid_runtime_seal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value,
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _make_policy_execution_fixture_async(episode)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+    seal_path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_episode_seal.json"
+    )
+    seal = json.loads(seal_path.read_text())
+    if value is None:
+        seal.pop(field)
+    else:
+        seal[field] = value
+    _write_json(seal_path, seal)
+    state = tmp_path / "dry-run-state"
+
+    report = _bridge(state).process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "SEALED_QUARANTINED"
+    assert report.quarantine_reasons == (
+        "BRIDGE_INTEGRATED_POLICY_EXECUTION_SEAL_INVALID",
+    )
     assert not state.exists()
 
 
@@ -1499,6 +1652,114 @@ def test_policy_execution_generation_mismatch_is_quarantined_without_writes(
     assert report.classification == "recorded_live_policy_execution_smoke"
     assert report.quarantine_reasons == (
         "BRIDGE_POLICY_EXECUTION_GENERATION_INVALID",
+    )
+    assert not state.exists()
+
+
+def test_policy_execution_generation_uses_independent_initial_offsets() -> None:
+    identity = {
+        "session_id": "stage3-policy-execute-fixture",
+        "episode_id": "episode_000000",
+        "clock_domain_id": "upper_host_monotonic",
+        "policy_revision": "cycle10",
+        "policy_epoch": 1,
+        "reset_generation": 0,
+        "takeover_generation": 0,
+    }
+
+    generations = [
+        Stage3ProductionBridge._policy_execution_generation(
+            {**identity, "policy_epoch": epoch, "takeover_generation": takeover},
+            identity,
+        )
+        for epoch, takeover in ((1, 0), (2, 1), (3, 2))
+    ]
+    for previous, current in zip(generations[:-1], generations[1:], strict=True):
+        Stage3ProductionBridge._validate_policy_execution_generation_step(
+            previous, current
+        )
+
+    for epoch, takeover in ((2, 0), (1, 1)):
+        with pytest.raises(
+            ProductionBridgeError,
+            match="BRIDGE_POLICY_EXECUTION_GENERATION_INVALID",
+        ):
+            Stage3ProductionBridge._policy_execution_generation(
+                {
+                    **identity,
+                    "policy_epoch": epoch,
+                    "takeover_generation": takeover,
+                },
+                identity,
+            )
+    for previous, current in (
+        (generations[0], generations[2]),
+        (generations[1], generations[0]),
+    ):
+        with pytest.raises(
+            ProductionBridgeError,
+            match="BRIDGE_POLICY_EXECUTION_GENERATION_INVALID",
+        ):
+            Stage3ProductionBridge._validate_policy_execution_generation_step(
+                previous, current
+            )
+
+
+def test_policy_execution_accepts_nonzero_initial_policy_epoch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _offset_episode_policy_epoch(episode, 1)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+    state = tmp_path / "dry-run-state"
+
+    report = _bridge(state).process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "DRY_RUN_READY"
+    assert report.policy_action_ack_count == 2
+    assert report.quarantined_count == 0
+    assert not state.exists()
+
+
+def test_policy_execution_invalidated_old_proposal_cannot_execute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+    path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_proposal.jsonl"
+    )
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[0]["invalidated_by_takeover"] = True
+    _write_jsonl(path, rows)
+    state = tmp_path / "dry-run-state"
+
+    report = _bridge(state).process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "SEALED_QUARANTINED"
+    assert report.quarantine_reasons == (
+        "BRIDGE_POLICY_EXECUTION_INVALIDATED_PROPOSAL_EXECUTED",
     )
     assert not state.exists()
 
