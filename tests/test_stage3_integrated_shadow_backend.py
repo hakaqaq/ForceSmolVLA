@@ -28,6 +28,12 @@ from forcesmolvla.rft.stage3.integrated_shadow_backend import (
 
 
 ROOT = Path(__file__).parents[1]
+CLIENT_SCRIPTS = Path("/home/rlc123/fr3_client_ws/scripts")
+if str(CLIENT_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(CLIENT_SCRIPTS))
+
+from hilserl_impedance_protocol import GripperToggleAuthority  # noqa: E402
+
 BASELINE_POLICY_REVISION = (
     "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
 )
@@ -639,6 +645,146 @@ def test_stalled_close_is_an_accepted_closed_gripper_state() -> None:
         )
         is False
     )
+
+
+def _toggle_authority() -> GripperToggleAuthority:
+    return GripperToggleAuthority(
+        minimum_direction_delta_m=0.001,
+        maximum_feedback_age_ns=100,
+    )
+
+
+def _complete_toggle_command(
+    authority: GripperToggleAuthority,
+    *,
+    command_id: str,
+    requested_closed: bool,
+    start_width_m: float,
+    end_width_m: float,
+    outcome: str,
+) -> bool:
+    authority.observe_feedback(start_width_m, 100)
+    authority.record_accepted(
+        command_id,
+        requested_closed=requested_closed,
+        generation=1,
+        accepted_monotonic_ns=110,
+    )
+    authority.observe_feedback(end_width_m, 120)
+    return authority.record_terminal(
+        command_id,
+        outcome=outcome,
+        current_generation=1,
+        finished_monotonic_ns=130,
+    )
+
+
+def test_policy_closed_authority_makes_takeover_button_open() -> None:
+    authority = _toggle_authority()
+    assert _complete_toggle_command(
+        authority,
+        command_id="policy-close",
+        requested_closed=True,
+        start_width_m=0.085,
+        end_width_m=0.04456,
+        outcome="stalled",
+    )
+    assert authority.next_target_closed(
+        current_generation=1, now_monotonic_ns=140
+    ) is False
+
+
+def test_policy_open_authority_makes_takeover_button_close() -> None:
+    authority = _toggle_authority()
+    assert _complete_toggle_command(
+        authority,
+        command_id="policy-open",
+        requested_closed=False,
+        start_width_m=0.04456,
+        end_width_m=0.085,
+        outcome="reached",
+    )
+    assert authority.next_target_closed(
+        current_generation=1, now_monotonic_ns=140
+    ) is True
+
+
+def test_rejected_and_zero_motion_commands_do_not_update_toggle() -> None:
+    authority = _toggle_authority()
+    assert not _complete_toggle_command(
+        authority,
+        command_id="zero-close",
+        requested_closed=True,
+        start_width_m=0.085,
+        end_width_m=0.085,
+        outcome="stalled",
+    )
+    authority.record_accepted(
+        "rejected-close",
+        requested_closed=True,
+        generation=1,
+        accepted_monotonic_ns=140,
+    )
+    assert not authority.record_terminal(
+        "rejected-close",
+        outcome="rejected",
+        current_generation=1,
+        finished_monotonic_ns=150,
+    )
+    assert authority.next_target_closed(
+        current_generation=1, now_monotonic_ns=160
+    ) is True
+    stale = _toggle_authority()
+    stale.observe_feedback(0.085, 100)
+    stale.record_accepted(
+        "old-generation-close",
+        requested_closed=True,
+        generation=1,
+        accepted_monotonic_ns=110,
+    )
+    stale.observe_feedback(0.04456, 120)
+    assert not stale.record_terminal(
+        "old-generation-close",
+        outcome="stalled",
+        current_generation=2,
+        finished_monotonic_ns=130,
+    )
+    assert stale.authority_generation is None
+
+
+def test_valid_stalled_close_updates_toggle_authority() -> None:
+    authority = _toggle_authority()
+    assert _complete_toggle_command(
+        authority,
+        command_id="contact-close",
+        requested_closed=True,
+        start_width_m=0.085,
+        end_width_m=0.047,
+        outcome="stalled",
+    )
+    assert authority.authority_closed is True
+
+
+def test_stale_or_unknown_feedback_suppresses_takeover_gripper_goal() -> None:
+    authority = _toggle_authority()
+    authority.observe_feedback(0.085, 100)
+    assert authority.next_target_closed(
+        current_generation=1, now_monotonic_ns=201
+    ) is None
+    authority.observe_feedback(0.04456, 210)
+    assert authority.next_target_closed(
+        current_generation=1, now_monotonic_ns=220
+    ) is None
+    source = (
+        CLIENT_SCRIPTS / "record_franka_hilserl_impedance.py"
+    ).read_text(encoding="utf-8")
+    controller = source[
+        source.index("class HilserlIsolatedSpaceMouseController"):
+        source.index("def _control_worker")
+    ]
+    assert "def _sync_gripper_toggle_for_takeover" in controller
+    assert "Robotiq toggle inhibited" in controller
+    assert "_send_gripper_goal(\n                    not logical_target" in controller
 
 
 def test_integrated_cli_passes_shadow_runtime_binding_without_launch(
