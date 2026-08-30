@@ -591,9 +591,12 @@ class InMemoryRevisionStateMachine:
         self.publication_counters["epoch_invalidations"] += 1
         return self.policy_epoch
 
-    def acknowledge_synthetic_reset_boundary(self, boundary: QuiescentBoundary) -> None:
+    def acknowledge_reset_boundary(self, boundary: QuiescentBoundary) -> None:
         boundary.validate_for_activation()
         self.safe_reset_required = False
+
+    def acknowledge_synthetic_reset_boundary(self, boundary: QuiescentBoundary) -> None:
+        self.acknowledge_reset_boundary(boundary)
 
     @property
     def action_authorization_allowed(self) -> bool:
