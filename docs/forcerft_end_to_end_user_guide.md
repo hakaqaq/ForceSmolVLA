@@ -31,6 +31,7 @@ export MODEL_PYTHON=/path/to/forcesmolvla/bin/python
 export ROBOT_PYTHON="$FR3_WS/.venv/bin/python"
 export RAW_ROOT="$FR3_WS/datasets/task2"
 export LEROBOT_DATASET="$FORCESMOLVLA_ROOT/datasets/task2_lerobotv3"
+export REWARD_TRANSITION_ROOT=/absolute/path/to/reward_transition_view
 export CHECKPOINT_ROOT="$FORCESMOLVLA_ROOT/artifacts/development/stage3/formal_online_r/<formal-r-run>/checkpoints"
 export FORMAL_R_ROOT="$FORCESMOLVLA_ROOT/artifacts/development/stage3/formal_online_r/<formal-r-run>"
 export REVISION_REGISTRY="$FORCESMOLVLA_ROOT/artifacts/development/stage3/runtime/stage3_policy_revision_registry.json"
@@ -201,9 +202,9 @@ checkpoint 包含模型、optimizer、scheduler/RNG/dataloader 恢复契约及 r
 
 ```bash
 "$MODEL_PYTHON" tools/materialize_reward_transitions.py build \
-  --config configs/stage2_g1_frozen_detector_transition_view.development.json \
+  --config configs/reward_transition_materialization.development.json \
   --dataset-root "$LEROBOT_DATASET" \
-  --output-root "$FORCESMOLVLA_ROOT/artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
+  --output-root "$REWARD_TRANSITION_ROOT"
 ```
 
 当前 reward contract 使用 30 Hz detector score、阈值 0.83、连续 5 帧为正、第五个确认帧为 terminal；reward 是 sparse binary terminal。没有 manual boundary、episode-end、saved=true 或 last-frame fallback。detector 未触发的 episode/transition 按现有规则排除，不伪造 terminal。
@@ -229,7 +230,7 @@ export REWARD_RUN=/absolute/path/to/reward_classifier_run
 
 当前 classifier 为 frozen pretrained ResNet10 pre-pooling backbone，加双相机 learned embeddings/bottleneck 与 binary head。训练使用 Adam、150 optimizer updates、batch 256，positive 占 128，ordinary/hard negative 各 64；validation checkpoint 以最低 BCE 为主、PR-AUC 为 tie-break。
 
-当前 production bridge 使用的 development detector checkpoint 路径由 `configs/stage2_g1_frozen_detector_transition_view.development.json` 的 `frozen_inputs.classifier_checkpoint.path` 读取。不要手工替换 checkpoint 或只改文件名。
+当前 production bridge 使用的 development detector checkpoint 路径由 `configs/reward_transition_materialization.development.json` 的 `frozen_inputs.classifier_checkpoint.path` 读取。不要手工替换 checkpoint 或只改文件名。
 
 ## 8. Twin-Q Critic
 
@@ -247,13 +248,13 @@ Twin-Q 架构在 `src/forcesmolvla/rft/critic.py`，ActionContract-v2 adapter �
   --source-manifest artifacts/development/stage2/stage2_source_manifest.v4.json
 ```
 
-当前真实 bootstrap Critic 是 `configs/stage3_parent_binding.v1.development.json` 选定的 G7A-r2 Q1/Q2 与 target Q1/Q2。canonical 训练入口是：
+当前真实 bootstrap Critic 是 `configs/stage3_parent_binding.v1.development.json` 选定的 Q1/Q2 与 target Q1/Q2。canonical 训练入口是：
 
 ```bash
 "$MODEL_PYTHON" tools/train_twin_q_critic.py --run
 ```
 
-该入口复用现有 worker 和固定配置；`--run` 才会执行真实 Critic 训练。它导入的 G4/G5 helper 仍是当前 bootstrap 闭包的一部分。
+该入口复用正式 Critic worker、训练周期 primitives 和固定配置；`--run` 才会执行真实 Critic 训练。
 
 ## 9. Frozen-VLM Actor/Critic 微调
 

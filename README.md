@@ -26,10 +26,10 @@ post-VLM force fusion 与 MoE 思想，并新增 Action-Query Force Residual Ada
 flow timestep，在原生 prefix K/V cache 之外查询固定的 Force Context。Force 分支
 不接收、不拼接或修改 `past_key_values`。
 
-v4.2 的 Stage-1 证明范围是离线全参数 Force-conditioned Actor。Stage-2 已实现并
-验收 development-only 的 frozen-VLM Twin-Q、Flow-Matching + Q-guidance、
-ActionContract-v2、exact resume 和 throughput-v2 路径；当前仍不声称 formal
-Detector validation、无偏策略评估、部署发布或在线/真机训练已经完成。
+v4.2 的离线范围是全参数 Force-conditioned Actor。在线部分已实现并验收
+development-only 的 frozen-VLM Twin-Q、Flow-Matching + Q-guidance、
+ActionContract-v2、exact resume、真机采集与持续 Actor/Learner 循环；这些结果不等同于
+formal detector validation、无偏策略评估或 production deployment approval。
 
 ## 环境
 
@@ -112,16 +112,16 @@ env PYTHONHASHSEED=42 CUBLAS_WORKSPACE_CONFIG=:4096:8 \
 ```
 
 `tools/train_forcesmolvla_sft.py`是通用训练入口，不包含task1/task2/task3分支。`--dataset`指定任意满足
-ForceSmolVLA数据契约的LeRobot v3目录；任务名、输出目录、数据准入工件、P8证据和日志间隔
+ForceSmolVLA数据契约的LeRobot v3目录；任务名、输出目录、训练准入工件和日志间隔
 由`--config`指定。新增数据集时创建新的`configs/train/<experiment>.json`，无需修改训练代码。
 
-该长程入口只有在当前源码绑定的 P8 B4×1 single-pass exact-resume dry-run 通过后
-才允许启动；历史 P8、缺失 checkpoint 或旧 B2×8 evidence 均不能解锁训练。
+该长程入口只有在当前源码绑定的 B4×1 单遍 exact-resume dry-run 通过后
+才允许启动；历史验证结果、缺失 checkpoint 或旧 B2×8 evidence 均不能解锁训练。
 
 该入口严格使用episode-disjoint train split、train-only normalizer、双相机、H=50、
 ForceToken-MoE单遍联合flow/router loss、B4×1和40,000 samples（派生10,000 optimizer updates）；不含CPU fallback、
 VLM冻结或LoRA。它沿用SmolVLA的Flow-Matching/AdamW/bf16 recipe和ForceVLA的batch=4、
-每batch一次联合forward/backward语义；P7 B2×8 exact two-pass仅保留为独立gate/parity test。
+每batch一次联合forward/backward语义；B2×8 exact two-pass仅保留为独立 validation/parity test。
 10,000-update短程预算按LeRobot官方规则将原1000/20000 scheduler preset自动缩放为500-step warmup、
 update 10,000衰减至2.5e-6。数据读取使用8线程有序单窗口预取，下一窗口indices随sampler state
 写入resume contract，不改变uniform sampling语义。仅在最终update 10,000保存唯一strict checkpoint；周期validation只记录指标，不保存中间或best checkpoint。所有训练产物
