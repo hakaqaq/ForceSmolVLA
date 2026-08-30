@@ -7,11 +7,10 @@ import argparse
 import json
 from pathlib import Path
 
-from preflight_p5_dense_compute_gpu import _sha256
-from preflight_p6_variants_gpu import (
-    _dataset_storage_binding,
-    _pytest_evidence_summary,
-    _validate_runtime_import_roots,
+from forcesmolvla.training_runtime import file_sha256 as _sha256
+from forcesmolvla.dataset_binding import (
+    dataset_storage_binding as _dataset_storage_binding,
+    validate_runtime_import_roots as _validate_runtime_import_roots,
 )
 from preflight_p9_offline_replay import _load_scope_amendment, _validate_contract
 
@@ -80,7 +79,7 @@ def main() -> None:
         "tests/test_p9_shadow.py",
         "tools/build_p9_source_binding.py",
         "tools/p8_checkpoint_common.py",
-        "tools/preflight_p7_two_pass_gpu.py",
+        "src/forcesmolvla/training_runtime.py",
         "tools/preflight_p9_offline_replay.py",
         "tools/train_forcesmolvla_sft.py",
     ]

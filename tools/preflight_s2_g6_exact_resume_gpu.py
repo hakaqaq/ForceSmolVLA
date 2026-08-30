@@ -172,7 +172,7 @@ def negative_tests() -> list[dict]:
 
 def protected_snapshot() -> dict:
     from forcesmolvla.rft.exact_resume import checkpoint_tree
-    from preflight_s2_g5_single_cycle_gpu import protected_snapshot as g5_protected
+    from forcesmolvla.rft.training_cycle import protected_snapshot as g5_protected
 
     files = {
         "g5_config": ROOT / "configs/stage2_g5_single_cycle.development.yaml",

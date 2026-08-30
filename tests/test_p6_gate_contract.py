@@ -1,17 +1,13 @@
 import json
 from pathlib import Path
-import sys
-
 import pytest
 
 
 ROOT = Path(__file__).parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-
-from preflight_p6_variants_gpu import (  # noqa: E402
-    _validate_p5_prerequisite,
-    _validate_runtime_import_roots,
-    _validate_spec,
+from forcesmolvla.dataset_binding import (
+    validate_dense_compute_prerequisite as _validate_dense_compute_prerequisite,
+    validate_runtime_import_roots as _validate_runtime_import_roots,
+    validate_variant_spec as _validate_spec,
 )
 
 
@@ -24,7 +20,7 @@ def _spec():
 def test_p6_freezes_all_four_p5_prerequisite_hashes_and_import_roots():
     spec = _spec()
     _validate_spec(spec)
-    observed = _validate_p5_prerequisite(
+    observed = _validate_dense_compute_prerequisite(
         ROOT,
         spec,
         dataset_root=ROOT / "datasets/task2_lerobotv3",
@@ -45,7 +41,7 @@ def test_p6_rejects_any_parent_p5_hash_drift():
     spec = _spec()
     spec["p5_prerequisite"]["gate_result"]["sha256"] = "0" * 64
     with pytest.raises(RuntimeError, match="P6_P5_GATE_RESULT_HASH_MISMATCH"):
-        _validate_p5_prerequisite(
+        _validate_dense_compute_prerequisite(
             ROOT,
             spec,
             dataset_root=ROOT / "datasets/task2_lerobotv3",

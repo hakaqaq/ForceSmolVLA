@@ -18,9 +18,9 @@ import pyarrow.parquet as pq
 
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from preflight_p6_variants_gpu import _dataset_storage_binding  # noqa: E402
+from forcesmolvla.dataset_binding import dataset_storage_binding  # noqa: E402
 
 
 EXPECTED_P8_DATASET_SHA256 = "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
@@ -323,7 +323,7 @@ def validate_upstream(
         "conversion_manifest": binding(conversion_path),
         "dataset_info": binding(info_path),
         "p8_source_binding": binding(p8_binding_path),
-        "p8_dataset_hash_implementation": binding(ROOT / "tools/preflight_p6_variants_gpu.py"),
+        "p8_dataset_hash_implementation": binding(ROOT / "src/forcesmolvla/dataset_binding.py"),
     }
 
 
@@ -336,7 +336,7 @@ def build_inventory(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str,
     reviewed = load_json(args.reviewed_labels.resolve())
     template = load_json(args.template.resolve())
     reviewed_by_id, schema_validation = validate_review_schema(reviewed, template)
-    dataset_storage = _dataset_storage_binding(args.dataset_root.resolve())
+    dataset_storage = dataset_storage_binding(args.dataset_root.resolve())
     bindings = validate_upstream(args, dataset_storage)
     bindings["p8_dataset_storage"] = {
         "dataset_root": args.dataset_root.resolve().relative_to(ROOT).as_posix(),

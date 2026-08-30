@@ -20,7 +20,7 @@ from forcesmolvla.rft.critic_action_adapter_v2 import (
     raw_gripper_out_of_public_tolerance_mask,
 )
 
-import preflight_s2_g5_single_cycle_gpu as legacy
+from forcesmolvla.rft import training_cycle_runtime as legacy
 
 
 ROOT = Path(__file__).parents[1].resolve()

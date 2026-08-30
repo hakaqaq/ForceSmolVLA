@@ -143,7 +143,10 @@ def main() -> None:
         fp32_action_projection,
     )
     from lerobot.policies.smolvla.modeling_smolvla import make_att_2d_masks
-    from preflight_p5_dense_compute_gpu import _sha256, _validate_source_binding
+    from forcesmolvla.training_runtime import (
+        file_sha256 as _sha256,
+        validate_source_binding as _validate_source_binding,
+    )
 
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA_NOT_AVAILABLE")

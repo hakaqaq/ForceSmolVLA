@@ -92,7 +92,7 @@ def main() -> None:
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
     from forcesmolvla.router_training import SerializableUniformSampler
     from forcesmolvla.router_training import build_p7_optimizer_and_scheduler
-    from preflight_p5_dense_compute_gpu import _sha256
+    from forcesmolvla.training_runtime import file_sha256 as _sha256
     from preflight_p8_checkpoint_gpu import (
         _validate_contract,
         _validate_p8_source_binding,

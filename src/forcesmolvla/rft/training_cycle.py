@@ -340,3 +340,30 @@ def optimizer_state_storage_independent(optimizer: torch.optim.Optimizer, q1: nn
             if isinstance(value, Tensor)
         )
     return bool(q1_storage) and bool(q2_storage) and not (q1_storage & q2_storage)
+
+
+# Stable production API for the materialization and update primitives formerly
+# embedded in the one-off G5 runner.
+from forcesmolvla.rft.training_cycle_runtime import (  # noqa: E402
+    FORBIDDEN_OPENS,
+    DATASET,
+    R5,
+    SAFE_MANIFEST,
+    SAFE_NPZ,
+    FlowCounter,
+    TrainData,
+    actor_module_gradient_norms,
+    actor_gradient_scale_probe,
+    actor_update,
+    capture_rng_states,
+    critic_update,
+    flow_microbatch_terms,
+    install_open_audit,
+    named_generator,
+    parameter_group_gradient_norm,
+    protected_snapshot,
+    repeat_actor_batch,
+    sample_policy_candidates,
+    slice_actor_batch,
+    verify_config,
+)

@@ -104,7 +104,7 @@ def worker(candidate: dict) -> dict:
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
     from forcesmolvla.router_training import MoEMicrobatch, build_p7_optimizer_and_scheduler, single_pass_optimizer_update
     from forcesmolvla.training_data import load_runtime_artifacts, prepare_training_sample
-    from preflight_p7_two_pass_gpu import _make_batch
+    from forcesmolvla.training_runtime import build_training_batch as _make_batch
 
     device = configure_runtime()
     batch_size = int(candidate["physical_batch_size"])
@@ -325,4 +325,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

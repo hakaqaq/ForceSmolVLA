@@ -117,8 +117,8 @@ def main() -> None:
     require(args.run, "pass --run for authorized G7-B")
     for path in (OUTPUT, CHECKPOINT, ARTIFACT, REPORT):
         require(not path.exists(), f"G7B_APPEND_ONLY_TARGET_EXISTS:{path}")
-    from forcesmolvla.rft.g7b import verify_g7b_source_manifest
-    verify_g7b_source_manifest(ROOT, SOURCE)
+    from forcesmolvla.rft.joint_training_checkpoint import verify_joint_training_source_manifest
+    verify_joint_training_source_manifest(ROOT, SOURCE)
     environment = os.environ.copy(); environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"; environment["PYTHONPATH"] = f"{ROOT / 'src'}:{ROOT}"
     tests = subprocess.run([sys.executable, "-m", "pytest", "-q", "tests/test_rft_g7b.py", "tests/test_rft_critic_action_contract_v2.py", "tests/test_rft_losses.py"], cwd=ROOT, env=environment, capture_output=True, text=True)
     require(tests.returncode == 0, f"G7B_TEST_FAILURE:{(tests.stdout + tests.stderr)[-3000:]}")

@@ -121,7 +121,7 @@ def actor_update_batched(
     config: dict, candidate_id: str,
 ) -> dict:
     """Frozen G5 objective with a variable physical microbatch layout."""
-    import preflight_s2_g5_single_cycle_gpu as g5
+    from forcesmolvla.rft import training_cycle as g5
     from forcesmolvla.rft.losses import build_actor_q_action, compute_actor_q_loss
     from forcesmolvla.rft.training_cycle import global_gradient_norm, gradients_finite, module_state_sha256
 
@@ -303,8 +303,8 @@ def partial_mask_audit(data, policy, q1, q2, device) -> dict:
 
 
 def run_candidate(candidate: dict) -> dict:
-    import preflight_s2_g5_single_cycle_gpu as g5
-    import run_s2_g7a_worker as g7a_worker
+    from forcesmolvla.rft import training_cycle as g5
+    from forcesmolvla.rft import critic_training as g7a_worker
     import run_s2_g7b_worker as g7b_worker
     from forcesmolvla.rft.training_cycle import module_state_sha256
 
@@ -546,4 +546,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

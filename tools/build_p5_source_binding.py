@@ -8,12 +8,12 @@ import json
 from pathlib import Path
 import subprocess
 
-from preflight_p5_dense_compute_gpu import (
-    _sha256,
-    _tree_sha256,
-    _validate_action_target_population_prerequisite,
-    _validate_p4_prerequisite,
-    _validate_static_spec,
+from forcesmolvla.training_runtime import (
+    file_sha256 as _sha256,
+    tree_sha256 as _tree_sha256,
+    validate_action_target_population_prerequisite as _validate_action_target_population_prerequisite,
+    validate_dense_compute_spec as _validate_static_spec,
+    validate_action_target_prerequisite as _validate_action_target_prerequisite,
 )
 
 
@@ -32,7 +32,7 @@ def main() -> None:
     spec_path = root / "configs/p5_force_token_dense_compute.development.json"
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     _validate_static_spec(spec)
-    _validate_p4_prerequisite(root, spec)
+    _validate_action_target_prerequisite(root, spec)
     action_target_population_prerequisite = (
         _validate_action_target_population_prerequisite(root, dataset_root)
     )
@@ -79,7 +79,7 @@ def main() -> None:
         "tools/build_p5_source_binding.py",
         "tools/action_target_population_parity_gate.py",
         "tools/preflight_p4_bare_parity.py",
-        "tools/preflight_p5_dense_compute_gpu.py",
+        "src/forcesmolvla/training_runtime.py",
         "tools/refit_chunk_delta_normalizer.py",
     ]
     project_files.extend(

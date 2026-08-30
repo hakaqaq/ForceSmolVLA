@@ -13,7 +13,7 @@ from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
 from forcesmolvla.rft import flow_sampling, losses
 from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
 
-import preflight_s2_g4_losses_gpu as legacy
+from forcesmolvla.rft import training_cycle_runtime as legacy
 
 
 ROOT = Path(__file__).parents[1].resolve()

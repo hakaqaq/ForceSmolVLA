@@ -16,7 +16,7 @@ from serve_forcerft_actor_learner import (  # noqa: E402
     AsyncPolicyLearnerRuntime,
     RequestHandler,
 )
-from run_stage3_async_actor_learner import reconcile_post_checkpoint_replay  # noqa: E402
+from forcesmolvla.rft.stage3.async_runtime import reconcile_post_checkpoint_replay
 from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
 
 

@@ -6,15 +6,203 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 import math
+from pathlib import Path
+import random
 import threading
 import time
 from typing import Any, Callable, Iterable, Iterator, Sequence
 
 import numpy as np
+import torch
 
 
 class AsyncRuntimeError(RuntimeError):
     pass
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AsyncRuntimeError(message)
+
+
+def reconcile_post_checkpoint_replay(credits: Any, all_r: Sequence[dict]) -> int:
+    """Mint credit exactly once for live replay UIDs admitted after checkpoint."""
+
+    uids = [str(row["identity"]["transition_uid"]) for row in all_r]
+    require(len(set(uids)) == len(uids), "STAGE3_ASYNC_LIVE_REPLAY_UID_DUPLICATE")
+    minted = sum(credits.mint_for_unique_online_transition(uid) for uid in uids)
+    snapshot = credits.snapshot()
+    require(
+        snapshot.credited_transition_count == len(uids) and snapshot.available > 0,
+        "STAGE3_ASYNC_REPLAY_OR_CREDIT_MISMATCH",
+    )
+    return minted
+
+
+def prepare_learner(
+    device: torch.device,
+    all_r: Sequence[dict],
+    r_macros: Sequence[dict],
+    source_episodes: dict,
+    *,
+    resume_checkpoint: Path,
+    warmup_api: Any,
+    joint_api: Any,
+) -> dict[str, Any]:
+    """Restore one exact-resume Learner without importing CLI modules from src."""
+
+    from forcesmolvla.rft.critic import frozen_task_feature
+    from forcesmolvla.rft.frozen_vlm_trainability import (
+        FROZEN_PREFIXES,
+        apply_frozen_vlm_trainability,
+        build_frozen_vlm_actor_optimizer,
+    )
+    from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
+    from forcesmolvla.rft.throughput_v2 import FrozenPrefixFlowCounter
+    from forcesmolvla.training_data import load_normalizer_manifest
+
+    actor_package = resume_checkpoint / "candidate_policy"
+    actor, q1, q2, q1_target, q2_target, binding, config = (
+        joint_api.load_resume_modules(
+            resume_checkpoint,
+            actor_package,
+            device,
+            allow_checkpoint_candidate=True,
+        )
+    )
+    trainability = apply_frozen_vlm_trainability(actor)
+    critic_parameters = [
+        parameter
+        for module in (q1, q2)
+        for parameter in module.parameters()
+        if parameter.requires_grad
+    ]
+    critic_optimizer = torch.optim.Adam(
+        critic_parameters,
+        lr=3e-4,
+        betas=(0.9, 0.999),
+        eps=1e-8,
+        weight_decay=0.0,
+    )
+    actor_optimizer, actor_scheduler, actor_ownership = (
+        build_frozen_vlm_actor_optimizer(
+            actor, lr=float(config["optimizer"]["actor"]["lr"])
+        )
+    )
+    modules = {
+        "q1": q1,
+        "q2": q2,
+        "q1_target": q1_target,
+        "q2_target": q2_target,
+    }
+    runtime = joint_api.load_joint_checkpoint_once(
+        resume_checkpoint,
+        actor=actor,
+        modules=modules,
+        critic_optimizer=critic_optimizer,
+        actor_optimizer=actor_optimizer,
+        actor_scheduler=actor_scheduler,
+        device=device,
+    )
+    counters = runtime["counters"]
+    joint_cycles = int(counters["joint_cycles"])
+    require(
+        counters
+        == {
+            "joint_cycles": joint_cycles,
+            "critic_optimizer_steps": joint_cycles * 2,
+            "actor_optimizer_steps": joint_cycles,
+            "target_polyak_steps": joint_cycles * 2,
+        }
+        and critic_optimizer.state
+        and actor_optimizer.state
+        and actor_scheduler.last_epoch == joint_cycles,
+        "STAGE3_ASYNC_LEARNER_EXACT_RESUME_INVALID",
+    )
+    credits = UpdateCreditLedger.from_state_dict(runtime["sample_credit"])
+    new_r_transition_count = reconcile_post_checkpoint_replay(credits, all_r)
+
+    random.setstate(runtime["rng_state"]["python"])
+    np.random.set_state(runtime["rng_state"]["numpy"])
+    torch.set_rng_state(runtime["rng_state"]["torch_cpu"])
+    torch.cuda.set_rng_state_all(runtime["rng_state"]["torch_cuda"])
+    critic_noise = torch.Generator(device=device)
+    critic_noise.set_state(runtime["rng_state"]["critic_noise_generator"])
+    r_rng, d_rng = random.Random(), random.Random()
+    r_rng.setstate(runtime["sampler_state"]["r_rng"])
+    d_rng.setstate(runtime["sampler_state"]["d_rng"])
+
+    frozen = [
+        parameter
+        for name, parameter in actor.named_parameters()
+        if name.startswith(FROZEN_PREFIXES)
+    ]
+    joint_api.assert_optimizer_ownership(
+        actor_optimizer, critic_optimizer, frozen_parameters=frozen
+    )
+    require(
+        actor_ownership["frozen_parameter_in_optimizer"] == 0
+        and trainability.trainable_actor_parameter_tensors
+        == actor_ownership["parameter_tensor_count"],
+        "STAGE3_ASYNC_OPTIMIZER_OWNERSHIP",
+    )
+
+    normalizer = load_normalizer_manifest(
+        Path(binding["normalizer_binding"]["absolute_path"])
+    )
+    r_replay = warmup_api.FormalReplay(r_macros, source_episodes, normalizer)
+    d_replay = joint_api.JointDemoReplay(normalizer)
+    critic_r, critic_d, actor_r, actor_d = joint_api.make_schedules(
+        r_rng,
+        d_rng,
+        r_population_size=len(r_macros),
+        d_population=d_replay.population,
+        cycles=1,
+    )
+    d_replay.prefetch_joint(critic_d, actor_d)
+    feature = torch.from_numpy(frozen_task_feature()).to(
+        device=device, dtype=torch.float32
+    )
+    normalizer_mean = torch.tensor(
+        normalizer.delta_action7.mean, dtype=torch.float32, device=device
+    )
+    normalizer_std = torch.tensor(
+        normalizer.delta_action7.std, dtype=torch.float32, device=device
+    )
+    flow = FrozenPrefixFlowCounter(
+        inference_batch_size=int(config["batching"]["flow_inference_subbatch"])
+    )
+    return {
+        "actor": actor,
+        "q1": q1,
+        "q2": q2,
+        "q1_target": q1_target,
+        "q2_target": q2_target,
+        "modules": modules,
+        "binding": binding,
+        "config": config,
+        "critic_optimizer": critic_optimizer,
+        "actor_optimizer": actor_optimizer,
+        "actor_scheduler": actor_scheduler,
+        "runtime": runtime,
+        "credits": credits,
+        "new_r_transition_count": new_r_transition_count,
+        "critic_noise": critic_noise,
+        "r_rng": r_rng,
+        "d_rng": d_rng,
+        "r_replay": r_replay,
+        "d_replay": d_replay,
+        "critic_r": critic_r,
+        "critic_d": critic_d,
+        "actor_r": actor_r,
+        "actor_d": actor_d,
+        "feature": feature,
+        "delta_mean": normalizer_mean,
+        "delta_std": normalizer_std,
+        "flow": flow,
+        "normalizer": normalizer,
+        "resume_checkpoint": resume_checkpoint,
+    }
 
 
 class InferencePriorityCoordinator:

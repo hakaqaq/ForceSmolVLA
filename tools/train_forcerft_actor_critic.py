@@ -167,12 +167,12 @@ def _online_actor_row(replay: warmup.FormalReplay, index: int) -> dict[str, Any]
 def build_actor_training_batch(
     rows: list[dict[str, Any]], actor, feature: torch.Tensor, device: torch.device,
 ) -> dict[str, Any]:
-    from preflight_s2_g4_losses_gpu import actor_batch
+    from forcesmolvla.rft.batch import build_actor_batch
 
     samples = [row["current"] for row in rows]
     return {
         "current_observation": warmup._critic_observation(samples, feature, device),
-        "current_actor_batch": actor_batch(actor, samples, device, include_action=True),
+        "current_actor_batch": build_actor_batch(actor, samples, device, include_action=True),
         "expert_rows": torch.tensor([row["expert"] for row in rows], dtype=torch.bool, device=device),
         "identities": tuple(row["identity"] for row in rows),
     }

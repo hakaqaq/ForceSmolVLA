@@ -14,7 +14,7 @@ from forcesmolvla.context import ChunkContext
 from lerobot.policies.smolvla.modeling_smolvla import pad_vector
 from lerobot.utils.constants import ACTION
 
-from preflight_p7_two_pass_gpu import _make_batch
+from forcesmolvla.training_runtime import build_training_batch as _make_batch
 
 
 def canonical_sha256(value) -> str:

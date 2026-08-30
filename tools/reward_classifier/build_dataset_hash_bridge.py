@@ -17,9 +17,9 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from preflight_p6_variants_gpu import _dataset_storage_binding  # noqa: E402
+from forcesmolvla.dataset_binding import dataset_storage_binding  # noqa: E402
 
 
 EXPECTED_P8_SHA256 = "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
@@ -80,7 +80,7 @@ def main() -> None:
     args = parser.parse_args()
 
     dataset_root = args.dataset_root.resolve()
-    p8 = _dataset_storage_binding(dataset_root)
+    p8 = dataset_storage_binding(dataset_root)
     if p8["tree_sha256"] != EXPECTED_P8_SHA256:
         raise RuntimeError(f"STAGE1_DATA_DRIFT: {p8['tree_sha256']}")
 
@@ -114,9 +114,9 @@ def main() -> None:
         "status": "PASS_DIFFERENT_HASH_DEFINITIONS_SAME_FROZEN_PAYLOAD",
         "dataset_root": str(dataset_root),
         "p8_original_implementation": {
-            "source_path": "tools/preflight_p6_variants_gpu.py",
-            "source_sha256": sha256(ROOT / "tools/preflight_p6_variants_gpu.py"),
-            "function": "_dataset_storage_binding",
+            "source_path": "src/forcesmolvla/dataset_binding.py",
+            "source_sha256": sha256(ROOT / "src/forcesmolvla/dataset_binding.py"),
+            "function": "dataset_storage_binding",
             "algorithm": "sha256(concat(sorted(relative_path + NUL + file_sha256 + LF)))",
             "included_paths": ["data/**", "videos/**", "meta/**"],
             "excluded_paths": ["all dataset-root files outside data/, videos/, meta/"],

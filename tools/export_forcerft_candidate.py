@@ -63,7 +63,7 @@ def _deployment_artifacts(
     approval_id: str,
 ) -> tuple[Path, Path]:
     from forcesmolvla.checkpoint import sha256_file
-    from export_stage2b_cycle210_evaluation_smoke import client_source_sha256
+    from forcesmolvla.deployment_binding import client_source_sha256
     from serve_policy import (
         load_deployment_binding,
         load_deployment_profile,

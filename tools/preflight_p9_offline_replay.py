@@ -17,11 +17,14 @@ import time
 
 import numpy as np
 
-from preflight_p5_dense_compute_gpu import _require_offline, _sha256, _validate_source_binding
-from preflight_p6_variants_gpu import (
-    _dataset_storage_binding,
-    _pytest_evidence_summary,
-    _validate_runtime_import_roots,
+from forcesmolvla.training_runtime import (
+    file_sha256 as _sha256,
+    require_offline_environment as _require_offline,
+    validate_source_binding as _validate_source_binding,
+)
+from forcesmolvla.dataset_binding import (
+    dataset_storage_binding as _dataset_storage_binding,
+    validate_runtime_import_roots as _validate_runtime_import_roots,
 )
 
 

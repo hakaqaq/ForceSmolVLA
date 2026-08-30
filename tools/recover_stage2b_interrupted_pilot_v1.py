@@ -80,7 +80,7 @@ def semantic_cycle(record: dict) -> dict:
 
 def main() -> None:
     from forcesmolvla.rft.exact_resume import checkpoint_tree
-    from forcesmolvla.rft.g7_long_run import hardlink_milestone, validate_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import hardlink_milestone, validate_cycle_checkpoint
     from forcesmolvla.rft.source_manifest import validate_stage2_source_manifest
 
     require(not any(path.exists() for path in (OUTPUT, CHECKPOINTS, ARTIFACT, REPORT)), "INTERRUPTED_APPEND_ONLY_TARGET_EXISTS")

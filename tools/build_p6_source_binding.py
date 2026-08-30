@@ -8,13 +8,12 @@ import json
 from pathlib import Path
 import subprocess
 
-from preflight_p5_dense_compute_gpu import _sha256, _tree_sha256
-from preflight_p6_variants_gpu import (
-    _dataset_storage_binding,
-    _pytest_evidence_summary,
-    _validate_p5_prerequisite,
-    _validate_runtime_import_roots,
-    _validate_spec,
+from forcesmolvla.training_runtime import file_sha256 as _sha256, tree_sha256 as _tree_sha256
+from forcesmolvla.dataset_binding import (
+    dataset_storage_binding as _dataset_storage_binding,
+    validate_dense_compute_prerequisite as _validate_dense_compute_prerequisite,
+    validate_runtime_import_roots as _validate_runtime_import_roots,
+    validate_variant_spec as _validate_spec,
 )
 
 
@@ -42,7 +41,7 @@ def main() -> None:
     repo_id = conversion.get("repo_id")
     if not isinstance(repo_id, str) or not repo_id:
         raise RuntimeError("P6_CONVERSION_REPO_ID_MISSING")
-    _validate_p5_prerequisite(
+    _validate_dense_compute_prerequisite(
         root, spec, dataset_root=dataset_root, repo_id=repo_id
     )
 
@@ -104,8 +103,8 @@ def main() -> None:
         "tools/build_p5_source_binding.py",
         "tools/build_p6_source_binding.py",
         "tools/preflight_p4_bare_parity.py",
-        "tools/preflight_p5_dense_compute_gpu.py",
-        "tools/preflight_p6_variants_gpu.py",
+        "src/forcesmolvla/training_runtime.py",
+        "src/forcesmolvla/dataset_binding.py",
     ]
     project_files.extend(
         path.relative_to(root).as_posix()

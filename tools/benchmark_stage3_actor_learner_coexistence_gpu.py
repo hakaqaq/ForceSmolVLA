@@ -303,7 +303,7 @@ def source_audit() -> dict[str, Any]:
         "tools/preflight_stage3_gpu.py": (
             "def _load_real_batches", "def _critic_step", "def _actor_step", "def run_gpu_preflight",
         ),
-        "tools/preflight_s2_g5_single_cycle_gpu.py": ("class TrainData", "def build_batch"),
+        "src/forcesmolvla/rft/training_cycle_runtime.py": ("class TrainData", "def build_batch"),
     }
     for relative, needles in checks.items():
         source = (ROOT / relative).read_text(encoding="utf-8")
@@ -367,7 +367,7 @@ def source_audit() -> dict[str, Any]:
         "learner_workload": {
             "orchestrator": "tools/preflight_stage3_gpu.py:run_gpu_preflight",
             "real_data": "tools/preflight_stage3_gpu.py:_load_real_batches",
-            "data_builder": "tools/preflight_s2_g5_single_cycle_gpu.py:TrainData.build_batch",
+            "data_builder": "forcesmolvla.rft.training_cycle_runtime:TrainData.build_batch",
             "critic_step": "tools/preflight_stage3_gpu.py:_critic_step",
             "actor_step": "tools/preflight_stage3_gpu.py:_actor_step",
             "optimizer_ownership": "tools/preflight_stage3_gpu.py:_optimizer_factory",

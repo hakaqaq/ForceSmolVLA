@@ -280,7 +280,7 @@ def run(
     expected_revision: str = EXPECTED_REVISION,
     fixed_episode_id: str = FIXED_EPISODE_ID,
 ) -> dict[str, Any]:
-    from preflight_s2_g4_losses_gpu import actor_batch
+    from forcesmolvla.rft.batch import build_actor_batch
     from forcesmolvla.rft.critic import frozen_task_feature
     from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
     from forcesmolvla.training_data import load_normalizer_manifest
@@ -329,7 +329,7 @@ def run(
     )
     parent_path = Path(parent_binding["actor_parent"]["architecture_binding"]["container_path"])
     parent = _load_actor(parent_path, device)
-    batch = actor_batch(parent, samples, device, include_action=False)
+    batch = build_actor_batch(parent, samples, device, include_action=False)
     parent_action = _sample_actor(parent, batch, noise, label="parent")
     del parent
     torch.cuda.empty_cache()

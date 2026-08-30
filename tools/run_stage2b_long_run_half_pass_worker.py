@@ -107,8 +107,7 @@ def load_config() -> tuple[dict, dict]:
 
 
 def build_context(device: torch.device, *, with_data: bool):
-    import run_s2_g7a_r2_worker  # install the frozen ActionContract-v2 adapter
-    import run_s2_g7a_worker as g7a
+    from forcesmolvla.rft import critic_training as g7a
     import run_s2_g7b_worker as g7b
     from forcesmolvla.rft.frozen_vlm_trainability import (
         apply_frozen_vlm_trainability,
@@ -124,7 +123,7 @@ def build_context(device: torch.device, *, with_data: bool):
     return (
         context, parent_sampler_states, parent_rng,
         actor_optimizer, actor_scheduler, actor_ownership, trainability,
-        run_s2_g7a_r2_worker,
+        g7a,
     )
 
 
@@ -159,7 +158,7 @@ def load_checkpoint(
 ) -> tuple[dict, dict, dict]:
     import run_s2_g7b_worker as g7b
     from forcesmolvla.rft.canonical_state import canonical_digest
-    from forcesmolvla.rft.g7_long_run import validate_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import validate_cycle_checkpoint
     from forcesmolvla.rft.training_cycle import ensure_all_gradients_none
 
     manifest = validate_cycle_checkpoint(checkpoint, expected_cycle=expected_cycle)
@@ -207,7 +206,7 @@ def checkpoint_boundary(
     protected: dict, startup: dict[str, bytes], g5,
 ) -> dict:
     from forcesmolvla.rft.canonical_state import canonical_digest
-    from forcesmolvla.rft.g7_long_run import hardlink_milestone, save_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import hardlink_milestone, save_cycle_checkpoint
 
     modules = {name: context[name] for name in ("actor", "q1", "q2", "q1_target", "q2_target")}
     rng = g5.capture_rng_states(generators)
@@ -494,7 +493,7 @@ def actor_update_eta3(
 
 
 def validation(*, cycle: int, context: dict, fixed: dict, device, generators: dict, g5) -> dict:
-    import run_s2_g7a_worker as g7a
+    from forcesmolvla.rft import critic_training as g7a
     from forcesmolvla.rft.canonical_state import canonical_digest
     from forcesmolvla.rft.training_cycle import module_state_sha256
 
@@ -569,8 +568,8 @@ def compact_critic(report: dict) -> dict:
 
 def train_segment(args) -> None:
     import benchmark_stage2_batch_scaling_gpu as benchmark
-    import preflight_s2_g5_single_cycle_gpu as g5
-    import run_s2_g7a_worker as g7a
+    from forcesmolvla.rft import training_cycle as g5
+    from forcesmolvla.rft import critic_training as g7a
     import run_s2_g7b_worker as g7b
     from forcesmolvla.rft.critic import modules_storage_independent
     from forcesmolvla.rft.frozen_vlm_trainability import frozen_state_digest
@@ -805,7 +804,7 @@ def train_segment(args) -> None:
 
 
 def verify(args) -> None:
-    import run_s2_g7a_worker as g7a
+    from forcesmolvla.rft import critic_training as g7a
     from forcesmolvla.rft.training_cycle import ensure_all_gradients_none
 
     device = g7a.configure_runtime()

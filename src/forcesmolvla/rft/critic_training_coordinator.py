@@ -18,16 +18,16 @@ from typing import Any
 import torch
 
 
-ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs/stage2_g7a_critic_warmup.development.yaml"
-SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v9_g7a.json"
-WORKER = ROOT / "tools/run_s2_g7a_worker.py"
-OUTPUT = ROOT / "artifacts/development/stage2/g7a_critic_warmup"
-CHECKPOINT = ROOT / "artifacts/development/stage2/g7a_critic_warmup_checkpoint.development"
-ARTIFACT = ROOT / "artifacts/development/stage2/s2_g7a_critic_warmup_preflight.json"
-REPORT = ROOT / "docs/s2_g7a_critic_warmup_report.md"
-G5_CHECKPOINT = ROOT / "artifacts/development/stage2/g5_single_cycle_checkpoint.development"
-G6_OUTPUT = ROOT / "artifacts/development/stage2/g6_exact_resume"
+ROOT = Path(__file__).resolve().parents[3]
+CONFIG = ROOT / "configs/stage2_g7a_r2_critic_warmup.development.yaml"
+SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v10_g7a_r2.json"
+WORKER_MODULE = "forcesmolvla.rft.critic_training"
+OUTPUT = ROOT / "artifacts/development/stage2/g7a_r2_critic_warmup"
+CHECKPOINT = ROOT / "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint"
+ARTIFACT = ROOT / "artifacts/development/stage2/s2_g7a_r2_critic_warmup_preflight.json"
+REPORT = ROOT / "docs/s2_g7a_r2_critic_warmup_report.md"
+G5_CHECKPOINT = ROOT / "artifacts/development/stage2/g5_single_cycle_checkpoint.v2.development"
+G6_OUTPUT = ROOT / "artifacts/development/stage2/g6_exact_resume.v2"
 
 
 def require(condition: bool, message: str) -> None:
@@ -69,22 +69,12 @@ def atomic_text(path: Path, value: str) -> None:
 
 def protected_snapshot() -> dict:
     from forcesmolvla.rft.exact_resume import checkpoint_tree
-    from preflight_s2_g5_single_cycle_gpu import protected_snapshot as g5_protected
+    from forcesmolvla.rft.training_cycle_runtime import protected_snapshot as g5_protected
 
     g5 = g5_protected()
     files = {
-        "g5_artifact": ROOT / "artifacts/development/stage2/s2_g5_single_cycle_preflight.json",
-        "g5_checkpoint_manifest": G5_CHECKPOINT / "checkpoint_manifest.json",
-        "g6_artifact": ROOT / "artifacts/development/stage2/s2_g6_exact_resume_preflight.json",
-        "g6_report": ROOT / "docs/s2_g6_exact_resume_preflight_report.md",
-        "g6_source_manifest": ROOT / "artifacts/development/stage2/stage2_source_manifest.v8_g6.json",
-        "g6_config": ROOT / "configs/stage2_g6_exact_resume.development.yaml",
-        "g6_canonical_source": ROOT / "src/forcesmolvla/rft/canonical_state.py",
-        "g6_exact_resume_source": ROOT / "src/forcesmolvla/rft/exact_resume.py",
-        "g6_worker": ROOT / "tools/run_s2_g6_branch_worker.py",
-        "g6_coordinator": ROOT / "tools/preflight_s2_g6_exact_resume_gpu.py",
         "g7a_config": CONFIG,
-        "g7a_source_manifest": SOURCE_MANIFEST,
+        "g7a_worker": ROOT / "src/forcesmolvla/rft/critic_training.py",
     }
     return {
         "g5_protected": g5,
@@ -92,8 +82,6 @@ def protected_snapshot() -> dict:
         "trees": {
             "r5_checkpoint": g5["r5_checkpoint_tree"],
             "stage1_dataset": g5["p8_storage_tree"],
-            "g5_checkpoint": checkpoint_tree(G5_CHECKPOINT),
-            "g6_output": checkpoint_tree(G6_OUTPUT),
         },
     }
 
@@ -180,8 +168,10 @@ def main() -> None:
         require(not target.exists(), f"G7A_APPEND_ONLY_TARGET_EXISTS:{target}")
 
     from forcesmolvla.rft.exact_resume import checkpoint_tree
-    from forcesmolvla.rft.g7a import (
-        G7A_COUNTERS, validate_g7a_checkpoint, verify_source_manifest,
+    from forcesmolvla.rft.critic_warmup_checkpoint import (
+        CRITIC_WARMUP_COUNTERS,
+        validate_critic_warmup_checkpoint,
+        verify_source_manifest,
     )
 
     verify_source_manifest(ROOT, SOURCE_MANIFEST)
@@ -199,27 +189,27 @@ def main() -> None:
         warmup_log = work / "warmup_worker.log"
         with warmup_log.open("w", encoding="utf-8") as log:
             warmup_process = subprocess.Popen([
-                sys.executable, str(WORKER), "--mode", "warmup",
+                sys.executable, "-m", WORKER_MODULE, "--mode", "warmup",
                 "--checkpoint", str(temp_checkpoint), "--result", str(warmup_result_path),
                 "--fixed-diagnostics", str(fixed_path),
                 "--protected-snapshot", str(protected_path),
             ], cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             wait_process(warmup_process, warmup_log, "WARMUP")
         warmup = json.loads(warmup_result_path.read_text())
-        require(warmup["counters"] == G7A_COUNTERS, "G7A_WARMUP_COUNTERS_INVALID")
+        require(warmup["counters"] == CRITIC_WARMUP_COUNTERS, "G7A_WARMUP_COUNTERS_INVALID")
         warmup_pid = warmup["environment"]["pid"]
 
         verify_log = work / "fresh_load_worker.log"
         with verify_log.open("w", encoding="utf-8") as log:
             verify_process = subprocess.Popen([
-                sys.executable, str(WORKER), "--mode", "verify",
+                sys.executable, "-m", WORKER_MODULE, "--mode", "verify",
                 "--checkpoint", str(temp_checkpoint), "--result", str(verify_result_path),
             ], cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             wait_process(verify_process, verify_log, "FRESH_LOAD")
         fresh_load = json.loads(verify_result_path.read_text())
         require(fresh_load["strict_model_load"] and fresh_load["parameter_updates"] == 0, "G7A_FRESH_LOAD_INVALID")
         require(warmup_pid != fresh_load["environment"]["pid"], "G7A_FRESH_LOAD_PID_REUSED")
-        validate_g7a_checkpoint(temp_checkpoint)
+        validate_critic_warmup_checkpoint(temp_checkpoint)
         os.replace(temp_checkpoint, CHECKPOINT)
         os.replace(work, OUTPUT)
     except BaseException:
@@ -293,5 +283,112 @@ def main() -> None:
     }, sort_keys=True))
 
 
+def production_main() -> None:
+    """Run the canonical warmup and strict-load verification without reports."""
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run", action="store_true")
+    args = parser.parse_args()
+    require(args.run, "pass --run for authorized Twin-Q warmup")
+    require(not torch.cuda.is_initialized(), "G7A_COORDINATOR_MUST_NOT_CREATE_CUDA_CONTEXT")
+    require(CONFIG.is_file(), "G7A_CONFIG_MISSING")
+    for target in (OUTPUT, CHECKPOINT):
+        require(not target.exists(), f"G7A_APPEND_ONLY_TARGET_EXISTS:{target}")
+
+    from forcesmolvla.rft.critic_warmup_checkpoint import (
+        CRITIC_WARMUP_COUNTERS,
+        validate_critic_warmup_checkpoint,
+    )
+
+    before = protected_snapshot()
+    work = Path(tempfile.mkdtemp(prefix=".g7a_work.", dir=OUTPUT.parent))
+    protected_path = work / "protected_before.json"
+    atomic_json(protected_path, before)
+    temp_checkpoint = work / "g7a_r2_critic_warmup_checkpoint"
+    fixed_path = work / "fixed_diagnostics.pt"
+    warmup_result_path = work / "warmup_result.json"
+    verify_result_path = work / "fresh_load_result.json"
+    environment = worker_environment()
+    try:
+        warmup_log = work / "warmup_worker.log"
+        with warmup_log.open("w", encoding="utf-8") as log:
+            warmup_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    WORKER_MODULE,
+                    "--mode",
+                    "warmup",
+                    "--checkpoint",
+                    str(temp_checkpoint),
+                    "--result",
+                    str(warmup_result_path),
+                    "--fixed-diagnostics",
+                    str(fixed_path),
+                    "--protected-snapshot",
+                    str(protected_path),
+                ],
+                cwd=ROOT,
+                env=environment,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            wait_process(warmup_process, warmup_log, "WARMUP")
+        warmup = json.loads(warmup_result_path.read_text(encoding="utf-8"))
+        require(warmup["counters"] == CRITIC_WARMUP_COUNTERS, "G7A_WARMUP_COUNTERS_INVALID")
+
+        verify_log = work / "fresh_load_worker.log"
+        with verify_log.open("w", encoding="utf-8") as log:
+            verify_process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    WORKER_MODULE,
+                    "--mode",
+                    "verify",
+                    "--checkpoint",
+                    str(temp_checkpoint),
+                    "--result",
+                    str(verify_result_path),
+                ],
+                cwd=ROOT,
+                env=environment,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            wait_process(verify_process, verify_log, "FRESH_LOAD")
+        fresh_load = json.loads(verify_result_path.read_text(encoding="utf-8"))
+        require(
+            fresh_load["strict_model_load"]
+            and fresh_load["parameter_updates"] == 0,
+            "G7A_FRESH_LOAD_INVALID",
+        )
+        validate_critic_warmup_checkpoint(temp_checkpoint)
+        os.replace(temp_checkpoint, CHECKPOINT)
+        os.replace(work, OUTPUT)
+    except BaseException:
+        failure = OUTPUT.parent / f"g7a_failed_{os.getpid()}"
+        if work.exists():
+            os.replace(work, failure)
+        raise
+
+    require(before == protected_snapshot(), "G7A_FROZEN_INPUT_MUTATION")
+    require(not torch.cuda.is_initialized(), "G7A_COORDINATOR_CREATED_CUDA_CONTEXT")
+    print(
+        json.dumps(
+            {
+                "status": "pass",
+                "critic_optimizer_updates": 256,
+                "actor_optimizer_updates": 0,
+                "checkpoint": str(CHECKPOINT),
+                "strict_load": True,
+            },
+            sort_keys=True,
+        )
+    )
+
+
 if __name__ == "__main__":
-    main()
+    production_main()

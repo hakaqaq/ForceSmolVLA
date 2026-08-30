@@ -6,16 +6,16 @@ from pathlib import Path
 import pytest
 import torch
 
-from forcesmolvla.rft.g7a import (
-    G7A_CHECKPOINT_MARKERS,
-    G7A_COUNTERS,
+from forcesmolvla.rft.critic_warmup_checkpoint import (
+    CRITIC_WARMUP_CHECKPOINT_MARKERS,
+    CRITIC_WARMUP_COUNTERS,
     aggregate_gradient_probes,
     grouped_regression,
     regression_metrics,
-    save_g7a_checkpoint,
+    save_critic_warmup_checkpoint,
     select_fixed_critic_probe,
     spearman_correlation,
-    validate_g7a_checkpoint,
+    validate_critic_warmup_checkpoint,
     verify_source_manifest,
 )
 
@@ -80,12 +80,12 @@ def test_g7a_checkpoint_is_atomic_integrity_bound_and_critic_only(tmp_path: Path
     )
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)
     checkpoint = tmp_path / "checkpoint"
-    manifest = save_g7a_checkpoint(
+    manifest = save_critic_warmup_checkpoint(
         checkpoint,
         critics=critics,
         critic_optimizer=optimizer,
         critic_scheduler=scheduler,
-        counters=G7A_COUNTERS,
+        counters=CRITIC_WARMUP_COUNTERS,
         sampler_states={"td": {"draws": 256}},
         rng_states={"fixture": True},
         actor_binding={"optimizer_created": False},
@@ -94,14 +94,14 @@ def test_g7a_checkpoint_is_atomic_integrity_bound_and_critic_only(tmp_path: Path
         protected_snapshot={"unchanged": True},
         startup_snapshot_bytes={"config.yaml": b"frozen\n"},
     )
-    assert all(manifest[key] == value for key, value in G7A_CHECKPOINT_MARKERS.items())
+    assert all(manifest[key] == value for key, value in CRITIC_WARMUP_CHECKPOINT_MARKERS.items())
     assert manifest["actor_state_stored"] is False
-    assert validate_g7a_checkpoint(checkpoint)["counters"] == G7A_COUNTERS
+    assert validate_critic_warmup_checkpoint(checkpoint)["counters"] == CRITIC_WARMUP_COUNTERS
 
     target = checkpoint / "manifests/actor_binding.json"
     target.write_bytes(target.read_bytes() + b" ")
     with pytest.raises(RuntimeError, match="G7A_CHECKPOINT_INTERNAL_FILE_SHA_MISMATCH"):
-        validate_g7a_checkpoint(checkpoint)
+        validate_critic_warmup_checkpoint(checkpoint)
 
 
 def test_source_manifest_fails_closed_on_drift(tmp_path: Path) -> None:

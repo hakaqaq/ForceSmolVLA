@@ -322,7 +322,7 @@ def _critic_observation(samples: list[dict[str, Any]], feature: torch.Tensor, de
 
 
 def build_batch(rows: list[dict[str, Any]], actor, feature: torch.Tensor, device: torch.device) -> dict[str, Any]:
-    from preflight_s2_g4_losses_gpu import actor_batch
+    from forcesmolvla.rft.batch import build_actor_batch
 
     rows = sorted(rows, key=lambda row: row["terminated"])
     current = [row["current"] for row in rows]
@@ -330,7 +330,7 @@ def build_batch(rows: list[dict[str, Any]], actor, feature: torch.Tensor, device
     return {
         "current_observation": _critic_observation(current, feature, device),
         "next_observation": _critic_observation(following, feature, device),
-        "next_actor_batch": actor_batch(actor, following, device, include_action=False),
+        "next_actor_batch": build_actor_batch(actor, following, device, include_action=False),
         "behavior_action": torch.from_numpy(np.stack([row["behavior_action"] for row in rows])).to(device),
         "behavior_mask": torch.ones(len(rows), 3, dtype=torch.bool, device=device),
         "reward": torch.tensor([row["reward"] for row in rows], dtype=torch.float32, device=device),

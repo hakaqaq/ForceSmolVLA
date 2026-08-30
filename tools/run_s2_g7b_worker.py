@@ -115,11 +115,15 @@ def build_samplers(data, generators, parent_states: dict):
 
 
 def load_parent(context: dict) -> tuple[dict, dict]:
-    from forcesmolvla.rft.g7a import G7A_COUNTERS, module_component_digests, validate_g7a_checkpoint
+    from forcesmolvla.rft.critic_warmup_checkpoint import (
+        CRITIC_WARMUP_COUNTERS,
+        module_component_digests,
+        validate_critic_warmup_checkpoint,
+    )
 
-    manifest = validate_g7a_checkpoint(PARENT)
+    manifest = validate_critic_warmup_checkpoint(PARENT)
     config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
-    require(manifest["counters"] == G7A_COUNTERS, "G7B_PARENT_COUNTER_DRIFT")
+    require(manifest["counters"] == CRITIC_WARMUP_COUNTERS, "G7B_PARENT_COUNTER_DRIFT")
     for name in ("q1", "q2", "q1_target", "q2_target"):
         state = torch.load(PARENT / f"models/{name}_state.pt", map_location="cpu", weights_only=False)
         incompatible = context[name].load_state_dict(state, strict=True)
@@ -251,23 +255,28 @@ def public_diagnostic(policy, data, actor_batch: dict, noise: torch.Tensor, cycl
 
 
 def load_models_and_state(device, with_data: bool = True):
-    import run_s2_g7a_r2_worker  # installs frozen v2 adapter into G3/G4 paths
-    import run_s2_g7a_worker as g7a_worker
-    from forcesmolvla.rft.g7b import build_actor_optimizer_scheduler
+    from forcesmolvla.rft import critic_training as g7a_worker
+    from forcesmolvla.rft.joint_training_checkpoint import build_actor_optimizer_scheduler
 
     context = g7a_worker.initialize_fresh(device=device, with_data=with_data)
     sampler_states, parent_rng = load_parent(context)
     actor_optimizer, actor_scheduler, actor_ownership = build_actor_optimizer_scheduler(context["actor"])
-    return context, sampler_states, parent_rng, actor_optimizer, actor_scheduler, actor_ownership, run_s2_g7a_r2_worker
+    return context, sampler_states, parent_rng, actor_optimizer, actor_scheduler, actor_ownership, g7a_worker
 
 
 def train(args) -> None:
-    import run_s2_g7a_worker as g7a_worker
-    import preflight_s2_g5_single_cycle_gpu as g5
+    from forcesmolvla.rft import critic_training as g7a_worker
+    from forcesmolvla.rft import training_cycle as g5
     from forcesmolvla.rft.canonical_state import canonical_digest
     from forcesmolvla.rft.critic import modules_storage_independent
-    from forcesmolvla.rft.g7a import module_component_digests
-    from forcesmolvla.rft.g7b import G7B_COUNTERS, describe_p95, save_g7b_checkpoint, validate_g7b_checkpoint, validate_optimizer_step_sets
+    from forcesmolvla.rft.critic_warmup_checkpoint import module_component_digests
+    from forcesmolvla.rft.joint_training_checkpoint import (
+        JOINT_TRAINING_COUNTERS,
+        describe_p95,
+        save_joint_training_checkpoint,
+        validate_joint_training_checkpoint,
+        validate_optimizer_step_sets,
+    )
     from forcesmolvla.rft.training_cycle import ensure_all_gradients_none, module_state_sha256, optimizer_state_storage_independent
 
     g5.install_open_audit()
@@ -377,7 +386,7 @@ def train(args) -> None:
     require(all(bool(torch.isfinite(parameter).all()) for module in (policy, q1, q2, q1_target, q2_target) for parameter in module.parameters()), "G7B_NONFINITE_PARAMETER")
     require(all(item["gripper_q_gradient_max_abs"] == 0.0 and item["tcp6_q_gradient_norm"] > 0.0 and item["gripper_fm_gradient_norm"] > 0.0 for item in gradient_reports), "G7B_ACTION_GRADIENT_CONTRACT")
 
-    counters = dict(G7B_COUNTERS)
+    counters = dict(JOINT_TRAINING_COUNTERS)
     ownership = {
         "actor": actor_ownership, "critic": context["ownership"],
         "actor_critic_parameter_intersection": len({id(p) for p in policy.parameters()} & {id(p) for m in (q1, q2) for p in m.parameters()}),
@@ -392,7 +401,7 @@ def train(args) -> None:
     }
     startup = {name: path.read_bytes() for name, path in startup_paths.items()}
     modules = {"actor": policy, "q1": q1, "q2": q2, "q1_target": q1_target, "q2_target": q2_target}
-    manifest = save_g7b_checkpoint(
+    manifest = save_joint_training_checkpoint(
         args.checkpoint, modules=modules, actor_optimizer=actor_optimizer,
         critic_optimizer=critic_optimizer, actor_scheduler=actor_scheduler,
         critic_scheduler=critic_scheduler, counters=counters,
@@ -401,7 +410,7 @@ def train(args) -> None:
         ownership_manifest=ownership, protected_snapshot=json.loads(args.protected.read_text()),
         startup_snapshot_bytes=startup,
     )
-    validate_g7b_checkpoint(args.checkpoint)
+    validate_joint_training_checkpoint(args.checkpoint)
     raw = [item["raw_q_over_fm"] for item in gradient_reports]
     weighted = [item["weighted_eta_q_over_beta_fm"] for item in gradient_reports]
     cosine = [item["cosine_similarity"] for item in gradient_reports]
@@ -430,15 +439,19 @@ def train(args) -> None:
 
 
 def verify(args) -> None:
-    import run_s2_g7a_worker as g7a_worker
-    from forcesmolvla.rft.g7b import validate_g7b_checkpoint, build_actor_optimizer_scheduler, validate_optimizer_step_sets
+    from forcesmolvla.rft import critic_training as g7a_worker
+    from forcesmolvla.rft.joint_training_checkpoint import (
+        build_actor_optimizer_scheduler,
+        validate_joint_training_checkpoint,
+        validate_optimizer_step_sets,
+    )
     from forcesmolvla.rft.training_cycle import SerializableReplacementSampler, SerializableUniqueSampler, ensure_all_gradients_none
 
     device = g7a_worker.configure_runtime()
     _config, training = load_config()
     context = g7a_worker.initialize_fresh(device=device, with_data=False)
     actor_optimizer, actor_scheduler, _ = build_actor_optimizer_scheduler(context["actor"])
-    manifest = validate_g7b_checkpoint(args.checkpoint)
+    manifest = validate_joint_training_checkpoint(args.checkpoint)
     modules = {name: context[name] for name in ("actor", "q1", "q2", "q1_target", "q2_target")}
     for name, module in modules.items():
         incompatible = module.load_state_dict(torch.load(args.checkpoint / f"models/{name}_state.pt", map_location="cpu", weights_only=False), strict=True)

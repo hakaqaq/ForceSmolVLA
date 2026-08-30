@@ -12,9 +12,9 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from preflight_p6_variants_gpu import _dataset_storage_binding  # noqa: E402
+from forcesmolvla.dataset_binding import dataset_storage_binding  # noqa: E402
 
 
 CANONICAL_TASK_PROMPT = "Pick up the purple ring and place it onto the red peg."
@@ -92,7 +92,7 @@ def main() -> None:
     for path, value in expected.items():
         if sha256(path) != value:
             raise RuntimeError(f"frozen input SHA mismatch: {path}")
-    if _dataset_storage_binding(dataset_root)["tree_sha256"] != EXPECTED_P8_SHA:
+    if dataset_storage_binding(dataset_root)["tree_sha256"] != EXPECTED_P8_SHA:
         raise RuntimeError("STAGE1_DATA_DRIFT")
 
     protocol_text = v2_protocol.read_text()
@@ -216,7 +216,7 @@ def main() -> None:
             "r5_model_path": r5_model.relative_to(ROOT).as_posix(),
             "r5_model_sha256": sha256(r5_model),
             "dataset_hash_algorithm": "P8 original _dataset_storage_binding",
-            "dataset_tree_sha256": _dataset_storage_binding(dataset_root)["tree_sha256"],
+            "dataset_tree_sha256": dataset_storage_binding(dataset_root)["tree_sha256"],
             "conversion_manifest_sha256": sha256(dataset_root / "conversion_manifest.json"),
             "stage1_data_changed": False,
         },

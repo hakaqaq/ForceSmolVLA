@@ -35,7 +35,7 @@ def _interrupted_require(value: bool, message: str) -> None:
 
 
 def _verify_interrupted(args) -> None:
-    import run_s2_g7a_worker as g7a
+    from forcesmolvla.rft import critic_training as g7a
     from forcesmolvla.rft.training_cycle import ensure_all_gradients_none
 
     device = g7a.configure_runtime()

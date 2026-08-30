@@ -24,7 +24,6 @@ for path in (SRC, ROOT / "tools"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import run_stage3_async_actor_learner as async_runner  # noqa: E402
 import train_forcerft_critic_warmup as warmup  # noqa: E402
 import train_forcerft_actor_critic as joint  # noqa: E402
 import serve_policy  # noqa: E402
@@ -32,6 +31,7 @@ from forcesmolvla.rft.stage3.async_runtime import (  # noqa: E402
     EpisodePin,
     InferencePriorityCoordinator,
     PinnedEpisode,
+    prepare_learner,
 )
 from forcesmolvla.rft.stage3.publication import load_revision_registry  # noqa: E402
 
@@ -91,12 +91,14 @@ class OneCycleLearner:
         )
         self.unique_r_count = len(all_r)
         self.r_macro_count = len(r_macros)
-        self.learner = async_runner._prepare_learner(
+        self.learner = prepare_learner(
             device,
             all_r,
             r_macros,
             source_episodes,
             resume_checkpoint=self.resume_checkpoint,
+            warmup_api=warmup,
+            joint_api=joint,
         )
 
     def __call__(

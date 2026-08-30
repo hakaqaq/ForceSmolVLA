@@ -1,4 +1,4 @@
-"""Cycle-boundary checkpoint contract for G7 development long-run stage 1."""
+"""Cycle-boundary checkpoint contract for development long runs."""
 
 from __future__ import annotations
 

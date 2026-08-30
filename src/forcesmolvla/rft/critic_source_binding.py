@@ -1,4 +1,4 @@
-"""Append-only G7-A-r2 source-manifest verification."""
+"""Append-only Critic source-manifest verification."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from forcesmolvla.rft.source_manifest import validate_stage2_source_manifest
 
 
-def verify_g7a_r2_source_manifest(root: Path, manifest_path: Path) -> dict:
+def verify_critic_source_manifest(root: Path, manifest_path: Path) -> dict:
     payload = validate_stage2_source_manifest(root, manifest_path)
     paths = [entry["relative_path"] for entry in payload["files"]]
     if any("manual_reward" in path or path.startswith("labels/") for path in paths):

@@ -161,7 +161,7 @@ def full_training_state(
         optimizer_parameter_name_groups,
         training_state_payload,
     )
-    from forcesmolvla.rft.g7_long_run import counters_for_cycle
+    from forcesmolvla.rft.long_run_checkpoint import counters_for_cycle
 
     modules = {name: context[name] for name in ("actor", "q1", "q2", "q1_target", "q2_target")}
     actor_names = dict(context["actor"].named_parameters())
@@ -192,7 +192,7 @@ def save_recovery(
     samplers: dict, generators: dict, ownership: dict, g5,
 ) -> dict:
     from forcesmolvla.rft.canonical_state import canonical_digest
-    from forcesmolvla.rft.g7_long_run import save_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import save_cycle_checkpoint
 
     rng = g5.capture_rng_states(generators)
     before = canonical_digest(rng)
@@ -226,8 +226,8 @@ def save_recovery(
 
 def run(args) -> dict:
     import benchmark_stage2_batch_scaling_gpu as benchmark
-    import preflight_s2_g5_single_cycle_gpu as g5
-    import run_s2_g7a_worker as g7a
+    from forcesmolvla.rft import training_cycle as g5
+    from forcesmolvla.rft import critic_training as g7a
     import run_s2_g7b_worker as g7b
     import run_stage2b_long_run_half_pass_worker as legacy
     from forcesmolvla.rft.canonical_state import canonical_digest, module_record

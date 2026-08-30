@@ -1,17 +1,13 @@
 import json
 from pathlib import Path
-import sys
-
 import pytest
 
 
 ROOT = Path(__file__).parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-
-from preflight_p7_two_pass_gpu import (  # noqa: E402
-    _validate_p6_prerequisite,
-    _validate_recipe,
+from forcesmolvla.dataset_binding import (
+    validate_dataset_variant_prerequisite as _validate_dataset_variant_prerequisite,
 )
+from forcesmolvla.training_runtime import validate_training_recipe as _validate_recipe
 
 
 def _recipe():
@@ -39,7 +35,7 @@ def test_p7_freezes_p6_and_separates_single_pass_from_exact_oracle():
         recipe["loss"]["acceptance_oracle_router_algorithm"]
         == "exact_two_pass_all_microbatches_all_ranks"
     )
-    observed = _validate_p6_prerequisite(
+    observed = _validate_dataset_variant_prerequisite(
         ROOT,
         recipe,
         dataset_root=ROOT / "datasets/task2_lerobotv3",
@@ -57,7 +53,7 @@ def test_p7_rejects_any_parent_p6_hash_drift():
     recipe = _recipe()
     recipe["p6_prerequisite"]["gate_result"]["sha256"] = "0" * 64
     with pytest.raises(RuntimeError, match="P7_P6_GATE_RESULT_HASH_MISMATCH"):
-        _validate_p6_prerequisite(
+        _validate_dataset_variant_prerequisite(
             ROOT,
             recipe,
             dataset_root=ROOT / "datasets/task2_lerobotv3",

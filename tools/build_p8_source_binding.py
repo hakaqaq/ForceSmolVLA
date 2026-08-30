@@ -8,11 +8,10 @@ import json
 from pathlib import Path
 import subprocess
 
-from preflight_p5_dense_compute_gpu import _sha256, _tree_sha256
-from preflight_p6_variants_gpu import (
-    _dataset_storage_binding,
-    _pytest_evidence_summary,
-    _validate_runtime_import_roots,
+from forcesmolvla.training_runtime import file_sha256 as _sha256, tree_sha256 as _tree_sha256
+from forcesmolvla.dataset_binding import (
+    dataset_storage_binding as _dataset_storage_binding,
+    validate_runtime_import_roots as _validate_runtime_import_roots,
 )
 from preflight_p8_checkpoint_gpu import _validate_contract, _validate_p7_prerequisite
 
@@ -118,9 +117,8 @@ def main() -> None:
         "tools/p8_cold_start_worker.py",
         "tools/prefix_parity.py",
         "tools/preflight_p4_bare_parity.py",
-        "tools/preflight_p5_dense_compute_gpu.py",
-        "tools/preflight_p6_variants_gpu.py",
-        "tools/preflight_p7_two_pass_gpu.py",
+        "src/forcesmolvla/training_runtime.py",
+        "src/forcesmolvla/dataset_binding.py",
         "tools/preflight_p8_checkpoint_gpu.py",
     ]
     project_files.extend(

@@ -1,4 +1,4 @@
-"""G7-A-only statistics and Critic warm-up checkpoint contract."""
+"""Critic warm-up statistics and checkpoint contract."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from forcesmolvla.rft.exact_resume import directory_entries
 from forcesmolvla.rft.training_cycle import ensure_all_gradients_none
 
 
-G7A_CHECKPOINT_MARKERS = {
+CRITIC_WARMUP_CHECKPOINT_MARKERS = {
     "artifact_status": "DEVELOPMENT_G7A_CRITIC_WARMUP_ONLY",
     "deployment_status": "NOT_FOR_DEPLOYMENT",
     "policy_evaluation_status": "NOT_FOR_POLICY_EVALUATION",
@@ -27,7 +27,7 @@ G7A_CHECKPOINT_MARKERS = {
     "g7b_use_status": "APPROVED_ONLY_FOR_G7B_IF_EXPLICITLY_AUTHORIZED",
     "robot_execution_authorized": False,
 }
-G7A_COUNTERS = {
+CRITIC_WARMUP_COUNTERS = {
     "critic_optimizer_updates": 256,
     "critic_scheduler_steps": 256,
     "q1_target_polyak_updates": 256,
@@ -317,7 +317,7 @@ def _torch_save(path: Path, value: Any) -> None:
         os.fsync(stream.fileno())
 
 
-def save_g7a_checkpoint(
+def save_critic_warmup_checkpoint(
     destination: Path,
     *,
     critics: Mapping[str, nn.Module],
@@ -333,7 +333,7 @@ def save_g7a_checkpoint(
     startup_snapshot_bytes: Mapping[str, bytes],
 ) -> dict:
     destination = Path(destination).resolve()
-    if destination.exists() or dict(counters) != G7A_COUNTERS:
+    if destination.exists() or dict(counters) != CRITIC_WARMUP_COUNTERS:
         raise RuntimeError("G7A_CHECKPOINT_TARGET_OR_COUNTER_INVALID")
     ensure_all_gradients_none(*critics.values())
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -366,7 +366,7 @@ def save_g7a_checkpoint(
         entries = directory_entries(temporary)
         manifest = {
             "schema_version": "forcesmolvla_g7a_critic_warmup_checkpoint.v1",
-            **G7A_CHECKPOINT_MARKERS,
+            **CRITIC_WARMUP_CHECKPOINT_MARKERS,
             "complete_update_boundary": True,
             "pending_optimizer_step": False,
             "pending_polyak_update": False,
@@ -398,15 +398,15 @@ def save_g7a_checkpoint(
         raise
 
 
-def validate_g7a_checkpoint(checkpoint: Path) -> dict:
+def validate_critic_warmup_checkpoint(checkpoint: Path) -> dict:
     checkpoint = Path(checkpoint)
     manifest_path = checkpoint / "checkpoint_manifest.json"
     manifest = json.loads(manifest_path.read_text())
-    if any(manifest.get(key) != value for key, value in G7A_CHECKPOINT_MARKERS.items()):
+    if any(manifest.get(key) != value for key, value in CRITIC_WARMUP_CHECKPOINT_MARKERS.items()):
         raise RuntimeError("G7A_CHECKPOINT_MARKER_MISMATCH")
     if manifest.get("manifest_payload_sha256") != _manifest_payload_sha256(manifest):
         raise RuntimeError("G7A_CHECKPOINT_MANIFEST_PAYLOAD_MISMATCH")
-    if manifest.get("counters") != G7A_COUNTERS or not manifest.get("complete_update_boundary"):
+    if manifest.get("counters") != CRITIC_WARMUP_COUNTERS or not manifest.get("complete_update_boundary"):
         raise RuntimeError("G7A_CHECKPOINT_COUNTER_OR_BOUNDARY_INVALID")
     if any(manifest.get(key) for key in (
         "pending_optimizer_step", "pending_polyak_update", "pending_gradient"
@@ -421,6 +421,6 @@ def validate_g7a_checkpoint(checkpoint: Path) -> dict:
     if digest != manifest.get("files_sha256"):
         raise RuntimeError("G7A_CHECKPOINT_FILE_DIGEST_MISMATCH")
     counters = json.loads((checkpoint / "state/counters.json").read_text())
-    if counters != G7A_COUNTERS:
+    if counters != CRITIC_WARMUP_COUNTERS:
         raise RuntimeError("G7A_CHECKPOINT_COUNTER_FILE_MISMATCH")
     return manifest

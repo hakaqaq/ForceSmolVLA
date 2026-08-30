@@ -19,8 +19,8 @@ def main() -> None:
     args = parser.parse_args()
     worker.require(not args.result.exists(), "STAGE2B_RECOVERY_AUDIT_APPEND_ONLY")
 
-    import preflight_s2_g5_single_cycle_gpu as g5
-    import run_s2_g7a_worker as g7a
+    from forcesmolvla.rft import training_cycle as g5
+    from forcesmolvla.rft import critic_training as g7a
     from forcesmolvla.rft.canonical_state import canonical_digest
     from forcesmolvla.rft.frozen_vlm_trainability import frozen_state_digest
     from forcesmolvla.rft.training_cycle import ensure_all_gradients_none

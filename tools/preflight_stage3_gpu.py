@@ -646,7 +646,7 @@ def _load_real_batches(
     tools_path = str(ROOT / "tools")
     if tools_path not in sys.path:
         sys.path.insert(0, tools_path)
-    from preflight_s2_g5_single_cycle_gpu import FlowCounter, TrainData
+    from forcesmolvla.rft.training_cycle import FlowCounter, TrainData
     from forcesmolvla.rft.critic import frozen_task_feature, frozen_task_feature_sha256
 
     data_config = config["data"]
@@ -869,7 +869,7 @@ def _critic_step(
     noise_generator: torch.Generator,
     config: Mapping[str, Any],
 ) -> dict[str, Any]:
-    from preflight_s2_g5_single_cycle_gpu import slice_actor_batch
+    from forcesmolvla.rft.training_cycle import slice_actor_batch
     from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
     from forcesmolvla.rft.stage3.losses import compute_online_twin_q_td_loss
     from forcesmolvla.rft.training_cycle import module_state_sha256, polyak_update_verified
@@ -1023,7 +1023,7 @@ def _actor_step(
     q_noise_generator: torch.Generator,
     config: Mapping[str, Any],
 ) -> dict[str, Any]:
-    from preflight_s2_g5_single_cycle_gpu import slice_actor_batch
+    from forcesmolvla.rft.training_cycle import slice_actor_batch
     from forcesmolvla.force_token import RouterState
     from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
     from forcesmolvla.rft.frozen_vlm_trainability import frozen_prefix_flow_matching_terms

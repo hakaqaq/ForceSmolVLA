@@ -80,7 +80,7 @@ def environment() -> dict[str, str]:
 
 def main() -> None:
     from forcesmolvla.rft.exact_resume import checkpoint_tree
-    from forcesmolvla.rft.g7_long_run import validate_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import validate_cycle_checkpoint
 
     config = yaml.safe_load(CONFIG.read_text())
     require(config["authorization"] == "yes_for_420_total_cycles", "ONE_PASS_NOT_AUTHORIZED")

@@ -18,12 +18,15 @@ import subprocess
 import sys
 import time
 
-from preflight_p5_dense_compute_gpu import _require_offline, _sha256
-from preflight_p7_two_pass_gpu import (
-    _build_validation_fixture,
-    _canonical_sha256,
-    _make_batch,
-    _validation_scalar,
+from forcesmolvla.training_runtime import (
+    build_training_batch as _make_batch,
+    build_validation_fixture as _build_validation_fixture,
+    canonical_sha256 as _canonical_sha256,
+    file_sha256 as _sha256,
+    require_offline_environment as _require_offline,
+    tree_sha256 as _tree_sha256,
+    validate_action_target_population_prerequisite,
+    validation_scalar as _validation_scalar,
 )
 
 
@@ -41,15 +44,6 @@ SCHEDULER_FINAL_LR = 2.5e-6
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def _tree_sha256(root: Path) -> str:
-    digest = hashlib.sha256()
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
-        relative = path.relative_to(root).as_posix()
-        digest.update(relative.encode() + b"\0")
-        digest.update(_sha256(path).encode() + b"\n")
-    return digest.hexdigest()
 
 
 def _resolve_path(root: Path, value: str) -> Path:
@@ -220,8 +214,7 @@ def _source_binding(
         path.relative_to(root).as_posix()
         for path in (root / "src/forcesmolvla").glob("*.py")
     ) + [
-        "tools/preflight_p5_dense_compute_gpu.py",
-        "tools/preflight_p7_two_pass_gpu.py",
+        "src/forcesmolvla/training_runtime.py",
         "tools/action_target_population_parity_gate.py",
         "tools/train_forcesmolvla_sft.py",
         "artifacts/development/action_target_population_parity_r1.json",
@@ -588,10 +581,6 @@ def main() -> None:
         single_pass_optimizer_update,
     )
     from forcesmolvla.training_data import load_runtime_artifacts, prepare_training_sample
-    from preflight_p5_dense_compute_gpu import (
-        _validate_action_target_population_prerequisite,
-    )
-
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA_NOT_AVAILABLE_NO_CPU_FALLBACK")
     gpu_name = torch.cuda.get_device_name(0)
@@ -604,7 +593,7 @@ def main() -> None:
     repo_id = conversion.get("repo_id")
     if not isinstance(repo_id, str) or not repo_id:
         raise RuntimeError("DATASET_REPO_ID_MISSING")
-    _validate_action_target_population_prerequisite(root, dataset_root)
+    validate_action_target_population_prerequisite(root, dataset_root)
     data_scope, data_scope_sha256 = _load_data_scope(
         root, dataset_root, repo_id, config
     )

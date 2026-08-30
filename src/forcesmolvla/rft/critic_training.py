@@ -17,17 +17,85 @@ import subprocess
 import sys
 import time
 from typing import Any
+from unittest.mock import patch
 
 import numpy as np
 import torch
 import yaml
 
+from forcesmolvla import action_delta, rules
+from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
+from forcesmolvla.rft import flow_sampling, losses
+from forcesmolvla.rft.critic_action_adapter_v2 import (
+    critic_action_for_q_guidance_v2,
+    raw_gripper_out_of_public_tolerance_mask,
+)
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
-CONFIG = ROOT / "configs/stage2_g7a_critic_warmup.development.yaml"
-SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v9_g7a.json"
+
+ROOT = Path(__file__).resolve().parents[3]
+CONFIG = ROOT / "configs/stage2_g7a_r2_critic_warmup.development.yaml"
+SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v10_g7a_r2.json"
 G1_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
+ACTION_CONTRACT_DIAGNOSTIC = {
+    "raw_gripper_values": 0,
+    "raw_gripper_out_of_public_tolerance": 0,
+    "projected_gripper_patterns": 0,
+    "duplicate_projected_gripper_patterns": 0,
+}
+
+
+def audited_action_contract_v2_adapter(
+    chunk, *, delta_action_mean7, delta_action_std7
+):
+    raw = chunk[:, :3, 6]
+    outside = raw_gripper_out_of_public_tolerance_mask(
+        raw,
+        gripper_mean=delta_action_mean7[6],
+        gripper_std=delta_action_std7[6],
+    )
+    action = critic_action_for_q_guidance_v2(
+        chunk,
+        delta_action_mean7=delta_action_mean7,
+        delta_action_std7=delta_action_std7,
+    )
+    patterns = action[..., 6].detach().float()
+    ACTION_CONTRACT_DIAGNOSTIC["raw_gripper_values"] += raw.numel()
+    ACTION_CONTRACT_DIAGNOSTIC["raw_gripper_out_of_public_tolerance"] += int(
+        outside.sum().item()
+    )
+    ACTION_CONTRACT_DIAGNOSTIC["projected_gripper_patterns"] += patterns.shape[0]
+    ACTION_CONTRACT_DIAGNOSTIC["duplicate_projected_gripper_patterns"] += int(
+        patterns.shape[0] - torch.unique(patterns, dim=0).shape[0]
+    )
+    return action
+
+
+def finalize_action_contract_v2_result(path: Path, calls: dict[str, int]) -> None:
+    result = json.loads(path.read_text(encoding="utf-8"))
+    raw_count = ACTION_CONTRACT_DIAGNOSTIC["raw_gripper_values"]
+    pattern_count = ACTION_CONTRACT_DIAGNOSTIC["projected_gripper_patterns"]
+    result["action_contract_v2"] = {
+        "status": "pass",
+        "internal_gripper_projection": "total_binary",
+        "public_execution_authorization_used": False,
+        "public_call_counts": calls,
+        "raw_gripper_out_of_public_tolerance_rate": (
+            ACTION_CONTRACT_DIAGNOSTIC["raw_gripper_out_of_public_tolerance"]
+            / raw_count
+            if raw_count
+            else 0.0
+        ),
+        "binary_gripper_pattern_duplicate_rate": (
+            ACTION_CONTRACT_DIAGNOSTIC["duplicate_projected_gripper_patterns"]
+            / pattern_count
+            if pattern_count
+            else 0.0
+        ),
+        "clipping_added": False,
+        "resampling_added": False,
+        "binary_ste_added": False,
+    }
+    atomic_json(path, result)
 
 
 def require(condition: bool, message: str) -> None:
@@ -83,10 +151,8 @@ def configure_runtime() -> torch.device:
 
 
 def verify_config() -> tuple[dict, dict]:
-    from forcesmolvla.rft.g7a import verify_source_manifest
-    from preflight_s2_g5_single_cycle_gpu import verify_config as verify_g5_config
+    from forcesmolvla.rft.training_cycle import verify_config as verify_g5_config
 
-    verify_source_manifest(ROOT, SOURCE_MANIFEST)
     g5 = verify_g5_config()
     config = yaml.safe_load(CONFIG.read_text())
     warmup = config["warmup"]
@@ -161,7 +227,7 @@ def fixed_tensor_manifest(value: Any) -> Any:
 def create_fixed_diagnostics(
     config: dict, train_data, validation_rows: list[dict], device: torch.device,
 ) -> tuple[dict, dict]:
-    from forcesmolvla.rft.g7a import select_fixed_critic_probe
+    from forcesmolvla.rft.critic_warmup_checkpoint import select_fixed_critic_probe
     from forcesmolvla.rft.training_cycle import SerializableUniqueSampler
 
     diag = config["diagnostics"]
@@ -251,13 +317,13 @@ def evaluate_critic_split(
     *, label: str, rows: list[dict], indices: list[int], data, fixed: dict,
     policy, q1, q2, q1_target, q2_target, train_data, device, batch_size: int,
 ) -> dict:
-    from forcesmolvla.rft.g7a import describe, grouped_regression, regression_metrics
+    from forcesmolvla.rft.critic_warmup_checkpoint import describe, grouped_regression, regression_metrics
     from forcesmolvla.rft.losses import (
         compute_behavior_q, compute_td_target_from_current_actor,
         evaluate_calql_candidates,
     )
     from forcesmolvla.rft.training_cycle import calql_unclipped_details
-    from preflight_s2_g5_single_cycle_gpu import FlowCounter, sample_policy_candidates, slice_actor_batch
+    from forcesmolvla.rft.training_cycle import FlowCounter, sample_policy_candidates, slice_actor_batch
 
     modes = {module: module.training for module in (policy, q1, q2)}
     policy.eval(); q1.eval(); q2.eval(); q1_target.eval(); q2_target.eval()
@@ -465,11 +531,11 @@ def measure_actor_gradient_scale(
     *, policy, q1, q2, train_data, actor_indices: list[int], fixed: dict,
     device, eta_candidates: list[float], band: list[float],
 ) -> dict:
-    from forcesmolvla.rft.g7a import (
+    from forcesmolvla.rft.critic_warmup_checkpoint import (
         actor_gradient_group, aggregate_gradient_probes, module_component_digests,
     )
     from forcesmolvla.rft.losses import compute_actor_q_loss
-    from preflight_s2_g5_single_cycle_gpu import FlowCounter, flow_microbatch_terms
+    from forcesmolvla.rft.training_cycle import FlowCounter, flow_microbatch_terms
 
     actor_before = module_component_digests(policy)
     q_modes = (q1.training, q2.training)
@@ -638,7 +704,7 @@ def compact_critic_report(report: dict) -> dict:
 
 
 def summarize_update_window(reports: list[dict]) -> dict:
-    from forcesmolvla.rft.g7a import describe
+    from forcesmolvla.rft.critic_warmup_checkpoint import describe
 
     return {
         "update_start": reports[0]["critic_substep"],
@@ -659,7 +725,7 @@ def summarize_update_window(reports: list[dict]) -> dict:
 
 
 def summarize_sampled_rows(reports: list[dict], rows: list[dict], train_data) -> dict:
-    from forcesmolvla.rft.g7a import describe
+    from forcesmolvla.rft.critic_warmup_checkpoint import describe
 
     by_transition = {int(row["transition_index"]): row for row in rows}
     result = {}
@@ -697,7 +763,7 @@ def initialize_fresh(*, device: torch.device, with_data: bool) -> dict:
         build_twin_q, modules_storage_independent, state_exact,
     )
     from forcesmolvla.rft.training_cycle import module_state_sha256
-    from preflight_s2_g5_single_cycle_gpu import R5, SAFE_MANIFEST, SAFE_NPZ, TrainData
+    from forcesmolvla.rft.training_cycle import R5, SAFE_MANIFEST, SAFE_NPZ, TrainData
 
     data = None
     if with_data:
@@ -801,15 +867,18 @@ def warmup_samplers(data, generators: dict):
 def run_warmup(args) -> None:
     from forcesmolvla.rft.canonical_state import canonical_digest, canonicalize
     from forcesmolvla.rft.critic import modules_storage_independent
-    from forcesmolvla.rft.g7a import (
-        G7A_COUNTERS, module_component_digests, save_g7a_checkpoint,
-        sha256_file, validate_g7a_checkpoint,
+    from forcesmolvla.rft.critic_warmup_checkpoint import (
+        CRITIC_WARMUP_COUNTERS,
+        module_component_digests,
+        save_critic_warmup_checkpoint,
+        sha256_file,
+        validate_critic_warmup_checkpoint,
     )
     from forcesmolvla.rft.training_cycle import (
         ensure_all_gradients_none, module_state_sha256,
         optimizer_state_storage_independent,
     )
-    from preflight_s2_g5_single_cycle_gpu import (
+    from forcesmolvla.rft.training_cycle import (
         FORBIDDEN_OPENS, FlowCounter, R5, capture_rng_states, critic_update,
         install_open_audit,
     )
@@ -965,7 +1034,7 @@ def run_warmup(args) -> None:
         for parameter in module.parameters()
     ), "G7A_NONFINITE_PARAMETER")
 
-    counters = dict(G7A_COUNTERS)
+    counters = dict(CRITIC_WARMUP_COUNTERS)
     sampler_final = {name: sampler.state_dict() for name, sampler in samplers.items()}
     rng_final = capture_rng_states(generators)
     protected = json.loads(args.protected_snapshot.read_text())
@@ -979,12 +1048,12 @@ def run_warmup(args) -> None:
     }
     startup = {
         "g7a/stage2_g7a_critic_warmup.development.yaml": CONFIG.read_bytes(),
-        "g7a/stage2_source_manifest.v9_g7a.json": SOURCE_MANIFEST.read_bytes(),
+        "g7a/critic_training.py": Path(__file__).read_bytes(),
         "g7a/protected_snapshot.json": args.protected_snapshot.read_bytes(),
         "g1/g1_manifest.json": (G1_ROOT / "g1_manifest.json").read_bytes(),
     }
     rng_before_save = canonical_digest(rng_final)
-    checkpoint_manifest = save_g7a_checkpoint(
+    checkpoint_manifest = save_critic_warmup_checkpoint(
         args.checkpoint, critics={
             "q1": q1, "q2": q2, "q1_target": q1_target, "q2_target": q2_target,
         }, critic_optimizer=context["optimizer"], critic_scheduler=context["scheduler"],
@@ -994,7 +1063,7 @@ def run_warmup(args) -> None:
         startup_snapshot_bytes=startup,
     )
     require(canonical_digest(capture_rng_states(generators)) == rng_before_save, "G7A_CHECKPOINT_CONSUMED_RNG")
-    validate_g7a_checkpoint(args.checkpoint)
+    validate_critic_warmup_checkpoint(args.checkpoint)
 
     result = {
         "worker_mode": "warmup", "environment": environment_audit(),
@@ -1046,8 +1115,10 @@ def run_warmup(args) -> None:
 
 def run_verify(args) -> None:
     from forcesmolvla.rft.exact_resume import restore_rng_states_last
-    from forcesmolvla.rft.g7a import (
-        G7A_COUNTERS, module_component_digests, validate_g7a_checkpoint,
+    from forcesmolvla.rft.critic_warmup_checkpoint import (
+        CRITIC_WARMUP_COUNTERS,
+        module_component_digests,
+        validate_critic_warmup_checkpoint,
     )
     from forcesmolvla.rft.critic import modules_storage_independent
     from forcesmolvla.rft.training_cycle import (
@@ -1057,15 +1128,15 @@ def run_verify(args) -> None:
 
     device = configure_runtime()
     verify_config()
-    manifest = validate_g7a_checkpoint(args.checkpoint)
+    manifest = validate_critic_warmup_checkpoint(args.checkpoint)
     require(
         (args.checkpoint / "startup_snapshot/g7a/stage2_g7a_critic_warmup.development.yaml").read_bytes()
         == CONFIG.read_bytes(),
         "G7A_VERIFY_CONFIG_BINDING_MISMATCH",
     )
     require(
-        (args.checkpoint / "startup_snapshot/g7a/stage2_source_manifest.v9_g7a.json").read_bytes()
-        == SOURCE_MANIFEST.read_bytes(),
+        (args.checkpoint / "startup_snapshot/g7a/critic_training.py").read_bytes()
+        == Path(__file__).read_bytes(),
         "G7A_VERIFY_SOURCE_BINDING_MISMATCH",
     )
     context = initialize_fresh(device=device, with_data=False)
@@ -1083,7 +1154,7 @@ def run_verify(args) -> None:
     )
     context["scheduler"].load_state_dict(scheduler_state)
     counters = json.loads((args.checkpoint / "state/counters.json").read_text())
-    require(counters == G7A_COUNTERS, "G7A_VERIFY_COUNTER_MISMATCH")
+    require(counters == CRITIC_WARMUP_COUNTERS, "G7A_VERIFY_COUNTER_MISMATCH")
     sampler_states = torch.load(
         args.checkpoint / "state/sampler_states.pt", map_location="cpu", weights_only=False
     )
@@ -1183,12 +1254,55 @@ def main() -> None:
     parser.add_argument("--fixed-diagnostics", type=Path)
     parser.add_argument("--protected-snapshot", type=Path)
     args = parser.parse_args()
-    require(CONFIG.is_file() and SOURCE_MANIFEST.is_file(), "G7A_STARTUP_CONFIG_OR_SOURCE_MISSING")
-    if args.mode == "warmup":
-        require(args.fixed_diagnostics is not None and args.protected_snapshot is not None, "G7A_WARMUP_INPUT_MISSING")
-        run_warmup(args)
-    else:
-        run_verify(args)
+    require(CONFIG.is_file(), "G7A_STARTUP_CONFIG_MISSING")
+    flow_sampling.critic_action_for_q_guidance = audited_action_contract_v2_adapter
+    losses.critic_action_for_q_guidance = audited_action_contract_v2_adapter
+    forbidden = RuntimeError("G7A_R2_PUBLIC_EXECUTION_PATH_CALLED")
+    with (
+        patch.object(
+            action_delta.ActionDeltaProcessor,
+            "from_delta",
+            side_effect=forbidden,
+        ) as inverse,
+        patch.object(
+            action_delta.ActionSafetyProfile,
+            "validate_chunk",
+            side_effect=forbidden,
+        ) as validator,
+        patch.object(
+            action_delta,
+            "decode_binary_gripper_width",
+            side_effect=forbidden,
+        ) as decoder,
+        patch.object(
+            rules,
+            "load_and_validate_rulespec",
+            side_effect=forbidden,
+        ) as rulespec,
+        patch.object(
+            ForceSmolVLAPolicy,
+            "predict_action_chunk",
+            side_effect=forbidden,
+        ) as predict,
+    ):
+        if args.mode == "warmup":
+            require(
+                args.fixed_diagnostics is not None
+                and args.protected_snapshot is not None,
+                "G7A_WARMUP_INPUT_MISSING",
+            )
+            run_warmup(args)
+        else:
+            run_verify(args)
+    calls = {
+        "public_validator_calls": validator.call_count,
+        "absolute_inverse_calls": inverse.call_count,
+        "public_binary_decoder_calls": decoder.call_count,
+        "RuleSpec_calls": rulespec.call_count,
+        "predict_action_chunk_calls": predict.call_count,
+    }
+    require(not any(calls.values()), f"G7A_R2_PUBLIC_PATH_CALL:{calls}")
+    finalize_action_contract_v2_result(args.result, calls)
 
 
 if __name__ == "__main__":

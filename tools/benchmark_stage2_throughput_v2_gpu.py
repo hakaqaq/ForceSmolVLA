@@ -144,7 +144,7 @@ class PersistentCpuPipeline:
     """Immutable Parquet-row and decoded-image cache, prefetched by CPU workers."""
 
     def __init__(self, data) -> None:
-        import preflight_s2_g5_single_cycle_gpu as g5
+        from forcesmolvla.rft import training_cycle as g5
 
         self.data = data
         self.g5 = g5
@@ -165,7 +165,7 @@ class PersistentCpuPipeline:
     def _load_table(self, relative: str) -> list[dict]:
         import pyarrow.parquet as pq
         from forcesmolvla.rft.offline_transitions import PROVENANCE_KEYS
-        from preflight_s2_g5_single_cycle_gpu import DATASET
+        from forcesmolvla.rft.training_cycle import DATASET
 
         if relative not in self.tables:
             columns = [
@@ -278,7 +278,7 @@ def grouped_critic_update(
 ) -> tuple[dict[str, Any], dict[str, torch.Tensor]]:
     """Same G4 loss/update with TD and Cal-QL Flow requests co-scheduled."""
 
-    import preflight_s2_g5_single_cycle_gpu as g5
+    from forcesmolvla.rft import training_cycle as g5
     from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
     from forcesmolvla.rft.losses import (
         compute_behavior_q,
@@ -453,7 +453,7 @@ def grouped_critic_update(
 
 def worker(candidate: dict[str, Any], result_path: Path) -> dict[str, Any]:
     import benchmark_stage2_batch_scaling_gpu as benchmark
-    import preflight_s2_g5_single_cycle_gpu as g5
+    from forcesmolvla.rft import training_cycle as g5
     import run_s2_g7b_worker as g7b
     import run_stage2b_long_run_half_pass_worker as stage2b
     from forcesmolvla.rft.frozen_vlm_trainability import frozen_state_digest

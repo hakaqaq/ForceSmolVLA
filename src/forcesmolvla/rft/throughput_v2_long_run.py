@@ -101,7 +101,7 @@ class BoundedTrainingDataCache:
     """Read Parquet once; predecode only current/next observations per batch."""
 
     def __init__(self, data, *, max_bytes: int, prefetch_workers: int) -> None:
-        import preflight_s2_g5_single_cycle_gpu as g5
+        from forcesmolvla.rft import training_cycle as g5
 
         if prefetch_workers < 1:
             raise ValueError("THROUGHPUT_V2_PREFETCH_WORKERS")
@@ -124,7 +124,7 @@ class BoundedTrainingDataCache:
     def _load_table(self, relative: str) -> list[dict[str, Any]]:
         import pyarrow.parquet as pq
         from forcesmolvla.rft.offline_transitions import PROVENANCE_KEYS
-        from preflight_s2_g5_single_cycle_gpu import DATASET
+        from forcesmolvla.rft.training_cycle_runtime import DATASET
 
         with self.table_lock:
             cached = self.tables.get(relative)
@@ -215,7 +215,7 @@ def install_bounded_training_cache(
 ) -> Iterator[BoundedTrainingDataCache]:
     """Install process-local cache without changing sampler or RNG state."""
 
-    import preflight_s2_g5_single_cycle_gpu as g5
+    from forcesmolvla.rft import training_cycle as g5
 
     cache = BoundedTrainingDataCache(
         data, max_bytes=max_bytes, prefetch_workers=prefetch_workers

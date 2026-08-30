@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from forcesmolvla.rft.g7_long_run import counters_for_cycle
+from forcesmolvla.rft.long_run_checkpoint import counters_for_cycle
 
 
 ROOT = Path(__file__).parents[1]

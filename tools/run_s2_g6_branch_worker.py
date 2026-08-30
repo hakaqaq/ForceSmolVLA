@@ -78,7 +78,7 @@ def _sampler_states(context: dict) -> dict:
 
 
 def _rng_states(context: dict) -> dict:
-    from preflight_s2_g5_single_cycle_gpu import capture_rng_states
+    from forcesmolvla.rft.training_cycle import capture_rng_states
 
     return capture_rng_states(context["generators"])
 
@@ -138,7 +138,7 @@ class CycleTrace:
 
     def __enter__(self):
         import forcesmolvla.rft.losses as losses
-        import preflight_s2_g5_single_cycle_gpu as g5
+        from forcesmolvla.rft import training_cycle as g5
 
         def random_wrapper(operation: str):
             def factory(original):
@@ -235,7 +235,7 @@ def initialize_context(*, restore_checkpoint: bool) -> dict:
         SerializableUniqueSampler,
         build_stage2_optimizers,
     )
-    from preflight_s2_g5_single_cycle_gpu import (
+    from forcesmolvla.rft.training_cycle import (
         R5, SAFE_MANIFEST, SAFE_NPZ, TrainData, named_generator, verify_config,
     )
 
@@ -392,7 +392,7 @@ def draw_cycle_batches(context: dict) -> tuple[list[list[int]], list[list[int]],
 def run_cycle(context: dict, *, cycle: int, include_g5_scale_probe: bool, trace_enabled: bool) -> tuple[dict, dict]:
     from forcesmolvla.rft.canonical_state import canonical_digest, tensor_record
     from forcesmolvla.rft.training_cycle import ensure_all_gradients_none
-    from preflight_s2_g5_single_cycle_gpu import (
+    from forcesmolvla.rft.training_cycle import (
         FlowCounter, actor_gradient_scale_probe, actor_update, critic_update,
     )
 
@@ -605,7 +605,7 @@ def main() -> None:
     args.work_dir.mkdir(parents=True, exist_ok=True)
     from forcesmolvla.rft.canonical_state import assert_payload_exact
     from forcesmolvla.rft.exact_resume import preflight_g5_checkpoint
-    from preflight_s2_g5_single_cycle_gpu import FORBIDDEN_OPENS, install_open_audit
+    from forcesmolvla.rft.training_cycle import FORBIDDEN_OPENS, install_open_audit
 
     install_open_audit()
     preflight = preflight_g5_checkpoint(ROOT, G5_CHECKPOINT)

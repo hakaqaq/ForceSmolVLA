@@ -121,7 +121,7 @@ def save_boundary(
     protected: dict, startup: dict, g5,
 ) -> dict:
     from forcesmolvla.rft.canonical_state import canonical_digest
-    from forcesmolvla.rft.g7_long_run import hardlink_milestone, save_cycle_checkpoint, validate_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import hardlink_milestone, save_cycle_checkpoint, validate_cycle_checkpoint
 
     rng = g5.capture_rng_states(generators)
     digest = canonical_digest(rng)
@@ -173,13 +173,13 @@ def validation_diagnostic(*, cycle: int, context: dict, validation_rows: list[di
 
 
 def train(args) -> None:
-    import preflight_s2_g5_single_cycle_gpu as g5
-    import run_s2_g7a_worker as g7a_worker
+    from forcesmolvla.rft import training_cycle as g5
+    from forcesmolvla.rft import critic_training as g7a_worker
     import run_s2_g7b_worker as g7b
     from forcesmolvla.rft.canonical_state import canonical_digest
     from forcesmolvla.rft.critic import modules_storage_independent
-    from forcesmolvla.rft.g7_long_run import counters_for_cycle
-    from forcesmolvla.rft.g7b import describe_p95
+    from forcesmolvla.rft.long_run_checkpoint import counters_for_cycle
+    from forcesmolvla.rft.joint_training_checkpoint import describe_p95
     from forcesmolvla.rft.training_cycle import ensure_all_gradients_none, module_state_sha256, optimizer_state_storage_independent
 
     g5.install_open_audit()
@@ -375,9 +375,9 @@ def train(args) -> None:
 
 
 def verify(args) -> None:
-    import run_s2_g7a_worker as g7a_worker
+    from forcesmolvla.rft import critic_training as g7a_worker
     import run_s2_g7b_worker as g7b
-    from forcesmolvla.rft.g7_long_run import counters_for_cycle, validate_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import counters_for_cycle, validate_cycle_checkpoint
     from forcesmolvla.rft.training_cycle import SerializableReplacementSampler, SerializableUniqueSampler, ensure_all_gradients_none
 
     device = g7a_worker.configure_runtime()

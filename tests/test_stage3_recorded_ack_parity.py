@@ -28,7 +28,7 @@ from forcesmolvla.rft.stage3.temporal_parity import (
     validate_recorded_ack_fixture,
     validate_temporal_parity_report,
 )
-from tools.preflight_s2_g4_losses_gpu import actor_batch
+from forcesmolvla.rft.batch import build_actor_batch
 
 
 def _binding(relative: str) -> dict:
@@ -474,7 +474,7 @@ def test_real_phase2_actor_critic_image_range_and_task_feature_contract() -> Non
     policy.model.vlm_with_expert.processor = type("Processor", (), {"tokenizer": tokenizer})()
     image = np.full((3, 8, 8), 255, dtype=np.uint8)
     task = "Pick up the purple ring and place it onto the red peg."
-    batch = actor_batch(policy, [{
+    batch = build_actor_batch(policy, [{
         "camera1": image,
         "camera2": image,
         "state7": np.zeros(7, dtype=np.float32),

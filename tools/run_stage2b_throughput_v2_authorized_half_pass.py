@@ -147,7 +147,7 @@ def run_segment(
         and payload["frozen_parameter_hash_unchanged"],
         f"AUTHORIZED_SEGMENT_AUDIT_FAILED:{start}:{end}",
     )
-    from forcesmolvla.rft.g7_long_run import validate_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import validate_cycle_checkpoint
 
     validate_cycle_checkpoint(checkpoint, expected_cycle=end)
     atomic_json(OUTPUT / f"authorized_boundary_cycle_{end}.json", {

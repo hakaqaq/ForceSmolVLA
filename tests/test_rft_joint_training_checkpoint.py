@@ -7,13 +7,13 @@ import pytest
 import torch
 import yaml
 
-from forcesmolvla.rft.g7b import (
-    G7B_CHECKPOINT_MARKERS,
-    G7B_COUNTERS,
+from forcesmolvla.rft.joint_training_checkpoint import (
+    JOINT_TRAINING_CHECKPOINT_MARKERS,
+    JOINT_TRAINING_COUNTERS,
     describe_p95,
-    save_g7b_checkpoint,
+    save_joint_training_checkpoint,
     validate_optimizer_step_sets,
-    validate_g7b_checkpoint,
+    validate_joint_training_checkpoint,
 )
 
 
@@ -69,21 +69,21 @@ def test_atomic_checkpoint_is_append_only_and_tamper_evident(tmp_path: Path) -> 
     actor_scheduler = torch.optim.lr_scheduler.LambdaLR(actor_optimizer, lambda _: 1.0)
     critic_scheduler = torch.optim.lr_scheduler.LambdaLR(critic_optimizer, lambda _: 1.0)
     target = tmp_path / "checkpoint"
-    manifest = save_g7b_checkpoint(
+    manifest = save_joint_training_checkpoint(
         target, modules=modules, actor_optimizer=actor_optimizer,
         critic_optimizer=critic_optimizer, actor_scheduler=actor_scheduler,
-        critic_scheduler=critic_scheduler, counters=G7B_COUNTERS,
+        critic_scheduler=critic_scheduler, counters=JOINT_TRAINING_COUNTERS,
         parent_counters={"critic_optimizer_updates": 256}, sampler_states={"x": 1},
         rng_states={"x": 2}, ownership_manifest={"intersection": 0},
         protected_snapshot={"frozen": True}, startup_snapshot_bytes={"config/test.txt": b"fixed\n"},
     )
-    assert all(manifest[key] == value for key, value in G7B_CHECKPOINT_MARKERS.items())
-    assert validate_g7b_checkpoint(target)["counters"] == G7B_COUNTERS
+    assert all(manifest[key] == value for key, value in JOINT_TRAINING_CHECKPOINT_MARKERS.items())
+    assert validate_joint_training_checkpoint(target)["counters"] == JOINT_TRAINING_COUNTERS
     with pytest.raises(RuntimeError, match="G7B_CHECKPOINT_TARGET_OR_COUNTER_INVALID"):
-        save_g7b_checkpoint(
+        save_joint_training_checkpoint(
             target, modules=modules, actor_optimizer=actor_optimizer,
             critic_optimizer=critic_optimizer, actor_scheduler=actor_scheduler,
-            critic_scheduler=critic_scheduler, counters=G7B_COUNTERS,
+            critic_scheduler=critic_scheduler, counters=JOINT_TRAINING_COUNTERS,
             parent_counters={"critic_optimizer_updates": 256}, sampler_states={}, rng_states={},
             ownership_manifest={}, protected_snapshot={}, startup_snapshot_bytes={},
         )
@@ -92,4 +92,4 @@ def test_atomic_checkpoint_is_append_only_and_tamper_evident(tmp_path: Path) -> 
     payload["joint_cycles"] = 7
     counter.write_text(json.dumps(payload))
     with pytest.raises(RuntimeError, match="G7B_CHECKPOINT_INTERNAL_FILE_SHA_MISMATCH"):
-        validate_g7b_checkpoint(target)
+        validate_joint_training_checkpoint(target)

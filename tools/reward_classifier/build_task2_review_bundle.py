@@ -21,9 +21,9 @@ import pyarrow.parquet as pq
 
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from preflight_p6_variants_gpu import _dataset_storage_binding  # noqa: E402
+from forcesmolvla.dataset_binding import dataset_storage_binding  # noqa: E402
 
 
 EXPECTED_P8_SHA = "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
@@ -99,7 +99,7 @@ def main() -> None:
     if args.bundle_dir.exists() or args.label_template.exists():
         raise RuntimeError("review outputs already exist; use validation instead of overwriting")
     dataset_root = args.dataset_root.resolve()
-    before = _dataset_storage_binding(dataset_root)
+    before = dataset_storage_binding(dataset_root)
     if before["tree_sha256"] != EXPECTED_P8_SHA:
         raise RuntimeError("STAGE1_DATA_DRIFT")
     for name, expected in EXPECTED_MANIFESTS.items():
@@ -217,7 +217,7 @@ def main() -> None:
         "episodes": label_episodes,
     }
 
-    after = _dataset_storage_binding(dataset_root)
+    after = dataset_storage_binding(dataset_root)
     if before != after:
         raise RuntimeError("STAGE1_DATA_CHANGED_DURING_REVIEW_INDEX_READ")
 

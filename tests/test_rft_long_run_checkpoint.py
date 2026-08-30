@@ -6,7 +6,7 @@ import pytest
 import torch
 import yaml
 
-from forcesmolvla.rft.g7_long_run import (
+from forcesmolvla.rft.long_run_checkpoint import (
     MARKERS,
     counters_for_cycle,
     hardlink_milestone,

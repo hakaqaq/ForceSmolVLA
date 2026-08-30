@@ -88,7 +88,7 @@ def actor_temporary_update(context: dict, actor_batch: dict, optimizer, schedule
     )
     from forcesmolvla.rft.training_cycle import global_gradient_norm, module_state_sha256
     from forcesmolvla.router_training import collect_pass_a_statistics, microbatch_two_pass_terms
-    from preflight_s2_g5_single_cycle_gpu import FlowCounter
+    from forcesmolvla.rft.training_cycle import FlowCounter
 
     policy, q1, q2 = context["actor"], context["q1"], context["q2"]
     device = actor_batch["reward"].device
@@ -187,9 +187,8 @@ def actor_temporary_update(context: dict, actor_batch: dict, optimizer, schedule
 
 def main() -> None:
     require(not OUTPUT.exists() and not REPORT.exists(), "FROZEN_VLM_PREFLIGHT_OUTPUT_EXISTS")
-    import run_s2_g7a_r2_worker  # installs the immutable ActionContract-v2 adapter
-    import run_s2_g7a_worker as g7a
-    import preflight_s2_g5_single_cycle_gpu as g5
+    from forcesmolvla.rft import critic_training as g7a
+    from forcesmolvla.rft import training_cycle as g5
     from forcesmolvla.rft.frozen_vlm_trainability import (
         apply_frozen_vlm_trainability,
         build_frozen_vlm_actor_optimizer,

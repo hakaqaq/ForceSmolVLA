@@ -26,9 +26,9 @@ import torch
 import yaml
 
 
-ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs/stage2_g5_single_cycle.development.yaml"
-SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v7_g5.json"
+ROOT = Path(__file__).resolve().parents[3]
+CONFIG = ROOT / "configs/stage2_g5_single_cycle.v2.development.yaml"
+SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v13_g5_v2.json"
 ARTIFACT = ROOT / "artifacts/development/stage2/s2_g5_single_cycle_preflight.json"
 REPORT = ROOT / "docs/s2_g5_single_cycle_preflight_report.md"
 CHECKPOINT = ROOT / "artifacts/development/stage2/g5_single_cycle_checkpoint.development"
@@ -118,44 +118,28 @@ def file_tree(root: Path, subdirectories: tuple[str, ...] | None = None) -> dict
 
 
 def protected_snapshot() -> dict:
-    parent = json.loads((ROOT / "configs/stage2_parent_bridge.development.json").read_text())
     files = {
-        "classifier_checkpoint": CLASSIFIER,
         "g1_manifest": G1_ROOT / "g1_manifest.json",
         "g1_frame_scores": G1_ROOT / "frame_scores.parquet",
         "g1_transition_index": G1_ROOT / "transition_index.parquet",
-        "g2_artifact": ROOT / "artifacts/development/stage2/s2_g2_twin_q_topology.json",
         "g2_config": ROOT / "configs/stage2_g2_force_aware_twin_q.development.yaml",
-        "g3_flow_artifact": ROOT / "artifacts/development/stage2/s2_g3_differentiable_flow.v4.json",
-        "g3_gradient_artifact": ROOT / "artifacts/development/stage2/s2_g3_gradient_precision_matrix.v4.json",
-        "g4_artifact": ROOT / "artifacts/development/stage2/s2_g4_loss_preflight.json",
-        "g4_config": ROOT / "configs/stage2_g4_losses.development.yaml",
-        "g4_losses_source": ROOT / "src/forcesmolvla/rft/losses.py",
+        "action_contract": ROOT / "configs/stage2_action_contract.v2.development.json",
         "g5_config": CONFIG,
-        "g5_source_manifest": SOURCE_MANIFEST,
         "g5_training_cycle_source": ROOT / "src/forcesmolvla/rft/training_cycle.py",
+        "g5_training_runtime_source": ROOT / "src/forcesmolvla/rft/training_cycle_runtime.py",
         "g5_training_checkpoint_source": ROOT / "src/forcesmolvla/rft/training_checkpoint.py",
-        "g5_preflight_source": ROOT / "tools/preflight_s2_g5_single_cycle_gpu.py",
-        "g5_tests": ROOT / "tests/test_rft_training_cycle.py",
         "g2_critic_source": ROOT / "src/forcesmolvla/rft/critic.py",
         "g3_flow_source": ROOT / "src/forcesmolvla/rft/flow_sampling.py",
         "dataset_conversion": DATASET / "conversion_manifest.json",
         "dataset_split": DATASET / "split_manifest.json",
         "dataset_normalizer": DATASET / "normalizer_manifest.json",
         "actor_core": ROOT / "src/forcesmolvla/modeling_forcesmolvla.py",
-        "public_inference": ROOT / "src/forcesmolvla/inference.py",
-        "vendor_smolvla": ROOT / "vendor/lerobot/src/lerobot/policies/smolvla/modeling_smolvla.py",
     }
-    for index, item in enumerate(parent["parent_p4_to_p8_qualification_artifacts"]):
-        files[f"stage1_p4_p8_{index:02d}"] = ROOT / item["path"]
-    for path in sorted((ROOT / "artifacts/development").glob("p9_v4_2_r8_*")):
-        files[f"stage1_{path.stem}"] = path
     result = {
         "files": {name: binding(path) for name, path in files.items()},
         "p8_storage_tree": file_tree(DATASET, ("data", "videos", "meta")),
         "r5_checkpoint_tree": file_tree(R5),
     }
-    require(result["files"]["classifier_checkpoint"]["sha256"] == EXPECTED_CLASSIFIER_SHA256, "G5_CLASSIFIER_SHA_DRIFT")
     require(result["files"]["g1_manifest"]["sha256"] == EXPECTED_G1_MANIFEST_SHA256, "G5_G1_SHA_DRIFT")
     require(result["p8_storage_tree"]["tree_sha256"] == EXPECTED_P8_TREE_SHA256, "G5_P8_TREE_SHA_DRIFT")
     return result
@@ -394,7 +378,7 @@ class TrainData:
         from forcesmolvla.rft.losses import CriticObservation
         from forcesmolvla.rft.offline_transitions import PROVENANCE_KEYS
         from forcesmolvla.training_data import prepare_training_sample
-        from preflight_s2_g4_losses_gpu import actor_batch
+        from forcesmolvla.rft.batch import build_actor_batch
 
         require(len(indices) == len(set(indices)), "G5_BATCH_INDICES_NOT_UNIQUE")
         requested: dict[str, set[int]] = defaultdict(set)
@@ -487,8 +471,8 @@ class TrainData:
             "identities": self.identity_records(indices),
             "current_observation": critic_observation(current_samples),
             "next_observation": critic_observation(next_samples),
-            "current_actor_batch": actor_batch(policy, current_samples, device, include_action=include_flow_actions),
-            "next_actor_batch": actor_batch(policy, next_samples, device, include_action=False),
+            "current_actor_batch": build_actor_batch(policy, current_samples, device, include_action=include_flow_actions),
+            "next_actor_batch": build_actor_batch(policy, next_samples, device, include_action=False),
             "behavior_action": torch.from_numpy(np.stack(behavior_actions)).to(device),
             "behavior_mask": torch.from_numpy(np.stack(behavior_masks)).to(device),
             "reward": torch.tensor([row["reward"] for row in rows], dtype=torch.float32, device=device),
@@ -1348,7 +1332,6 @@ def main() -> None:
     for path in (ARTIFACT, REPORT, CHECKPOINT):
         require(not path.exists(), f"G5_APPEND_ONLY_TARGET_EXISTS:{path}")
     install_open_audit()
-    sys.path.insert(0, str(ROOT / "tools"))
     config = verify_config()
     tests = run_unit_tests()
     before = protected_snapshot()

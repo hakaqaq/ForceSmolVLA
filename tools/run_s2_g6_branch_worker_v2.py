@@ -12,7 +12,7 @@ from forcesmolvla.rft import flow_sampling, losses
 from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
 from forcesmolvla.rft.exact_resume_v2 import install_exact_resume_v2
 
-import preflight_s2_g5_single_cycle_gpu as g5
+from forcesmolvla.rft import training_cycle as g5
 import run_s2_g6_branch_worker as worker
 
 

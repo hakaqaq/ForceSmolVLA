@@ -1,4 +1,4 @@
-"""Append-only G7-B joint-smoke ownership and checkpoint contract."""
+"""Append-only joint-training ownership and checkpoint contract."""
 
 from __future__ import annotations
 
@@ -20,14 +20,14 @@ from forcesmolvla.rft.source_manifest import validate_stage2_source_manifest
 from forcesmolvla.rft.training_cycle import ensure_all_gradients_none
 
 
-G7B_CHECKPOINT_MARKERS = {
+JOINT_TRAINING_CHECKPOINT_MARKERS = {
     "artifact_status": "DEVELOPMENT_G7B_JOINT_SMOKE_ONLY",
     "deployment_status": "NOT_FOR_DEPLOYMENT",
     "policy_evaluation_status": "NOT_FOR_POLICY_EVALUATION",
     "long_train_parent_status": "NOT_AN_APPROVED_LONG_TRAIN_PARENT",
     "robot_execution_authorized": False,
 }
-G7B_COUNTERS = {
+JOINT_TRAINING_COUNTERS = {
     "joint_cycles": 8,
     "critic_optimizer_updates": 16,
     "actor_optimizer_updates": 8,
@@ -47,7 +47,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_g7b_source_manifest(root: Path, manifest_path: Path) -> dict:
+def verify_joint_training_source_manifest(root: Path, manifest_path: Path) -> dict:
     payload = validate_stage2_source_manifest(root, manifest_path)
     if payload.get("scope") != "G7B_development_joint_smoke_ActionContract_v2":
         raise RuntimeError("G7B_SOURCE_SCOPE_INVALID")
@@ -150,7 +150,7 @@ def _torch_save(path: Path, value: Any) -> None:
         os.fsync(stream.fileno())
 
 
-def save_g7b_checkpoint(
+def save_joint_training_checkpoint(
     destination: Path,
     *,
     modules: Mapping[str, nn.Module],
@@ -167,7 +167,7 @@ def save_g7b_checkpoint(
     startup_snapshot_bytes: Mapping[str, bytes],
 ) -> dict:
     destination = Path(destination).resolve()
-    if destination.exists() or dict(counters) != G7B_COUNTERS:
+    if destination.exists() or dict(counters) != JOINT_TRAINING_COUNTERS:
         raise RuntimeError("G7B_CHECKPOINT_TARGET_OR_COUNTER_INVALID")
     ensure_all_gradients_none(*modules.values())
     targets = (modules["q1_target"], modules["q2_target"])
@@ -204,7 +204,7 @@ def save_g7b_checkpoint(
         entries = directory_entries(temporary)
         manifest = {
             "schema_version": "forcesmolvla_g7b_joint_smoke_checkpoint.v1",
-            **G7B_CHECKPOINT_MARKERS,
+            **JOINT_TRAINING_CHECKPOINT_MARKERS,
             "complete_cycle_boundary": True,
             "pending_graph": False,
             "pending_accumulation": False,
@@ -239,14 +239,14 @@ def save_g7b_checkpoint(
         raise
 
 
-def validate_g7b_checkpoint(checkpoint: Path) -> dict:
+def validate_joint_training_checkpoint(checkpoint: Path) -> dict:
     checkpoint = Path(checkpoint)
     manifest = json.loads((checkpoint / "checkpoint_manifest.json").read_text())
-    if any(manifest.get(key) != value for key, value in G7B_CHECKPOINT_MARKERS.items()):
+    if any(manifest.get(key) != value for key, value in JOINT_TRAINING_CHECKPOINT_MARKERS.items()):
         raise RuntimeError("G7B_CHECKPOINT_MARKER_MISMATCH")
     if manifest.get("manifest_payload_sha256") != _payload_sha256(manifest):
         raise RuntimeError("G7B_CHECKPOINT_MANIFEST_PAYLOAD_MISMATCH")
-    if manifest.get("counters") != G7B_COUNTERS or not manifest.get("complete_cycle_boundary"):
+    if manifest.get("counters") != JOINT_TRAINING_COUNTERS or not manifest.get("complete_cycle_boundary"):
         raise RuntimeError("G7B_CHECKPOINT_COUNTER_OR_BOUNDARY_INVALID")
     if any(manifest.get(key) for key in (
         "pending_graph", "pending_accumulation", "pending_optimizer_step", "pending_polyak_update"
@@ -260,6 +260,6 @@ def validate_g7b_checkpoint(checkpoint: Path) -> dict:
     ).hexdigest()
     if digest != manifest.get("files_sha256"):
         raise RuntimeError("G7B_CHECKPOINT_FILE_DIGEST_MISMATCH")
-    if json.loads((checkpoint / "state/counters.json").read_text()) != G7B_COUNTERS:
+    if json.loads((checkpoint / "state/counters.json").read_text()) != JOINT_TRAINING_COUNTERS:
         raise RuntimeError("G7B_CHECKPOINT_COUNTER_FILE_MISMATCH")
     return manifest

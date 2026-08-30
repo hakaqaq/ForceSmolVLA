@@ -88,11 +88,11 @@ def main() -> None:
         canonical_digest, global_rng_digest, gripper_domain_layers,
     )
     from forcesmolvla.rft.training_cycle import module_state_sha256
-    from preflight_s2_g5_single_cycle_gpu import (
+    from forcesmolvla.rft.training_cycle import (
         FORBIDDEN_OPENS, FlowCounter, R5, SAFE_MANIFEST, SAFE_NPZ, TrainData,
         install_open_audit, repeat_actor_batch,
     )
-    from run_s2_g7a_worker import (
+    from forcesmolvla.rft.critic_training import (
         attach_distance, configure_runtime, environment_audit, identity,
         load_split_rows, split_data,
     )

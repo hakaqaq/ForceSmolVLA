@@ -213,7 +213,7 @@ def export_checkpoint(config: dict[str, Any]) -> dict[str, Any]:
         write_development_artifact_manifest,
     )
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
-    from forcesmolvla.rft.g7_long_run import validate_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import validate_cycle_checkpoint
 
     parent = ROOT / config["runtime_parent"]
     source_checkpoint = ROOT / config["source_checkpoint"]
@@ -385,7 +385,7 @@ def validate_existing_export(config: dict[str, Any]) -> dict[str, Any]:
         validate_training_payload_contract,
     )
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
-    from forcesmolvla.rft.g7_long_run import validate_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import validate_cycle_checkpoint
 
     parent = ROOT / config["runtime_parent"]
     source_checkpoint = ROOT / config["source_checkpoint"]

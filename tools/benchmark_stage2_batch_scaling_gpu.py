@@ -89,7 +89,7 @@ class GpuTelemetry:
 
 class TimedFlowCounter:
     def __init__(self, inference_batch_size: int) -> None:
-        from preflight_s2_g5_single_cycle_gpu import FlowCounter
+        from forcesmolvla.rft.training_cycle import FlowCounter
         self.inner = FlowCounter(inference_batch_size=inference_batch_size)
         self.seconds = {"td_next": 0.0, "cql_current": 0.0, "cql_next": 0.0, "actor_guidance": 0.0}
 
@@ -104,13 +104,12 @@ class TimedFlowCounter:
 
 
 def configure_runtime() -> torch.device:
-    import run_s2_g7a_worker as g7a
+    from forcesmolvla.rft import critic_training as g7a
     return g7a.configure_runtime()
 
 
 def load_context(device: torch.device):
-    import run_s2_g7a_r2_worker  # install ActionContract-v2 into G4 paths
-    import run_s2_g7a_worker as g7a
+    from forcesmolvla.rft import critic_training as g7a
     import run_s2_g7b_worker as g7b
     from forcesmolvla.rft.frozen_vlm_trainability import (
         apply_frozen_vlm_trainability, build_frozen_vlm_actor_optimizer,
@@ -267,7 +266,7 @@ def actor_update(
 
 
 def critic_update(*, context, training, generators, samplers, batch_size: int, update_id: int) -> dict:
-    import preflight_s2_g5_single_cycle_gpu as g5
+    from forcesmolvla.rft import training_cycle as g5
     from forcesmolvla.rft import training_cycle
 
     data, policy, q1 = context["data"], context["actor"], context["q1"]

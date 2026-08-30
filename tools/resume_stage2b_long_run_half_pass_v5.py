@@ -122,7 +122,7 @@ def main() -> None:
     require(failure["status"] == "stopped" and failure["failure_segment"] == [0, 105], "STAGE2B_RECOVERY_HISTORICAL_FAILURE")
 
     from forcesmolvla.rft.exact_resume import checkpoint_tree
-    from forcesmolvla.rft.g7_long_run import validate_cycle_checkpoint
+    from forcesmolvla.rft.long_run_checkpoint import validate_cycle_checkpoint
     from forcesmolvla.rft.source_manifest import validate_stage2_source_manifest
 
     validate_stage2_source_manifest(ROOT, SOURCE)

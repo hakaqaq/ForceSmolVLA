@@ -103,7 +103,7 @@ def row_references(data, indices: list[int], *, include_flow_actions: bool):
 
 
 def simulate(output: Path) -> dict:
-    import preflight_s2_g5_single_cycle_gpu as g5
+    from forcesmolvla.rft import training_cycle as g5
     from forcesmolvla.rft.canonical_state import canonical_digest
     from forcesmolvla.rft.throughput_v2_long_run import (
         BoundedTrainingDataCache,

@@ -15,7 +15,7 @@ import torch
 
 from forcesmolvla.rft.exact_resume_v2 import G5_MANIFEST_SHA256, install_exact_resume_v2
 
-import preflight_s2_g5_single_cycle_gpu as g5
+from forcesmolvla.rft import training_cycle as g5
 import preflight_s2_g6_exact_resume_gpu as legacy
 
 
