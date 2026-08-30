@@ -55,6 +55,7 @@ INTEGRATED_POLICY_EXECUTION_SCHEMA = (
     "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
 )
 POLICY_EXECUTION_SMOKE_CLASSIFICATION = "recorded_live_policy_execution_smoke"
+TRAINING_STARTS_UNIQUE_R = 100
 UPPER_CLOCK = "upper_host_monotonic"
 POLICY_LINEAGE_FIELDS = frozenset(
     {
@@ -409,6 +410,36 @@ class BridgeReport:
     human_override_count: int = 0
     human_override_executed_count: int = 0
     model_update_count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class FormalOnlineRAdmissionReport:
+    status: str
+    episode_id: str
+    classification: str
+    policy_execution_smoke_bridge: str
+    accepted_unique_r_transition_count: int
+    total_unique_r_transition_count: int
+    training_starts: int
+    training_starts_reached: bool
+    human_override_count: int
+    human_override_replay_count: int
+    invalidated_proposal_replay_count: int
+    observation_warmup_excluded_count: int
+    wal_written_count: int
+    outbox_written_count: int
+    replay_written_count: int
+    idempotent_transition_count: int
+    admission_record_written: bool
+    episode_seal_written: bool
+    actor_update_count: int = 0
+    critic_update_count: int = 0
+    optimizer_update_count: int = 0
+    checkpoint_update_count: int = 0
+    policy_revision_published_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1386,11 +1417,15 @@ class Stage3ProductionBridge:
                 "BRIDGE_POLICY_EXECUTION_GRIPPER_TERMINAL_COVERAGE_MISMATCH"
             )
         accepted_gripper_states = [
-            (
-                lease.terminal_finished_monotonic_ns,
-                lease.requested_state,
-                lease.requested_width_m,
-            )
+            {
+                "terminal_finished_monotonic_ns": lease.terminal_finished_monotonic_ns,
+                "requested_state": lease.requested_state,
+                "requested_width_m": lease.requested_width_m,
+                "origin_kind": "initial_gripper_lease",
+                "origin_local_goal_sequence": lease.origin_local_goal_sequence,
+                "origin_action_goal_id": lease.origin_action_goal_id,
+                "terminal_outcome": lease.terminal_outcome,
+            }
         ]
         stalled_contact_count = 0
         quality = (
@@ -1422,11 +1457,17 @@ class Stage3ProductionBridge:
                     "BRIDGE_POLICY_EXECUTION_GRIPPER_TERMINAL_INVALID"
                 )
             accepted_gripper_states.append(
-                (
-                    int(status["finished_monotonic_ns"]),
-                    requested_state,
-                    requested_width,
-                )
+                {
+                    "terminal_finished_monotonic_ns": int(
+                        status["finished_monotonic_ns"]
+                    ),
+                    "requested_state": requested_state,
+                    "requested_width_m": requested_width,
+                    "origin_kind": "native_gripper_terminal",
+                    "origin_local_goal_sequence": sequence,
+                    "origin_action_goal_id": target["action_goal_id"],
+                    "terminal_outcome": outcome,
+                }
             )
             if requested_state == "CLOSED" and outcome == "stalled":
                 diagnostic = quality_goals.get(sequence)
@@ -1445,16 +1486,24 @@ class Stage3ProductionBridge:
             raise ProductionBridgeError(
                 "BRIDGE_POLICY_EXECUTION_GRIPPER_QUALITY_INVALID"
             )
+        gripper_origin_by_sequence: dict[int, dict[str, Any]] = {}
         for authority in gripper_authorities:
             feedback_ns = int(authority.get("feedback_monotonic_ns", 0))
             applicable = [
-                state for state in accepted_gripper_states if state[0] <= feedback_ns
+                state
+                for state in accepted_gripper_states
+                if int(state["terminal_finished_monotonic_ns"]) <= feedback_ns
             ]
             if not applicable:
                 raise ProductionBridgeError(
                     "BRIDGE_POLICY_EXECUTION_GRIPPER_ORIGIN_MISSING"
                 )
-            _, state, width = max(applicable)
+            origin = max(
+                applicable,
+                key=lambda item: int(item["terminal_finished_monotonic_ns"]),
+            )
+            state = str(origin["requested_state"])
+            width = float(origin["requested_width_m"])
             if authority.get("command_required") is False and (
                 authority.get("requested_state") != state
                 or float(authority.get("requested_width_m", -1.0)) != width
@@ -1478,6 +1527,13 @@ class Stage3ProductionBridge:
                     raise ProductionBridgeError(
                         "BRIDGE_POLICY_EXECUTION_POLICY_GRIPPER_ACK_INVALID"
                     )
+                origin = next(
+                    item
+                    for item in accepted_gripper_states
+                    if item["origin_local_goal_sequence"] == local_sequence
+                    and item["origin_action_goal_id"] == target["action_goal_id"]
+                )
+            gripper_origin_by_sequence[int(authority["sequence"])] = dict(origin)
 
         reconciliation = _read_json(
             stream_root / "policy_execute_camera_reconciliation.json"
@@ -1634,6 +1690,15 @@ class Stage3ProductionBridge:
         return {
             "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
             "initial_gripper_lease": lease,
+            "prepared": prepared,
+            "observations": observation_by_id,
+            "requests": request_by_id,
+            "results": result_by_request,
+            "proposals": proposal_by_request,
+            "chunks": chunk_by_request,
+            "transitions": tuple(transitions),
+            "gripper_origins": gripper_origin_by_sequence,
+            "seal": seal,
             "summary": {
                 "schema": INTEGRATED_POLICY_EXECUTION_SCHEMA,
                 "session_id": identity["session_id"],
@@ -3177,6 +3242,500 @@ class Stage3ProductionBridge:
             os.fsync(handle.fileno())
         os.replace(temporary, path)
         _fsync_directory(path.parent)
+
+    def _formal_online_r_observation(
+        self,
+        *,
+        episode_dir: Path,
+        episode_id: str,
+        source: Mapping[str, Any],
+        prepared: PreparedEpisode,
+    ) -> dict[str, Any]:
+        t_ref_ns = int(source.get("t_ref_ns", 0))
+        frame = bisect_right(prepared.tuple_host_ns, t_ref_ns) - 1
+        if frame < 0:
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_CAUSAL_OBSERVATION_MISSING"
+            )
+        materialized_ns = int(prepared.tuple_host_ns[frame])
+        state7 = _finite_vector(
+            prepared.state7[frame], 7, "BRIDGE_FORMAL_R_STATE7_INVALID"
+        )
+        wrench6 = _finite_vector(
+            prepared.wrench6[frame], 6, "BRIDGE_FORMAL_R_WRENCH6_INVALID"
+        )
+        stream_ids = source.get("stream_ids")
+        stream_timestamps = source.get("stream_timestamps_ns")
+        if not isinstance(stream_ids, Mapping) or not isinstance(
+            stream_timestamps, Mapping
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_OBSERVATION_STREAMS_MISSING"
+            )
+
+        cameras: dict[str, dict[str, Any]] = {}
+        for role, model in (("external", "D435"), ("wrist", "D405")):
+            stream_name = f"{role}_camera"
+            relative = str(stream_ids.get(stream_name, ""))
+            camera_path = (episode_dir / relative).resolve()
+            camera_ns = int(stream_timestamps.get(stream_name, 0))
+            if (
+                not relative
+                or not camera_path.is_relative_to(episode_dir.resolve())
+                or not camera_path.is_file()
+                or camera_ns <= 0
+                or camera_ns > t_ref_ns
+                or t_ref_ns - camera_ns > self.config.max_camera_age_ns
+            ):
+                raise ProductionBridgeError(
+                    f"BRIDGE_FORMAL_R_{role.upper()}_CAMERA_INVALID"
+                )
+            cameras[role] = {
+                "model": model,
+                "blob_reference": relative,
+                "timestamp_monotonic_ns": camera_ns,
+                "age_ms": (t_ref_ns - camera_ns) / 1.0e6,
+                "clock_domain_id": self.config.clock_domain_id,
+            }
+
+        return {
+            "observation_id": str(source["observation_id"]),
+            "episode_id": episode_id,
+            "source_t_ref_monotonic_ns": t_ref_ns,
+            "materialized_frame": frame,
+            "materialized_timestamp_monotonic_ns": materialized_ns,
+            "materialization_age_ms": (t_ref_ns - materialized_ns) / 1.0e6,
+            "clock_domain_id": self.config.clock_domain_id,
+            "state7_absolute": list(state7),
+            "wrench6_calibrated_tcp": list(wrench6),
+            "wrench_materialization": {
+                "source": "raw_to_lerobot_v3.prepare_episode",
+                "calibrated_tcp_wrench": True,
+                "raw_wrench_learner_eligible": False,
+            },
+            "camera_external": cameras["external"],
+            "camera_wrist": cameras["wrist"],
+            "normalization": "deferred_to_frozen_replay_adapter",
+        }
+
+    def _formal_online_r_transition(
+        self,
+        *,
+        episode_dir: Path,
+        episode_id: str,
+        task: str,
+        integrated: Mapping[str, Any],
+        source: Mapping[str, Any],
+        terminal: bool,
+    ) -> dict[str, Any]:
+        request_id = str(source.get("request_id", ""))
+        request = integrated["requests"].get(request_id)
+        result = integrated["results"].get(request_id)
+        proposal = integrated["proposals"].get(request_id)
+        chunk = integrated["chunks"].get(request_id)
+        current = integrated["observations"].get(
+            str(source.get("current_observation_id", ""))
+        )
+        next_observation = integrated["observations"].get(
+            str(source.get("next_observation_id", ""))
+        )
+        if not all(
+            isinstance(value, Mapping)
+            for value in (request, result, proposal, chunk, current, next_observation)
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_POLICY_LINEAGE_MISSING"
+            )
+        if proposal.get("invalidated_by_takeover") is True:
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_INVALIDATED_PROPOSAL_SELECTED"
+            )
+        sequence = int(source.get("selection", {}).get("sequence", -1))
+        gripper_origin = integrated["gripper_origins"].get(sequence)
+        if not isinstance(gripper_origin, Mapping):
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_GRIPPER_ORIGIN_MISSING"
+            )
+        observation = self._formal_online_r_observation(
+            episode_dir=episode_dir,
+            episode_id=episode_id,
+            source=current,
+            prepared=integrated["prepared"],
+        )
+        materialized_next = self._formal_online_r_observation(
+            episode_dir=episode_dir,
+            episode_id=episode_id,
+            source=next_observation,
+            prepared=integrated["prepared"],
+        )
+        if (
+            materialized_next["source_t_ref_monotonic_ns"]
+            <= observation["source_t_ref_monotonic_ns"]
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_NEXT_OBSERVATION_NOT_CAUSAL"
+            )
+        action7 = _finite_vector(
+            source.get("accepted_absolute7"),
+            7,
+            "BRIDGE_FORMAL_R_ACCEPTED_ACTION7_INVALID",
+        )
+        pose_ack = source.get("pose_ack")
+        gripper = source.get("gripper_authority")
+        if (
+            not isinstance(pose_ack, Mapping)
+            or pose_ack.get("accepted") is not True
+            or not isinstance(gripper, Mapping)
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_ACTION7_AUTHORITY_INCOMPLETE"
+            )
+        generation = {
+            field: int(source[field])
+            for field in (
+                "policy_epoch",
+                "reset_generation",
+                "takeover_generation",
+            )
+        }
+        payload: dict[str, Any] = {
+            "schema_version": SCHEMA_VERSION,
+            "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
+            "identity": {
+                "episode_id": episode_id,
+                "session_id": str(source["session_id"]),
+                "decision_id": sequence,
+                "anchor_frame": observation["materialized_frame"],
+                "next_frame": materialized_next["materialized_frame"],
+                "source_ack_id": str(source["ack_id"]),
+                "task": task,
+                "transition_uid": None,
+            },
+            "generation": generation,
+            "policy_lineage": {
+                "request": dict(request),
+                "result": dict(result),
+                "proposal": dict(proposal),
+                "chunk": dict(chunk),
+                "selection": dict(source["selection"]),
+                "revision": str(source["policy_revision"]),
+                "generation": generation,
+            },
+            "action_authority": {
+                "accepted_absolute_action7": list(action7),
+                "executed_action_source": "policy",
+                "pose_command": dict(source["pose_command"]),
+                "pose_ack": dict(pose_ack),
+                "gripper": dict(gripper),
+                "gripper_terminal_provenance": dict(gripper_origin),
+                "safety_arbitration": dict(source["safety_arbitration"]),
+                "full_action7_ack_closure": True,
+            },
+            "observation": observation,
+            "next_observation": materialized_next,
+            "outcome": {
+                "reward": 1.0 if terminal else 0.0,
+                "terminated": terminal,
+                "truncated": False,
+                "done": terminal,
+                "bootstrap_mask": 0.0 if terminal else 1.0,
+                "discount": 0.0 if terminal else 0.99,
+                "operator_task_outcome": "success",
+                "detector_outcome": "success",
+                "terminal_observation_id": integrated["summary"][
+                    "terminal_observation_id"
+                ],
+            },
+            "eligibility": {
+                "formal_training_replay_eligible": True,
+                "formal_replay": True,
+                "real_online_r": True,
+                "replay_membership": "R_online",
+            },
+            "commit": {
+                "source_episode_technical_seal": "complete",
+                "episode_sealed": True,
+                "policy_execution_smoke_bridge": "PASS",
+                "learner_started": False,
+                "actor_updates": 0,
+                "critic_updates": 0,
+                "optimizer_updates": 0,
+                "checkpoint_updates": 0,
+                "policy_revision_publications": 0,
+            },
+        }
+        stable = {
+            "schema_version": SCHEMA_VERSION,
+            "episode_id": episode_id,
+            "source_ack_id": source["ack_id"],
+            "sequence": sequence,
+            "current_observation_id": source["current_observation_id"],
+            "next_observation_id": source["next_observation_id"],
+            "policy_revision": source["policy_revision"],
+            "generation": generation,
+        }
+        payload["identity"]["transition_uid"] = _sha256_bytes(
+            _canonical_bytes(stable)
+        )
+        payload["integrity"] = {
+            "canonical_payload_sha256": _sha256_bytes(_canonical_bytes(payload))
+        }
+        return payload
+
+    def admit_policy_execution_smoke(
+        self,
+        episode_dir: Path,
+        *,
+        operator_task_outcome: str,
+    ) -> FormalOnlineRAdmissionReport:
+        """Admit an already bridge-valid smoke episode into durable formal R."""
+
+        episode_dir = Path(episode_dir)
+        start = _read_json(episode_dir / "episode_start.json")
+        episode_id = self._episode_id(episode_dir, start)
+        episode_key = episode_id.replace("/", "__")
+        result = _read_json(episode_dir / "episode_result.json")
+        streams = self._load_streams(episode_dir)
+        self._validate_seal(result, streams)
+        integrated = self._load_integrated_capture(
+            episode_dir=episode_dir,
+            native_result=result,
+            streams=streams,
+            operator_task_outcome=operator_task_outcome,
+        )
+        if (
+            not isinstance(integrated, Mapping)
+            or integrated.get("classification")
+            != POLICY_EXECUTION_SMOKE_CLASSIFICATION
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_POLICY_EXECUTION_SMOKE_PASS_REQUIRED"
+            )
+        summary = integrated["summary"]
+        if (
+            summary.get("technical_seal") != "complete"
+            or summary.get("operator_task_outcome") != "success"
+            or summary.get("detector_outcome") != "success"
+            or summary.get("executed_action_source") != "policy"
+            or summary.get("policy_execution") is not True
+            or summary.get("formal_replay") is not False
+            or summary.get("real_online_r") is not False
+            or summary.get("training_replay_eligible") is not False
+            or summary.get("policy_lineage_complete") is not True
+            or int(summary.get("human_override_executed_count", -1)) != 0
+            or int(summary.get("model_update_count", -1)) != 0
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_POLICY_EXECUTION_SMOKE_PASS_REQUIRED"
+            )
+
+        source_transitions = sorted(
+            integrated["transitions"],
+            key=lambda item: int(item.get("receive_monotonic_ns", 0)),
+        )
+        first_materialized_ns = int(integrated["prepared"].tuple_host_ns[0])
+        replay_sources: list[Mapping[str, Any]] = []
+        observation_warmup_excluded_count = 0
+        for source in source_transitions:
+            current = integrated["observations"].get(
+                str(source.get("current_observation_id", ""))
+            )
+            next_observation = integrated["observations"].get(
+                str(source.get("next_observation_id", ""))
+            )
+            if not isinstance(current, Mapping) or not isinstance(
+                next_observation, Mapping
+            ):
+                raise ProductionBridgeError(
+                    "BRIDGE_FORMAL_R_POLICY_LINEAGE_MISSING"
+                )
+            if int(current.get("t_ref_ns", 0)) < first_materialized_ns:
+                observation_warmup_excluded_count += 1
+                continue
+            replay_sources.append(source)
+        if not replay_sources:
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_NO_CAUSAL_CALIBRATED_TRANSITIONS"
+            )
+        terminal_id = str(summary["terminal_observation_id"])
+        terminal_indices = [
+            index
+            for index, item in enumerate(replay_sources)
+            if item.get("next_observation_id") == terminal_id
+        ]
+        if terminal_indices != [len(replay_sources) - 1]:
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_TERMINAL_BOUNDARY_INVALID"
+            )
+        task = str(result.get("task", start.get("task", "")))
+        transitions = [
+            self._formal_online_r_transition(
+                episode_dir=episode_dir,
+                episode_id=episode_id,
+                task=task,
+                integrated=integrated,
+                source=source,
+                terminal=index == len(replay_sources) - 1,
+            )
+            for index, source in enumerate(replay_sources)
+        ]
+        uids = [item["identity"]["transition_uid"] for item in transitions]
+        if len(set(uids)) != len(transitions):
+            raise ProductionBridgeError("BRIDGE_FORMAL_R_UID_DUPLICATE")
+        invalidated_replay_count = sum(
+            item["policy_lineage"]["proposal"].get("invalidated_by_takeover")
+            is True
+            for item in transitions
+        )
+        if invalidated_replay_count:
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_INVALIDATED_PROPOSAL_SELECTED"
+            )
+
+        admission_relative = f"admissions/{episode_key}.json"
+        admission_record = {
+            "kind": "formal_online_r_admission",
+            "episode_id": episode_id,
+            "source_episode": str(episode_dir.resolve()),
+            "source_episode_semantics": {
+                "formal_replay": False,
+                "real_online_r": False,
+            },
+            "admitted_replay_semantics": {
+                "formal_replay": True,
+                "real_online_r": True,
+                "membership": "R_online",
+            },
+            "policy_execution_smoke_bridge": "PASS",
+            "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
+            "episode_sealed": True,
+            "operator_task_outcome": "success",
+            "detector_outcome": "success",
+            "executed_action_source": "policy",
+            "initial_gripper_lease": integrated[
+                "initial_gripper_lease"
+            ].to_dict(),
+            "accepted_unique_r_transition_count": len(transitions),
+            "human_override_count": int(summary["human_override_count"]),
+            "human_override_replay_count": 0,
+            "invalidated_proposal_replay_count": 0,
+            "observation_warmup_excluded_count": (
+                observation_warmup_excluded_count
+            ),
+            "transitions": [
+                {
+                    "transition_uid": item["identity"]["transition_uid"],
+                    "canonical_payload_sha256": item["integrity"][
+                        "canonical_payload_sha256"
+                    ],
+                    "source_ack_id": item["identity"]["source_ack_id"],
+                }
+                for item in transitions
+            ],
+            "model_updates": {
+                "actor": 0,
+                "critic": 0,
+                "optimizer": 0,
+                "checkpoint": 0,
+                "policy_revision_publication": 0,
+            },
+        }
+        admission_written = self._immutable_write(
+            self.state_root / admission_relative, admission_record
+        )
+
+        wal_written = outbox_written = replay_written = idempotent = 0
+        for transition in transitions:
+            uid = transition["identity"]["transition_uid"]
+            digest = transition["integrity"]["canonical_payload_sha256"]
+            wal_relative = f"wal/{uid}.json"
+            outbox_relative = f"outbox/{uid}.json"
+            if self._immutable_write(
+                self.state_root / wal_relative,
+                {
+                    "transition_uid": uid,
+                    "canonical_payload_sha256": digest,
+                    "admission_record": admission_relative,
+                    "episode_sealed": True,
+                    "payload": transition,
+                },
+            ):
+                wal_written += 1
+            if self._immutable_write(
+                self.state_root / outbox_relative,
+                {
+                    "transition_uid": uid,
+                    "canonical_payload_sha256": digest,
+                    "admission_record": admission_relative,
+                    "wal_record": wal_relative,
+                    "episode_sealed": True,
+                    "replay_membership": "R_online",
+                },
+            ):
+                outbox_written += 1
+            if self._immutable_write(
+                self.state_root / "replay" / f"{uid}.json",
+                {
+                    "transition_uid": uid,
+                    "canonical_payload_sha256": digest,
+                    "admission_record": admission_relative,
+                    "outbox_record": outbox_relative,
+                    "episode_sealed": True,
+                    "replay_membership": "R_online",
+                    "payload": transition,
+                },
+            ):
+                replay_written += 1
+            else:
+                idempotent += 1
+
+        episode_manifest = {
+            "kind": "formal_online_r_episode_seal",
+            "episode_id": episode_id,
+            "status": "SEALED_COMMITTED",
+            "admission_record": admission_relative,
+            "replay_membership": "R_online",
+            "accepted_unique_r_transition_count": len(transitions),
+            "transition_uids": uids,
+            "human_override_replay_count": 0,
+            "invalidated_proposal_replay_count": 0,
+            "observation_warmup_excluded_count": (
+                observation_warmup_excluded_count
+            ),
+            "learner_started": False,
+            "actor_updates": 0,
+            "critic_updates": 0,
+            "optimizer_updates": 0,
+            "checkpoint_updates": 0,
+            "policy_revision_publications": 0,
+        }
+        episode_seal_written = self._immutable_write(
+            self.state_root / "episodes" / f"{episode_key}.json",
+            episode_manifest,
+        )
+        total_unique = len(list((self.state_root / "replay").glob("*.json")))
+        return FormalOnlineRAdmissionReport(
+            status="FORMAL_ONLINE_R_ADMITTED",
+            episode_id=episode_id,
+            classification=POLICY_EXECUTION_SMOKE_CLASSIFICATION,
+            policy_execution_smoke_bridge="PASS",
+            accepted_unique_r_transition_count=len(transitions),
+            total_unique_r_transition_count=total_unique,
+            training_starts=TRAINING_STARTS_UNIQUE_R,
+            training_starts_reached=total_unique >= TRAINING_STARTS_UNIQUE_R,
+            human_override_count=int(summary["human_override_count"]),
+            human_override_replay_count=0,
+            invalidated_proposal_replay_count=0,
+            observation_warmup_excluded_count=(
+                observation_warmup_excluded_count
+            ),
+            wal_written_count=wal_written,
+            outbox_written_count=outbox_written,
+            replay_written_count=replay_written,
+            idempotent_transition_count=idempotent,
+            admission_record_written=admission_written,
+            episode_seal_written=episode_seal_written,
+        )
 
     def process_episode(
         self,

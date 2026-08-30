@@ -193,6 +193,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--state-root", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
+        "--admit-formal-online-r",
+        action="store_true",
+        help="Admit one bridge-PASS policy-execution smoke episode into formal R.",
+    )
+    parser.add_argument(
         "--operator-task-outcome",
         choices=("success", "failure"),
         help="Required operator semantic label for an integrated capture episode.",
@@ -217,11 +222,13 @@ def main(argv: list[str] | None = None) -> int:
 
     config, raw = load_bridge_config(args.config)
     episode = args.episode or Path(raw["recorded_offline_fixture"]["episode_dir"])
+    if args.dry_run and args.admit_formal_online_r:
+        raise SystemExit("--dry-run and --admit-formal-online-r are mutually exclusive")
     if not args.dry_run and args.state_root is None:
         raise SystemExit("--state-root is required unless --dry-run is used")
     state_root = args.state_root or Path("/tmp/forcesmolvla_stage3_bridge_dry_run")
     policy_execution_smoke = (
-        args.dry_run
+        (args.dry_run or args.admit_formal_online_r)
         and (
             episode.parent.parent
             / "integrated_capture"
@@ -229,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
             / "streams/policy_execute_episode_seal.json"
         ).is_file()
     )
-    report = Stage3ProductionBridge(
+    bridge = Stage3ProductionBridge(
         config=config,
         state_root=state_root,
         episode_materializer=(
@@ -237,13 +244,29 @@ def main(argv: list[str] | None = None) -> int:
             if policy_execution_smoke
             else frozen_episode_materializer(OneShotFrozenG1Detector())
         ),
-    ).process_episode(
-        episode,
-        dry_run=args.dry_run,
-        operator_task_outcome=args.operator_task_outcome,
     )
+    if args.admit_formal_online_r:
+        if args.operator_task_outcome != "success":
+            raise SystemExit(
+                "--operator-task-outcome success is required for formal online-R admission"
+            )
+        report = bridge.admit_policy_execution_smoke(
+            episode,
+            operator_task_outcome=args.operator_task_outcome,
+        )
+    else:
+        report = bridge.process_episode(
+            episode,
+            dry_run=args.dry_run,
+            operator_task_outcome=args.operator_task_outcome,
+        )
     print(json.dumps(report.to_dict(), sort_keys=True, indent=2))
-    return 0 if report.status in {"DRY_RUN_READY", "SEALED_COMMITTED", "ACTIVE_STAGED"} else 2
+    return 0 if report.status in {
+        "DRY_RUN_READY",
+        "SEALED_COMMITTED",
+        "ACTIVE_STAGED",
+        "FORMAL_ONLINE_R_ADMITTED",
+    } else 2
 
 
 if __name__ == "__main__":

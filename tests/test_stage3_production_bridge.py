@@ -1195,6 +1195,183 @@ def test_integrated_policy_execution_smoke_is_read_only_and_not_shadow(
     assert not state.exists()
 
 
+def _admission_prepared(episode: Path) -> PreparedEpisode:
+    prepared = _fake_materialization(episode).prepared
+    prepared.tuple_host_ns[:] -= 20_000_000
+    return prepared
+
+
+def test_formal_online_r_admission_materializes_only_executed_policy_transitions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+    stream_root = (
+        episode.parent.parent / "integrated_capture" / episode.name / "streams"
+    )
+    transition_path = stream_root / "policy_execute_transition.jsonl"
+    seal_path = stream_root / "policy_execute_episode_seal.json"
+    original_transition_bytes = transition_path.read_bytes()
+    original_seal_bytes = seal_path.read_bytes()
+    state = tmp_path / "formal-r"
+
+    report = _bridge(state).admit_policy_execution_smoke(
+        episode,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "FORMAL_ONLINE_R_ADMITTED"
+    assert report.policy_execution_smoke_bridge == "PASS"
+    assert report.accepted_unique_r_transition_count == 2
+    assert report.total_unique_r_transition_count == 2
+    assert report.training_starts == 100
+    assert report.training_starts_reached is False
+    assert report.human_override_count == 1
+    assert report.human_override_replay_count == 0
+    assert report.invalidated_proposal_replay_count == 0
+    assert report.observation_warmup_excluded_count == 0
+    assert report.wal_written_count == 2
+    assert report.outbox_written_count == 2
+    assert report.replay_written_count == 2
+    assert report.actor_update_count == 0
+    assert report.critic_update_count == 0
+    assert report.optimizer_update_count == 0
+    assert report.checkpoint_update_count == 0
+    assert len(list((state / "wal").glob("*.json"))) == 2
+    assert len(list((state / "outbox").glob("*.json"))) == 2
+    replay_records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((state / "replay").glob("*.json"))
+    ]
+    payloads = sorted(
+        (record["payload"] for record in replay_records),
+        key=lambda item: item["identity"]["decision_id"],
+    )
+    assert [item["identity"]["decision_id"] for item in payloads] == [1, 3]
+    assert all(
+        item["classification"] == "recorded_live_policy_execution_smoke"
+        and item["eligibility"]["formal_replay"] is True
+        and item["eligibility"]["real_online_r"] is True
+        and item["eligibility"]["replay_membership"] == "R_online"
+        and item["action_authority"]["executed_action_source"] == "policy"
+        and item["action_authority"]["full_action7_ack_closure"] is True
+        and item["action_authority"]["pose_ack"]["accepted"] is True
+        and len(item["action_authority"]["accepted_absolute_action7"]) == 7
+        and item["policy_lineage"].keys()
+        >= {"request", "result", "proposal", "chunk", "revision", "generation"}
+        and len(item["observation"]["state7_absolute"]) == 7
+        and len(item["observation"]["wrench6_calibrated_tcp"]) == 6
+        and item["observation"]["camera_external"]["model"] == "D435"
+        and item["observation"]["camera_wrist"]["model"] == "D405"
+        and item["action_authority"]["gripper_terminal_provenance"]
+        for item in payloads
+    )
+    assert [item["outcome"]["reward"] for item in payloads] == [0.0, 1.0]
+    assert [item["outcome"]["terminated"] for item in payloads] == [False, True]
+    assert all(
+        item["policy_lineage"]["proposal"]["invalidated_by_takeover"] is False
+        for item in payloads
+    )
+    admission = json.loads(next((state / "admissions").glob("*.json")).read_text())
+    assert admission["source_episode_semantics"] == {
+        "formal_replay": False,
+        "real_online_r": False,
+    }
+    assert admission["admitted_replay_semantics"] == {
+        "formal_replay": True,
+        "membership": "R_online",
+        "real_online_r": True,
+    }
+    episode_seal = json.loads(next((state / "episodes").glob("*.json")).read_text())
+    assert episode_seal["accepted_unique_r_transition_count"] == 2
+    assert episode_seal["learner_started"] is False
+    assert episode_seal["actor_updates"] == 0
+    assert episode_seal["critic_updates"] == 0
+    assert episode_seal["optimizer_updates"] == 0
+    assert episode_seal["checkpoint_updates"] == 0
+    assert transition_path.read_bytes() == original_transition_bytes
+    assert seal_path.read_bytes() == original_seal_bytes
+
+
+def test_formal_online_r_admission_is_uid_digest_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+    state = tmp_path / "formal-r"
+    bridge = _bridge(state)
+    first = bridge.admit_policy_execution_smoke(
+        episode, operator_task_outcome="success"
+    )
+    before = {
+        path.relative_to(state): path.read_bytes()
+        for path in state.rglob("*.json")
+    }
+
+    second = bridge.admit_policy_execution_smoke(
+        episode, operator_task_outcome="success"
+    )
+
+    assert first.accepted_unique_r_transition_count == 2
+    assert second.accepted_unique_r_transition_count == 2
+    assert second.wal_written_count == 0
+    assert second.outbox_written_count == 0
+    assert second.replay_written_count == 0
+    assert second.idempotent_transition_count == 2
+    assert second.admission_record_written is False
+    assert second.episode_seal_written is False
+    assert before == {
+        path.relative_to(state): path.read_bytes()
+        for path in state.rglob("*.json")
+    }
+
+
+def test_formal_online_r_admission_excludes_pre_warmup_current_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+    state = tmp_path / "formal-r"
+
+    report = _bridge(state).admit_policy_execution_smoke(
+        episode,
+        operator_task_outcome="success",
+    )
+
+    assert report.accepted_unique_r_transition_count == 1
+    assert report.observation_warmup_excluded_count == 1
+    replay = json.loads(next((state / "replay").glob("*.json")).read_text())
+    assert replay["payload"]["identity"]["decision_id"] == 3
+    assert replay["payload"]["outcome"]["terminated"] is True
+
+
+def test_formal_online_r_admission_requires_bridge_pass_without_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+    state = tmp_path / "formal-r"
+
+    with pytest.raises(
+        ProductionBridgeError,
+        match="BRIDGE_POLICY_EXECUTION_OPERATOR_SUCCESS_REQUIRED",
+    ):
+        _bridge(state).admit_policy_execution_smoke(
+            episode,
+            operator_task_outcome="failure",
+        )
+
+    assert not state.exists()
+
+
 def test_policy_execution_generation_mismatch_is_quarantined_without_writes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
