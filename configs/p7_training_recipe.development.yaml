@@ -1,0 +1,128 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "execution_role": "single_pass_gate_with_exact_two_pass_oracle",
+  "long_running_sft_allowed": false,
+  "training_stage": "offline_full_finetune",
+  "variants": ["force_token_moe", "force_token_moe_additive"],
+  "all_existing_parameters_require_grad": true,
+  "p6_prerequisite": {
+    "static_spec": {
+      "path": "configs/p6_dense_param_moe.development.json",
+      "sha256": "b3988b12665d1c9668da27dde3256ae47042996f55cd81384d4f32a5a7e27681"
+    },
+    "source_binding": {
+      "path": "artifacts/development/p6_v4_2_r7_source_binding.json",
+      "sha256": "291983591fce875b04b3632b1c503243b1881c3f92021c18765c494a27a24395"
+    },
+    "resolved_config": {
+      "path": "artifacts/development/p6_v4_2_r7_resolved_config.json",
+      "sha256": "c57ce93f3cf96458427fc96ecc61bf2bb62d6e45bec013c57a9e9fe536185800"
+    },
+    "gate_result": {
+      "path": "artifacts/development/p6_v4_2_r7_gpu_preflight.json",
+      "sha256": "e7adfa8968c9bbf11aee3377e7d54f8645f5166daa13e3ead73ce905de92be7a"
+    },
+    "required_gate_status": "pass",
+    "required_acceptance_status": "development_only",
+    "required_formal_eligible": false
+  },
+  "optimizer": {
+    "type": "AdamW",
+    "lr": 0.0001,
+    "betas": [0.9, 0.95],
+    "eps": 1e-8,
+    "weight_decay": 1e-10,
+    "no_decay": ["bias", "normalization_scale", "embedding", "alpha", "learned_action_slot"],
+    "parameter_partition": "each_trainable_parameter_exactly_once",
+    "grad_clip_norm": 10.0
+  },
+  "reference_single_pass_sft_schedule": {
+    "implementation": "lerobot.optim.CosineDecayWithWarmupSchedulerConfig@30da8e687a6dfc617fcd94afc367ac7071c376ce",
+    "primary_budget_unit": "samples",
+    "target_samples": 80000,
+    "effective_samples_per_update": 4,
+    "derived_optimizer_updates": 20000,
+    "warmup_samples": 4000,
+    "derived_warmup_updates": 1000,
+    "peak_lr": 0.0001,
+    "decay_lr": 0.0000025,
+    "decay_end_samples": 80000,
+    "derived_decay_end_update": 20000
+  },
+  "single_pass_gate_budget": {
+    "primary_budget_unit": "samples",
+    "target_samples": 4,
+    "derived_optimizer_updates": 1
+  },
+  "exact_two_pass_oracle_budget": {
+    "primary_budget_unit": "samples",
+    "target_samples": 16,
+    "derived_optimizer_updates": 1
+  },
+  "single_pass_batching": {
+    "batch_per_gpu": 4,
+    "gradient_accumulation_microbatches": 1,
+    "effective_samples_per_gpu_update": 4
+  },
+  "exact_two_pass_oracle_batching": {
+    "batch_per_gpu": 2,
+    "gradient_accumulation_microbatches": 8,
+    "effective_samples_per_gpu_update": 16
+  },
+  "loss": {
+    "total": "L_flow + 0.01*L_balance + 0.001*L_z",
+    "flow_reduction": "global_valid_feature_token_weighted",
+    "active_training_router_algorithm": "single_pass_batch_local",
+    "acceptance_oracle_router_algorithm": "exact_two_pass_all_microbatches_all_ranks",
+    "balance_weight": 0.01,
+    "z_weight": 0.001,
+    "num_experts": 4,
+    "empty_router_window_auxiliary": 0.0,
+    "ddp_backward_scale": "world_size"
+  },
+  "determinism": {
+    "seeds": [42, 43, 44],
+    "python_rng": true,
+    "numpy_rng": true,
+    "torch_cpu_rng": true,
+    "torch_cuda_all_rng": true,
+    "torch_deterministic_algorithms": true,
+    "cudnn_deterministic": true,
+    "cudnn_benchmark": false,
+    "cublas_workspace_config": ":4096:8",
+    "new_module_dropout": 0.0
+  },
+  "sampler": {
+    "type": "uniform_eligible_chunk_with_replacement",
+    "serializable_state": ["eligible_indices", "seed", "rng_state", "cursor"]
+  },
+  "checkpoint": {
+    "interval_samples": 2000,
+    "selection": "fixed_validation_global_valid_feature_token_weighted_L_flow",
+    "early_stopping": false,
+    "source_binding_and_resolved_config_required": true,
+    "strict_reload": "not_executed_until_P8"
+  },
+  "fixed_validation_fixture_required": [
+    "tuple_list",
+    "masks",
+    "epsilon7_tensor_and_sha256",
+    "time_tensor_and_sha256",
+    "ChunkContext_and_sha256"
+  ],
+  "additive_control": {
+    "only_structural_difference": "Q_add=C; Q_main=S+C",
+    "parameter_state_and_initialization_must_match_at_step_zero": true,
+    "optimizer_data_precision_noise_time_valid_budget_must_match": true
+  },
+  "p7_phase_boundary": {
+    "development_checkpoint_save": "permitted_but_not_created_by_preflight",
+    "checkpoint_strict_reload": "not_accepted_until_P8",
+    "long_development_sft": "blocked_until_P8_exact_resume_and_force_parity",
+    "shadow": "not_implemented_until_P9"
+  },
+  "detached_signature": null,
+  "approval": null
+}

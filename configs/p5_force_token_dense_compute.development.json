@@ -1,0 +1,131 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "variant": "force_token_dense_compute",
+  "training_stage": "offline_full_finetune",
+  "rng": {
+    "seed": 42,
+    "python": 42,
+    "numpy": 42,
+    "torch_cpu": 42,
+    "torch_cuda": 42
+  },
+  "dimensions": {
+    "D_vlm": 960,
+    "D_expert": 720,
+    "D_action_physical": 7,
+    "D_action_padded": 32,
+    "H": 50
+  },
+  "fusion_layout": {
+    "camera1": [0, 64],
+    "camera2": [64, 128],
+    "language": [128, 176],
+    "fusion_selection_indices": [0, 176],
+    "state_token_excluded": true,
+    "force_slot_index": 176,
+    "N_fused_physical": 177,
+    "segment_ids": {
+      "camera1": 0,
+      "camera2": 1,
+      "language": 2,
+      "force": 3
+    }
+  },
+  "force_encoder": {
+    "type": "ForceMLP",
+    "layers": [[6, 960], [960, 960]],
+    "activation": "SiLU",
+    "raw_wrench_layer_norm": false,
+    "initialization": "xavier_uniform_weight_zero_bias"
+  },
+  "fusion": {
+    "num_blocks": 2,
+    "num_heads": 8,
+    "head_dim": 120,
+    "ffn_hidden_dim": 3840,
+    "activation": "GELU",
+    "layer_norm_eps": 1e-05,
+    "dropout": 0.0,
+    "invalid_key_mask_before_softmax": true,
+    "invalid_query_output_zero": true
+  },
+  "context_refiner": {
+    "type": "dense_compute",
+    "shape": [960, 3840, 960],
+    "activation": "GELU",
+    "active_macs_per_valid_token": 7372800,
+    "moe_reference_active_macs_per_valid_token": 7377600,
+    "relative_active_mac_difference": 0.0006506180589834075
+  },
+  "guidance_projection": {
+    "shape": [960, 720],
+    "bias": true,
+    "dtype_region": "fp32_autocast_disabled"
+  },
+  "force_cross_attention": {
+    "type": "single_head_scaled_dot_product",
+    "num_heads": 1,
+    "head_dim": 720,
+    "scale": "1/sqrt(720)",
+    "qkv": "Linear(720,720,bias=True)",
+    "internal_output_projection": false,
+    "invalid_key_mask_value": "-inf_before_softmax",
+    "invalid_query_output_zero": true,
+    "force_slot_always_valid": true,
+    "dtype_region": "fp32_autocast_disabled"
+  },
+  "adapter": {
+    "learned_action_slot": [50, 720],
+    "time_projection": "Linear(1,720,bias=True)",
+    "noisy_action_projection": "Linear(7,720,bias=True)",
+    "W_out": "Linear(720,720,bias=True)",
+    "W_out_is_unique_output_projection": true,
+    "W_out_initialization": "zero_weight_zero_bias",
+    "alpha_initialization": "atanh(1e-3)",
+    "action_output_head_dtype_region": "fp32_autocast_disabled"
+  },
+  "optimizer": {
+    "type": "AdamW",
+    "lr": 0.0001,
+    "betas": [0.9, 0.95],
+    "eps": 1e-08,
+    "weight_decay": 1e-10,
+    "gradient_clip_norm": 10.0,
+    "full_parameter": true,
+    "cpu_fallback": false,
+    "oom_downgrade": false
+  },
+  "optimizer_no_weight_decay": [
+    "bias",
+    "normalization",
+    "embedding",
+    "alpha",
+    "learned_action_slot"
+  ],
+  "p4_prerequisite": {
+    "acceptance_config": {
+      "path": "configs/parity_acceptance.development.json",
+      "sha256": "fefe35a92bcbf22de67c7c7b43e9f97d2658afef41745182b2b8207f750592f4"
+    },
+    "source_binding_sha256": "dd205856db61de6ed5f0b5406a706ddc127ca7a928406a756645cede73f8fec5",
+    "artifacts": {
+      "fp32": {
+        "path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_fp32.json",
+        "sha256": "42dff9b52f3a86a93255784efd597281a230c4bca689fdf32fab107430d29c1d"
+      },
+      "bf16": {
+        "path": "artifacts/development/p4_v4_2_r7_bare_parity_gpu_bf16.json",
+        "sha256": "3681061b9b0974cdd03159d6987433ccd1666df5817685d77efb74b2fb59854f"
+      }
+    },
+    "required_gate": "P4_bare_smolvla_parity",
+    "required_gate_status": "pass",
+    "required_acceptance_status": "development_only",
+    "required_formal_eligible": false
+  },
+  "source_binding_required": true,
+  "detached_signature": null,
+  "approval": null
+}
