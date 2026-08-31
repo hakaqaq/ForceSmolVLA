@@ -11,7 +11,7 @@ import threading
 
 import pytest
 
-from forcesmolvla.rft.stage3.gripper_provenance import (
+from forcesmolvla.rft.online.gripper_authority import (
     FULL_ACTION7_ACK_CLOSURE_PRODUCTION,
     GRIPPER_FEEDBACK_FRESHNESS_BOUND,
     GRIPPER_NOOP_ACK_POLICY,
@@ -26,9 +26,9 @@ from forcesmolvla.rft.stage3.gripper_provenance import (
     GripperProvenanceError,
     GripperProvenanceLedger,
     close_full_action7_authority,
-    pose_authority_from_g7c1_entry,
+    pose_authority_from_accepted_reference,
 )
-from forcesmolvla.rft.stage3.runtime_contract import (
+from forcesmolvla.rft.online.action_runtime import (
     ChunkRequestIdentity,
     ChunkResultIdentity,
     RationalH50SelectionLedger,
@@ -38,7 +38,7 @@ from forcesmolvla.rft.stage3.runtime_contract import (
 
 
 ROOT = Path(__file__).parents[1]
-CONFIG_PATH = ROOT / "configs/stage3_gripper_provenance.v1.development.json"
+CONFIG_PATH = ROOT / "configs/online_replay_gripper_authority.v1.development.json"
 CLOCK = "upper_host_monotonic"
 
 
@@ -585,7 +585,7 @@ def test_g7c1_pose_ack_plus_gripper_authority_closes_cpu_action7_without_lowerin
     )
     with pytest.raises(RuntimeSafetyViolation, match="NOT_ACK_AUTHORITATIVE"):
         entry.to_accepted_ack(clock_domain_id=CLOCK)
-    pose = pose_authority_from_g7c1_entry(
+    pose = pose_authority_from_accepted_reference(
         entry, transition_id="runtime-transition", episode_id="episode-A"
     )
     staged = close_full_action7_authority(
@@ -627,7 +627,7 @@ def test_full_action7_rejects_value_only_or_cross_generation_claims():
         feedback=_feedback(gripper),
     )
     _, entry = _runtime_pose_entry(gripper_goal_id="wrong-origin")
-    pose = pose_authority_from_g7c1_entry(
+    pose = pose_authority_from_accepted_reference(
         entry, transition_id="transition-1", episode_id="episode-A"
     )
     with pytest.raises(GripperProvenanceError, match="FULL_ACTION7_AUTHORITY_INVALID"):
@@ -802,7 +802,7 @@ def audit(event, args):
         raise AssertionError('process side effect: ' + event)
 sys.meta_path.insert(0, BlockRobotImports())
 sys.addaudithook(audit)
-import forcesmolvla.rft.stage3.gripper_provenance
+import forcesmolvla.rft.online.gripper_authority
 import torch
 after = {t.ident for t in threading.enumerate()}
 assert before == after

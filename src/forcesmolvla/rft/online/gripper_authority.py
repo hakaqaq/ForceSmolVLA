@@ -656,7 +656,7 @@ class GripperProvenanceLedger:
         self._generation_boundary(new_generation=new_generation, reason="EPISODE_CHANGE")
 
 
-def pose_authority_from_g7c1_entry(
+def pose_authority_from_accepted_reference(
     entry: Any,
     *,
     transition_id: str,
@@ -679,7 +679,7 @@ def pose_authority_from_g7c1_entry(
         or entry.pose_ack_ns < entry.dispatch_ns
         or len(entry.selected_post_adapter_absolute7) != 7
     ):
-        raise GripperProvenanceError("G7C1_POSE_ACK_NOT_AUTHORITATIVE")
+        raise GripperProvenanceError("POSE_ACK_NOT_AUTHORITATIVE")
     return PoseAcceptedAuthority(
         transition_id=transition_id,
         pose_command_id=entry.pose_command_id,
