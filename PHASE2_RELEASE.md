@@ -72,5 +72,7 @@ checkpoint's retained provenance records its original `NOT_FOR_DEPLOYMENT` and
 `NOT_FOR_POLICY_EVALUATION` status. Its recovery payload has been pruned, so
 exact optimizer-state resume from that boundary is no longer available locally.
 See
-[`docs/phase2_pipeline_retention.md`](docs/phase2_pipeline_retention.md) and
+The current retention and recovery rules are maintained in
+[`docs/forcerft_end_to_end_user_guide.md`](docs/forcerft_end_to_end_user_guide.md#12-数据和-checkpoint-保留策略).
+The historical machine-readable cleanup record remains
 [`phase2_pipeline_retention.v1.json`](artifacts/development/stage2/phase2_pipeline_retention.v1.json).

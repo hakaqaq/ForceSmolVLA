@@ -10,13 +10,29 @@ ForceSmolVLA 是以双相机图像、机器人状态和标定后的 TCP wrench �
 
 1. 原生 recorder 以独立 native-rate streams 保存 D435、D405、state7、wrench、gripper、raw/safe action 与 Pose ACK。
 2. converter 在离线阶段做因果对齐，生成 LeRobot v3 数据集、episode split 和只由 train split 拟合的 frozen normalizer。
-3. ForceSmolVLA SFT 全量更新已有模型参数，得到 Phase-2 Actor parent。
+3. ForceSmolVLA SFT 全量更新已有模型参数，得到 offline SFT Actor parent。
 4. reward classifier 在人工审核的 frame labels 上训练；冻结 detector 再把 frame score 物化成 reward、terminal 和 demonstration transition view。
-5. Twin-Q 使用离线 `D` bootstrap。Stage-3 learner 恢复 Actor、Q1/Q2、target Q1/Q2、两个 optimizer、RNG、sampler 和 sample-credit 状态。
+5. Twin-Q 使用离线 `D` bootstrap。在线 ForceRFT Learner 恢复 Actor、Q1/Q2、target Q1/Q2、两个 optimizer、RNG、sampler 和 sample-credit 状态。
 6. 在线阶段由 active Actor 控制机器人；Learner 只采样 episode 开始前已经 seal、bridge PASS、admission 的历史 `R` 和已绑定 `D`。当前正在采集的 episode 不可采样。
 7. episode 结束后依次执行 production bridge、append-only admission、candidate export/publication、真实 Home witness 和 episode-boundary activation。revision 只在 episode 边界切换。
 
 当前实现的 online joint cycle 保持既有算法：每轮 2 个 Critic TD optimizer step、2 个 target Polyak update、1 个 Actor optimizer step；R/D 为 50:50；FM 只用于 expert/demo；Actor guidance 使用 `min(Q1,Q2)`；Q gradient 只进入 TCP6，gripper 的 Q gradient 为零，但 gripper 仍可从 expert FM 获得梯度；VLM 保持 frozen/eval/no-grad。
+
+### 1.1 从零开始的完整顺序
+
+| 环节 | 输入 | 执行入口 | 主要输出 | 下一步用途 |
+|---|---|---|---|---|
+| 原生真机示教采集 | FR3、双相机、wrench、gripper、SpaceMouse | `$FR3_WS/scripts/record_franka_hilserl_impedance.py` | accepted native episode | LeRobot v3 转换 |
+| 数据转换 | accepted native episodes | `tools/convert_franka_raw_to_lerobot_v3.py` | LeRobot v3、split、normalizer manifests | SFT、reward、offline replay |
+| Actor 全量微调 | LeRobot v3 train split | `tools/train_forcesmolvla_sft.py` | offline SFT Actor checkpoint | Twin-Q/在线训练的 Actor parent |
+| Reward 人工标注 | review bundle、双相机帧 | `tools/reward_classifier/annotate_reward_frames.py` | reviewed frame labels、label inventory | classifier 训练 |
+| Reward classifier | reviewed labels、train/val 图像 | `tools/reward_classifier/train_reward_classifier.py` | frozen detector checkpoint | reward/terminal 物化 |
+| Reward 与离线 replay | LeRobot v3、frozen detector | `tools/materialize_reward_transitions.py`、`tools/materialize_offline_demo_replay.py` | reward/terminal transition view、offline `D` | Twin-Q 与 joint learner |
+| Twin-Q bootstrap | offline `D`、offline SFT Actor | `tools/train_twin_q_critic.py` | Q1/Q2、target Q1/Q2 | Critic warmup/joint update |
+| Frozen-VLM joint update | Actor、Critics、正式 `R`、offline `D` | `tools/train_forcerft_critic_warmup.py`、`tools/train_forcerft_actor_critic.py` | exact-resume checkpoint、candidate Actor | offline validation/publication |
+| 持续在线训练 | active Actor、latest checkpoint、formal replay | `tools/run_forcerft_online_loop.py` | 新 episode、append-only `R`、pending checkpoint/candidate | Home-boundary publication/activation |
+
+每一行成功完成并通过该行的完整性检查后再进入下一行。不要用修改 manifest、伪造 ACK/terminal 或复制其他 episode 图片的方法跨过失败步骤。
 
 ## 2. 环境与硬件
 
@@ -28,6 +44,7 @@ ForceSmolVLA 是以双相机图像、机器人状态和标定后的 TCP wrench �
 export FORCESMOLVLA_ROOT=/path/to/ForceSmolVLA
 export FR3_WS=/path/to/fr3_client_ws
 export MODEL_PYTHON=/path/to/forcesmolvla/bin/python
+export REWARD_PYTHON=/path/to/conrft_reward/bin/python
 export ROBOT_PYTHON="$FR3_WS/.venv/bin/python"
 export RAW_ROOT="$FR3_WS/datasets/task2"
 export LEROBOT_DATASET="$FORCESMOLVLA_ROOT/datasets/task2_lerobotv3"
@@ -38,7 +55,7 @@ export REVISION_REGISTRY="$FORCESMOLVLA_ROOT/artifacts/development/stage3/runtim
 cd "$FORCESMOLVLA_ROOT"
 ```
 
-模型训练、validation、publication 和 activation CLI 使用包含 PyTorch、JAX/Flax（reward classifier）和 `jsonschema` 的模型环境。机器人 Home/recording 使用 FR3 ROS 工作区的 Python。不要用缺少 `jsonschema` 的 robot venv 执行 revision activation。
+Actor/Critic 训练、validation、publication 和 activation 使用包含 PyTorch 与 `jsonschema` 的 `$MODEL_PYTHON`。Reward cache 准备用 `$MODEL_PYTHON`，Reward classifier 的 `train` 子命令使用项目绑定的 JAX/Flax `conrft_reward` 环境 `$REWARD_PYTHON`。机器人 Home/recording 使用 FR3 ROS 工作区的 Python。不要用缺少 `jsonschema` 的 robot venv 执行 revision activation。
 
 机器人终端需要：
 
@@ -117,7 +134,8 @@ accepted episode 至少保存：D435 external RGB、D405 wrist RGB、measured TC
   --output-root "$LEROBOT_DATASET" \
   --repo-id local/task2_lerobotv3 \
   --project-root "$FORCESMOLVLA_ROOT" \
-  --runtime-spec configs/converter_runtime_spec.task2.development.json
+  --runtime-spec configs/converter_runtime_spec.task2.development.json \
+  --development-only
 ```
 
 在正式写出前可只检查输入：
@@ -131,6 +149,8 @@ accepted episode 至少保存：D435 external RGB、D405 wrist RGB、measured TC
   --runtime-spec configs/converter_runtime_spec.task2.development.json \
   --preflight-only
 ```
+
+`--development-only` 明确把当前开发数据写成不可冒充 formal dataset 的输出；只有将来具备独立批准的正式输入契约时才可省略。正式转换要求新的空输出目录，不覆盖已有 LeRobot 数据集。
 
 ### 4.2 数据契约
 
@@ -150,13 +170,13 @@ accepted episode 至少保存：D435 external RGB、D405 wrist RGB、measured TC
 "$MODEL_PYTHON" -m pytest -q tests/test_raw_to_lerobot_v3.py tests/test_lerobot_v3_smoke.py tests/test_split_normalizer.py
 ```
 
-`normalizer_manifest.json` 是冻结输入。训练/推理只能应用一次，不得在 Stage-2/Stage-3 重拟合或重复 normalize。
+`normalizer_manifest.json` 是冻结输入。offline SFT、Critic、Actor joint training 和 policy inference 都只能应用一次，不得在后续环节重拟合或重复 normalize。
 
 ## 5. ForceSmolVLA 全量微调
 
 ### 5.1 配置与训练
 
-当前 SFT 入口是 `tools/train_forcesmolvla_sft.py`，task2 实验配置是 `configs/train/task2.json`，训练 recipe 是 `configs/offline_sft_training_recipe.development.yaml`。
+当前 SFT 入口是 `tools/train_forcesmolvla_sft.py`，task2 实验配置是 `configs/train/task2.json`。完整训练契约来自 `configs/offline_sft_training_recipe.development.yaml`，其中绑定当前 canonical recipe `configs/forcesmolvla_sft_recipe.development.yaml`。
 
 ```bash
 export PYTHONHASHSEED=42
@@ -177,15 +197,28 @@ export TRANSFORMERS_OFFLINE=1
   --resume /absolute/path/to/sft/checkpoint
 ```
 
-当前 recipe 的主要语义是 40,000 training samples、batch/GPU=4、AdamW、bf16 autocast、force adapter/action head fp32，以及 `L_flow + 0.01*L_balance + 0.001*L_z`。offline full-finetune 阶段要求所有已有模型参数 trainable；VLM、force branch、router/action expert 一起更新。不要把 Stage-3 的 frozen-VLM 规则错误套用到这一步。
+当前 recipe 的主要语义是 40,000 training samples、batch/GPU=4、AdamW、bf16 autocast、force adapter/action head fp32，以及 `L_flow + 0.01*L_balance + 0.001*L_z`。offline full-finetune 要求所有已有模型参数 trainable；VLM、force branch、router/action expert 一起更新。不要把在线 ForceRFT 的 frozen-VLM 规则错误套用到这一步。
 
-checkpoint 包含模型、optimizer、scheduler/RNG/dataloader 恢复契约及 runtime manifests。最终 Phase-2 Actor parent 由 `configs/stage3_parent_binding.v1.development.json` 动态绑定；不要按历史 cycle 名称猜测。
+checkpoint 包含模型、optimizer、scheduler/RNG/dataloader 恢复契约及 runtime manifests。最终 offline SFT Actor parent 由 `configs/stage3_parent_binding.v1.development.json` 动态绑定；不要按历史 cycle 名称猜测。
 
 ## 6. Reward 标注
 
 ### 6.1 人工 frame labels
 
-当前 reviewed labels 位于 `labels/task2_reward_frame_labels.v2.reviewed.json`。标签 ingest/validation：
+当前 reviewed labels 位于 `labels/task2_reward_frame_labels.v2.reviewed.json`。使用现有 review bundle 逐 episode 查看同一 parquet row 的 D435 third-person 与 D405 wrist 帧，填写 confident completion boundary、ordinary negative、hard negative、ambiguous、reviewer 与 confidence。这个过程必须由人工完成；CLI 只验证和 ingest，不替代人工判断。
+
+任务的唯一语义是：抓起紫色圆环，使中心孔与红色 peg 对齐，将圆环套到 peg 上，松开夹爪，并让圆环稳定支撑在 peg/base assembly 上。只有以下四项同时成立时才标为 positive：
+
+1. 红色 peg 明确穿过紫色圆环中心孔；
+2. 圆环已脱离夹爪，不再由夹爪支撑；
+3. 圆环稳定落在 peg/base assembly 上；
+4. 后续可观察帧中没有滑落、弹出或重新抓取。
+
+`first_confident_complete_frame` 是双相机首次同时支持以上四项的帧。圆环仍在桌面、尚未抓取或明显远离 peg 属于 ordinary negative；已经到 peg 上方、近似同轴、接触或部分套入，但仍被夹爪支撑或尚未稳定，属于 hard negative；遮挡、双相机结论不一致或无法确认稳定性的帧必须标为 ambiguous/ignore，不能进入 classifier 训练、阈值选择或指标统计。不得根据 `saved=true`、episode 末帧、文件名、episode success 或示例视频时间推断完成帧。
+
+每条 episode 至少记录 `last_confident_incomplete_frame`、`first_confident_complete_frame`、hard/ordinary/ambiguous 闭区间、`completion_visible`、`completion_stable`、`positive_available`、reviewer、时间、confidence 与 notes。成功后立即结束、没有足够后续帧验证稳定性时，必须令 `positive_available=false`，不能强制把末帧标为 positive。episode split 必须沿用转换时的冻结 split；同一 episode 不得跨 split，test 不参与训练或阈值选择。
+
+标签 ingest/validation：
 
 ```bash
 "$MODEL_PYTHON" tools/reward_classifier/annotate_reward_frames.py \
@@ -194,7 +227,7 @@ checkpoint 包含模型、optimizer、scheduler/RNG/dataloader 恢复契约及 r
   --validate-only
 ```
 
-标注协议见 `docs/task2_reward_labeling_protocol.v2.md`。ambiguous frame 完全排除；ordinary negative 和 hard negative 都映射为 0，positive 映射为 1。
+ambiguous frame 完全排除；ordinary negative 和 hard negative 都映射为 0，positive 映射为 1。验证会拒绝 episode 泄漏、重叠区间、未标帧、缺失 reviewer 和不连续 positive 区间。
 
 ### 6.2 reward/terminal 物化
 
@@ -223,7 +256,7 @@ export REWARD_RUN=/absolute/path/to/reward_classifier_run
   --config configs/stage2_r0_reward_classifier_training.development.json \
   prepare-cache --cache-dir "$REWARD_CACHE"
 
-"$MODEL_PYTHON" tools/reward_classifier/train_reward_classifier.py \
+"$REWARD_PYTHON" tools/reward_classifier/train_reward_classifier.py \
   --config configs/stage2_r0_reward_classifier_training.development.json \
   train --cache-dir "$REWARD_CACHE" --output-dir "$REWARD_RUN"
 ```
@@ -232,9 +265,13 @@ export REWARD_RUN=/absolute/path/to/reward_classifier_run
 
 当前 production bridge 使用的 development detector checkpoint 路径由 `configs/reward_transition_materialization.development.json` 的 `frozen_inputs.classifier_checkpoint.path` 读取。不要手工替换 checkpoint 或只改文件名。
 
+当前 reward materialization contract 使用 probability threshold `0.83`，并要求连续 5 个 30 Hz positive frame 才触发 detector terminal。单帧超过阈值不等于 terminal；阈值、连续帧数、checkpoint 与 split 都必须以该配置为准。历史校准或一次性测试报告不再作为运行入口。
+
 ## 8. Twin-Q Critic
 
 Twin-Q 架构在 `src/forcesmolvla/rft/critic.py`，ActionContract-v2 adapter 在 `src/forcesmolvla/rft/critic_action_adapter_v2.py`。Critic 输入包含双相机、state7、wrench6、确定性的 256D canonical task feature 和 K=3 的 action7。
+
+Actor 输出 H=50 的 absolute action7；执行端以 10 Hz dispatch，Critic 使用连续 3 个已执行 action7 构造 macro-action。TCP6 与 gripper 都必须经过同一个 ActionContract-v2 adapter，state7、wrench6 和 action normalizer 各应用且只应用一次。padding/valid mask、terminal mask、bootstrap mask 和 loss mask 不得混用；terminal transition 的 TD target 不调用 next Actor 或 target Q。
 
 离线 demonstration replay 由冻结 detector view 构造：
 
@@ -260,9 +297,9 @@ Twin-Q 架构在 `src/forcesmolvla/rft/critic.py`，ActionContract-v2 adapter �
 
 ### 9.1 Parent binding
 
-Stage-3 初始 parent 必须从 `configs/stage3_parent_binding.v1.development.json` 读取：
+在线 Actor/Critic 初始化 parent 必须从 `configs/stage3_parent_binding.v1.development.json` 读取：
 
-- Actor：已批准的 Phase-2 Actor export；
+- Actor：已批准的 offline SFT Actor export；
 - Q1/Q2 与 target Q1/Q2：已绑定 Twin-Q bootstrap；
 - frozen state7/wrench6/action normalizer；
 - ActionContract-v2；
@@ -290,6 +327,8 @@ warmup 创建 fresh Critic optimizer，不创建 Actor optimizer；Actor frozen/
 ```
 
 exact resume 必须恢复 Actor、Q1/Q2、targets、Actor/Critic optimizer、RNG、sampler 和 sample credits；Critic optimizer 不可重建，Actor/Critic optimizer 参数不可重叠，frozen VLM 与 state-prefix projection 不进入 optimizer。
+
+联合训练保持固定语义：每个 cycle 为 2 个 pure Twin-Q TD step、每步后 1 次 target Polyak update，以及 1 个 Actor step；R/D 为 50:50；FM loss 只作用于 expert/demo；Actor Q guidance 使用 `min(Q1,Q2)`；Q gradient 只进入 TCP6，gripper Q gradient 必须精确为零，但 gripper 仍可从 expert FM 获得梯度。VLM 始终 eval/no-grad。不得在该路径引入 Cal-QL、CQL、random candidate、MC return 或 online self-imitation FM。
 
 ### 9.4 验证与导出
 
@@ -472,7 +511,7 @@ operator_task_outcome [success/failure]:
 - active、immediate previous rollback、pending candidate package；
 - latest exact-resume learner checkpoint；
 - 至少一个 previous known-good exact-resume checkpoint；
-- Stage-3 bootstrap 的 Phase-2 Actor、Q1/Q2、target Q1/Q2；
+- online bootstrap 所需的 offline SFT Actor、Q1/Q2、target Q1/Q2；
 - frozen normalizer、ActionContract-v2、task feature、calibration；
 - revision registry、active/previous deployment profile/binding；
 - current continuous-loop capture root；
@@ -480,7 +519,7 @@ operator_task_outcome [success/failure]:
 
 正式 `R` 的 observation image 不是自包含复制：sampler 会根据 admission source episode 和 blob 路径重新打开原始 external/wrist JPEG。因此 raw episode 名字即使包含 smoke/validation/旧 cycle，只要被 replay 引用就绝对不能删除。移动目录也会破坏绝对路径引用。
 
-checkpoint 的 sampler/replay metadata、source checkpoint 与 credits 构成 exact-resume 链。删除前必须同时检查 registry records、candidate package、deployment profile、checkpoint metadata 和后继 checkpoint 的 source reference。
+每个 exact-resume checkpoint 自身保存模型、Critics/targets、optimizers、RNG、sampler、replay cursor 和 credits；`source_checkpoint` 还承担 provenance。旧 checkpoint 即使不是 loader 的运行时依赖，也可能仍被 previous package、deployment profile 或后继 metadata 以绝对路径引用。删除前必须同时检查 registry records、candidate package、deployment profile/binding、checkpoint metadata 和后继 checkpoint 的 source reference。
 
 ### 12.2 可归档或删除候选
 
