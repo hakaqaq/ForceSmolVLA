@@ -12,10 +12,13 @@ from forcesmolvla.rft.online.actor_learner_runtime import (
     H50ActionCache,
     InferenceRequest,
     InferencePriorityCoordinator,
+    OnlineTrainingPolicy,
     PinnedEpisode,
     TakeoverWindow,
     run_concurrent_window,
     run_timed_actor,
+    online_checkpoint_path,
+    retain_latest_online_checkpoints,
 )
 
 
@@ -46,6 +49,22 @@ class FakeRegistry:
         assert self.episode
         self.episode = False
         self.pinned = None
+
+
+def test_fixed_online_training_schedule_and_checkpoint_retention(tmp_path) -> None:
+    policy = OnlineTrainingPolicy()
+    assert not policy.training_ready(99)
+    assert policy.training_ready(100)
+    assert policy.broadcast_due(5) and not policy.broadcast_due(6)
+    assert policy.checkpoint_due(50) and not policy.checkpoint_due(55)
+    for cycle in (50, 100, 107):
+        online_checkpoint_path(tmp_path, cycle).mkdir()
+    retained = retain_latest_online_checkpoints(tmp_path)
+    assert [path.name for path in retained] == [
+        "online_actor_critic_cycle_000100",
+        "online_actor_critic_cycle_000107",
+    ]
+    assert not online_checkpoint_path(tmp_path, 50).exists()
 
 
 def test_episode_revision_is_pinned_for_whole_window() -> None:

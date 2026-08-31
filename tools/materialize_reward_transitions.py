@@ -31,7 +31,7 @@ MANUAL_REWARD_TRANSITION_ROOT = (
 MANUAL_REWARD_TRANSITION_DISPOSITION = (
     MANUAL_REWARD_TRANSITION_ROOT / "g1_training_disposition.v1.json"
 )
-CHECKPOINT_PATH = ROOT / "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack"
+CHECKPOINT_PATH = ROOT / "outputs/task2/reward_classifier/checkpoints/best/best_checkpoint.msgpack"
 SAFE_ASSET_PATH = ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
 TRAINING_SOURCE = ROOT / "tools/reward_classifier/train_reward_classifier.py"
 ADAPTER_SOURCE = ROOT / "tools/reward_classifier/conrft_lerobot_v3_adapter.py"

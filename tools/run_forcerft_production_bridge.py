@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "configs/online_replay_production_bridge.v1.development.yaml"
 REWARD_DETECTOR_CHECKPOINT = (
     ROOT
-    / "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack"
+    / "outputs/task2/reward_classifier/checkpoints/best/best_checkpoint.msgpack"
 )
 REWARD_CLASSIFIER_TOOL = ROOT / "tools/reward_classifier/train_reward_classifier.py"
 CONRFT_RUNTIME_ROOT = Path("/home/rlc123/conrft/serl_launcher")

@@ -60,11 +60,8 @@ def _async_runtime_identity(
         or not metadata["active_actor_revision"]
         or not isinstance(metadata.get("learner_resume_checkpoint"), str)
         or not metadata["learner_resume_checkpoint"]
-        or not isinstance(metadata.get("pending_candidate_id"), str)
-        or not metadata["pending_candidate_id"]
-        or metadata.get("pending_candidate_published") is not False
-        or metadata.get("pending_candidate_activated") is not False
-        or metadata.get("learner_started") is not False
+        or metadata.get("server_persistent") is not True
+        or metadata.get("current_episode_sampling") is not False
     ):
         raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_RUNTIME_MISMATCH")
     return {
@@ -81,29 +78,20 @@ def _complete_async_runtime(
     deadline: float,
 ) -> dict[str, Any]:
     client._request("POST", "/runtime/episode-end", dict(identity))
-    while True:
-        status = client._request("GET", "/runtime/status")
-        state = status.get("learner_state")
-        if state == "failed":
-            raise IntegratedCaptureError(
-                f"ASYNC_POLICY_LEARNER_FAILED:{status.get('learner_error')}"
-            )
-        if state == "complete":
-            break
-        if time.monotonic() >= deadline:
-            raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_COMPLETION_TIMEOUT")
-        time.sleep(0.05)
+    status = client._request("GET", "/runtime/status")
+    state = status.get("learner_state")
+    if state == "failed":
+        raise IntegratedCaptureError(
+            f"ASYNC_POLICY_LEARNER_FAILED:{status.get('learner_error')}"
+        )
     if (
-        status.get("learner_started") is not True
-        or int(status.get("learner_critic_steps", -1)) != 2
-        or int(status.get("learner_actor_steps", -1)) != 1
-        or int(status.get("learner_polyak_steps", -1)) != 2
+        state not in {"waiting_for_replay", "ready", "running", "complete"}
+        or int(status.get("learner_critic_steps", -1)) < 0
+        or int(status.get("learner_actor_steps", -1)) < 0
+        or int(status.get("learner_polyak_steps", -1)) < 0
         or status.get("current_episode_sampled") is not False
-        or status.get("pending_candidate_published") is not False
-        or status.get("pending_candidate_activated") is not False
         or int(status.get("nonfinite_count", -1)) != 0
         or int(status.get("oom_count", -1)) != 0
-        or status.get("actor_and_learner_concurrently_alive") is not True
     ):
         raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_COMPLETION_INVALID")
     return status
@@ -2293,14 +2281,12 @@ class IntegratedCaptureBackend:
                     ),
                     "actor_updates": int(async_status["learner_actor_steps"]),
                     "critic_updates": int(async_status["learner_critic_steps"]),
-                    "pending_checkpoint_path": async_status[
-                        "pending_checkpoint_path"
-                    ],
-                    "pending_candidate_id": async_status[
-                        "pending_candidate_id"
-                    ],
-                    "pending_candidate_published": False,
-                    "pending_candidate_activated": False,
+                    "online_checkpoint_path": async_status.get(
+                        "latest_checkpoint_path"
+                    ),
+                    "actor_parameter_broadcast_count": int(
+                        async_status.get("actor_parameter_broadcast_count", 0)
+                    ),
                     "current_episode_sampled_by_learner": False,
                 }
             )

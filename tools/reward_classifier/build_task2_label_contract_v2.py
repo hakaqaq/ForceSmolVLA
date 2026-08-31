@@ -78,7 +78,7 @@ def main() -> None:
     dataset_root = ROOT / "datasets/task2_lerobotv3"
     r5_model = (
         ROOT
-        / "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/forcesmolvla_sft_step_010000/model.safetensors"
+        / "outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000/model.safetensors"
     )
 
     if v2_template.exists() or audit_path.exists():

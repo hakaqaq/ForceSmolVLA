@@ -19,8 +19,10 @@ import torch
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = ROOT / "configs/twin_q_critic_warmup.development.yaml"
 WORKER_MODULE = "forcesmolvla.rft.critic_training"
-OUTPUT = ROOT / "artifacts/development/offline/twin_q_critic_warmup_step_000256_run"
-CHECKPOINT = ROOT / "artifacts/development/offline/offline_twin_q_critic_warmup_step_000256"
+CHECKPOINT = (
+    ROOT
+    / "outputs/task2/offline/checkpoints/offline_twin_q_critic_warmup_step_000256"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -264,12 +266,26 @@ def production_main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true")
+    parser.add_argument("--task-id", default="task2")
+    parser.add_argument("--output-root", type=Path)
     args = parser.parse_args()
+    from forcesmolvla.training_runtime import resolve_task_output_root
+
+    output_root = resolve_task_output_root(
+        ROOT, task_id=args.task_id, output_root=args.output_root
+    )
+    checkpoint = (
+        output_root
+        / "offline/checkpoints/offline_twin_q_critic_warmup_step_000256"
+    )
     require(args.run, "pass --run for authorized Twin-Q warmup")
     require(not torch.cuda.is_initialized(), "OFFLINE_TWIN_Q_COORDINATOR_MUST_NOT_CREATE_CUDA_CONTEXT")
     require(CONFIG.is_file(), "OFFLINE_TWIN_Q_CONFIG_MISSING")
-    for target in (OUTPUT, CHECKPOINT):
-        require(not target.exists(), f"OFFLINE_TWIN_Q_APPEND_ONLY_TARGET_EXISTS:{target}")
+    require(
+        not checkpoint.exists(),
+        f"OFFLINE_TWIN_Q_APPEND_ONLY_TARGET_EXISTS:{checkpoint}",
+    )
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
 
     from forcesmolvla.rft.critic_warmup_checkpoint import (
         CRITIC_WARMUP_COUNTERS,
@@ -277,7 +293,9 @@ def production_main() -> None:
     )
 
     before = protected_snapshot()
-    work = Path(tempfile.mkdtemp(prefix=".offline_twin_q_work.", dir=OUTPUT.parent))
+    work = Path(
+        tempfile.mkdtemp(prefix=".offline_twin_q_work.", dir=checkpoint.parent)
+    )
     protected_path = work / "protected_before.json"
     atomic_json(protected_path, before)
     temp_checkpoint = work / "offline_twin_q_critic_warmup_step_000256"
@@ -342,10 +360,13 @@ def production_main() -> None:
             "OFFLINE_TWIN_Q_FRESH_LOAD_INVALID",
         )
         validate_critic_warmup_checkpoint(temp_checkpoint)
-        os.replace(temp_checkpoint, CHECKPOINT)
-        os.replace(work, OUTPUT)
+        os.replace(temp_checkpoint, checkpoint)
+        for path in work.iterdir():
+            if path.is_file():
+                path.unlink()
+        work.rmdir()
     except BaseException:
-        failure = OUTPUT.parent / f"offline_twin_q_failed_{os.getpid()}"
+        failure = checkpoint.parent / f"offline_twin_q_failed_{os.getpid()}"
         if work.exists():
             os.replace(work, failure)
         raise
@@ -358,7 +379,7 @@ def production_main() -> None:
                 "status": "pass",
                 "critic_optimizer_updates": 256,
                 "actor_optimizer_updates": 0,
-                "checkpoint": str(CHECKPOINT),
+                "checkpoint": str(checkpoint),
                 "strict_load": True,
             },
             sort_keys=True,

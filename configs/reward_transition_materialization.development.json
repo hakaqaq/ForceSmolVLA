@@ -70,7 +70,7 @@
       "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"
     },
     "classifier_checkpoint": {
-      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+      "path": "outputs/task2/reward_classifier/checkpoints/best/best_checkpoint.msgpack",
       "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
     },
     "classifier_training_report": {
@@ -89,7 +89,7 @@
       "path": "artifacts/development/stage2/reward_classifier/r0_one_shot_test_evaluation.v1.json",
       "sha256": "ec02e805c84a80778be9e16525d751da058a28bd1ebde85f394b33875b6a3988"
     },
-    "r5_checkpoint": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/forcesmolvla_sft_step_010000"
+    "r5_checkpoint": "outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000"
   },
   "required_runtime_audit": {
     "manual_label_files_opened": 0,

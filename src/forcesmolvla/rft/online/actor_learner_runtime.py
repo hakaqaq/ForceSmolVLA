@@ -6,8 +6,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 import math
+import os
 from pathlib import Path
 import random
+import shutil
 import threading
 import time
 from typing import Any, Callable, Iterable, Iterator, Sequence
@@ -18,6 +20,74 @@ import torch
 
 class AsyncRuntimeError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class OnlineTrainingPolicy:
+    """Fixed scheduling contract for the persistent online Learner."""
+
+    training_starts: int = 100
+    demo_ratio: float = 0.5
+    online_ratio: float = 0.5
+    critic_updates_per_cycle: int = 2
+    actor_updates_per_cycle: int = 1
+    target_polyak_updates_per_cycle: int = 2
+    actor_parameter_broadcast_period: int = 5
+    checkpoint_period: int = 50
+    keep_latest_checkpoints: int = 2
+
+    def __post_init__(self) -> None:
+        require(
+            self.training_starts == 100
+            and self.demo_ratio == self.online_ratio == 0.5
+            and self.critic_updates_per_cycle == 2
+            and self.actor_updates_per_cycle == 1
+            and self.target_polyak_updates_per_cycle == 2
+            and self.actor_parameter_broadcast_period == 5
+            and self.checkpoint_period == 50
+            and self.keep_latest_checkpoints == 2,
+            "FORCERFT_ONLINE_TRAINING_POLICY_INVALID",
+        )
+
+    def training_ready(self, online_transition_count: int) -> bool:
+        return online_transition_count >= self.training_starts
+
+    def broadcast_due(self, completed_cycle: int) -> bool:
+        return completed_cycle > 0 and completed_cycle % self.actor_parameter_broadcast_period == 0
+
+    def checkpoint_due(self, completed_cycle: int) -> bool:
+        return completed_cycle > 0 and completed_cycle % self.checkpoint_period == 0
+
+
+def online_checkpoint_path(checkpoint_root: Path, completed_cycle: int) -> Path:
+    require(completed_cycle >= 0, "FORCERFT_ONLINE_CYCLE_INVALID")
+    return checkpoint_root / f"online_actor_critic_cycle_{completed_cycle:06d}"
+
+
+def retain_latest_online_checkpoints(checkpoint_root: Path, *, keep: int = 2) -> tuple[Path, ...]:
+    """Keep the newest exact-resume directories after a successful save."""
+
+    require(keep == 2, "FORCERFT_ONLINE_CHECKPOINT_RETENTION_INVALID")
+    checkpoints: list[tuple[int, Path]] = []
+    for path in checkpoint_root.glob("online_actor_critic_cycle_*"):
+        if not path.is_dir():
+            continue
+        try:
+            cycle = int(path.name.rsplit("_", 1)[1])
+        except ValueError:
+            continue
+        checkpoints.append((cycle, path))
+    checkpoints.sort()
+    for _cycle, path in checkpoints[:-keep]:
+        shutil.rmtree(path)
+    return tuple(path for _cycle, path in checkpoints[-keep:])
+
+
+def broadcast_actor_parameters(learner_actor: torch.nn.Module, inference_actor: torch.nn.Module) -> None:
+    """Atomically copy the completed Learner Actor state in memory."""
+
+    inference_actor.load_state_dict(learner_actor.state_dict(), strict=True)
+    inference_actor.eval()
 
 
 def require(condition: bool, message: str) -> None:
@@ -61,7 +131,12 @@ def prepare_learner(
     from forcesmolvla.rft.throughput_v2 import FrozenPrefixFlowCounter
     from forcesmolvla.training_data import load_normalizer_manifest
 
-    actor_package = resume_checkpoint / "candidate_policy"
+    import json
+
+    metadata = json.loads((resume_checkpoint / "metadata.json").read_text(encoding="utf-8"))
+    actor_package = resume_checkpoint / str(
+        metadata.get("actor_directory", "candidate_policy")
+    )
     actor, q1, q2, q1_target, q2_target, binding, config = (
         joint_api.load_resume_modules(
             resume_checkpoint,
@@ -84,6 +159,9 @@ def prepare_learner(
         eps=1e-8,
         weight_decay=0.0,
     )
+    critic_scheduler = torch.optim.lr_scheduler.LambdaLR(
+        critic_optimizer, lambda _step: 1.0
+    )
     actor_optimizer, actor_scheduler, actor_ownership = (
         build_frozen_vlm_actor_optimizer(
             actor, lr=float(config["optimizer"]["actor"]["lr"])
@@ -102,18 +180,16 @@ def prepare_learner(
         critic_optimizer=critic_optimizer,
         actor_optimizer=actor_optimizer,
         actor_scheduler=actor_scheduler,
+        critic_scheduler=critic_scheduler,
         device=device,
     )
     counters = runtime["counters"]
     joint_cycles = int(counters["joint_cycles"])
+    online_cycles = int(runtime.get("online_joint_cycles", 0))
     require(
-        counters
-        == {
-            "joint_cycles": joint_cycles,
-            "critic_optimizer_steps": joint_cycles * 2,
-            "actor_optimizer_steps": joint_cycles,
-            "target_polyak_steps": joint_cycles * 2,
-        }
+        int(counters["critic_optimizer_steps"]) == joint_cycles * 2
+        and int(counters["actor_optimizer_steps"]) == joint_cycles
+        and int(counters["target_polyak_steps"]) == joint_cycles * 2
         and critic_optimizer.state
         and actor_optimizer.state
         and actor_scheduler.last_epoch == joint_cycles,
@@ -182,6 +258,7 @@ def prepare_learner(
         "binding": binding,
         "config": config,
         "critic_optimizer": critic_optimizer,
+        "critic_scheduler": critic_scheduler,
         "actor_optimizer": actor_optimizer,
         "actor_scheduler": actor_scheduler,
         "runtime": runtime,
@@ -202,6 +279,7 @@ def prepare_learner(
         "flow": flow,
         "normalizer": normalizer,
         "resume_checkpoint": resume_checkpoint,
+        "online_joint_cycles": online_cycles,
     }
 
 

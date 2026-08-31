@@ -26,7 +26,10 @@ DEFAULT_RAW_EPISODE = DEFAULT_RAW_SESSION / "episodes/episode_000018"
 DEFAULT_CAPTURE_MANIFEST = (
     ROOT / "golden_fixtures/stage3_recorded_ack_fixture.v1.capture_manifest.json"
 )
-DEFAULT_PARENT_BINDING = ROOT / "configs/online_replay_bootstrap_parent_binding.v1.development.json"
+DEFAULT_PARENT_BINDING: Path | None = None
+CANONICAL_MANIFEST_ROOT = (
+    ROOT / "outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000/manifests"
+)
 DEFAULT_TERMINAL_INDEX = (
     ROOT
     / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
@@ -361,7 +364,7 @@ def export_recorded_ack_fixture(
     raw_episode: Path = DEFAULT_RAW_EPISODE,
     output: Path = DEFAULT_RECORDED_FIXTURE,
     capture_manifest_output: Path = DEFAULT_CAPTURE_MANIFEST,
-    parent_binding_path: Path = DEFAULT_PARENT_BINDING,
+    parent_binding_path: Path | None = DEFAULT_PARENT_BINDING,
     terminal_index_path: Path = DEFAULT_TERMINAL_INDEX,
 ) -> dict[str, Any]:
     raw_session = raw_session.resolve()
@@ -390,14 +393,20 @@ def export_recorded_ack_fixture(
         "onrobot_robotiq tool profile identity missing",
     )
 
-    parent = _load_json(parent_binding_path.resolve(), "online bootstrap parent binding")
-    try:
-        calibration_path = Path(parent["calibration_binding"]["absolute_path"]).resolve()
-        runtime_path = Path(parent["runtime_contract_binding"]["absolute_path"]).resolve()
-        normalizer_path = Path(parent["normalizer_binding"]["absolute_path"]).resolve()
-        action_contract_path = Path(parent["action_contract_binding"]["absolute_path"]).resolve()
-    except (KeyError, TypeError, ValueError) as error:
-        raise RecordedAckExportError("online bootstrap parent converter bindings missing") from error
+    if parent_binding_path is None:
+        calibration_path = CANONICAL_MANIFEST_ROOT / "calibration_bundle.development.json"
+        runtime_path = CANONICAL_MANIFEST_ROOT / "converter_runtime_spec.task2.development.json"
+        normalizer_path = ROOT / "datasets/task2_lerobotv3/normalizer_manifest.json"
+        action_contract_path = CANONICAL_MANIFEST_ROOT / "action_delta_spec.json"
+    else:
+        parent = _load_json(parent_binding_path.resolve(), "online bootstrap parent binding")
+        try:
+            calibration_path = Path(parent["calibration_binding"]["absolute_path"]).resolve()
+            runtime_path = Path(parent["runtime_contract_binding"]["absolute_path"]).resolve()
+            normalizer_path = Path(parent["normalizer_binding"]["absolute_path"]).resolve()
+            action_contract_path = Path(parent["action_contract_binding"]["absolute_path"]).resolve()
+        except (KeyError, TypeError, ValueError) as error:
+            raise RecordedAckExportError("online bootstrap parent converter bindings missing") from error
     calibration = _load_json(calibration_path, "Stage-2 calibration bundle")
     prepared = prepare_episode(
         raw_episode,

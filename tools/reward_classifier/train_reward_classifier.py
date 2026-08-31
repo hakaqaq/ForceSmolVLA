@@ -1000,7 +1000,7 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
 
     staging = output_dir.parent / f".{output_dir.name}.tmp-{os.getpid()}"
     require(not staging.exists(), f"output staging exists: {staging}")
-    checkpoint_dir = staging / "checkpoints"
+    checkpoint_dir = staging / "checkpoints" / "best"
     checkpoint_dir.mkdir(parents=True)
     try:
         primary, primary_best, primary_last, primary_resume = baseline("seed0_primary", True, checkpoint_dir)
@@ -1036,7 +1036,7 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
 
         checkpoint_bindings = {
             name: {
-                "path": f"{relative(output_dir)}/checkpoints/{name}",
+                "path": f"{relative(output_dir)}/checkpoints/best/{name}",
                 "file_size": (checkpoint_dir / name).stat().st_size,
                 "sha256": sha256_file(checkpoint_dir / name),
             }
@@ -1239,12 +1239,14 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=CONFIG_DEFAULT)
+    parser.add_argument("--task-id", default="task2")
+    parser.add_argument("--output-root", type=Path)
     subparsers = parser.add_subparsers(dest="command", required=True)
     prepare = subparsers.add_parser("prepare-cache")
     prepare.add_argument("--cache-dir", type=Path, required=True)
     train = subparsers.add_parser("train")
     train.add_argument("--cache-dir", type=Path, required=True)
-    train.add_argument("--output-dir", type=Path, required=True)
+    train.add_argument("--output-dir", type=Path)
     return parser.parse_args()
 
 
@@ -1254,7 +1256,18 @@ def main() -> None:
     if args.command == "prepare-cache":
         prepare_cache(args.cache_dir.resolve(), config_path)
     else:
-        run_training(args.cache_dir.resolve(), args.output_dir.resolve(), config_path)
+        from forcesmolvla.training_runtime import resolve_task_output_root
+
+        root = Path(__file__).resolve().parents[2]
+        output_dir = (
+            args.output_dir.resolve()
+            if args.output_dir is not None
+            else resolve_task_output_root(
+                root, task_id=args.task_id, output_root=args.output_root
+            )
+            / "reward_classifier"
+        )
+        run_training(args.cache_dir.resolve(), output_dir, config_path)
 
 
 if __name__ == "__main__":

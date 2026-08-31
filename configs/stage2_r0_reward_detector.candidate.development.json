@@ -4,7 +4,7 @@
   "bindings": {
     "best_checkpoint": {
       "file_size": 87217825,
-      "path": "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack",
+      "path": "outputs/task2/reward_classifier/checkpoints/best/best_checkpoint.msgpack",
       "sha256": "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
     },
     "calibration_source": {

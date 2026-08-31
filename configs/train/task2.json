@@ -3,7 +3,7 @@
   "acceptance_status": "development_only",
   "formal_eligible": false,
   "name": "task2_full_sft",
-  "output_dir": "outputs/development/task2_full_sft",
+  "output_dir": "outputs/task2/sft",
   "data_scope": "configs/task2_development_data_scope.json",
   "dataset_validation": "artifacts/development/task2_lerobotv3_validation.json",
   "converter_runtime_spec": "configs/converter_runtime_spec.task2.development.json",

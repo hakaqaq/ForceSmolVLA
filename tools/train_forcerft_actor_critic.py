@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Continue online-replay warmup with Actor/Critic joint cycles."""
+"""Train the canonical demo-only Frozen-VLM ForceRFT Actor/Critic."""
 
 from __future__ import annotations
 
@@ -26,19 +26,24 @@ for path in (SRC, ROOT / "tools"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import train_forcerft_critic_warmup as warmup  # noqa: E402
+from forcesmolvla.rft.online import replay_training as warmup  # noqa: E402
 
 
-RESUME_CHECKPOINT = (
-    warmup.FORMAL_R_ROOT / "checkpoints/online_actor_critic_cycle_000010"
+TASK_ID = "task2"
+TASK_OUTPUT_ROOT = ROOT / "outputs/task2"
+SFT_CHECKPOINT = (
+    TASK_OUTPUT_ROOT
+    / "sft/checkpoints/forcesmolvla_sft_step_010000"
 )
-RESUME_ACTOR_PACKAGE = (
-    ROOT
-    / "artifacts/development/online_replay/published"
-    / "online_actor_critic_cycle_000010_actor_export.v1"
+CRITIC_CHECKPOINT = (
+    TASK_OUTPUT_ROOT
+    / "offline/checkpoints/offline_twin_q_critic_warmup_step_000256"
 )
-JOINT_CHECKPOINT = warmup.FORMAL_R_ROOT / "checkpoints/online_actor_critic_cycle_000020"
-CANDIDATE_REVISION_ID = "stage3-online-r-joint-cycle-000020-candidate"
+JOINT_CHECKPOINT = (
+    TASK_OUTPUT_ROOT
+    / "offline/checkpoints/offline_actor_critic_cycle_000210"
+)
+ACTOR_CHECKPOINT_ID = "offline-actor-critic-cycle-000210"
 
 
 def require(condition: bool, message: str) -> None:
@@ -509,10 +514,15 @@ def save_joint_checkpoint(
     actor_optimizer,
     actor_scheduler,
     runtime_state: Mapping[str, Any],
-    parent_binding: Mapping[str, Any],
+    parent_binding: Mapping[str, Any] | None,
     source_checkpoint: Path,
     total_joint_cycles: int,
-    candidate_revision_id: str,
+    actor_checkpoint_id: str,
+    actor_parent_path: Path | None = None,
+    parent_binding_id: str | None = None,
+    critic_scheduler=None,
+    checkpoint_kind: str = "online_replay_actor_critic_training",
+    actor_directory: str = "candidate_policy",
 ) -> None:
     from forcesmolvla.checkpoint import export_development_actor_checkpoint
 
@@ -523,16 +533,24 @@ def save_joint_checkpoint(
         (temporary / "models").mkdir()
         (temporary / "optimizers").mkdir()
         (temporary / "state").mkdir()
-        candidate = temporary / "candidate_policy"
+        (temporary / "artifacts").mkdir()
+        candidate = temporary / actor_directory
+        if actor_parent_path is None:
+            require(parent_binding is not None, "FORCERFT_ACTOR_PARENT_REQUIRED")
+            actor_parent_path = Path(
+                parent_binding["actor_parent"]["architecture_binding"]["container_path"]
+            )
+        binding_id = parent_binding_id or (
+            str(parent_binding["binding_id"]) if parent_binding is not None else ""
+        )
+        require(bool(binding_id), "FORCERFT_PARENT_BINDING_ID_REQUIRED")
         export_development_actor_checkpoint(
             policy=actor,
             destination=candidate,
-            runtime_parent=Path(
-                parent_binding["actor_parent"]["architecture_binding"]["container_path"]
-            ),
+            runtime_parent=actor_parent_path,
             source_joint_checkpoint=path,
-            candidate_revision_id=candidate_revision_id,
-            parent_binding_id=parent_binding["binding_id"],
+            candidate_revision_id=actor_checkpoint_id,
+            parent_binding_id=binding_id,
             published=False,
         )
         for name, module in modules.items():
@@ -540,23 +558,36 @@ def save_joint_checkpoint(
         torch.save(critic_optimizer.state_dict(), temporary / "optimizers/critic_optimizer_state.pt")
         torch.save(actor_optimizer.state_dict(), temporary / "optimizers/actor_optimizer_state.pt")
         torch.save(actor_scheduler.state_dict(), temporary / "optimizers/actor_scheduler_state.pt")
+        if critic_scheduler is not None:
+            torch.save(
+                critic_scheduler.state_dict(),
+                temporary / "optimizers/critic_scheduler_state.pt",
+            )
         torch.save(dict(runtime_state), temporary / "state/runtime_state.pt")
+        artifacts = runtime_state.get("runtime_artifacts", {})
+        normalizer_source = Path(str(artifacts.get("normalizer", "")))
+        action_contract_source = Path(str(artifacts.get("action_contract", "")))
+        if checkpoint_kind == "offline_actor_critic_exact_resume":
+            require(normalizer_source.is_file(), "FORCERFT_NORMALIZER_MISSING")
+            require(action_contract_source.is_file(), "FORCERFT_ACTION_CONTRACT_MISSING")
+        if normalizer_source.is_file():
+            shutil.copy2(normalizer_source, temporary / "artifacts/normalizer_manifest.json")
+        if action_contract_source.is_file():
+            shutil.copy2(action_contract_source, temporary / "artifacts/action_delta_spec.json")
         metadata = {
-            "kind": "online_replay_actor_critic_training",
+            "kind": checkpoint_kind,
             "complete": True,
             "source_checkpoint": str(source_checkpoint),
             "joint_cycles": total_joint_cycles,
             "critic_ready": True,
             "actor_q_guidance_enabled": True,
-            "parent_binding_id": parent_binding["binding_id"],
+            "parent_binding_id": binding_id,
+            "actor_directory": actor_directory,
             "critic_optimizer_restored": True,
             "actor_optimizer_restored": True,
-            "candidate_policy_revision": {
-                "revision_id": candidate_revision_id,
-                "path": "candidate_policy",
-                "state": "candidate",
-                "activated": False,
-                "published": False,
+            "actor_checkpoint": {
+                "checkpoint_id": actor_checkpoint_id,
+                "path": actor_directory,
             },
         }
         (temporary / "metadata.json").write_text(
@@ -577,6 +608,7 @@ def load_joint_checkpoint_once(
     actor_optimizer,
     actor_scheduler,
     device: torch.device,
+    critic_scheduler=None,
 ) -> dict[str, Any]:
     from safetensors.torch import load_file
     from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
@@ -588,7 +620,8 @@ def load_joint_checkpoint_once(
         and metadata.get("actor_q_guidance_enabled") is True,
         "ONLINE_REPLAY_JOINT_CHECKPOINT_INCOMPLETE",
     )
-    actor_state = load_file(str(path / "candidate_policy/model.safetensors"), device="cpu")
+    actor_directory = str(metadata.get("actor_directory", "candidate_policy"))
+    actor_state = load_file(str(path / actor_directory / "model.safetensors"), device="cpu")
     actor.load_state_dict(actor_state, strict=True)
     for name, module in modules.items():
         state = torch.load(path / "models" / f"{name}_state.pt", map_location=device, weights_only=True)
@@ -602,6 +635,12 @@ def load_joint_checkpoint_once(
     actor_scheduler.load_state_dict(torch.load(
         path / "optimizers/actor_scheduler_state.pt", map_location="cpu", weights_only=True
     ))
+    critic_scheduler_path = path / "optimizers/critic_scheduler_state.pt"
+    if critic_scheduler is not None:
+        require(critic_scheduler_path.is_file(), "FORCERFT_CRITIC_SCHEDULER_MISSING")
+        critic_scheduler.load_state_dict(
+            torch.load(critic_scheduler_path, map_location="cpu", weights_only=True)
+        )
     runtime = torch.load(path / "state/runtime_state.pt", map_location="cpu", weights_only=False)
     credits = UpdateCreditLedger.from_state_dict(runtime["sample_credit"])
     require(credits.snapshot().available == runtime["sample_credit"]["minted"] - runtime["sample_credit"]["consumed"], "ONLINE_REPLAY_JOINT_CREDIT_RESTORE")
@@ -615,36 +654,28 @@ def load_resume_modules(
     checkpoint: Path,
     actor_package: Path,
     device: torch.device,
-    *,
-    allow_checkpoint_candidate: bool = False,
 ):
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
     from forcesmolvla.rft.critic import build_twin_q
 
-    binding = json.loads(warmup.PARENT_BINDING.read_text(encoding="utf-8"))
+    metadata_path = checkpoint / "metadata.json"
+    require(metadata_path.is_file(), "FORCERFT_EXACT_RESUME_METADATA_MISSING")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    actor_directory = str(metadata.get("actor_directory", ""))
+    require(
+        metadata.get("kind")
+        in {"offline_actor_critic_exact_resume", "online_actor_critic_exact_resume"}
+        and actor_directory == "actor"
+        and actor_package.resolve() == (checkpoint / "actor").resolve(),
+        "FORCERFT_EXACT_RESUME_ACTOR_PACKAGE_MISMATCH",
+    )
+    binding = {
+        "normalizer_binding": {
+            "absolute_path": str(checkpoint / "artifacts/normalizer_manifest.json")
+        }
+    }
     config = warmup.yaml.safe_load(
         warmup.TRAINING_CONFIG.read_text(encoding="utf-8")
-    )
-    candidate = json.loads(
-        (actor_package / "candidate.json").read_text(encoding="utf-8")
-    )
-    source_matches = (
-        Path(candidate["source_joint_checkpoint"]).resolve() == checkpoint.resolve()
-    )
-    published = (
-        candidate.get("state") == "published"
-        and candidate.get("published") is True
-    )
-    internal_checkpoint_candidate = (
-        allow_checkpoint_candidate
-        and actor_package.resolve() == (checkpoint / "candidate_policy").resolve()
-        and candidate.get("state") == "candidate"
-        and candidate.get("published") is False
-        and candidate.get("activated") is False
-    )
-    require(
-        source_matches and (published or internal_checkpoint_candidate),
-        "ONLINE_REPLAY_JOINT_RESUME_ACTOR_PACKAGE_MISMATCH",
     )
     actor = ForceSmolVLAPolicy.from_pretrained(
         actor_package,
@@ -669,234 +700,303 @@ def load_resume_modules(
     return actor, q1, q2, q1_target, q2_target, binding, config
 
 
-def run(
+def load_offline_training_parents(
+    *,
+    actor_checkpoint: Path,
+    critic_checkpoint: Path,
+    device: torch.device,
+):
+    """Restore the SFT Actor and the completed offline Twin-Q warmup."""
+
+    from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
+    from forcesmolvla.rft.critic import build_twin_q
+    from forcesmolvla.rft.frozen_vlm_trainability import (
+        apply_frozen_vlm_trainability,
+        build_frozen_vlm_actor_optimizer,
+    )
+
+    config = warmup.yaml.safe_load(warmup.TRAINING_CONFIG.read_text(encoding="utf-8"))
+    actor = ForceSmolVLAPolicy.from_pretrained(
+        actor_checkpoint,
+        local_files_only=True,
+        force_download=False,
+        strict=True,
+        artifact_use="development",
+    ).to(device)
+    apply_frozen_vlm_trainability(actor)
+    data = config["data"]
+    q1, q2, q1_target, q2_target, _conversion = build_twin_q(
+        warmup._resolve(data["critic_backbone_npz"]),
+        warmup._resolve(data["critic_backbone_manifest"]),
+        seed=0,
+    )
+    modules = {
+        "q1": q1,
+        "q2": q2,
+        "q1_target": q1_target,
+        "q2_target": q2_target,
+    }
+    for name, module in modules.items():
+        module.load_state_dict(
+            torch.load(
+                critic_checkpoint / "models" / f"{name}_state.pt",
+                map_location="cpu",
+                weights_only=True,
+            ),
+            strict=True,
+        )
+    q1.train(True)
+    q2.train(True)
+    q1_target.make_permanent_eval_target()
+    q2_target.make_permanent_eval_target()
+    q1, q2, q1_target, q2_target = (
+        module.to(device) for module in (q1, q2, q1_target, q2_target)
+    )
+    modules = {
+        "q1": q1,
+        "q2": q2,
+        "q1_target": q1_target,
+        "q2_target": q2_target,
+    }
+    critic_optimizer = torch.optim.Adam(
+        [
+            parameter
+            for module in (q1, q2)
+            for parameter in module.parameters()
+            if parameter.requires_grad
+        ],
+        lr=3e-4,
+        betas=(0.9, 0.999),
+        eps=1e-8,
+        weight_decay=0.0,
+    )
+    critic_optimizer.load_state_dict(
+        torch.load(
+            critic_checkpoint / "optimizers/critic_optimizer_state.pt",
+            map_location=device,
+            weights_only=True,
+        )
+    )
+    critic_scheduler = torch.optim.lr_scheduler.LambdaLR(
+        critic_optimizer, lambda _step: 1.0
+    )
+    critic_scheduler.load_state_dict(
+        torch.load(
+            critic_checkpoint / "schedulers/critic_scheduler_state.pt",
+            map_location="cpu",
+            weights_only=True,
+        )
+    )
+    actor_optimizer, actor_scheduler, actor_ownership = (
+        build_frozen_vlm_actor_optimizer(
+            actor, lr=float(config["optimizer"]["actor"]["lr"])
+        )
+    )
+    return (
+        actor,
+        q1,
+        q2,
+        q1_target,
+        q2_target,
+        modules,
+        critic_optimizer,
+        critic_scheduler,
+        actor_optimizer,
+        actor_scheduler,
+        actor_ownership,
+        config,
+    )
+
+
+def _restore_critic_parent_rng(
+    critic_checkpoint: Path, device: torch.device
+) -> tuple[torch.Generator, random.Random, random.Random]:
+    rng = torch.load(
+        critic_checkpoint / "state/rng_states.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    random.setstate(rng["python_random_state"])
+    np.random.set_state(rng["numpy_random_state"])
+    torch.set_rng_state(rng["torch_cpu_rng_state"])
+    if device.type == "cuda":
+        torch.cuda.set_rng_state_all(rng["torch_cuda_rng_states"])
+    noise = torch.Generator(device=device)
+    noise.set_state(rng["named_generator_states"]["td_next_action_flow_noise"])
+    d_rng = random.Random()
+    d_rng.setstate(random.getstate())
+    r_rng = random.Random(4405)
+    return noise, r_rng, d_rng
+
+
+def make_offline_demo_schedules(
+    rng: random.Random,
+    population: tuple[int, ...],
     *,
     cycles: int,
+) -> tuple[list[list[int]], list[list[int]]]:
+    critic = [rng.sample(population, 64) for _ in range(cycles * 2)]
+    actor = [rng.sample(population, 24) for _ in range(cycles)]
+    return critic, actor
+
+
+def run_offline_joint_training(
+    *,
+    cycles: int,
+    actor_checkpoint: Path,
+    critic_checkpoint: Path,
     checkpoint: Path,
-    resume_checkpoint: Path,
-    resume_actor_package: Path,
-    candidate_revision_id: str,
 ) -> dict[str, Any]:
+    """Run the sole demo-only Frozen-VLM Actor/Critic training phase."""
+
     from forcesmolvla.rft.critic import frozen_task_feature
-    from forcesmolvla.rft.frozen_vlm_trainability import FROZEN_PREFIXES, apply_frozen_vlm_trainability, build_frozen_vlm_actor_optimizer
+    from forcesmolvla.rft.frozen_vlm_trainability import FROZEN_PREFIXES
     from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
     from forcesmolvla.rft.throughput_v2 import FrozenPrefixFlowCounter
     from forcesmolvla.training_data import load_normalizer_manifest
 
-    require(cycles == 10, "ONLINE_REPLAY_JOINT_REQUIRES_10_CYCLES")
-    require(torch.cuda.is_available(), "ONLINE_REPLAY_JOINT_CUDA_UNAVAILABLE")
+    require(cycles == 210, "FORCERFT_OFFLINE_JOINT_CYCLES_MUST_BE_210")
+    require(torch.cuda.is_available(), "FORCERFT_OFFLINE_JOINT_CUDA_UNAVAILABLE")
+    require(not checkpoint.exists(), "FORCERFT_OFFLINE_JOINT_CHECKPOINT_EXISTS")
     device = torch.device("cuda:0")
-    all_r, r_macros, source_episodes = warmup.load_formal_online_r(
-        warmup.FORMAL_R_ROOT
-    )
-    actor, q1, q2, q1_target, q2_target, binding, config = load_resume_modules(
-        resume_checkpoint, resume_actor_package, device
-    )
-    trainability = apply_frozen_vlm_trainability(actor)
-    critic_parameters = [
-        parameter for module in (q1, q2) for parameter in module.parameters()
-        if parameter.requires_grad
-    ]
-    critic_optimizer = torch.optim.Adam(
-        critic_parameters, lr=3e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0,
-    )
-    modules = {"q1": q1, "q2": q2, "q1_target": q1_target, "q2_target": q2_target}
-    actor_optimizer, actor_scheduler, actor_ownership = build_frozen_vlm_actor_optimizer(
-        actor, lr=float(config["optimizer"]["actor"]["lr"]),
-    )
-    resume_runtime = load_joint_checkpoint_once(
-        resume_checkpoint,
-        actor=actor,
-        modules=modules,
-        critic_optimizer=critic_optimizer,
-        actor_optimizer=actor_optimizer,
-        actor_scheduler=actor_scheduler,
+    (
+        actor,
+        q1,
+        q2,
+        q1_target,
+        q2_target,
+        modules,
+        critic_optimizer,
+        critic_scheduler,
+        actor_optimizer,
+        actor_scheduler,
+        actor_ownership,
+        config,
+    ) = load_offline_training_parents(
+        actor_checkpoint=actor_checkpoint,
+        critic_checkpoint=critic_checkpoint,
         device=device,
     )
-    previous = resume_runtime["counters"]
-    require(
-        previous["joint_cycles"] == 10
-        and previous["critic_optimizer_steps"] == 20
-        and previous["actor_optimizer_steps"] == 10
-        and previous["target_polyak_steps"] == 20
-        and critic_optimizer.state
-        and actor_optimizer.state
-        and actor_scheduler.last_epoch == 10,
-        "ONLINE_REPLAY_JOINT_EXACT_RESUME_INVALID",
-    )
-    credits = UpdateCreditLedger.from_state_dict(resume_runtime["sample_credit"])
-    new_r_transition_count = sum(
-        credits.mint_for_unique_online_transition(
-            row["identity"]["transition_uid"]
-        )
-        for row in all_r
-    )
-    require(
-        credits.snapshot().credited_transition_count == len(all_r),
-        "ONLINE_REPLAY_JOINT_REPLAY_CREDIT_MISMATCH",
-    )
-
-    random.setstate(resume_runtime["rng_state"]["python"])
-    np.random.set_state(resume_runtime["rng_state"]["numpy"])
-    torch.set_rng_state(resume_runtime["rng_state"]["torch_cpu"])
-    torch.cuda.set_rng_state_all(resume_runtime["rng_state"]["torch_cuda"])
-    critic_noise = torch.Generator(device=device)
-    critic_noise.set_state(
-        resume_runtime["rng_state"]["critic_noise_generator"]
-    )
-    r_rng = random.Random()
-    d_rng = random.Random()
-    r_rng.setstate(resume_runtime["sampler_state"]["r_rng"])
-    d_rng.setstate(resume_runtime["sampler_state"]["d_rng"])
-
-    frozen_parameters = [
-        parameter for name, parameter in actor.named_parameters()
+    frozen = [
+        parameter
+        for name, parameter in actor.named_parameters()
         if name.startswith(FROZEN_PREFIXES)
     ]
     assert_optimizer_ownership(
-        actor_optimizer, critic_optimizer, frozen_parameters=frozen_parameters,
+        actor_optimizer, critic_optimizer, frozen_parameters=frozen
     )
     require(
-        actor_ownership["frozen_parameter_in_optimizer"] == 0
-        and trainability.trainable_actor_parameter_tensors == actor_ownership["parameter_tensor_count"],
-        "ONLINE_REPLAY_JOINT_ACTOR_OPTIMIZER_OWNERSHIP",
+        actor_ownership["frozen_parameter_in_optimizer"] == 0,
+        "FORCERFT_OFFLINE_FROZEN_PARAMETER_IN_OPTIMIZER",
     )
-
-    normalizer = load_normalizer_manifest(Path(binding["normalizer_binding"]["absolute_path"]))
-    r_replay = warmup.FormalReplay(r_macros, source_episodes, normalizer)
-    d_replay = JointDemoReplay(normalizer)
-    critic_r_schedule, critic_d_schedule, actor_r_schedule, actor_d_schedule = make_schedules(
-        r_rng,
-        d_rng,
-        r_population_size=len(r_macros),
-        d_population=d_replay.population,
-        cycles=cycles,
+    critic_noise, r_rng, d_rng = _restore_critic_parent_rng(
+        critic_checkpoint, device
     )
-    d_replay.prefetch_joint(critic_d_schedule, actor_d_schedule)
-    feature = torch.from_numpy(frozen_task_feature()).to(device=device, dtype=torch.float32)
-    delta_mean = torch.tensor(normalizer.delta_action7.mean, dtype=torch.float32, device=device)
-    delta_std = torch.tensor(normalizer.delta_action7.std, dtype=torch.float32, device=device)
-    flow = FrozenPrefixFlowCounter(inference_batch_size=int(config["batching"]["flow_inference_subbatch"]))
-
+    normalizer_path = warmup.DATASET / "normalizer_manifest.json"
+    normalizer = load_normalizer_manifest(normalizer_path)
+    replay = JointDemoReplay(normalizer)
+    critic_schedule, actor_schedule = make_offline_demo_schedules(
+        d_rng, replay.population, cycles=cycles
+    )
+    replay.prefetch_joint(critic_schedule, actor_schedule)
+    feature = torch.from_numpy(frozen_task_feature()).to(
+        device=device, dtype=torch.float32
+    )
+    delta_mean = torch.tensor(
+        normalizer.delta_action7.mean, dtype=torch.float32, device=device
+    )
+    delta_std = torch.tensor(
+        normalizer.delta_action7.std, dtype=torch.float32, device=device
+    )
+    flow = FrozenPrefixFlowCounter(
+        inference_batch_size=int(config["batching"]["flow_inference_subbatch"])
+    )
     td_losses: list[float] = []
     fm_losses: list[float] = []
     actor_q_losses: list[float] = []
-    actor_gradient_range = [math.inf, -math.inf]
-    tcp_q_gradient_range = [math.inf, -math.inf]
-    q1_range = [math.inf, -math.inf]
-    q2_range = [math.inf, -math.inf]
-    gripper_q_gradient_max = 0.0
-    frozen_vlm_gradient_max = 0.0
-    nonfinite_count = 0
-    oom_count = 0
-    critic_steps = actor_steps = target_steps = 0
-    cycle_offset = int(previous["joint_cycles"])
-    critic_step_offset = int(previous["critic_optimizer_steps"])
-
     for cycle in range(cycles):
-        credits.consume_joint_cycle()
         for substep in range(2):
-            schedule_index = cycle * 2 + substep
-            rows = [r_replay.materialize(index) for index in critic_r_schedule[schedule_index]]
-            rows.extend(d_replay.materialize(index) for index in critic_d_schedule[schedule_index])
+            rows = [
+                replay.materialize(index)
+                for index in critic_schedule[cycle * 2 + substep]
+            ]
             batch = warmup.build_batch(rows, actor, feature, device)
-            try:
-                record = critic_step(
-                    step=critic_step_offset + critic_steps,
-                    actor=actor,
-                    q1=q1,
-                    q2=q2,
-                    q1_target=q1_target,
-                    q2_target=q2_target,
-                    optimizer=critic_optimizer,
-                    batch=batch,
-                    flow=flow,
-                    noise_generator=critic_noise,
-                    delta_mean=delta_mean,
-                    delta_std=delta_std,
-                )
-            except torch.cuda.OutOfMemoryError:
-                oom_count += 1
-                raise
-            except FloatingPointError:
-                nonfinite_count += 1
-                raise
-            td_losses.append(record["loss"])
-            _range_update(q1_range, record["q1"])
-            _range_update(q2_range, record["q2"])
-            critic_steps += 1
-            target_steps += 1
-
-        actor_rows = [_online_actor_row(r_replay, index) for index in actor_r_schedule[cycle]]
-        actor_rows.extend(d_replay.materialize_actor(index) for index in actor_d_schedule[cycle])
-        actor_batch = build_actor_training_batch(actor_rows, actor, feature, device)
-        try:
-            actor_record = actor_step(
-                cycle=cycle_offset + cycle,
+            record = critic_step(
+                step=cycle * 2 + substep,
                 actor=actor,
                 q1=q1,
                 q2=q2,
                 q1_target=q1_target,
                 q2_target=q2_target,
-                optimizer=actor_optimizer,
-                scheduler=actor_scheduler,
-                batch=actor_batch,
+                optimizer=critic_optimizer,
+                batch=batch,
                 flow=flow,
+                noise_generator=critic_noise,
                 delta_mean=delta_mean,
                 delta_std=delta_std,
-                config=config,
+                microbatch_size=4,
             )
-        except torch.cuda.OutOfMemoryError:
-            oom_count += 1
-            raise
-        except FloatingPointError:
-            nonfinite_count += 1
-            raise
-        fm_losses.append(actor_record["fm_loss"])
-        actor_q_losses.append(actor_record["actor_q_loss"])
-        _range_update(q1_range, actor_record["q1"])
-        _range_update(q2_range, actor_record["q2"])
-        actor_gradient_range[0] = min(actor_gradient_range[0], actor_record["actor_gradient_norm"])
-        actor_gradient_range[1] = max(actor_gradient_range[1], actor_record["actor_gradient_norm"])
-        tcp_q_gradient_range[0] = min(tcp_q_gradient_range[0], actor_record["tcp6_q_gradient_norm"])
-        tcp_q_gradient_range[1] = max(tcp_q_gradient_range[1], actor_record["tcp6_q_gradient_norm"])
-        gripper_q_gradient_max = max(gripper_q_gradient_max, actor_record["gripper_q_gradient_max"])
-        frozen_vlm_gradient_max = max(frozen_vlm_gradient_max, actor_record["frozen_vlm_gradient_max"])
-        actor_steps += 1
-        print(f"[joint] completed cycle {cycle + 1}/{cycles}", file=sys.stderr, flush=True)
-
-    require(
-        critic_steps == 20
-        and actor_steps == 10
-        and target_steps == 20
-        and nonfinite_count == oom_count == 0
-        and gripper_q_gradient_max == 0.0
-        and frozen_vlm_gradient_max == 0.0,
-        "ONLINE_REPLAY_JOINT_COMPLETION_CONTRACT",
-    )
-    total_joint_cycles = cycle_offset + cycles
-    total_critic_steps = critic_step_offset + critic_steps
-    total_actor_steps = int(previous["actor_optimizer_steps"]) + actor_steps
-    total_target_steps = int(previous["target_polyak_steps"]) + target_steps
+            critic_scheduler.step()
+            td_losses.append(float(record["loss"]))
+            del batch, rows
+        actor_rows = [
+            replay.materialize_actor(index) for index in actor_schedule[cycle]
+        ]
+        actor_batch = build_actor_training_batch(
+            actor_rows, actor, feature, device
+        )
+        actor_record = actor_step(
+            cycle=cycle,
+            actor=actor,
+            q1=q1,
+            q2=q2,
+            q1_target=q1_target,
+            q2_target=q2_target,
+            optimizer=actor_optimizer,
+            scheduler=actor_scheduler,
+            batch=actor_batch,
+            flow=flow,
+            delta_mean=delta_mean,
+            delta_std=delta_std,
+            config=config,
+        )
+        fm_losses.append(float(actor_record["fm_loss"]))
+        actor_q_losses.append(float(actor_record["actor_q_loss"]))
+        del actor_batch, actor_rows
+        if (cycle + 1) % 10 == 0 or cycle + 1 == cycles:
+            print(
+                f"[offline-joint] completed cycle {cycle + 1}/{cycles}",
+                file=sys.stderr,
+                flush=True,
+            )
     runtime_state = {
-        "source_checkpoint": str(resume_checkpoint),
-        "flags": {"critic_ready": True, "actor_q_guidance_enabled": True},
+        "online_joint_cycles": 0,
+        "source_checkpoint": str(critic_checkpoint),
+        "actor_parent_checkpoint": str(actor_checkpoint),
+        "flags": {
+            "offline_demo_only": True,
+            "vlm_frozen": True,
+            "critic_ready": True,
+            "actor_q_guidance_enabled": True,
+        },
         "counters": {
-            "joint_cycles": total_joint_cycles,
-            "critic_optimizer_steps": total_critic_steps,
-            "actor_optimizer_steps": total_actor_steps,
-            "target_polyak_steps": total_target_steps,
+            "joint_cycles": cycles,
+            "critic_optimizer_steps": cycles * 2,
+            "actor_optimizer_steps": cycles,
+            "target_polyak_steps": cycles * 2,
+            "critic_parent_optimizer_steps": 256,
         },
         "replay": {
-            "formal_r_root": str(warmup.FORMAL_R_ROOT),
-            "unique_r_transition_count": len(all_r),
-            "new_r_transition_count": new_r_transition_count,
-            "eligible_ack_macro_count": len(r_macros),
-            "mix": {"R": 32, "D": 32},
+            "offline_demo_root": str(warmup.REWARD_TRANSITION_ROOT),
+            "offline_demo_population": len(replay.population),
+            "offline_cursor": cycles,
+            "current_episode_sampled": False,
         },
-        "sample_credit": credits.state_dict(),
+        "sample_credit": UpdateCreditLedger(
+            credits_per_transition=1, credits_per_joint_cycle=1
+        ).state_dict(),
         "sampler_state": {
-            "cycle": total_joint_cycles,
+            "cycle": cycles,
             "r_rng": r_rng.getstate(),
             "d_rng": d_rng.getstate(),
         },
@@ -910,16 +1010,22 @@ def run(
         "optimizer_ownership": {
             "overlap": 0,
             "frozen_vlm_or_state_prefix_in_actor_optimizer": 0,
-            "critic_optimizer_restored_from_joint_checkpoint": True,
-            "actor_optimizer_restored_from_joint_checkpoint": True,
+            "critic_optimizer_restored_from_warmup": True,
+            "actor_optimizer_fresh": True,
         },
-        "candidate_policy_revision": {
-            "revision_id": candidate_revision_id,
-            "state": "candidate",
-            "activated": False,
-            "published": False,
+        "runtime_artifacts": {
+            "normalizer": str(normalizer_path),
+            "action_contract": str(
+                actor_checkpoint
+                / "manifests/action_delta_spec.json"
+            ),
         },
-        "step_metrics": {"critic_td_loss": list(td_losses)},
+        "actor_checkpoint": {"checkpoint_id": ACTOR_CHECKPOINT_ID},
+        "step_metrics": {
+            "critic_td_loss": td_losses,
+            "actor_fm_loss": fm_losses,
+            "actor_min_twin_q_loss": actor_q_losses,
+        },
     }
     save_joint_checkpoint(
         checkpoint,
@@ -928,11 +1034,16 @@ def run(
         critic_optimizer=critic_optimizer,
         actor_optimizer=actor_optimizer,
         actor_scheduler=actor_scheduler,
+        critic_scheduler=critic_scheduler,
         runtime_state=runtime_state,
-        parent_binding=binding,
-        source_checkpoint=resume_checkpoint,
-        total_joint_cycles=total_joint_cycles,
-        candidate_revision_id=candidate_revision_id,
+        parent_binding=None,
+        actor_parent_path=actor_checkpoint,
+        parent_binding_id="task2-offline-sft-and-twin-q",
+        source_checkpoint=critic_checkpoint,
+        total_joint_cycles=cycles,
+        actor_checkpoint_id=ACTOR_CHECKPOINT_ID,
+        checkpoint_kind="offline_actor_critic_exact_resume",
+        actor_directory="actor",
     )
     restored = load_joint_checkpoint_once(
         checkpoint,
@@ -941,63 +1052,112 @@ def run(
         critic_optimizer=critic_optimizer,
         actor_optimizer=actor_optimizer,
         actor_scheduler=actor_scheduler,
+        critic_scheduler=critic_scheduler,
         device=device,
     )
     require(
         restored["counters"] == runtime_state["counters"],
-        "ONLINE_REPLAY_JOINT_CHECKPOINT_LOAD",
+        "FORCERFT_OFFLINE_EXACT_RESUME_INVALID",
     )
     return {
-        "NEW_R_TRANSITION_COUNT": new_r_transition_count,
-        "TOTAL_R_TRANSITION_COUNT": len(all_r),
-        "JOINT_CYCLES_COMPLETED": cycles,
-        "CRITIC_OPTIMIZER_TOTAL_STEPS": total_critic_steps,
-        "ACTOR_OPTIMIZER_TOTAL_STEPS": total_actor_steps,
-        "TARGET_POLYAK_TOTAL_STEPS": total_target_steps,
-        "TD_LOSS_FIRST_LAST": [td_losses[0], td_losses[-1]],
-        "FM_LOSS_FIRST_LAST": [fm_losses[0], fm_losses[-1]],
-        "ACTOR_MIN_TWIN_Q_LOSS_FIRST_LAST": [actor_q_losses[0], actor_q_losses[-1]],
-        "Q1_MIN_MAX": q1_range,
-        "Q2_MIN_MAX": q2_range,
-        "ACTOR_GRADIENT_NORM_MIN_MAX": actor_gradient_range,
-        "TCP6_Q_GRADIENT_NORM_MIN_MAX": tcp_q_gradient_range,
-        "GRIPPER_Q_GRADIENT_MAX": gripper_q_gradient_max,
-        "FROZEN_VLM_GRADIENT_MAX": frozen_vlm_gradient_max,
-        "NONFINITE_COUNT": nonfinite_count,
-        "OOM_COUNT": oom_count,
-        "SAMPLE_CREDITS_REMAINING": credits.snapshot().available,
-        "ONLINE_REPLAY_JOINT_CHECKPOINT_PATH": str(checkpoint),
-        "CRITIC_READY": True,
-        "ACTOR_Q_GUIDANCE_ENABLED": True,
-        "NEW_CANDIDATE_ID": candidate_revision_id,
-        "CANDIDATE_POLICY_REVISION_PATH": str(checkpoint / "candidate_policy"),
-        "CANDIDATE_POLICY_REVISION_STATE": "candidate",
-        "REVISION_ACTIVATED": False,
+        "OFFLINE_JOINT_CYCLES": cycles,
+        "OFFLINE_CRITIC_OPTIMIZER_STEPS": cycles * 2,
+        "OFFLINE_ACTOR_OPTIMIZER_STEPS": cycles,
+        "FULL_EXACT_RESUME_LOAD": "PASS",
+        "OFFLINE_ACTOR_CRITIC_CHECKPOINT_PATH": str(checkpoint),
+    }
+
+
+def strict_load_offline_checkpoint(
+    *, actor_checkpoint: Path, critic_checkpoint: Path, checkpoint: Path
+) -> dict[str, Any]:
+    """Strictly restore every offline training state without an optimizer step."""
+
+    require(torch.cuda.is_available(), "FORCERFT_OFFLINE_JOINT_CUDA_UNAVAILABLE")
+    device = torch.device("cuda:0")
+    (
+        actor, _q1, _q2, _q1_target, _q2_target, modules,
+        critic_optimizer, critic_scheduler, actor_optimizer, actor_scheduler,
+        _ownership, _config,
+    ) = load_offline_training_parents(
+        actor_checkpoint=actor_checkpoint,
+        critic_checkpoint=critic_checkpoint,
+        device=device,
+    )
+    runtime = load_joint_checkpoint_once(
+        checkpoint,
+        actor=actor, modules=modules,
+        critic_optimizer=critic_optimizer,
+        actor_optimizer=actor_optimizer,
+        actor_scheduler=actor_scheduler,
+        critic_scheduler=critic_scheduler,
+        device=device,
+    )
+    counters = runtime["counters"]
+    require(
+        int(counters["joint_cycles"]) == 210
+        and int(counters["critic_optimizer_steps"]) == 420
+        and int(counters["actor_optimizer_steps"]) == 210
+        and int(counters["target_polyak_steps"]) == 420
+        and critic_optimizer.state and actor_optimizer.state
+        and actor_scheduler.last_epoch == 210
+        and (checkpoint / "artifacts/normalizer_manifest.json").is_file()
+        and (checkpoint / "artifacts/action_delta_spec.json").is_file(),
+        "FORCERFT_OFFLINE_EXACT_RESUME_INVALID",
+    )
+    return {
+        "FULL_EXACT_RESUME_LOAD": "PASS",
+        "OFFLINE_JOINT_CYCLES": 210,
+        "OFFLINE_CRITIC_OPTIMIZER_STEPS": 420,
+        "OFFLINE_ACTOR_OPTIMIZER_STEPS": 210,
+        "OPTIMIZER_STEP_COUNT": 0,
     }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cycles", type=int, default=10)
-    parser.add_argument("--checkpoint", type=Path, default=JOINT_CHECKPOINT)
-    parser.add_argument("--resume-checkpoint", type=Path, default=RESUME_CHECKPOINT)
-    parser.add_argument(
-        "--resume-actor-package", type=Path, default=RESUME_ACTOR_PACKAGE
-    )
-    parser.add_argument("--candidate-id", default=CANDIDATE_REVISION_ID)
+    parser.add_argument("--task-id", default=TASK_ID)
+    parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--offline-joint-cycles", type=int, default=210)
+    parser.add_argument("--actor-checkpoint", type=Path)
+    parser.add_argument("--critic-checkpoint", type=Path)
+    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--strict-load-only", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
+    from forcesmolvla.training_runtime import resolve_task_output_root
+
     args = parse_args()
+    output_root = resolve_task_output_root(
+        ROOT, task_id=args.task_id, output_root=args.output_root
+    )
+    actor_checkpoint = args.actor_checkpoint or (
+        output_root / "sft/checkpoints/forcesmolvla_sft_step_010000"
+    )
+    critic_checkpoint = args.critic_checkpoint or (
+        output_root
+        / "offline/checkpoints/offline_twin_q_critic_warmup_step_000256"
+    )
+    checkpoint = args.checkpoint or (
+        output_root / "offline/checkpoints/offline_actor_critic_cycle_000210"
+    )
     print(
         json.dumps(
-            run(
-                cycles=args.cycles,
-                checkpoint=args.checkpoint,
-                resume_checkpoint=args.resume_checkpoint,
-                resume_actor_package=args.resume_actor_package,
-                candidate_revision_id=args.candidate_id,
+            (
+                strict_load_offline_checkpoint(
+                    actor_checkpoint=actor_checkpoint,
+                    critic_checkpoint=critic_checkpoint,
+                    checkpoint=checkpoint,
+                )
+                if args.strict_load_only
+                else run_offline_joint_training(
+                    cycles=args.offline_joint_cycles,
+                    actor_checkpoint=actor_checkpoint,
+                    critic_checkpoint=critic_checkpoint,
+                    checkpoint=checkpoint,
+                )
             ),
             indent=2,
             sort_keys=True,

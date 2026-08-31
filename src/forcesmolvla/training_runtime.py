@@ -11,6 +11,21 @@ import subprocess
 from typing import Any
 
 
+def resolve_task_output_root(
+    repository_root: Path,
+    *,
+    task_id: str,
+    output_root: Path | None = None,
+) -> Path:
+    """Return the sole task-scoped training output root."""
+
+    task_id = task_id.strip()
+    if not task_id or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in task_id):
+        raise ValueError("TASK_ID_INVALID")
+    selected = repository_root / "outputs" / task_id if output_root is None else output_root
+    return Path(selected).expanduser().resolve()
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:

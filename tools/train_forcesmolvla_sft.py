@@ -460,8 +460,8 @@ def _save_checkpoint(
     source_binding = json.loads((run_root / "source_binding.json").read_text())
 
     checkpoints = run_root / "checkpoints"
-    target = checkpoints / f"step_{step:06d}"
-    temporary = checkpoints / f".step_{step:06d}.tmp"
+    target = checkpoints / f"forcesmolvla_sft_step_{step:06d}"
+    temporary = checkpoints / f".forcesmolvla_sft_step_{step:06d}.tmp"
     if target.exists() or temporary.exists():
         raise FileExistsError(f"refusing to overwrite checkpoint: {target}")
     temporary.mkdir(parents=True)
@@ -559,6 +559,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config", type=Path, required=True, help="training experiment JSON"
     )
+    parser.add_argument("--task-id", required=True)
+    parser.add_argument("--output-root", type=Path)
     parser.add_argument("--resume", type=Path, help="checkpoint to resume")
     return parser.parse_args()
 
@@ -585,6 +587,7 @@ def main() -> None:
         single_pass_optimizer_update,
     )
     from forcesmolvla.training_data import load_runtime_artifacts, prepare_training_sample
+    from forcesmolvla.training_runtime import resolve_task_output_root
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA_NOT_AVAILABLE_NO_CPU_FALLBACK")
     gpu_name = torch.cuda.get_device_name(0)
@@ -592,7 +595,9 @@ def main() -> None:
     config_path = args.config.resolve()
     config = _load_config(config_path)
     dataset_root = args.dataset.resolve()
-    run_root = _resolve_path(root, config["output_dir"])
+    run_root = resolve_task_output_root(
+        root, task_id=args.task_id, output_root=args.output_root
+    ) / "sft"
     conversion = json.loads((dataset_root / "conversion_manifest.json").read_text())
     repo_id = conversion.get("repo_id")
     if not isinstance(repo_id, str) or not repo_id:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the active online-replay Actor and one exact-resume Learner cycle."""
+"""Serve one persistent ForceRFT Actor/Learner process across episodes."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import random
 import sys
 import threading
 import time
-from typing import Any, Callable, Mapping
+from typing import Any, Mapping
 
 import numpy as np
 import torch
@@ -24,71 +24,86 @@ for path in (SRC, ROOT / "tools"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-import train_forcerft_critic_warmup as warmup  # noqa: E402
+from forcesmolvla.rft.online import replay_training as warmup  # noqa: E402
 import train_forcerft_actor_critic as joint  # noqa: E402
 import serve_policy  # noqa: E402
 from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
+    OnlineTrainingPolicy,
+    broadcast_actor_parameters,
+    online_checkpoint_path,
+    retain_latest_online_checkpoints,
     EpisodePin,
     InferencePriorityCoordinator,
     PinnedEpisode,
     prepare_learner,
+    reconcile_post_checkpoint_replay,
 )
-from forcesmolvla.rft.online.policy_revision import load_revision_registry  # noqa: E402
+from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
+    InMemoryRevisionStateMachine,
+    RevisionRecord,
+    RevisionState,
+)
 
 
 DEFAULT_RESUME_CHECKPOINT = (
-    warmup.FORMAL_R_ROOT / "checkpoints/online_actor_critic_cycle_000020"
+    ROOT / "outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210"
 )
-DEFAULT_PENDING_CHECKPOINT = (
-    warmup.FORMAL_R_ROOT
-    / "checkpoints/online_replay_actor_critic_cycle_000021_pending"
-)
-DEFAULT_PENDING_CANDIDATE_ID = (
-    "stage3-online-r-real-async-joint-cycle-000021-candidate"
-)
-
-
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise RuntimeError(message)
 
 
-def _replay_snapshot() -> tuple[tuple[str, int, int], ...]:
+def _replay_snapshot(replay_root: Path) -> tuple[tuple[str, int, int], ...]:
     return tuple(sorted(
         (path.name, path.stat().st_size, path.stat().st_mtime_ns)
-        for path in (warmup.FORMAL_R_ROOT / "replay").glob("*.json")
+        for path in (replay_root / "replay").glob("*.json")
     ))
 
 
-class OneCycleLearner:
-    """One restored joint cycle over the replay snapshot loaded at startup."""
+class ContinuousLearner:
+    """Persistent Learner over sealed replay, independent of episode boundaries."""
 
     def __init__(
         self,
         *,
         device: torch.device,
         resume_checkpoint: Path,
-        pending_checkpoint: Path,
-        pending_candidate_id: str,
-        current_session_id: str,
+        checkpoint_root: Path,
+        replay_root: Path,
+        current_session_id: str | None,
     ) -> None:
-        require(not pending_checkpoint.exists(), "ONLINE_REPLAY_ASYNC_PENDING_CHECKPOINT_EXISTS")
         self.device = device
         self.resume_checkpoint = resume_checkpoint.resolve()
-        self.pending_checkpoint = pending_checkpoint.resolve()
-        self.pending_candidate_id = pending_candidate_id
+        self.checkpoint_root = checkpoint_root.resolve()
+        self.checkpoint_root.mkdir(parents=True, exist_ok=True)
+        self.replay_root = replay_root.resolve()
         self.current_session_id = current_session_id
-        self.replay_before = _replay_snapshot()
+        self.learner: dict[str, Any] | None = None
+        self.unique_r_count = 0
+        self.r_macro_count = 0
+
+    def set_current_session(self, session_id: str) -> None:
+        self.current_session_id = session_id
+
+    def clear_current_session(self) -> None:
+        self.current_session_id = None
+
+    def _ensure_learner(self) -> bool:
+        if self.learner is not None:
+            return True
+        if len(tuple((self.replay_root / "replay").glob("*.json"))) < 100:
+            return False
         all_r, r_macros, source_episodes = warmup.load_formal_online_r(
-            warmup.FORMAL_R_ROOT
+            self.replay_root
         )
-        require(
-            not any(
-                row["identity"].get("session_id") == current_session_id
-                for row in all_r
-            ),
-            "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
-        )
+        if self.current_session_id is not None:
+            require(
+                not any(
+                    row["identity"].get("session_id") == self.current_session_id
+                    for row in all_r
+                ),
+                "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
+            )
         self.unique_r_count = len(all_r)
         self.r_macro_count = len(r_macros)
         self.learner = prepare_learner(
@@ -100,14 +115,56 @@ class OneCycleLearner:
             warmup_api=warmup,
             joint_api=joint,
         )
+        return True
 
     def __call__(
         self, coordinator: InferencePriorityCoordinator
     ) -> dict[str, Any]:
+        if not self._ensure_learner():
+            return {
+                "waiting_for_replay": True,
+                "learner_critic_steps": 0,
+                "learner_actor_steps": 0,
+                "learner_polyak_steps": 0,
+                "current_episode_sampled": False,
+                "nonfinite_count": 0,
+                "oom_count": 0,
+            }
+        assert self.learner is not None
         learner = self.learner
+        all_r, r_macros, source_episodes = warmup.load_formal_online_r(
+            self.replay_root
+        )
+        if self.current_session_id is not None:
+            require(
+                not any(
+                    row["identity"].get("session_id") == self.current_session_id
+                    for row in all_r
+                ),
+                "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
+            )
+        reconcile_post_checkpoint_replay(learner["credits"], all_r)
+        if not learner["credits"].can_consume_joint_cycle():
+            return {
+                "waiting_for_replay": True,
+                "learner_critic_steps": 0,
+                "learner_actor_steps": 0,
+                "learner_polyak_steps": 0,
+                "current_episode_sampled": False,
+                "nonfinite_count": 0,
+                "oom_count": 0,
+            }
+        if len(r_macros) != len(learner["r_replay"].macros):
+            learner["r_replay"] = warmup.FormalReplay(
+                r_macros, source_episodes, learner["normalizer"]
+            )
+        self.unique_r_count = len(all_r)
+        self.r_macro_count = len(r_macros)
+        replay_before = _replay_snapshot(self.replay_root)
         previous = learner["runtime"]["counters"]
         critic_offset = int(previous["critic_optimizer_steps"])
-        cycle = int(previous["joint_cycles"])
+        base_cycle = int(previous["joint_cycles"])
+        online_cycle = int(learner.get("online_joint_cycles", 0))
         selected_identities: list[str] = []
         td_losses: list[float] = []
         nonfinite_count = 0
@@ -159,6 +216,7 @@ class OneCycleLearner:
                 nonfinite_count += 1
                 raise
             td_losses.append(float(record["loss"]))
+            learner["critic_scheduler"].step()
 
         rows = [
             joint._online_actor_row(learner["r_replay"], index)
@@ -178,7 +236,7 @@ class OneCycleLearner:
                     self.device,
                 )
             actor_record = joint.actor_step(
-                cycle=cycle,
+                cycle=base_cycle + online_cycle,
                 actor=learner["actor"],
                 q1=learner["q1"],
                 q2=learner["q2"],
@@ -205,26 +263,27 @@ class OneCycleLearner:
             self.current_session_id in identity
             for identity in selected_identities
         )
-        replay_after = _replay_snapshot()
+        replay_after = _replay_snapshot(self.replay_root)
         require(
             not current_episode_sampled
-            and replay_after == self.replay_before
+            and replay_after == replay_before
             and nonfinite_count == 0
             and oom_count == 0,
             "ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT",
         )
         counters = {
-            "joint_cycles": cycle + 1,
+            "joint_cycles": base_cycle + 1,
             "critic_optimizer_steps": critic_offset + 2,
             "actor_optimizer_steps": int(previous["actor_optimizer_steps"]) + 1,
             "target_polyak_steps": int(previous["target_polyak_steps"]) + 2,
         }
         runtime_state = {
+            "online_joint_cycles": online_cycle + 1,
             "source_checkpoint": str(self.resume_checkpoint),
             "flags": {"critic_ready": True, "actor_q_guidance_enabled": True},
             "counters": counters,
             "replay": {
-                "formal_r_root": str(warmup.FORMAL_R_ROOT),
+                "formal_r_root": str(self.replay_root),
                 "unique_r_transition_count": self.unique_r_count,
                 "new_r_transition_count": learner["new_r_transition_count"],
                 "eligible_ack_macro_count": self.r_macro_count,
@@ -233,7 +292,7 @@ class OneCycleLearner:
             },
             "sample_credit": learner["credits"].state_dict(),
             "sampler_state": {
-                "cycle": cycle + 1,
+                "cycle": online_cycle + 1,
                 "r_rng": learner["r_rng"].getstate(),
                 "d_rng": learner["d_rng"].getstate(),
             },
@@ -250,44 +309,23 @@ class OneCycleLearner:
                 "critic_optimizer_restored_from_joint_checkpoint": True,
                 "actor_optimizer_restored_from_joint_checkpoint": True,
             },
-            "candidate_policy_revision": {
-                "revision_id": self.pending_candidate_id,
-                "state": "candidate",
-                "activated": False,
-                "published": False,
-                "coordinator_disposition": "pending_episode_boundary",
-            },
+            "runtime_artifacts": learner["runtime"].get("runtime_artifacts", {}),
             "step_metrics": {
                 "critic_td_loss": td_losses,
                 "actor_fm_loss": [float(actor_record["fm_loss"])],
                 "actor_min_twin_q_loss": [float(actor_record["actor_q_loss"])],
             },
         }
-        joint.save_joint_checkpoint(
-            self.pending_checkpoint,
-            actor=learner["actor"],
-            modules=learner["modules"],
-            critic_optimizer=learner["critic_optimizer"],
-            actor_optimizer=learner["actor_optimizer"],
-            actor_scheduler=learner["actor_scheduler"],
-            runtime_state=runtime_state,
-            parent_binding=learner["binding"],
-            source_checkpoint=self.resume_checkpoint,
-            total_joint_cycles=cycle + 1,
-            candidate_revision_id=self.pending_candidate_id,
+        learner["runtime"] = runtime_state
+        learner["online_joint_cycles"] = online_cycle + 1
+        learner["critic_r"], learner["critic_d"], learner["actor_r"], learner["actor_d"] = joint.make_schedules(
+            learner["r_rng"], learner["d_rng"],
+            r_population_size=len(learner["r_replay"].macros),
+            d_population=learner["d_replay"].population, cycles=1,
         )
-        candidate = json.loads(
-            (self.pending_checkpoint / "candidate_policy/candidate.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        require(
-            candidate.get("revision_id") == self.pending_candidate_id
-            and candidate.get("state") == "candidate"
-            and candidate.get("published") is False
-            and candidate.get("activated") is False,
-            "ONLINE_REPLAY_ASYNC_PENDING_CANDIDATE_STATE_INVALID",
-        )
+        latest_checkpoint = None
+        if OnlineTrainingPolicy().checkpoint_due(online_cycle + 1):
+            latest_checkpoint = self.save_checkpoint()
         return {
             "learner_critic_steps": 2,
             "learner_actor_steps": 1,
@@ -295,11 +333,40 @@ class OneCycleLearner:
             "current_episode_sampled": False,
             "nonfinite_count": nonfinite_count,
             "oom_count": oom_count,
-            "pending_checkpoint_path": str(self.pending_checkpoint),
-            "pending_candidate_id": self.pending_candidate_id,
-            "pending_candidate_published": False,
-            "pending_candidate_activated": False,
+            "online_joint_cycle": online_cycle + 1,
+            "learner_actor": learner["actor"],
+            "latest_checkpoint_path": (
+                None if latest_checkpoint is None else str(latest_checkpoint)
+            ),
         }
+
+    def save_checkpoint(self) -> Path | None:
+        if self.learner is None:
+            return None
+        learner = self.learner
+        completed = int(learner.get("online_joint_cycles", 0))
+        if completed <= 0:
+            return None
+        target = online_checkpoint_path(self.checkpoint_root, completed)
+        if not target.exists():
+            joint.save_joint_checkpoint(
+                target,
+                actor=learner["actor"], modules=learner["modules"],
+                critic_optimizer=learner["critic_optimizer"],
+                actor_optimizer=learner["actor_optimizer"],
+                actor_scheduler=learner["actor_scheduler"],
+                critic_scheduler=learner["critic_scheduler"],
+                runtime_state=learner["runtime"], parent_binding=None,
+                actor_parent_path=self.resume_checkpoint / "actor",
+                parent_binding_id="task2-offline-exact-resume",
+                source_checkpoint=self.resume_checkpoint,
+                total_joint_cycles=int(learner["runtime"]["counters"]["joint_cycles"]),
+                actor_checkpoint_id=f"online-actor-critic-cycle-{completed:06d}",
+                checkpoint_kind="online_actor_critic_exact_resume",
+                actor_directory="actor",
+            )
+        retain_latest_online_checkpoints(self.checkpoint_root, keep=2)
+        return target
 
 
 class AsyncPolicyLearnerRuntime:
@@ -315,9 +382,8 @@ class AsyncPolicyLearnerRuntime:
         active_revision_id: str,
         active_model_revision: str,
         learner_resume_checkpoint: Path,
-        pending_checkpoint: Path,
-        pending_candidate_id: str,
-        learner_job: Callable[[InferencePriorityCoordinator], Mapping[str, Any]],
+        online_checkpoint_root: Path,
+        learner_job: ContinuousLearner,
         inference_stream: Any = None,
     ) -> None:
         self.engine = engine
@@ -327,8 +393,7 @@ class AsyncPolicyLearnerRuntime:
         self.active_revision_id = active_revision_id
         self.active_model_revision = active_model_revision
         self.learner_resume_checkpoint = learner_resume_checkpoint.resolve()
-        self.pending_checkpoint = pending_checkpoint.resolve()
-        self.pending_candidate_id = pending_candidate_id
+        self.online_checkpoint_root = online_checkpoint_root.resolve()
         self.learner_job = learner_job
         self.inference_stream = inference_stream
         self.coordinator = InferencePriorityCoordinator()
@@ -338,6 +403,10 @@ class AsyncPolicyLearnerRuntime:
         self._learner_state = "ready"
         self._learner_result: dict[str, Any] = {}
         self._learner_error: str | None = None
+        self._stop_learner = threading.Event()
+        self._broadcast_count = 0
+        self._policy = OnlineTrainingPolicy()
+        self._learner_thread: threading.Thread | None = None
         self._inference_request_count = 0
         self._actor_alive: AbstractContextManager[Any] | None = None
         self._pin: PinnedEpisode | None = None
@@ -347,16 +416,21 @@ class AsyncPolicyLearnerRuntime:
         return {
             **self.engine.metadata,
             "online_actor_learner": True,
+            "server_persistent": True,
+            "current_episode_sampling": False,
+            "training_starts": 100,
+            "actor_parameter_broadcast_period": 5,
+            "checkpoint_period": 50,
+            "keep_latest_checkpoints": 2,
+            "save_checkpoint_on_graceful_exit": True,
             "runtime_session_id": self.session_id,
             "runtime_episode_id": self.episode_id,
             "learner_started": self._learner_started,
             "learner_resume_checkpoint": str(self.learner_resume_checkpoint),
             "active_actor_revision": self.active_revision_id,
             "active_actor_model_revision": self.active_model_revision,
-            "pending_checkpoint_path": str(self.pending_checkpoint),
-            "pending_candidate_id": self.pending_candidate_id,
-            "pending_candidate_published": False,
-            "pending_candidate_activated": False,
+            "policy_epoch": int(self.machine.policy_epoch),
+            "online_checkpoint_root": str(self.online_checkpoint_root),
         }
 
     def status(self) -> dict[str, Any]:
@@ -364,12 +438,15 @@ class AsyncPolicyLearnerRuntime:
             result = dict(self._learner_result)
             return {
                 "online_actor_learner": True,
+                "server_persistent": True,
+                "current_episode_sampling": False,
                 "runtime_session_id": self.session_id,
                 "runtime_episode_id": self.episode_id,
                 "episode_active": self._episode_active,
                 "actor_revision_pinned": self._episode_active,
                 "active_actor_revision": self.active_revision_id,
                 "active_actor_model_revision": self.active_model_revision,
+                "policy_epoch": int(self.machine.policy_epoch),
                 "learner_started": self._learner_started,
                 "learner_state": self._learner_state,
                 "learner_resume_checkpoint": str(self.learner_resume_checkpoint),
@@ -379,10 +456,7 @@ class AsyncPolicyLearnerRuntime:
                 "current_episode_sampled": bool(
                     result.get("current_episode_sampled", False)
                 ),
-                "pending_checkpoint_path": str(self.pending_checkpoint),
-                "pending_candidate_id": self.pending_candidate_id,
-                "pending_candidate_published": False,
-                "pending_candidate_activated": False,
+                "online_checkpoint_root": str(self.online_checkpoint_root),
                 "inference_request_count": self._inference_request_count,
                 "actor_and_learner_concurrently_alive": (
                     self.coordinator.concurrently_alive
@@ -390,13 +464,16 @@ class AsyncPolicyLearnerRuntime:
                 "nonfinite_count": int(result.get("nonfinite_count", 0)),
                 "oom_count": int(result.get("oom_count", 0)),
                 "learner_error": self._learner_error,
+                "latest_checkpoint_path": (
+                    result.get("latest_checkpoint_path")
+                ),
+                "actor_parameter_broadcast_count": self._broadcast_count,
             }
 
     def start_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         self._validate_identity(payload)
         with self._lock:
             require(not self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_ALREADY_ACTIVE")
-            require(not self._learner_started, "ONLINE_REPLAY_ASYNC_SERVER_SINGLE_EPISODE_ONLY")
             self._pin = PinnedEpisode(
                 self.machine,
                 EpisodePin(
@@ -410,6 +487,21 @@ class AsyncPolicyLearnerRuntime:
             self._actor_alive.__enter__()
             self.coordinator.begin_actor_window(0.8)
             self._episode_active = True
+        return self.status()
+
+    def prepare_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        require(not self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_ALREADY_ACTIVE")
+        require(
+            payload.get("policy_revision") == self.active_model_revision,
+            "ONLINE_REPLAY_ASYNC_CAPTURE_IDENTITY_MISMATCH",
+        )
+        session_id = str(payload.get("session_id", ""))
+        episode_id = str(payload.get("episode_id", ""))
+        require(bool(session_id and episode_id), "ONLINE_REPLAY_ASYNC_CAPTURE_IDENTITY_MISMATCH")
+        with self._lock:
+            self.session_id = session_id
+            self.episode_id = episode_id
+            self.learner_job.set_current_session(session_id)
         return self.status()
 
     def _validate_identity(self, payload: Mapping[str, Any]) -> None:
@@ -430,18 +522,33 @@ class AsyncPolicyLearnerRuntime:
         def run() -> None:
             try:
                 with self.coordinator.worker_alive("learner"):
-                    result = dict(self.learner_job(self.coordinator))
-                with self._lock:
-                    self._learner_result = result
-                    self._learner_state = "complete"
+                    while not self._stop_learner.is_set():
+                        result = dict(self.learner_job(self.coordinator))
+                        if result.get("waiting_for_replay"):
+                            with self._lock:
+                                self._learner_state = "waiting_for_replay"
+                            self._stop_learner.wait(0.25)
+                            continue
+                        cycle = int(result["online_joint_cycle"])
+                        if self._policy.broadcast_due(cycle):
+                            with self.engine._lock:
+                                broadcast_actor_parameters(
+                                    result["learner_actor"], self.engine.policy
+                                )
+                            self._broadcast_count += 1
+                        result.pop("learner_actor", None)
+                        with self._lock:
+                            self._learner_result = result
+                            self._learner_state = "running"
             except Exception as error:
                 with self._lock:
                     self._learner_error = f"{type(error).__name__}:{error}"
                     self._learner_state = "failed"
 
-        threading.Thread(
+        self._learner_thread = threading.Thread(
             target=run, name="online-actor-learner", daemon=True
-        ).start()
+        )
+        self._learner_thread.start()
 
     def infer(self, request: dict[str, Any]) -> dict[str, Any]:
         provenance = request.get("provenance", {})
@@ -483,6 +590,13 @@ class AsyncPolicyLearnerRuntime:
             self._actor_alive = None
             self._pin = None
             self._episode_active = False
+            self.learner_job.clear_current_session()
+
+    def stop(self) -> None:
+        self._stop_learner.set()
+        if self._learner_thread is not None:
+            self._learner_thread.join()
+        self.learner_job.save_checkpoint()
 
 
 class RequestHandler(serve_policy.RequestHandler):
@@ -498,6 +612,7 @@ class RequestHandler(serve_policy.RequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path not in {
+            "/runtime/prepare-episode",
             "/runtime/episode-start",
             "/runtime/episode-end",
             "/runtime/episode-abort",
@@ -512,6 +627,7 @@ class RequestHandler(serve_policy.RequestHandler):
             if not isinstance(payload, dict):
                 raise ValueError("ONLINE_REPLAY_ASYNC_RUNTIME_REQUEST_MUST_BE_OBJECT")
             method = {
+                "/runtime/prepare-episode": self.runtime.prepare_episode,
                 "/runtime/episode-start": self.runtime.start_episode,
                 "/runtime/episode-end": self.runtime.end_episode,
                 "/runtime/episode-abort": self.runtime.abort_episode,
@@ -525,68 +641,62 @@ class RequestHandler(serve_policy.RequestHandler):
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--deployment-profile", type=Path, required=True)
+    parser.add_argument("--task-id", default="task2")
+    parser.add_argument("--output-root", type=Path)
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--episode-id", required=True)
-    parser.add_argument("--learner-resume-checkpoint", type=Path, default=DEFAULT_RESUME_CHECKPOINT)
-    parser.add_argument("--pending-checkpoint", type=Path, default=DEFAULT_PENDING_CHECKPOINT)
-    parser.add_argument("--pending-candidate-id", default=DEFAULT_PENDING_CANDIDATE_ID)
+    parser.add_argument("--learner-resume-checkpoint", type=Path)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--allow-development-robot-execution", action="store_true")
-    parser.add_argument("--deployment-binding", type=Path)
-    parser.add_argument("--trusted-deployment-binding-sha256")
     args = parser.parse_args(argv)
     if args.host not in {"127.0.0.1", "localhost"} or args.port <= 0:
         parser.error("only a valid loopback endpoint is allowed")
-    if not args.allow_development_robot_execution:
-        parser.error("--allow-development-robot-execution is required")
     return args
 
 
 def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
+    from forcesmolvla.training_runtime import resolve_task_output_root
+
     require(torch.cuda.is_available(), "ONLINE_REPLAY_ASYNC_CUDA_UNAVAILABLE")
-    profile = serve_policy.load_deployment_profile(args.deployment_profile, ROOT)
-    binding_path = (
-        Path(profile["deployment_binding"])
-        if args.deployment_binding is None
-        else args.deployment_binding.resolve()
+    output_root = resolve_task_output_root(
+        ROOT, task_id=args.task_id, output_root=args.output_root
     )
-    trusted = (
-        str(profile["deployment_binding_sha256"])
-        if args.trusted_deployment_binding_sha256 is None
-        else args.trusted_deployment_binding_sha256
-    )
+    resume_checkpoint = (
+        args.learner_resume_checkpoint
+        or output_root / "offline/checkpoints/offline_actor_critic_cycle_000210"
+    ).resolve()
+    actor_package = resume_checkpoint / "actor"
+    require(actor_package.is_dir(), "FORCERFT_OFFLINE_EXACT_RESUME_ACTOR_MISSING")
     device = torch.device("cuda:0")
     engine = serve_policy.InferenceEngine(
-        Path(profile["checkpoint"]),
-        Path(profile["rulespec"]),
+        actor_package,
+        ROOT / "configs/live_action_safety.task2.development.yaml",
         ROOT / "schemas/rulespec.schema.json",
         device,
-        allow_development_robot_execution=True,
-        deployment_binding_path=binding_path,
-        trusted_deployment_binding_sha256=trusted,
     )
-    machine = load_revision_registry(async_runner.REVISION_REGISTRY, fresh_process=False)
-    active = machine.record(machine.active_revision_id)
-    deployed = json.loads(
-        (Path(profile["checkpoint"]) / "candidate.json").read_text(
-            encoding="utf-8"
+    checkpoint_metadata = json.loads(
+        (resume_checkpoint / "metadata.json").read_text(encoding="utf-8")
+    )
+    actor_checkpoint = checkpoint_metadata.get("actor_checkpoint", {})
+    active_revision_id = str(actor_checkpoint.get("checkpoint_id", ""))
+    require(
+        checkpoint_metadata.get("kind") == "offline_actor_critic_exact_resume"
+        and active_revision_id,
+        "FORCERFT_OFFLINE_EXACT_RESUME_METADATA_INVALID",
+    )
+    machine = InMemoryRevisionStateMachine(
+        RevisionRecord(
+            active_revision_id,
+            engine.model_sha256,
+            RevisionState.ACTIVE,
         )
     )
-    require(
-        deployed.get("state") == "published"
-        and deployed.get("published") is True
-        and active.revision_id == deployed.get("revision_id")
-        and active.model_sha256 == engine.model_sha256
-        and active.model_sha256 == deployed.get("model_revision"),
-        "ONLINE_REPLAY_ASYNC_ACTIVE_DEPLOYMENT_MISMATCH",
-    )
-    learner = OneCycleLearner(
+    checkpoint_root = output_root / "online/checkpoints"
+    learner = ContinuousLearner(
         device=device,
-        resume_checkpoint=args.learner_resume_checkpoint,
-        pending_checkpoint=args.pending_checkpoint,
-        pending_candidate_id=args.pending_candidate_id,
+        resume_checkpoint=resume_checkpoint,
+        checkpoint_root=checkpoint_root,
+        replay_root=output_root / "online",
         current_session_id=args.session_id,
     )
     return AsyncPolicyLearnerRuntime(
@@ -594,11 +704,10 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         machine=machine,
         session_id=args.session_id,
         episode_id=args.episode_id,
-        active_revision_id=active.revision_id,
-        active_model_revision=active.model_sha256,
-        learner_resume_checkpoint=args.learner_resume_checkpoint,
-        pending_checkpoint=args.pending_checkpoint,
-        pending_candidate_id=args.pending_candidate_id,
+        active_revision_id=active_revision_id,
+        active_model_revision=engine.model_sha256,
+        learner_resume_checkpoint=resume_checkpoint,
+        online_checkpoint_root=checkpoint_root,
         learner_job=learner,
         inference_stream=torch.cuda.Stream(device=device, priority=-1),
     )
@@ -616,12 +725,12 @@ def main() -> int:
     )
     print(
         f"[learner] exact-resume={runtime.learner_resume_checkpoint} "
-        f"pending={runtime.pending_checkpoint}",
+        f"online_checkpoints={runtime.online_checkpoint_root}",
         flush=True,
     )
     print(
         f"[server] listening on http://{args.host}:{args.port} "
-        "robot_io=false execution=approved_binding_supervised_development",
+        "robot_io=false execution=disabled",
         flush=True,
     )
     try:
@@ -629,6 +738,7 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        runtime.stop()
         server.server_close()
     return 0
 

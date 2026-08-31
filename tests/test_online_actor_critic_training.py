@@ -19,6 +19,17 @@ from train_forcerft_actor_critic import (  # noqa: E402
     save_joint_checkpoint,
 )
 from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger  # noqa: E402
+from forcesmolvla.training_runtime import resolve_task_output_root  # noqa: E402
+
+
+def test_task_output_root_is_canonical(tmp_path: Path) -> None:
+    assert resolve_task_output_root(tmp_path, task_id="task2") == (
+        tmp_path / "outputs/task2"
+    ).resolve()
+    explicit = tmp_path / "custom"
+    assert resolve_task_output_root(
+        tmp_path, task_id="task2", output_root=explicit
+    ) == explicit.resolve()
 
 
 class TinyPolicy(torch.nn.Module):
@@ -93,27 +104,20 @@ def test_optimizer_ownership_is_disjoint() -> None:
     )
 
 
-def test_resume_modules_reads_canonical_training_config(
+def test_resume_modules_reads_exact_resume_actor_and_canonical_training_config(
     tmp_path: Path, monkeypatch,
 ) -> None:
     checkpoint = tmp_path / "joint"
-    actor_package = checkpoint / "candidate_policy"
+    actor_package = checkpoint / "actor"
     actor_package.mkdir(parents=True)
-    (actor_package / "candidate.json").write_text(json.dumps({
-        "source_joint_checkpoint": str(checkpoint),
-        "state": "candidate",
-        "published": False,
-        "activated": False,
+    (checkpoint / "metadata.json").write_text(json.dumps({
+        "kind": "offline_actor_critic_exact_resume",
+        "actor_directory": "actor",
     }))
-    binding_path = tmp_path / "binding.json"
-    binding_path.write_text("{}\n")
     config_path = tmp_path / "training.yaml"
     config_path.write_text(
         "data:\n  critic_backbone_npz: backbone.npz\n"
         "  critic_backbone_manifest: backbone.json\n"
-    )
-    monkeypatch.setattr(
-        "train_forcerft_actor_critic.warmup.PARENT_BINDING", binding_path
     )
     monkeypatch.setattr(
         "train_forcerft_actor_critic.warmup.TRAINING_CONFIG", config_path
@@ -134,10 +138,11 @@ def test_resume_modules_reads_canonical_training_config(
         checkpoint,
         actor_package,
         torch.device("cpu"),
-        allow_checkpoint_candidate=True,
     )
 
-    assert binding == {}
+    assert binding["normalizer_binding"]["absolute_path"] == str(
+        checkpoint / "artifacts/normalizer_manifest.json"
+    )
     assert config["data"]["critic_backbone_npz"] == "backbone.npz"
 
 
@@ -169,9 +174,13 @@ def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
     critic_optimizer = torch.optim.Adam(
         tuple(modules["q1"].parameters()) + tuple(modules["q2"].parameters()), lr=3e-4,
     )
+    critic_scheduler = torch.optim.lr_scheduler.LambdaLR(
+        critic_optimizer, lambda _step: 1.0
+    )
     actor_optimizer = torch.optim.AdamW(actor.trainable.parameters(), lr=1e-5)
     actor_scheduler = torch.optim.lr_scheduler.LambdaLR(actor_optimizer, lambda _step: 1.0)
     _step(modules["q1"], critic_optimizer)
+    critic_scheduler.step()
     _step(actor.trainable, actor_optimizer)
     actor_scheduler.step()
     credits = UpdateCreditLedger(credits_per_transition=1, credits_per_joint_cycle=1)
@@ -185,14 +194,14 @@ def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
             "d_rng": random.Random(2).getstate(),
         },
         "counters": {"joint_cycles": 10},
+        "runtime_artifacts": {
+            "normalizer": str(tmp_path / "normalizer.json"),
+            "action_contract": str(tmp_path / "action_contract.json"),
+        },
         "step_metrics": {"critic_td_loss": [float(index) for index in range(20)]},
     }
-    binding = {
-        "binding_id": "approved_hybrid_cycle210_actor_g7a_r2_twin_q.v1",
-        "actor_parent": {
-            "architecture_binding": {"container_path": str(tmp_path / "unused")}
-        },
-    }
+    (tmp_path / "normalizer.json").write_text("{}\n")
+    (tmp_path / "action_contract.json").write_text("{}\n")
     checkpoint = tmp_path / "joint"
 
     save_joint_checkpoint(
@@ -202,11 +211,16 @@ def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
         critic_optimizer=critic_optimizer,
         actor_optimizer=actor_optimizer,
         actor_scheduler=actor_scheduler,
+        critic_scheduler=critic_scheduler,
         runtime_state=runtime,
-        parent_binding=binding,
-        source_checkpoint=tmp_path / "cycle_000010",
-        total_joint_cycles=20,
-        candidate_revision_id="stage3-online-r-joint-cycle-000020-candidate",
+        parent_binding=None,
+        actor_parent_path=tmp_path,
+        parent_binding_id="task2-offline-exact-resume",
+        source_checkpoint=tmp_path / "offline_parent",
+        total_joint_cycles=10,
+        actor_checkpoint_id="offline-actor-critic-cycle-000210",
+        checkpoint_kind="offline_actor_critic_exact_resume",
+        actor_directory="actor",
     )
     restored = load_joint_checkpoint_once(
         checkpoint,
@@ -215,6 +229,7 @@ def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
         critic_optimizer=critic_optimizer,
         actor_optimizer=actor_optimizer,
         actor_scheduler=actor_scheduler,
+        critic_scheduler=critic_scheduler,
         device=torch.device("cpu"),
     )
 
@@ -222,11 +237,13 @@ def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
     assert restored["step_metrics"]["critic_td_loss"] == [
         float(index) for index in range(20)
     ]
-    candidate = json.loads((checkpoint / "candidate_policy/candidate.json").read_text())
-    assert candidate["revision_id"] == "stage3-online-r-joint-cycle-000020-candidate"
-    assert candidate["state"] == "candidate"
-    assert candidate["activated"] is False
     metadata = json.loads((checkpoint / "metadata.json").read_text())
-    assert metadata["source_checkpoint"].endswith("cycle_000010")
-    assert metadata["joint_cycles"] == 20
+    assert metadata["kind"] == "offline_actor_critic_exact_resume"
+    assert metadata["actor_directory"] == "actor"
+    assert metadata["source_checkpoint"].endswith("offline_parent")
+    assert metadata["joint_cycles"] == 10
     assert metadata["actor_optimizer_restored"] is True
+    assert (checkpoint / "artifacts/normalizer_manifest.json").is_file()
+    assert (checkpoint / "artifacts/action_delta_spec.json").is_file()
+    assert critic_optimizer.state and actor_optimizer.state
+    assert critic_scheduler.last_epoch == 1 and actor_scheduler.last_epoch == 1

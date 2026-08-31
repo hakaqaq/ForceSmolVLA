@@ -86,7 +86,26 @@ REQUIRED_STREAMS = (
     "wrist_camera",
 )
 REPO_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_PARENT_BINDING = REPO_ROOT / "configs/online_replay_bootstrap_parent_binding.v1.development.json"
+DEFAULT_PARENT_BINDING: Path | None = None
+CANONICAL_SFT_MANIFEST_ROOT = (
+    REPO_ROOT
+    / "outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000/manifests"
+)
+
+
+def _runtime_input_paths(parent_binding_path: Path | None) -> tuple[Path, Path, str]:
+    if parent_binding_path is None:
+        return (
+            CANONICAL_SFT_MANIFEST_ROOT / "calibration_bundle.development.json",
+            CANONICAL_SFT_MANIFEST_ROOT / "converter_runtime_spec.task2.development.json",
+            "task2-canonical-runtime-inputs",
+        )
+    parent = _read_json(Path(parent_binding_path))
+    return (
+        Path(parent["calibration_binding"]["absolute_path"]),
+        Path(parent["runtime_contract_binding"]["absolute_path"]),
+        str(parent.get("binding_id", "")),
+    )
 DEFAULT_REWARD_TRANSITION_CONFIG = (
     REPO_ROOT / "configs/reward_transition_materialization.development.json"
 )
@@ -152,16 +171,16 @@ FrozenDetector = Callable[[PreparedEpisode], FrozenDetectorScores]
 def _prepare_native_episode(
     episode_dir: Path,
     *,
-    parent_binding_path: Path = DEFAULT_PARENT_BINDING,
+    parent_binding_path: Path | None = DEFAULT_PARENT_BINDING,
 ) -> PreparedEpisode:
     """Materialize calibrated observations without loading the reward model."""
 
-    parent = _read_json(Path(parent_binding_path))
-    calibration_payload = _read_json(
-        Path(parent["calibration_binding"]["absolute_path"])
+    calibration_path, runtime_path, _parent_id = _runtime_input_paths(
+        parent_binding_path
     )
+    calibration_payload = _read_json(calibration_path)
     runtime_contract = RuntimeContract.from_development_json(
-        Path(parent["runtime_contract_binding"]["absolute_path"])
+        runtime_path
     )
     episode_dir = Path(episode_dir)
     return prepare_episode(
@@ -175,12 +194,14 @@ def _prepare_native_episode(
 def frozen_episode_materializer(
     detector: FrozenDetector,
     *,
-    parent_binding_path: Path = DEFAULT_PARENT_BINDING,
+    parent_binding_path: Path | None = DEFAULT_PARENT_BINDING,
     detector_config_path: Path = DEFAULT_REWARD_TRANSITION_CONFIG,
 ) -> EpisodeMaterializer:
     """Bind the single-episode converter and frozen reward detector."""
 
-    parent = _read_json(Path(parent_binding_path))
+    calibration_path, runtime_path, parent_id = _runtime_input_paths(
+        parent_binding_path
+    )
     detector_config = _read_json(Path(detector_config_path))
     spec = detector_config.get("detector_spec", {})
     reward_contract = detector_config.get("reward_contract", {})
@@ -194,11 +215,8 @@ def frozen_episode_materializer(
         or reward_contract.get("detector_miss_policy") != "exclude_without_fallback"
     ):
         raise ProductionBridgeError("BRIDGE_FROZEN_DETECTOR_CONFIG_MISMATCH")
-    calibration_path = Path(parent["calibration_binding"]["absolute_path"])
-    runtime_path = Path(parent["runtime_contract_binding"]["absolute_path"])
     calibration_payload = _read_json(calibration_path)
     runtime_contract = RuntimeContract.from_development_json(runtime_path)
-    parent_id = str(parent.get("binding_id", ""))
     if not parent_id:
         raise ProductionBridgeError("BRIDGE_PARENT_BINDING_ID_MISSING")
 

@@ -27,13 +27,6 @@ _MODULE_EXPORTS = {
         "OnlineLossAPI",
         "TrainingStartsBlocked",
     ),
-    "bootstrap_parent": (
-        "ParentBindingError",
-        "load_parent_binding",
-        "preflight_parent_binding",
-        "validate_parent_binding_schema",
-        "validate_parent_binding_semantics",
-    ),
     "policy_protocol": ("InferenceDisposition", "PolicyEpochGate", "TransportEnvelope"),
     "policy_revision": (
         "EpisodeRevisionPin",

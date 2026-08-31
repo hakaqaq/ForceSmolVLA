@@ -21,7 +21,7 @@ def test_cli_requires_only_dataset_and_experiment_config(monkeypatch) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
-        ["train_forcesmolvla_sft.py", "--dataset", str(dataset), "--config", str(config)],
+        ["train_forcesmolvla_sft.py", "--dataset", str(dataset), "--config", str(config), "--task-id", "test_task"],
     )
 
     args = parse_args()

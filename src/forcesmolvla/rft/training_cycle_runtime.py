@@ -28,7 +28,7 @@ MANUAL_REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_manual_r
 LABELS = ROOT / "labels"
 DATASET = ROOT / "datasets/task2_lerobotv3"
 PARENT_ACTOR_CHECKPOINT = (
-    ROOT / "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/forcesmolvla_sft_step_010000"
+    ROOT / "outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000"
 )
 REWARD_BACKBONE_PARAMETERS = (
     ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"

@@ -1,13 +1,14 @@
 configuration_kind: forcerft_actor_critic_training.development
 authorization: approved_offline_and_asynchronous_training
 
-parent_binding:
-  path: configs/online_replay_bootstrap_parent_binding.v1.development.json
-  binding_id: approved_hybrid_cycle210_actor_g7a_r2_twin_q.v1
-  binding_type: new_hybrid_stage3_bootstrap
-  actor_source: cycle210_evaluation
-  critic_source: G7A-r2
-  target_critic_source: G7A-r2
+task:
+  task_id: task2
+  output_root: outputs/task2
+
+parents:
+  actor_checkpoint: outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000
+  critic_checkpoint: outputs/task2/offline/checkpoints/offline_twin_q_critic_warmup_step_000256
+  offline_exact_resume_checkpoint: outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210
   strict_load: true
   random_critic_fallback: false
   target_copy_fallback: false
@@ -15,32 +16,19 @@ parent_binding:
 environment:
   physical_cuda_device_index: 0
   visible_cuda_device_index: 0
-  expected_cuda_visible_devices: "0"
-  expected_gpu_name: NVIDIA GeForce RTX 4090 D
-  expected_gpu_uuid: GPU-0f7fb0c9-3905-7cd0-7e0e-bad412e1cc66
-  nvidia_smi_driver_version_at_authorization: 570.211.01
-  python_executable: /home/rlc123/anaconda3/envs/forcesmolvla/bin/python
   seed: 4404
-  cublas_workspace_config: ':4096:8'
   deterministic_algorithms: true
   cudnn_benchmark: false
   cudnn_deterministic: true
 
 data:
   transition_root: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
-  transition_manifest_sha256: 96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5
   lerobot_v3_root: datasets/task2_lerobotv3
-  conversion_manifest_sha256: b1d625b892e9df763c5bb0ffbe1ef78996e50bec8e27da1fca2806906d74d477
-  normalizer_manifest_sha256: c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e
   critic_backbone_npz: artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz
-  critic_backbone_npz_sha256: 16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5
   critic_backbone_manifest: artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json
-  critic_backbone_manifest_sha256: 2e54ec70420ebd9cd73c12689937fca2597cf74d8ea608526b805999647e22e8
-  online_R_source: synthetic_preflight_R_only
-  offline_D_source: automatic_detector_g1_train
-  reward_terminal_source: frozen_automatic_detector_g1_train_transition_rows
-  writes_real_replay: false
-  row_selection_seed: 4411
+  online_replay_root: outputs/task2/online/replay
+  offline_D_source: materialized_reward_terminal_demo_replay
+  current_episode_sampling: false
 
 batching:
   critic_batch_size: 64
@@ -55,12 +43,28 @@ batching:
   critic_slots: 3
   action_features: 7
 
-cycles:
-  warmup_joint_cycles: 1
-  measured_joint_cycles: 3
+offline_training:
+  joint_cycles: 210
   critic_updates_per_cycle: 2
   actor_updates_per_cycle: 1
   target_polyak_updates_per_cycle: 2
+  demo_only: true
+  vlm_frozen: true
+  expert_only_flow_matching: true
+
+online_training:
+  training_starts: 100
+  demo_ratio: 0.5
+  online_ratio: 0.5
+  critic_updates_per_cycle: 2
+  actor_updates_per_cycle: 1
+  target_polyak_updates_per_cycle: 2
+  actor_parameter_broadcast_period: 5
+  checkpoint_period: 50
+  save_checkpoint_on_graceful_exit: true
+  keep_latest_checkpoints: 2
+  server_persistent: true
+  current_episode_sampling: false
 
 optimizer:
   actor:
@@ -72,11 +76,6 @@ optimizer:
     lr: 3.0e-4
     grad_clip_norm: 10.0
   polyak_tau: 0.005
-  inherit_optimizer_state: false
-  inherit_scheduler: false
-  inherit_rng: false
-  inherit_sampler: false
-  persist_runtime_state: false
 
 loss:
   beta_expert_flow_matching: 1.0
@@ -84,6 +83,9 @@ loss:
   balance_weight: 0.01
   z_weight: 0.001
   online_critic: pure_td
+  min_twin_q_actor_guidance: true
+  tcp6_q_gradient: true
+  gripper_q_stop_gradient: true
   calql_enabled: false
   cql_enabled: false
   random_candidates_enabled: false

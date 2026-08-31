@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import http.client
-from http.server import ThreadingHTTPServer
+import io
 from pathlib import Path
 import sys
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -51,26 +51,58 @@ class FakeEngine:
         "model_sha256": "model-cycle10",
     }
 
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.policy = FakePolicy()
+
     def infer(self, request):
         time.sleep(0.02)
         return {"request_id": request["request_id"], "actions": [[0.0] * 7] * 50}
 
 
-def _learner_job(coordinator):
-    with coordinator.learner_step_slot("critic", initial_estimate_s=0.0):
-        time.sleep(0.005)
-    return {
-        "learner_critic_steps": 2,
-        "learner_actor_steps": 1,
-        "learner_polyak_steps": 2,
-        "current_episode_sampled": False,
-        "nonfinite_count": 0,
-        "oom_count": 0,
-        "pending_checkpoint_path": "/tmp/pending",
-        "pending_candidate_id": "pending-cycle21",
-        "pending_candidate_published": False,
-        "pending_candidate_activated": False,
-    }
+class FakePolicy:
+    def __init__(self) -> None:
+        self.value = 0
+
+    def state_dict(self):
+        return {"value": self.value}
+
+    def load_state_dict(self, state, strict=True):
+        assert strict is True
+        self.value = state["value"]
+
+    def eval(self):
+        return self
+
+
+class FakeLearner:
+    def __init__(self) -> None:
+        self.cycle = 0
+
+    def set_current_session(self, _session_id: str) -> None:
+        pass
+
+    def clear_current_session(self) -> None:
+        pass
+
+    def save_checkpoint(self):
+        return None
+
+    def __call__(self, coordinator):
+        with coordinator.learner_step_slot("critic", initial_estimate_s=0.0):
+            time.sleep(0.005)
+        self.cycle += 1
+        return {
+            "learner_critic_steps": 2,
+            "learner_actor_steps": 1,
+            "learner_polyak_steps": 2,
+            "current_episode_sampled": False,
+            "nonfinite_count": 0,
+            "oom_count": 0,
+            "online_joint_cycle": self.cycle,
+            "learner_actor": FakePolicy(),
+            "latest_checkpoint_path": None,
+        }
 
 
 def _runtime() -> AsyncPolicyLearnerRuntime:
@@ -82,9 +114,8 @@ def _runtime() -> AsyncPolicyLearnerRuntime:
         active_revision_id="active-cycle10",
         active_model_revision="model-cycle10",
         learner_resume_checkpoint=Path("/tmp/cycle20"),
-        pending_checkpoint=Path("/tmp/pending"),
-        pending_candidate_id="pending-cycle21",
-        learner_job=_learner_job,
+        online_checkpoint_root=Path("/tmp/online-checkpoints"),
+        learner_job=FakeLearner(),
     )
 
 
@@ -130,7 +161,7 @@ def test_resume_reconciles_append_only_replay_and_credits_once() -> None:
     assert credits.snapshot().available == 698
 
 
-def test_runtime_pins_actor_and_runs_one_learner_cycle() -> None:
+def test_runtime_pins_actor_and_runs_persistent_learner() -> None:
     runtime = _runtime()
     runtime.start_episode(_identity())
     result = runtime.infer({
@@ -139,7 +170,7 @@ def test_runtime_pins_actor_and_runs_one_learner_cycle() -> None:
     })
     assert result["request_id"] == "request-1"
     deadline = time.monotonic() + 2.0
-    while runtime.status()["learner_state"] != "complete":
+    while runtime.status()["learner_actor_steps"] < 1:
         assert time.monotonic() < deadline
         time.sleep(0.005)
     runtime.end_episode(_identity())
@@ -148,8 +179,8 @@ def test_runtime_pins_actor_and_runs_one_learner_cycle() -> None:
     assert status["learner_critic_steps"] == 2
     assert status["learner_actor_steps"] == 1
     assert status["current_episode_sampled"] is False
-    assert status["pending_candidate_published"] is False
-    assert status["pending_candidate_activated"] is False
+    assert status["server_persistent"] is True
+    runtime.stop()
 
 
 def test_runtime_rejects_capture_and_inference_identity_mismatch() -> None:
@@ -163,41 +194,36 @@ def test_runtime_rejects_capture_and_inference_identity_mismatch() -> None:
             "provenance": {"session_id": "wrong"},
         })
     runtime.abort_episode(_identity())
+    runtime.stop()
 
 
 def test_http_runtime_endpoints_share_the_inference_runtime() -> None:
     runtime = _runtime()
-    server = ThreadingHTTPServer(("127.0.0.1", 0), RequestHandler)
-    server.engine = runtime
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+    handler = object.__new__(RequestHandler)
+    handler.server = SimpleNamespace(engine=runtime)
+    responses: list[tuple[int, dict]] = []
+    handler._write_json = lambda code, payload: responses.append((code, payload))
     try:
         import json
 
-        body = json.dumps(_identity())
-        connection.request(
-            "POST", "/runtime/episode-start", body,
-            {"Content-Type": "application/json"},
-        )
-        assert connection.getresponse().status == 200
-        connection.close()
-        connection = http.client.HTTPConnection(
-            "127.0.0.1", server.server_port, timeout=2
-        )
+        body = json.dumps(_identity()).encode()
+        handler.path = "/runtime/episode-start"
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = io.BytesIO(body)
+        handler.do_POST()
+        assert responses.pop(0)[0] == 200
+
         infer = json.dumps({
             "request_id": "request-http",
             "provenance": {"session_id": "session-1"},
+        }).encode()
+        handler.path = "/infer"
+        handler.headers = {"Content-Length": str(len(infer))}
+        handler.rfile = io.BytesIO(infer)
+        handler.do_POST()
+        assert responses.pop(0) == (200, {
+            "request_id": "request-http", "actions": [[0.0] * 7] * 50,
         })
-        connection.request(
-            "POST", "/infer", infer, {"Content-Type": "application/json"},
-        )
-        response = connection.getresponse()
-        assert response.status == 200
-        assert json.loads(response.read())["request_id"] == "request-http"
     finally:
-        connection.close()
         runtime.abort_episode(_identity())
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+        runtime.stop()
