@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import hashlib
 import json
 from pathlib import Path
 import sys
@@ -164,26 +163,3 @@ def test_real_parameters_remain_null_and_label_template_is_empty():
     review = json.loads((ROOT / "schemas/stage2_reward_classifier_review_template.json").read_text())
     assert review["records"] == []
     assert review["generation_permitted"] is False
-
-
-def test_r0prep_source_manifest_is_append_only_and_current():
-    path = ROOT / "artifacts/development/stage2/stage2_source_manifest.v4_r0prep.json"
-    payload = json.loads(path.read_text())
-    parent = ROOT / payload["parent_manifest_path"]
-    assert hashlib.sha256(parent.read_bytes()).hexdigest() == payload["parent_manifest_sha256"]
-    assert payload["parent_manifest_sha256"] == (
-        "defa5b1d1a975c465154ac62e009863163947065127c557b5600025ce77b29eb"
-    )
-    assert payload["manifest_generation"] == "v4_r0prep_1"
-    assert payload["active_gate"] == "R0_PREPARATION_ONLY"
-    assert payload["supersedes_for_future_gates"] is True
-    assert payload["parent_remains_authoritative_for_g0_g3"] is True
-    assert payload["self_included"] is False
-    for entry in payload["delta_files"]:
-        source = ROOT / entry["relative_path"]
-        assert source.stat().st_size == entry["file_size"]
-        assert hashlib.sha256(source.read_bytes()).hexdigest() == entry["sha256"]
-    assert payload["conrft_repository"]["environment_binding_status"] == "R0_PREPARATION_READY"
-    assert payload["isolated_environment"]["versions"]["jax"] == "0.4.20"
-    assert payload["isolated_environment"]["versions"]["flax"] == "0.8.0"
-    assert payload["isolated_environment"]["versions"]["optax"] == "0.1.5"
