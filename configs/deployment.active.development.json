@@ -2,7 +2,7 @@
   "schema_version": "forcesmolvla-deployment-profile-v1",
   "artifact_status": "development_only",
   "deployment_id": "task2-r5",
-  "checkpoint": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000",
+  "checkpoint": "outputs/development/task2_lerobotv3_full_sft_10k_r5/checkpoints/forcesmolvla_sft_step_010000",
   "rulespec": "configs/live_action_safety.task2.development.yaml",
   "deployment_binding": "artifacts/development/live/task2_r5_live_deployment_binding.json",
   "deployment_binding_sha256": "0e8564ea80d302779aa0fec5f73fdba8ff0a9a8f9cb85fe6ad677295fcbfb371",

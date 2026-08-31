@@ -505,6 +505,16 @@ operator_task_outcome [success/failure]:
 
 ### 12.1 必须保留
 
+当前 canonical milestone 路径采用 typed counter：
+
+- SFT：`$SFT_OUTPUT/checkpoints/forcesmolvla_sft_step_010000`；
+- offline Twin-Q warmup：`artifacts/development/offline/offline_twin_q_critic_warmup_step_000256`；
+- cycle210 Actor-only export：`artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1`；
+- online Critic warmup：`$CHECKPOINT_ROOT/online_replay_critic_warmup_step_000100`；
+- online Actor/Critic：`$CHECKPOINT_ROOT/online_actor_critic_cycle_000010` 与 `$CHECKPOINT_ROOT/online_actor_critic_cycle_000020`。
+
+这些名称中的 `step` 是 optimizer step，`cycle` 是联合训练 cycle；Actor-only package 使用 `actor_export`，不称为 checkpoint。冻结 provenance 仍可能引用旧容器路径，因此只有在所有 frozen consumer 都迁移后才可删除 legacy 容器。
+
 - 最终 LeRobot v3 offline `D` 数据集及 conversion/split/normalizer manifests；
 - v3 manifest、reward classifier、Critic 或从头复现实验引用的原始 raw episodes；
 - formal replay/WAL/outbox admission 引用的每个原始 online episode，包括全部 JPEG 和 streams；

@@ -1101,7 +1101,7 @@ def _make_policy_execution_fixture_async(episode: Path) -> Path:
     dataset = episode.parent.parent
     manifest_path = dataset / "integrated_capture_session.json"
     manifest = json.loads(manifest_path.read_text())
-    resume = "/tmp/stage3_joint_cycle_000020"
+    resume = "/tmp/online_actor_critic_cycle_000020"
     active = "stage3-online-r-joint-cycle-000010-candidate"
     pending = "stage3-online-r-real-async-joint-cycle-000021-pending"
     manifest.update(
@@ -1133,7 +1133,7 @@ def _make_policy_execution_fixture_async(episode: Path) -> Path:
             "critic_updates": 2,
             "actor_updates": 1,
             "current_episode_sampled_by_learner": False,
-            "pending_checkpoint_path": "/tmp/stage3_joint_cycle_000021_pending",
+            "pending_checkpoint_path": "/tmp/online_actor_critic_cycle_000021_pending",
             "pending_candidate_id": pending,
             "pending_candidate_published": False,
             "pending_candidate_activated": False,

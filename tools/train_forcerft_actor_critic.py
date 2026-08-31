@@ -34,7 +34,7 @@ RESUME_CHECKPOINT = (
 )
 RESUME_ACTOR_PACKAGE = (
     ROOT
-    / "artifacts/development/stage3/published"
+    / "artifacts/development/online_replay/published"
     / "online_actor_critic_cycle_000010_actor_export.v1"
 )
 JOINT_CHECKPOINT = warmup.FORMAL_R_ROOT / "checkpoints/online_actor_critic_cycle_000020"

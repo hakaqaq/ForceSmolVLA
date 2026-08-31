@@ -49,7 +49,7 @@ def test_cycle210_evaluation_actor_is_selected_and_not_a_learner_resume(binding:
     assert actor["selected"] is True
     assert actor["sha256"] == "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
     assert actor["full_learner_resume"] is False
-    assert "cycle210_evaluation_smoke_checkpoint.v1/model.safetensors" in actor["absolute_path"]
+    assert "offline_actor_critic_cycle_000210_actor_export.v1/model.safetensors" in actor["absolute_path"]
 
 
 def test_offline_twin_q_r2_online_and_target_twin_q_are_selected(binding: dict) -> None:

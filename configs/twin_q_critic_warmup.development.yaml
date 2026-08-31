@@ -98,7 +98,7 @@ rng:
     calql_next_policy_flow_noise: 4207
 
 checkpoint:
-  path: artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint
+  path: artifacts/development/offline/offline_twin_q_critic_warmup_step_000256
   atomic: true
   strict_fresh_process_load_required: true
   markers:

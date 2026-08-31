@@ -1,10 +1,10 @@
 {
   "artifact_status": "development_only",
-  "checkpoint": "artifacts/development/stage3/published/stage3_joint_cycle_000010_candidate.v1",
+  "checkpoint": "artifacts/development/online_replay/published/online_actor_critic_cycle_000010_actor_export.v1",
   "dataset_manifest": "datasets/task2_lerobotv3/conversion_manifest.json",
-  "deployment_binding": "artifacts/development/live/task2_stage3_joint_cycle000010_candidate_deployment_binding.v1.json",
+  "deployment_binding": "artifacts/development/live/task2_online_actor_critic_cycle000010_candidate_deployment_binding.v1.json",
   "deployment_binding_sha256": "80d5c1fb6a6edf8da9b87b5043e3b2ddb8984f90dfce2a055e00935f0215cd96",
-  "deployment_id": "task2-stage3-joint-cycle000010-candidate",
+  "deployment_id": "task2-online-actor-critic-cycle000010-candidate",
   "raw_session": "/home/rlc123/fr3_client_ws/datasets/task2/session.json",
   "rulespec": "configs/live_action_safety.task2.development.yaml",
   "schema_version": "forcesmolvla-deployment-profile-v1",

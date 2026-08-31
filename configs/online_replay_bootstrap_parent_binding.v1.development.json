@@ -15,8 +15,8 @@
   "actor_parent": {
     "logical_role": "Stage-3 initial Actor from cycle210 evaluation export",
     "selected": true,
-    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/model.safetensors",
-    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/model.safetensors",
+    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/model.safetensors",
+    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/model.safetensors",
     "format": "safetensors",
     "size_bytes": 1420094908,
     "sha256": "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d",
@@ -31,11 +31,11 @@
     ],
     "architecture_binding": {
       "module": "forcesmolvla.modeling_forcesmolvla.ForceSmolVLAPolicy",
-      "config_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/config.json",
+      "config_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/config.json",
       "config_sha256": "27147413fd1062e77c312e3a9f5221318df138878de20099faa1a0012292d24b",
-      "actor_export_manifest_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/artifact_manifest.json",
+      "actor_export_manifest_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/artifact_manifest.json",
       "actor_export_manifest_sha256": "fb6fa6aceb9892ba2d39d136936c7e28f4a701bf7dd994169aae60c69894e395",
-      "container_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1",
+      "container_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1",
       "container_tree_sha256": "0945ab6d984663b82c2546f2b70eb190e59907bbc87a44fa806fda0f729682b7",
       "container_file_count": 54,
       "container_total_file_size": 1425391406,
@@ -58,8 +58,8 @@
       {
         "logical_role": "online_q1",
         "selected": true,
-        "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q1_state.pt",
-        "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q1_state.pt",
+        "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/models/q1_state.pt",
+        "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/models/q1_state.pt",
         "format": "pytorch_state_dict",
         "size_bytes": 56463747,
         "sha256": "13f464ea2c07184dd6a564af6743872af2e2c06cbf21e23dfe29f20363bb4a66",
@@ -71,8 +71,8 @@
       {
         "logical_role": "online_q2",
         "selected": true,
-        "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q2_state.pt",
-        "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q2_state.pt",
+        "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/models/q2_state.pt",
+        "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/models/q2_state.pt",
         "format": "pytorch_state_dict",
         "size_bytes": 56463747,
         "sha256": "86022ddc6b78ea06919c0d02d7a7b7ee718d958df35f509d2a53ce9584ed53ec",
@@ -86,7 +86,7 @@
       "module": "forcesmolvla.rft.critic.ForceAwareMacroCritic",
       "config_path": "/home/rlc123/ForceSmolVLA/configs/twin_q_critic.development.yaml",
       "config_sha256": "ab23300edc478cff53a82215702fd659cc838933426f611042c9c6a3a88b7dcc",
-      "container_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint",
+      "container_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256",
       "container_tree_sha256": "f8c08b9058d173211a7306d370a97a848bfc1f7569ac52e6cc88baacff0c0d40",
       "container_file_count": 18,
       "container_total_file_size": 296019846,
@@ -107,8 +107,8 @@
       {
         "logical_role": "target_q1",
         "selected": true,
-        "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q1_target_state.pt",
-        "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q1_target_state.pt",
+        "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/models/q1_target_state.pt",
+        "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/models/q1_target_state.pt",
         "format": "pytorch_state_dict",
         "size_bytes": 56464699,
         "sha256": "da3e80a552c65be49e5f9d7f911cd1c3b2e466e4c1402a71181a5de4d24e62ea",
@@ -120,8 +120,8 @@
       {
         "logical_role": "target_q2",
         "selected": true,
-        "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q2_target_state.pt",
-        "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/models/q2_target_state.pt",
+        "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/models/q2_target_state.pt",
+        "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/models/q2_target_state.pt",
         "format": "pytorch_state_dict",
         "size_bytes": 56464699,
         "sha256": "a113fe238acbbf6921eb736a988c2dfd6b8074d01369786c860961ff6a1e6810",
@@ -141,8 +141,8 @@
   "normalizer_binding": {
     "logical_role": "frozen Stage-1 state7/wrench6/delta_action7 normalizer",
     "selected": true,
-    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/normalizer_manifest.json",
-    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/normalizer_manifest.json",
+    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/normalizer_manifest.json",
+    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/normalizer_manifest.json",
     "format": "json",
     "size_bytes": 137827,
     "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e",
@@ -154,8 +154,8 @@
   "action_contract_binding": {
     "logical_role": "ActionContract-v2 TCP6/gripper and Kx7 binding",
     "selected": true,
-    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/stage2_action_contract.v2.development.json",
-    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/stage2_action_contract.v2.development.json",
+    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/stage2_action_contract.v2.development.json",
+    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/stage2_action_contract.v2.development.json",
     "format": "json",
     "size_bytes": 2020,
     "sha256": "163af8b6a1eb23d39a1f1afd76098348501d6212e6b7ce4b5ec44ea5f31721d6",
@@ -183,8 +183,8 @@
   "calibration_binding": {
     "logical_role": "Stage-2 frozen wrench calibration bundle",
     "selected": true,
-    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/calibration_bundle.development.json",
-    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/calibration_bundle.development.json",
+    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/calibration_bundle.development.json",
+    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/calibration_bundle.development.json",
     "format": "json",
     "size_bytes": 1267,
     "sha256": "f041784b78e08f1359e27b8f841e6a61f687b59bce1b3db841ca4986937a53f6",
@@ -196,8 +196,8 @@
   "runtime_contract_binding": {
     "logical_role": "Stage-2 temporal/action converter runtime contract",
     "selected": true,
-    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/converter_runtime_spec.task2.development.json",
-    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/converter_runtime_spec.task2.development.json",
+    "absolute_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/converter_runtime_spec.task2.development.json",
+    "resolved_realpath": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/converter_runtime_spec.task2.development.json",
     "format": "json",
     "size_bytes": 2624,
     "sha256": "f6312bc580311077a5eec56c53c3013ab6cebd9744463cf4354651cdc0d616ea",
@@ -237,7 +237,7 @@
       "candidate_grad_clip_norm": 10.0,
       "candidate_scheduler": "constant",
       "source": "G7A-r2 startup snapshot stage2_g7a_critic_warmup.development.yaml",
-      "source_path": "/home/rlc123/ForceSmolVLA/artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/startup_snapshot/g7a/stage2_g7a_critic_warmup.development.yaml",
+      "source_path": "/home/rlc123/ForceSmolVLA/artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/startup_snapshot/g7a/stage2_g7a_critic_warmup.development.yaml",
       "source_sha256": "42c2a5bbeebb35d699f57adf89287b2f80dca62cf937704896bcc62bc41a8e59"
     },
     "g3p_tiny_cpu_optimizer_counts_as_rebuild": false
@@ -251,10 +251,10 @@
   },
   "compatibility_evidence": {
     "g7a_r2_checkpoint": {
-      "checkpoint_manifest_path": "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/checkpoint_manifest.json",
+      "checkpoint_manifest_path": "artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/checkpoint_manifest.json",
       "checkpoint_manifest_sha256": "2e0902076cb12a1391613230679730d035155528c9be01bd17dce960d5e707f7",
       "checkpoint_manifest_payload_sha256": "a80228dd6a836176b6e2c3bd45dd23d311dced75ca9e909968eaa31ecd7fc823",
-      "source_manifest_path": "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint/startup_snapshot/g7a/stage2_source_manifest.v9_g7a.json",
+      "source_manifest_path": "artifacts/development/offline/offline_twin_q_critic_warmup_step_000256/startup_snapshot/g7a/stage2_source_manifest.v9_g7a.json",
       "source_manifest_sha256": "9ad52d416277fb5a93f336b8a7287619f60e3a678b6bca4ff9e037e885c82390"
     },
     "critic_config": {
@@ -272,7 +272,7 @@
       "action_delta_sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1",
       "critic_action_adapter_path": "src/forcesmolvla/rft/critic_action_adapter_v2.py",
       "critic_action_adapter_sha256": "92b0861057f11c246da0eb9dfed3eac48af87491cf3f1b14e063834b891144f6",
-      "processor_graph_path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/processor_graph_manifest.json",
+      "processor_graph_path": "artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/processor_graph_manifest.json",
       "processor_graph_sha256": "d023b33f3fc356091c5444cabb7cd736a7208fc0d8e974cc1f40727f2450f0c0"
     },
     "stage3_transition_contract": {

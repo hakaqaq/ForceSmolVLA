@@ -254,7 +254,7 @@ def _synthetic_fixture(tmp_path: Path) -> dict:
             "action_delta": _binding("src/forcesmolvla/action_delta.py"),
             "normalizer_source": _binding("src/forcesmolvla/normalizer.py"),
             "normalizer_manifest": _binding(
-                "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/normalizer_manifest.json"
+                "artifacts/development/offline/offline_actor_critic_cycle_000210_actor_export.v1/manifests/normalizer_manifest.json"
             ),
             "action_contract_v2": _binding("configs/stage2_action_contract.v2.development.json"),
             "stage2_runtime_contract": _path_binding(runtime),

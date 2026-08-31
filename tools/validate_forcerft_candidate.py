@@ -35,7 +35,7 @@ JOINT_CHECKPOINT = (
 )
 PACKAGED_CHECKPOINT = (
     ROOT
-    / "artifacts/development/stage3/published"
+    / "artifacts/development/online_replay/published"
     / "online_actor_critic_cycle_000010_actor_export.v1"
 )
 PARENT_BINDING = ROOT / "configs/online_replay_bootstrap_parent_binding.v1.development.json"

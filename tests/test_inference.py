@@ -32,7 +32,7 @@ from serve_policy import (  # noqa: E402
 
 CHECKPOINT = Path(
     "/home/rlc123/ForceSmolVLA/outputs/development/"
-    "task2_lerobotv3_full_sft_10k_r5/checkpoints/step_010000"
+    "task2_lerobotv3_full_sft_10k_r5/checkpoints/forcesmolvla_sft_step_010000"
 )
 TEST_BINDING = {
     "state_pose_max_age_ms": 250.0,
