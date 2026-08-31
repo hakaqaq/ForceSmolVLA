@@ -1196,8 +1196,8 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
                 "DETECTOR_THRESHOLD_APPROVED": "no",
                 "TEST_EVALUATED": "no",
                 "TASK2_REWARD_TERMINAL_CREATED": "no",
-                "G1_CREATED": "no",
-                "G2_CREATED": "no",
+                "REWARD_TRANSITION_CREATED": "no",
+                "TWIN_Q_CREATED": "no",
                 "NEXT_ALLOWED_ACTION": "request_validation_only_detector_calibration",
             },
         }

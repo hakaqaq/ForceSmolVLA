@@ -181,7 +181,7 @@ def main() -> None:
         ROOT / "tools/reward_classifier/build_task2_label_contract_v2.py",
         ROOT / "tools/reward_classifier/serve_task2_label_ui.py",
         ROOT / "tools/reward_classifier/task2_label_ui.html",
-        ROOT / "tests/test_s2_task_semantics_v2.py",
+        ROOT / "tests/test_offline_task_semantics.py",
     ]
     audit = {
         "schema_version": "force_rft_task_semantics_audit.v4",

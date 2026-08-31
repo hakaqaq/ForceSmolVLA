@@ -730,7 +730,7 @@ def finalize(work_dir: Path) -> None:
     passed = all(conditions.values())
     metrics = frame_metrics(logits, class_codes)
     artifact_status = "PASS_ONE_SHOT_DEVELOPMENT_TEST" if passed else "FAIL_ONE_SHOT_DEVELOPMENT_TEST_CANDIDATE_REJECTED"
-    next_action = "request_G1_approval" if passed else "return_to_validation_redesign_or_collect_independent_calibration_episodes"
+    next_action = "request_REWARD_TRANSITION_approval" if passed else "return_to_validation_redesign_or_collect_independent_calibration_episodes"
     terminal = {
         "DETECTOR_CANDIDATE_APPROVED_FOR_ONE_SHOT_TEST": "yes",
         "ONE_SHOT_TEST_EVALUATION": "complete",
@@ -743,8 +743,8 @@ def finalize(work_dir: Path) -> None:
         "OPTIMIZER_UPDATES": "0",
         "TEST_EVALUATED": "yes_once",
         "TASK2_REWARD_TERMINAL_CREATED": "no",
-        "G1_CREATED": "no",
-        "G2_CREATED": "no",
+        "REWARD_TRANSITION_CREATED": "no",
+        "TWIN_Q_CREATED": "no",
         "NEXT_ALLOWED_ACTION": next_action,
     }
     artifact = {
@@ -882,7 +882,7 @@ def finalize(work_dir: Path) -> None:
             "test_acceptance": artifact["acceptance"],
             "permissions": {
                 "formal_or_production_use": False,
-                "G1_created_or_authorized_by_this_artifact": False,
+                "REWARD_TRANSITION_created_or_authorized_by_this_artifact": False,
                 "reward_or_terminal_created": False,
             },
             "next_allowed_action": next_action,

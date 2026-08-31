@@ -1,4 +1,4 @@
-"""Synthetic G1 transition primitives; real task2 labels remain externally gated."""
+"""Offline demonstration transition primitives with external reward labels."""
 
 from __future__ import annotations
 
@@ -122,7 +122,7 @@ def validate_outcome_labels(
         or payload.get("terminal_inference") != "forbidden"
         or payload.get("terminal_source") != "external_annotation"
     ):
-        raise RuntimeError("G1_EXTERNAL_REWARD_LABELS_NOT_FROZEN")
+        raise RuntimeError("OFFLINE_DEMO_REPLAY_EXTERNAL_REWARD_LABELS_NOT_FROZEN")
     labels = payload.get("episodes")
     if not isinstance(labels, list) or len(labels) != 47:
         raise RuntimeError("G1_OUTCOME_LABEL_COUNT_INVALID")

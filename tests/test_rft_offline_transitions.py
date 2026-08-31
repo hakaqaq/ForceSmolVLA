@@ -34,7 +34,7 @@ def test_real_g1_inputs_are_explicitly_unapproved_and_generation_is_blocked():
 
 
 def test_unapproved_placeholder_cannot_pass_external_reward_label_validation():
-    with pytest.raises(RuntimeError, match="G1_EXTERNAL_REWARD_LABELS_NOT_FROZEN"):
+    with pytest.raises(RuntimeError, match="OFFLINE_DEMO_REPLAY_EXTERNAL_REWARD_LABELS_NOT_FROZEN"):
         validate_outcome_labels(
             _json(ROOT / "labels/task2_episode_outcomes.v1.json"),
             conversion_episodes=[],
@@ -59,7 +59,7 @@ def test_real_builder_fails_closed_before_creating_output(tmp_path):
     )
 
     assert result.returncode != 0
-    assert "G1_REAL_BUILD_BLOCKED" in result.stderr
+    assert "OFFLINE_DEMO_REPLAY_REAL_BUILD_BLOCKED" in result.stderr
     assert not output.exists()
 
 

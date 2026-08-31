@@ -261,7 +261,7 @@ def main() -> None:
                     ROOT / "tools/reward_classifier/serve_task2_label_ui.py",
                     ROOT / "tools/reward_classifier/task2_label_ui.html",
                     ROOT / "docs/task2_reward_labeling_protocol.md",
-                    ROOT / "tests/test_s2_r0_data_audit.py",
+                    ROOT / "tests/test_offline_reward_data_audit.py",
                 )
             },
             "episode_count": len(episodes),

@@ -58,7 +58,7 @@ def _binding(path: Path, *, relative_to: Path = ROOT) -> dict:
 
 def _tree_progress(phase: str):
     def report(index: int, total: int, relative: str) -> None:
-        print(f"G1_DATA_TREE_{phase}:{index}/{total}:{relative}", flush=True)
+        print(f"OFFLINE_DEMO_REPLAY_DATA_TREE_{phase}:{index}/{total}:{relative}", flush=True)
 
     return report
 
@@ -142,7 +142,7 @@ def _build(args, temporary_root: Path) -> dict:
     validate_reward_spec(reward_spec)
     if reward_spec["real_g1_generation_permitted"] is not True:
         raise RuntimeError(
-            "G1_REAL_BUILD_BLOCKED_PENDING_EXTERNAL_FROZEN_REWARD_LABEL_APPROVAL"
+            "OFFLINE_DEMO_REPLAY_REAL_BUILD_BLOCKED_PENDING_EXTERNAL_FROZEN_REWARD_LABEL_APPROVAL"
         )
     validate_action_contract(action_contract)
     metadata = _episode_metadata(dataset_root)
@@ -153,14 +153,14 @@ def _build(args, temporary_root: Path) -> dict:
         episode_lengths=lengths,
     )
     if conversion.get("split") != split:
-        raise RuntimeError("G1_CONVERSION_SPLIT_MANIFEST_MISMATCH")
+        raise RuntimeError("OFFLINE_DEMO_REPLAY_CONVERSION_SPLIT_MANIFEST_MISMATCH")
     normalizer_binding = action_contract["frozen_normalizer_manifest"]
     if (
         normalizer_binding["path"]
         != normalizer_path.relative_to(ROOT).as_posix()
         or normalizer_binding["sha256"] != sha256_file(normalizer_path)
     ):
-        raise RuntimeError("G1_ACTION_CONTRACT_NORMALIZER_BINDING_MISMATCH")
+        raise RuntimeError("OFFLINE_DEMO_REPLAY_ACTION_CONTRACT_NORMALIZER_BINDING_MISMATCH")
 
     runtime = load_runtime_artifacts(
         dataset_root,
@@ -171,7 +171,7 @@ def _build(args, temporary_root: Path) -> dict:
     )
     info = _load_json(dataset_root / "meta/info.json")
     if info.get("fps") != 30 or info.get("total_episodes") != 47:
-        raise RuntimeError("G1_LEROBOT_METADATA_DRIFT")
+        raise RuntimeError("OFFLINE_DEMO_REPLAY_LEROBOT_METADATA_DRIFT")
 
     digests = {
         name: OrderedTensorDigest()
@@ -220,14 +220,14 @@ def _build(args, temporary_root: Path) -> dict:
             rows.append(row)
             episode_rows.append(row)
         if sum(row["terminated"] for row in episode_rows) != 1:
-            raise RuntimeError("G1_EPISODE_TERMINAL_TRANSITION_COUNT_INVALID")
+            raise RuntimeError("OFFLINE_DEMO_REPLAY_EPISODE_TERMINAL_TRANSITION_COUNT_INVALID")
         if sum(row["reward"] == 1.0 for row in episode_rows) != 1:
-            raise RuntimeError("G1_EPISODE_TERMINAL_REWARD_COUNT_INVALID")
+            raise RuntimeError("OFFLINE_DEMO_REPLAY_EPISODE_TERMINAL_REWARD_COUNT_INVALID")
         if any(row["anchor_frame_index"] >= row["next_frame_index"] for row in episode_rows):
-            raise RuntimeError("G1_TERMINAL_SELF_LOOP_OR_REVERSED_TRANSITION")
+            raise RuntimeError("OFFLINE_DEMO_REPLAY_TERMINAL_SELF_LOOP_OR_REVERSED_TRANSITION")
         per_episode_counts[label["raw_episode_id"]] = len(episode_rows)
         print(
-            f"G1_EPISODE:{label['output_episode_index'] + 1}/47:"
+            f"OFFLINE_DEMO_REPLAY_EPISODE:{label['output_episode_index'] + 1}/47:"
             f"{label['raw_episode_id']}:transitions={len(episode_rows)}",
             flush=True,
         )
@@ -239,7 +239,7 @@ def _build(args, temporary_root: Path) -> dict:
         dataset_root, progress=_tree_progress("AFTER")
     )
     if before_tree != after_tree:
-        raise RuntimeError("G1_V3_DATA_TREE_MUTATED")
+        raise RuntimeError("OFFLINE_DEMO_REPLAY_V3_DATA_TREE_MUTATED")
 
     split_counts = Counter(row["split"] for row in rows)
     terminal_count = sum(row["terminated"] for row in rows)
@@ -312,7 +312,7 @@ def _build(args, temporary_root: Path) -> dict:
         not in table.column_names,
     }
     if not all(acceptance.values()):
-        raise RuntimeError(f"G1_ACCEPTANCE_FAILED:{acceptance}")
+        raise RuntimeError(f"OFFLINE_DEMO_REPLAY_ACCEPTANCE_FAILED:{acceptance}")
     manifest = {
         "schema_version": "1.0",
         "gate": "S2-G1",
@@ -424,14 +424,14 @@ def main() -> None:
     validate_reward_spec(reward_spec)
     if reward_spec["real_g1_generation_permitted"] is not True:
         raise RuntimeError(
-            "G1_REAL_BUILD_BLOCKED_PENDING_EXTERNAL_FROZEN_REWARD_LABEL_APPROVAL"
+            "OFFLINE_DEMO_REPLAY_REAL_BUILD_BLOCKED_PENDING_EXTERNAL_FROZEN_REWARD_LABEL_APPROVAL"
         )
     dataset_root = args.dataset_root.resolve()
     output_root = args.output_root.resolve()
     if output_root.exists():
         raise FileExistsError(f"refusing to overwrite G1 output: {output_root}")
     if dataset_root == output_root or dataset_root in output_root.parents:
-        raise RuntimeError("G1_OUTPUT_MUST_BE_OUTSIDE_TASK2_LEROBOTV3")
+        raise RuntimeError("OFFLINE_DEMO_REPLAY_OUTPUT_MUST_BE_OUTSIDE_TASK2_LEROBOTV3")
     output_root.parent.mkdir(parents=True, exist_ok=True)
     temporary_root = Path(
         tempfile.mkdtemp(prefix=f".{output_root.name}.", dir=output_root.parent)

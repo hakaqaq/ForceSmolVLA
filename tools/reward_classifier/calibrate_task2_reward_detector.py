@@ -704,8 +704,8 @@ def make_markdown(
         "DETECTOR_THRESHOLD_APPROVED = no",
         "TEST_EVALUATED = no",
         "TASK2_REWARD_TERMINAL_CREATED = no",
-        "G1_CREATED = no",
-        "G2_CREATED = no",
+        "REWARD_TRANSITION_CREATED = no",
+        "TWIN_Q_CREATED = no",
         "NEXT_ALLOWED_ACTION = request_detector_candidate_approval",
         "```",
         "",
@@ -839,8 +839,8 @@ def finalize(work_dir: Path) -> None:
             "detector_threshold_approved": False,
             "test_evaluated": False,
             "reward_or_terminal_created": False,
-            "G1_created": False,
-            "G2_created": False,
+            "REWARD_TRANSITION_created": False,
+            "TWIN_Q_created": False,
         },
     }
 
@@ -915,8 +915,8 @@ def finalize(work_dir: Path) -> None:
                 "DETECTOR_THRESHOLD_APPROVED": "no",
                 "TEST_EVALUATED": "no",
                 "TASK2_REWARD_TERMINAL_CREATED": "no",
-                "G1_CREATED": "no",
-                "G2_CREATED": "no",
+                "REWARD_TRANSITION_CREATED": "no",
+                "TWIN_Q_CREATED": "no",
                 "NEXT_ALLOWED_ACTION": "request_detector_candidate_approval" if selected else "report_validation_constraint_conflict",
             },
         }

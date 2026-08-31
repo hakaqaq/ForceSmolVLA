@@ -141,8 +141,8 @@ def import_path(name: str, path: Path):
 
 def verify_config(config_path: Path, dataset_root: Path, output_root: Path) -> dict:
     config = load_json(config_path)
-    require(config["artifact_status"] == "DEVELOPMENT_AUTHORIZED_BUILD_ONLY", "DETECTOR_G1_CONFIG_STATUS_DRIFT")
-    require(config["scope"] == "g1_frozen_detector_transition_view.v1", "DETECTOR_G1_CONFIG_SCOPE_DRIFT")
+    require(config["artifact_status"] == "DEVELOPMENT_AUTHORIZED_BUILD_ONLY", "REWARD_TRANSITION_CONFIG_STATUS_DRIFT")
+    require(config["scope"] == "g1_frozen_detector_transition_view.v1", "REWARD_TRANSITION_CONFIG_SCOPE_DRIFT")
     detector = config["detector_spec"]
     require(
         detector["classifier_checkpoint_sha256"] == EXPECTED_CHECKPOINT_SHA256
@@ -151,37 +151,37 @@ def verify_config(config_path: Path, dataset_root: Path, output_root: Path) -> d
         and detector["detector_input_rate_hz"] == 30
         and detector["trigger_timestamp"] == "fifth_confirming_frame"
         and detector["trigger_backfilled_to_streak_start"] is False,
-        "DETECTOR_G1_FROZEN_SPEC_DRIFT",
+        "REWARD_TRANSITION_FROZEN_SPEC_DRIFT",
     )
-    require(config["output_root"] == output_root.relative_to(ROOT).as_posix(), "DETECTOR_G1_OUTPUT_CONFIG_DRIFT")
-    require(dataset_root == ROOT / config["frozen_inputs"]["dataset_root"], "DETECTOR_G1_DATASET_CONFIG_DRIFT")
-    require(not output_root.is_relative_to(dataset_root), "DETECTOR_G1_OUTPUT_INSIDE_DATASET")
+    require(config["output_root"] == output_root.relative_to(ROOT).as_posix(), "REWARD_TRANSITION_OUTPUT_CONFIG_DRIFT")
+    require(dataset_root == ROOT / config["frozen_inputs"]["dataset_root"], "REWARD_TRANSITION_DATASET_CONFIG_DRIFT")
+    require(not output_root.is_relative_to(dataset_root), "REWARD_TRANSITION_OUTPUT_INSIDE_DATASET")
     require(config["required_runtime_audit"] == {
         "manual_label_files_opened": 0,
         "manual_boundary_fields_consumed": 0,
         "manual_terminal_fallback_count": 0,
         "classifier_optimizer_updates": 0,
         "detector_parameter_search_count": 0,
-    }, "DETECTOR_G1_AUDIT_CONTRACT_DRIFT")
+    }, "REWARD_TRANSITION_AUDIT_CONTRACT_DRIFT")
     for name, item in config["frozen_inputs"].items():
         if not isinstance(item, dict) or "path" not in item:
             continue
         path = ROOT / item["path"]
-        require(path.is_file() and sha256_file(path) == item["sha256"], f"DETECTOR_G1_FROZEN_INPUT_DRIFT:{name}")
+        require(path.is_file() and sha256_file(path) == item["sha256"], f"REWARD_TRANSITION_FROZEN_INPUT_DRIFT:{name}")
     require(
         sha256_file(CHECKPOINT_PATH) == EXPECTED_CHECKPOINT_SHA256,
         "REWARD_DETECTOR_CHECKPOINT_DRIFT",
     )
     candidate = load_json(ROOT / config["frozen_inputs"]["detector_candidate"]["path"])
-    require(candidate["candidate"] == {"consecutive_positive_frames": 5, "probability_threshold": 0.83}, "DETECTOR_G1_CANDIDATE_DRIFT")
-    require(sha256_file(ROOT / config["frozen_inputs"]["historical_one_shot_test"]["path"]) == EXPECTED_ONE_SHOT_SHA256, "DETECTOR_G1_HISTORICAL_TEST_DRIFT")
+    require(candidate["candidate"] == {"consecutive_positive_frames": 5, "probability_threshold": 0.83}, "REWARD_TRANSITION_CANDIDATE_DRIFT")
+    require(sha256_file(ROOT / config["frozen_inputs"]["historical_one_shot_test"]["path"]) == EXPECTED_ONE_SHOT_SHA256, "REWARD_TRANSITION_HISTORICAL_TEST_DRIFT")
     disposition = load_json(MANUAL_REWARD_TRANSITION_DISPOSITION)
     require(
         disposition["artifact_role"] == "historical_manual_audit_only"
         and disposition["training_authorized"] is False
         and disposition["downstream_loader_authorized"] is False
         and disposition["superseded_by"] == "g1_frozen_detector_transition_view.v1",
-        "DETECTOR_G1_MANUAL_DISPOSITION_INVALID",
+        "REWARD_TRANSITION_MANUAL_DISPOSITION_INVALID",
     )
     return config
 
@@ -200,7 +200,7 @@ def episode_descriptors(dataset_root: Path) -> tuple[list[dict], dict, dict, dic
     info = load_json(dataset_root / "meta/info.json")
     metadata = episode_metadata(dataset_root)
     split_lookup = {episode_id: name for name in ("train", "val", "test") for episode_id in split[name]}
-    require(len(split_lookup) == 47 and [len(split[name]) for name in ("train", "val", "test")] == [38, 5, 4], "DETECTOR_G1_SPLIT_INVALID")
+    require(len(split_lookup) == 47 and [len(split[name]) for name in ("train", "val", "test")] == [38, 5, 4], "REWARD_TRANSITION_SPLIT_INVALID")
     episodes = []
     for source in sorted(conversion["episodes"], key=lambda item: int(item["output_episode_index"])):
         index = int(source["output_episode_index"])
@@ -209,8 +209,8 @@ def episode_descriptors(dataset_root: Path) -> tuple[list[dict], dict, dict, dic
         relative = info["data_path"].format(
             chunk_index=meta["data/chunk_index"], file_index=meta["data/file_index"]
         )
-        require(source["split"] == split_lookup[episode_id], "DETECTOR_G1_EPISODE_SPLIT_DRIFT")
-        require(int(source["diagnostics"]["frames"]) == int(meta["length"]), "DETECTOR_G1_EPISODE_LENGTH_DRIFT")
+        require(source["split"] == split_lookup[episode_id], "REWARD_TRANSITION_EPISODE_SPLIT_DRIFT")
+        require(int(source["diagnostics"]["frames"]) == int(meta["length"]), "REWARD_TRANSITION_EPISODE_LENGTH_DRIFT")
         episodes.append({
             "episode_id": episode_id,
             "output_episode_index": index,
@@ -219,28 +219,28 @@ def episode_descriptors(dataset_root: Path) -> tuple[list[dict], dict, dict, dic
             "source_data_relative_path": relative,
             "task": source["task"],
         })
-    require(len(episodes) == 47 and {item["episode_id"] for item in episodes} == set(split_lookup), "DETECTOR_G1_EPISODE_COVERAGE_INVALID")
+    require(len(episodes) == 47 and {item["episode_id"] for item in episodes} == set(split_lookup), "REWARD_TRANSITION_EPISODE_COVERAGE_INVALID")
     return episodes, conversion, split, info
 
 
 def decode_rgb(payload: bytes) -> np.ndarray:
     from PIL import Image
 
-    require(isinstance(payload, bytes), "DETECTOR_G1_IMAGE_BYTES_MISSING")
+    require(isinstance(payload, bytes), "REWARD_TRANSITION_IMAGE_BYTES_MISSING")
     with Image.open(BytesIO(payload)) as image:
         rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
-    require(rgb.shape == IMAGE_SHAPE, f"DETECTOR_G1_IMAGE_SHAPE_INVALID:{rgb.shape}")
+    require(rgb.shape == IMAGE_SHAPE, f"REWARD_TRANSITION_IMAGE_SHAPE_INVALID:{rgb.shape}")
     return np.ascontiguousarray(rgb)
 
 
 def read_protocol_line(process: subprocess.Popen, prefix: str, log_path: Path) -> dict:
-    require(process.stdout is not None, "DETECTOR_G1_GPU_STDOUT_MISSING")
+    require(process.stdout is not None, "REWARD_TRANSITION_GPU_STDOUT_MISSING")
     while True:
         line = process.stdout.readline()
         if not line:
             code = process.poll()
             tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:] if log_path.exists() else ""
-            raise RuntimeError(f"DETECTOR_G1_GPU_WORKER_EXITED:{code}:{tail}")
+            raise RuntimeError(f"REWARD_TRANSITION_GPU_WORKER_EXITED:{code}:{tail}")
         if line.startswith(prefix):
             return json.loads(line[len(prefix):])
 
@@ -273,8 +273,8 @@ def run_frozen_classifier(
             bufsize=1,
         )
         try:
-            ready = read_protocol_line(process, "G1_GPU_READY ", log_path)
-            require(ready["backend"] == "gpu", "DETECTOR_G1_GPU_BACKEND_REQUIRED")
+            ready = read_protocol_line(process, "REWARD_GPU_READY ", log_path)
+            require(ready["backend"] == "gpu", "REWARD_TRANSITION_GPU_BACKEND_REQUIRED")
             score_episodes = []
             score_cursor = 0
             for ordinal, episode in enumerate(episodes, start=1):
@@ -288,7 +288,7 @@ def run_frozen_classifier(
                     "provenance.camera1_receive_monotonic_ns",
                     "provenance.camera2_receive_monotonic_ns",
                 ])
-                require(table.num_rows == episode["frame_count"], "DETECTOR_G1_SCORE_FRAME_COUNT_MISMATCH")
+                require(table.num_rows == episode["frame_count"], "REWARD_TRANSITION_SCORE_FRAME_COUNT_MISMATCH")
                 rows = table.to_pylist()
                 frames: list[int] = []
                 global_indices: list[int] = []
@@ -302,8 +302,8 @@ def run_frozen_classifier(
                     camera2 = np.empty((len(batch_rows), *IMAGE_SHAPE), dtype=np.uint8)
                     for offset, row in enumerate(batch_rows):
                         frame = start + offset
-                        require(int(row["frame_index"]) == frame, "DETECTOR_G1_NON_CONSECUTIVE_FRAME")
-                        require(int(row["episode_index"]) == episode["output_episode_index"], "DETECTOR_G1_EPISODE_INDEX_DRIFT")
+                        require(int(row["frame_index"]) == frame, "REWARD_TRANSITION_NON_CONSECUTIVE_FRAME")
+                        require(int(row["episode_index"]) == episode["output_episode_index"], "REWARD_TRANSITION_EPISODE_INDEX_DRIFT")
                         rgb1 = decode_rgb(row[SOURCE_CAMERA_KEYS[0]]["bytes"])
                         rgb2 = decode_rgb(row[SOURCE_CAMERA_KEYS[1]]["bytes"])
                         adapted = adapter.adapt(
@@ -332,7 +332,7 @@ def run_frozen_classifier(
                     logits_path = batch_root / "logits.npy"
                     np.save(camera1_path, camera1, allow_pickle=False)
                     np.save(camera2_path, camera2, allow_pickle=False)
-                    require(process.stdin is not None, "DETECTOR_G1_GPU_STDIN_MISSING")
+                    require(process.stdin is not None, "REWARD_TRANSITION_GPU_STDIN_MISSING")
                     process.stdin.write(json.dumps({
                         "command": "infer",
                         "camera1": str(camera1_path),
@@ -341,8 +341,8 @@ def run_frozen_classifier(
                         "count": len(batch_rows),
                     }) + "\n")
                     process.stdin.flush()
-                    ack = read_protocol_line(process, "G1_GPU_BATCH ", log_path)
-                    require(ack["count"] == len(batch_rows), "DETECTOR_G1_GPU_BATCH_COUNT_MISMATCH")
+                    ack = read_protocol_line(process, "REWARD_GPU_BATCH ", log_path)
+                    require(ack["count"] == len(batch_rows), "REWARD_TRANSITION_GPU_BATCH_COUNT_MISMATCH")
                     logits.append(np.load(logits_path, allow_pickle=False).astype(np.float32))
                     for path in (camera1_path, camera2_path, logits_path):
                         path.unlink()
@@ -352,8 +352,8 @@ def run_frozen_classifier(
                     1.0 / (1.0 + np.exp(-episode_logits.astype(np.float64))),
                     np.exp(episode_logits.astype(np.float64)) / (1.0 + np.exp(episode_logits.astype(np.float64))),
                 )
-                require(len(episode_logits) == episode["frame_count"], "DETECTOR_G1_EPISODE_LOGIT_COUNT_MISMATCH")
-                require(np.all(np.isfinite(probabilities)), "DETECTOR_G1_NONFINITE_PROBABILITY")
+                require(len(episode_logits) == episode["frame_count"], "REWARD_TRANSITION_EPISODE_LOGIT_COUNT_MISMATCH")
+                require(np.all(np.isfinite(probabilities)), "REWARD_TRANSITION_NONFINITE_PROBABILITY")
                 score_episodes.append({
                     **episode,
                     "score_range_half_open": [score_cursor, score_cursor + len(frames)],
@@ -367,30 +367,30 @@ def run_frozen_classifier(
                     "valid": np.ones(len(frames), dtype=np.bool_),
                 })
                 score_cursor += len(frames)
-                print(f"G1_DETECTOR_SCORES:{ordinal}/47:{episode['episode_id']}:frames={len(frames)}", flush=True)
+                print(f"REWARD_TRANSITION_DETECTOR_SCORES:{ordinal}/47:{episode['episode_id']}:frames={len(frames)}", flush=True)
                 del table, rows
-            require(process.stdin is not None, "DETECTOR_G1_GPU_STDIN_MISSING")
+            require(process.stdin is not None, "REWARD_TRANSITION_GPU_STDIN_MISSING")
             process.stdin.write(json.dumps({"command": "stop"}) + "\n")
             process.stdin.flush()
-            summary = read_protocol_line(process, "G1_GPU_SUMMARY ", log_path)
+            summary = read_protocol_line(process, "REWARD_GPU_SUMMARY ", log_path)
             code = process.wait(timeout=30)
-            require(code == 0, f"DETECTOR_G1_GPU_WORKER_NONZERO:{code}")
+            require(code == 0, f"REWARD_TRANSITION_GPU_WORKER_NONZERO:{code}")
         except BaseException:
             process.kill()
             process.wait()
             raise
     shutil.rmtree(batch_root)
     log_path.unlink(missing_ok=True)
-    require(adapter.episode_reset_count == 47 and score_cursor == sum(item["frame_count"] for item in episodes), "DETECTOR_G1_ADAPTER_OR_SCORE_COVERAGE_INVALID")
+    require(adapter.episode_reset_count == 47 and score_cursor == sum(item["frame_count"] for item in episodes), "REWARD_TRANSITION_ADAPTER_OR_SCORE_COVERAGE_INVALID")
     return score_episodes, summary
 
 
 def gpu_server(config_path: Path) -> None:
     install_manual_file_audit()
-    require(os.environ.get("CONDA_DEFAULT_ENV") == "conrft_reward", "DETECTOR_G1_GPU_ENV_REQUIRED")
+    require(os.environ.get("CONDA_DEFAULT_ENV") == "conrft_reward", "REWARD_TRANSITION_GPU_ENV_REQUIRED")
     config = load_json(config_path)
     checkpoint = ROOT / config["frozen_inputs"]["classifier_checkpoint"]["path"]
-    require(sha256_file(checkpoint) == EXPECTED_CHECKPOINT_SHA256, "DETECTOR_G1_GPU_CHECKPOINT_DRIFT")
+    require(sha256_file(checkpoint) == EXPECTED_CHECKPOINT_SHA256, "REWARD_TRANSITION_GPU_CHECKPOINT_DRIFT")
     training_tool = import_path("detector_g1_training_tool", TRAINING_SOURCE)
     training_tool.install_type_only_octo_shim()
     sys.path.insert(0, str(CONRFT_RUNTIME_ROOT))
@@ -402,7 +402,7 @@ def gpu_server(config_path: Path) -> None:
     import optax
     from serl_launcher.networks.reward_classifier import create_classifier
 
-    require(jax.default_backend() == "gpu", f"DETECTOR_G1_GPU_REQUIRED:{jax.default_backend()}")
+    require(jax.default_backend() == "gpu", f"REWARD_TRANSITION_GPU_REQUIRED:{jax.default_backend()}")
     safe_tree, _ = training_tool.npz_encoder_tree()
     sample = {
         CLASSIFIER_CAMERA_KEYS[0]: jnp.zeros((1, 1, *IMAGE_SHAPE), dtype=jnp.uint8),
@@ -414,7 +414,7 @@ def gpu_server(config_path: Path) -> None:
             pretrained_encoder_path=str(bridge), n_way=2,
         )
     state = serialization.from_bytes(target, checkpoint.read_bytes())
-    require(int(state.step) == 150, "DETECTOR_G1_GPU_CHECKPOINT_STEP_DRIFT")
+    require(int(state.step) == 150, "REWARD_TRANSITION_GPU_CHECKPOINT_STEP_DRIFT")
     checkpoint_before = sha256_file(checkpoint)
     params_before = training_tool.tree_sha(state.params)
     backbone_before = training_tool.tree_sha(state.params, training_tool.is_backbone)
@@ -423,7 +423,7 @@ def gpu_server(config_path: Path) -> None:
     def infer(params, observations):
         return state.apply_fn({"params": params}, observations, train=False)
 
-    print("G1_GPU_READY " + json.dumps({
+    print("REWARD_GPU_READY " + json.dumps({
         "backend": jax.default_backend(), "device": str(jax.devices()[0]),
     }), flush=True)
     frame_count = 0
@@ -432,27 +432,27 @@ def gpu_server(config_path: Path) -> None:
         command = json.loads(line)
         if command["command"] == "stop":
             break
-        require(command["command"] == "infer", "DETECTOR_G1_GPU_COMMAND_INVALID")
+        require(command["command"] == "infer", "REWARD_TRANSITION_GPU_COMMAND_INVALID")
         camera1 = np.load(command["camera1"], mmap_mode="r", allow_pickle=False)
         camera2 = np.load(command["camera2"], mmap_mode="r", allow_pickle=False)
-        require(camera1.shape == camera2.shape == (command["count"], *IMAGE_SHAPE), "DETECTOR_G1_GPU_INPUT_SHAPE_INVALID")
+        require(camera1.shape == camera2.shape == (command["count"], *IMAGE_SHAPE), "REWARD_TRANSITION_GPU_INPUT_SHAPE_INVALID")
         observations = {
             CLASSIFIER_CAMERA_KEYS[0]: jnp.asarray(np.asarray(camera1))[:, None],
             CLASSIFIER_CAMERA_KEYS[1]: jnp.asarray(np.asarray(camera2))[:, None],
         }
         logits = np.asarray(jax.block_until_ready(infer(state.params, observations)), dtype=np.float32).reshape(-1)
-        require(len(logits) == command["count"] and np.all(np.isfinite(logits)), "DETECTOR_G1_GPU_OUTPUT_INVALID")
+        require(len(logits) == command["count"] and np.all(np.isfinite(logits)), "REWARD_TRANSITION_GPU_OUTPUT_INVALID")
         np.save(command["output"], logits, allow_pickle=False)
         frame_count += len(logits)
         batch_count += 1
-        print("G1_GPU_BATCH " + json.dumps({"count": len(logits), "batch": batch_count}), flush=True)
+        print("REWARD_GPU_BATCH " + json.dumps({"count": len(logits), "batch": batch_count}), flush=True)
     checkpoint_after = sha256_file(checkpoint)
     params_after = training_tool.tree_sha(state.params)
     backbone_after = training_tool.tree_sha(state.params, training_tool.is_backbone)
-    require(checkpoint_before == checkpoint_after == EXPECTED_CHECKPOINT_SHA256, "DETECTOR_G1_GPU_CHECKPOINT_CHANGED")
-    require(params_before == params_after and backbone_before == backbone_after, "DETECTOR_G1_GPU_PARAMETERS_CHANGED")
-    require(int(state.step) == 150, "DETECTOR_G1_GPU_OPTIMIZER_STEP_CHANGED")
-    print("G1_GPU_SUMMARY " + json.dumps({
+    require(checkpoint_before == checkpoint_after == EXPECTED_CHECKPOINT_SHA256, "REWARD_TRANSITION_GPU_CHECKPOINT_CHANGED")
+    require(params_before == params_after and backbone_before == backbone_after, "REWARD_TRANSITION_GPU_PARAMETERS_CHANGED")
+    require(int(state.step) == 150, "REWARD_TRANSITION_GPU_OPTIMIZER_STEP_CHANGED")
+    print("REWARD_GPU_SUMMARY " + json.dumps({
         "environment": os.environ["CONDA_DEFAULT_ENV"],
         "backend": jax.default_backend(),
         "device": str(jax.devices()[0]),
@@ -610,7 +610,7 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
     output_root = args.output_root.resolve()
     config = verify_config(args.config.resolve(), dataset_root, output_root)
     episodes, conversion, split, info = episode_descriptors(dataset_root)
-    require(info["fps"] == 30 and info["total_episodes"] == 47, "DETECTOR_G1_DATASET_INFO_DRIFT")
+    require(info["fps"] == 30 and info["total_episodes"] == 47, "REWARD_TRANSITION_DATASET_INFO_DRIFT")
     protected_files = {
         "classifier_checkpoint": CHECKPOINT_PATH,
         "historical_one_shot_test": ROOT / config["frozen_inputs"]["historical_one_shot_test"]["path"],
@@ -625,16 +625,16 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
         "r5_checkpoint_tree": dataset_tree_sha256(r5_root),
         "protected_file_sha256": {name: sha256_file(path) for name, path in protected_files.items()},
     }
-    require(before["p8_storage_tree"]["tree_sha256"] == EXPECTED_P8_STORAGE_SHA256, "DETECTOR_G1_P8_SHA_DRIFT")
+    require(before["p8_storage_tree"]["tree_sha256"] == EXPECTED_P8_STORAGE_SHA256, "REWARD_TRANSITION_P8_SHA_DRIFT")
     score_episodes, gpu_evidence = run_frozen_classifier(
         episodes=episodes,
         dataset_root=dataset_root,
         temporary_root=temporary_root,
         config_path=args.config.resolve(),
     )
-    require(gpu_evidence["frame_count"] == info["total_frames"], "DETECTOR_G1_GPU_TOTAL_FRAME_DRIFT")
-    require(gpu_evidence["optimizer_updates"] == 0, "DETECTOR_G1_OPTIMIZER_UPDATE_DETECTED")
-    require(gpu_evidence["manual_label_files_opened"] == 0, "DETECTOR_G1_GPU_MANUAL_LABEL_OPEN_DETECTED")
+    require(gpu_evidence["frame_count"] == info["total_frames"], "REWARD_TRANSITION_GPU_TOTAL_FRAME_DRIFT")
+    require(gpu_evidence["optimizer_updates"] == 0, "REWARD_TRANSITION_OPTIMIZER_UPDATE_DETECTED")
+    require(gpu_evidence["manual_label_files_opened"] == 0, "REWARD_TRANSITION_GPU_MANUAL_LABEL_OPEN_DETECTED")
 
     frame_rows = []
     detections = []
@@ -690,7 +690,7 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
                 "probability_threshold": TAU,
                 "required_consecutive_frames": REQUIRED_CONSECUTIVE_FRAMES,
             })
-    require(len(detections) == 47 and len(frame_rows) == info["total_frames"], "DETECTOR_G1_SCORE_COVERAGE_INVALID")
+    require(len(detections) == 47 and len(frame_rows) == info["total_frames"], "REWARD_TRANSITION_SCORE_COVERAGE_INVALID")
     frame_table = pa.Table.from_pylist(frame_rows, schema=frame_score_schema())
     frame_path = temporary_root / "frame_scores.parquet"
     pq.write_table(frame_table, frame_path, compression="zstd", row_group_size=8192)
@@ -749,11 +749,11 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
             episode_rows.append(row)
             split_transition_counts[row["split"]] += 1
             executed_steps_distribution[row["executed_steps"]] += 1
-        require(sum(row["reward"] == 1.0 for row in episode_rows) == 1, "DETECTOR_G1_EPISODE_REWARD_COUNT_INVALID")
-        require(sum(row["terminated"] for row in episode_rows) == 1, "DETECTOR_G1_EPISODE_TERMINAL_COUNT_INVALID")
-        require(episode_rows[-1]["next_frame"] == detection["detector_trigger_frame"], "DETECTOR_G1_EPISODE_TRIGGER_MISMATCH")
+        require(sum(row["reward"] == 1.0 for row in episode_rows) == 1, "REWARD_TRANSITION_EPISODE_REWARD_COUNT_INVALID")
+        require(sum(row["terminated"] for row in episode_rows) == 1, "REWARD_TRANSITION_EPISODE_TERMINAL_COUNT_INVALID")
+        require(episode_rows[-1]["next_frame"] == detection["detector_trigger_frame"], "REWARD_TRANSITION_EPISODE_TRIGGER_MISMATCH")
         per_episode_transition_counts[episode["episode_id"]] = len(episode_rows)
-    require(transition_rows, "DETECTOR_G1_NO_DETECTED_TRANSITIONS")
+    require(transition_rows, "REWARD_TRANSITION_NO_DETECTED_TRANSITIONS")
     transition_table = pa.Table.from_pylist(transition_rows, schema=transition_schema())
     transition_path = temporary_root / "transition_index.parquet"
     pq.write_table(transition_table, transition_path, compression="zstd", row_group_size=8192)
@@ -763,8 +763,8 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
         "r5_checkpoint_tree": dataset_tree_sha256(r5_root),
         "protected_file_sha256": {name: sha256_file(path) for name, path in protected_files.items()},
     }
-    require(before == after, "DETECTOR_G1_PROTECTED_INPUT_MUTATION")
-    require(not MANUAL_FILE_OPENS, f"DETECTOR_G1_MANUAL_LABEL_FILE_OPENED:{sorted(MANUAL_FILE_OPENS)}")
+    require(before == after, "REWARD_TRANSITION_PROTECTED_INPUT_MUTATION")
+    require(not MANUAL_FILE_OPENS, f"REWARD_TRANSITION_MANUAL_LABEL_FILE_OPENED:{sorted(MANUAL_FILE_OPENS)}")
     detected_ids = [item["episode_id"] for item in detections if item["detected"]]
     missed_ids = [item["episode_id"] for item in detections if item["detector_miss"]]
     trigger_rows = [row for row in frame_rows if row["is_trigger_frame"]]
@@ -796,7 +796,7 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
         "old_artifacts_unchanged": before["protected_file_sha256"] == after["protected_file_sha256"],
         "images_not_copied_to_output": not any(path.suffix.lower() in {".png", ".jpg", ".jpeg", ".npy"} for path in temporary_root.rglob("*")),
     }
-    require(all(acceptance.values()), f"DETECTOR_G1_ACCEPTANCE_FAILED:{acceptance}")
+    require(all(acceptance.values()), f"REWARD_TRANSITION_ACCEPTANCE_FAILED:{acceptance}")
 
     source_bindings = {
         "resolved_config": binding(args.config.resolve()),
@@ -822,7 +822,7 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
     }
     manifest = {
         "schema_version": "forcesmolvla_g1_frozen_detector_transition_view.v1",
-        "artifact_status": "PASS_G1_FROZEN_DETECTOR_TRANSITION_VIEW" if not missed_ids else "COMPLETE_WITH_DETECTOR_MISSES_EXCLUDED",
+        "artifact_status": "PASS_REWARD_TRANSITION_FROZEN_DETECTOR_TRANSITION_VIEW" if not missed_ids else "COMPLETE_WITH_DETECTOR_MISSES_EXCLUDED",
         "artifact_role": "development_frozen_detector_reward_source",
         "training_authorized": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -902,27 +902,27 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
             "DEVELOPMENT_DETECTOR_OPERATIONAL": "yes",
             "FORMAL_DETECTOR_APPROVED": "no",
             "PRODUCTION_DETECTOR_APPROVED": "no",
-            "G1_FROZEN_DETECTOR_TRANSITIONS": "complete" if not missed_ids else "complete_with_misses_excluded",
-            "G2_AUTHORIZED": "no",
-            "G2_CREATED": "no",
+            "REWARD_TRANSITION_FROZEN_DETECTOR_TRANSITIONS": "complete" if not missed_ids else "complete_with_misses_excluded",
+            "TWIN_Q_AUTHORIZED": "no",
+            "TWIN_Q_CREATED": "no",
             "TwinQ_CREATED": "no",
             "CalQL_CREATED": "no",
             "ACTOR_TRAINING": "not_started",
-            "NEXT_ALLOWED_ACTION": "review_detector_g1_miss_list" if missed_ids else "request_G2_TwinQ_topology_approval",
+            "NEXT_ALLOWED_ACTION": "review_detector_g1_miss_list" if missed_ids else "request_TWIN_Q_TwinQ_topology_approval",
         },
         "forbidden_outputs_created": [],
     }
     manifest_path = temporary_root / "g1_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     train_table = load_training_transitions(temporary_root)
-    require(train_table.num_rows == split_transition_counts["train"], "DETECTOR_G1_TRAIN_LOADER_COUNT_MISMATCH")
+    require(train_table.num_rows == split_transition_counts["train"], "REWARD_TRANSITION_TRAIN_LOADER_COUNT_MISMATCH")
     for forbidden_split in ("val", "test"):
         try:
             load_transition_split_for_training(temporary_root, forbidden_split)
         except ValueError:
             pass
         else:
-            raise RuntimeError("DETECTOR_G1_LOADER_ACCEPTED_HELDOUT_SPLIT")
+            raise RuntimeError("REWARD_TRANSITION_LOADER_ACCEPTED_HELDOUT_SPLIT")
     try:
         load_training_transitions(MANUAL_REWARD_TRANSITION_ROOT)
     except RuntimeError:
@@ -955,12 +955,12 @@ def main() -> None:
 
     self_check()
     if args.command == "self-check":
-        print("G1_FROZEN_DETECTOR_TRANSITION_SELF_CHECK=PASS")
+        print("REWARD_TRANSITION_FROZEN_DETECTOR_TRANSITION_SELF_CHECK=PASS")
         return
     output_root = args.output_root.resolve()
     dataset_root = args.dataset_root.resolve()
     require(not output_root.exists(), f"refusing to overwrite append-only detector G1 output: {output_root}")
-    require(not output_root.is_relative_to(dataset_root), "DETECTOR_G1_OUTPUT_INSIDE_DATASET")
+    require(not output_root.is_relative_to(dataset_root), "REWARD_TRANSITION_OUTPUT_INSIDE_DATASET")
     output_root.parent.mkdir(parents=True, exist_ok=True)
     temporary_root = Path(tempfile.mkdtemp(prefix=f".{output_root.name}.", dir=output_root.parent))
     try:
@@ -976,7 +976,7 @@ def main() -> None:
         "missed": manifest["statistics"]["missed_episode_count"],
         "transitions": manifest["statistics"]["transition_count"],
         "manual_label_files_opened": manifest["runtime_audit"]["manual_label_files_opened"],
-        "G2_CREATED": "no",
+        "TWIN_Q_CREATED": "no",
     }, sort_keys=True))
 
 
