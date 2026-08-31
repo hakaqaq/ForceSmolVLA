@@ -12,17 +12,17 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from forcesmolvla.rft.stage3 import integrated_shadow_backend as shadow_backend
-from forcesmolvla.rft.stage3.integrated_capture import (
+from forcesmolvla.rft.online import integrated_capture_backend as capture_backend
+from forcesmolvla.rft.online.integrated_capture import (
     IntegratedCaptureError,
     IntegratedCaptureLedger,
     RECORDER_CONTROL_CHAIN,
     build_capture_contract,
 )
-from forcesmolvla.rft.stage3.integrated_shadow_backend import (
+from forcesmolvla.rft.online.integrated_capture_backend import (
     ForbiddenPolicyPublisher,
-    IntegratedShadowBackend,
-    ShadowArtifactStore,
+    CaptureArtifactStore,
+    IntegratedCaptureBackend,
     build_native_recorder_command,
 )
 
@@ -81,7 +81,7 @@ def _policy_contract():
 
 
 def test_backend_owns_exactly_one_native_recorder_control_chain(tmp_path: Path) -> None:
-    backend = IntegratedShadowBackend()
+    backend = IntegratedCaptureBackend()
     assert backend.capabilities.controller_owner == "recorder"
     assert backend.capabilities.controller_process_count == 1
     assert backend.capabilities.starts_recorder_controller is True
@@ -106,7 +106,7 @@ def test_policy_publisher_is_a_fail_closed_non_dds_sentinel() -> None:
 def test_proposal_and_human_ack_are_separate_and_cannot_claim_execution(
     tmp_path: Path,
 ) -> None:
-    store = ShadowArtifactStore(tmp_path / "sidecar")
+    store = CaptureArtifactStore(tmp_path / "sidecar")
     proposal = {
         "actual_action_source": "human",
         "policy_execution": False,
@@ -143,7 +143,7 @@ def test_proposal_and_human_ack_are_separate_and_cannot_claim_execution(
 def test_backend_rejects_forged_policy_execution_before_loading_runtime(
     tmp_path: Path,
 ) -> None:
-    backend = IntegratedShadowBackend()
+    backend = IntegratedCaptureBackend()
     contract = replace(
         _contract(),
         actual_action_source="policy",
@@ -177,9 +177,9 @@ def test_policy_execution_accepts_authorized_baseline_and_published_candidate(
     )
 
     baseline_contract = _policy_contract()
-    shadow_backend._validate_policy_execution_contract(baseline_contract)
+    capture_backend._validate_policy_execution_contract(baseline_contract)
     baseline_profile_path = (
-        ROOT / "configs/deployment.stage3_cycle210_shadow.development.json"
+        ROOT / "configs/deployment.offline_actor_critic_cycle000210_shadow.development.json"
     )
     baseline_profile = json.loads(
         baseline_profile_path.read_text(encoding="utf-8")
@@ -196,7 +196,7 @@ def test_policy_execution_accepts_authorized_baseline_and_published_candidate(
         "rulespec_mode": "development_only",
         "rulespec_approval_status": "approved",
     }
-    shadow_backend._validate_policy_execution_profile(
+    capture_backend._validate_policy_execution_profile(
         deploy, baseline_profile, baseline_metadata, baseline_contract
     )
 
@@ -220,7 +220,7 @@ def test_policy_execution_accepts_authorized_baseline_and_published_candidate(
                 "acceptance_status": "development_only",
                 "formal_eligible": False,
                 "metadata": {
-                    "artifact_purpose": "stage3_development_candidate_actor",
+                    "artifact_purpose": "online_replay_development_candidate_actor",
                     "published": True,
                     "activated": False,
                     "model_revision": revision,
@@ -267,26 +267,26 @@ def test_policy_execution_accepts_authorized_baseline_and_published_candidate(
         "rulespec_mode": "development_only",
         "rulespec_approval_status": "approved",
     }
-    shadow_backend._validate_policy_execution_contract(candidate_contract)
-    shadow_backend._validate_policy_execution_profile(
+    capture_backend._validate_policy_execution_contract(candidate_contract)
+    capture_backend._validate_policy_execution_profile(
         deploy, candidate_profile, candidate_metadata, candidate_contract
     )
     with pytest.raises(
         IntegratedCaptureError, match="SERVER_AUTHORIZATION_MISMATCH"
     ):
-        shadow_backend._validate_policy_execution_profile(
+        capture_backend._validate_policy_execution_profile(
             deploy,
             candidate_profile,
             {**candidate_metadata, "robot_execution_allowed": False},
             candidate_contract,
         )
-    assert IntegratedShadowBackend.capabilities.controller_process_count == 1
-    assert IntegratedShadowBackend.capabilities.starts_deploy_controller is False
+    assert IntegratedCaptureBackend.capabilities.controller_process_count == 1
+    assert IntegratedCaptureBackend.capabilities.starts_deploy_controller is False
 
 
 def test_policy_chunk_selection_uses_apply_time_rational_grid() -> None:
     actions = np.arange(350, dtype=np.float64).reshape(50, 7)
-    index, selected = shadow_backend._selected_chunk_action(
+    index, selected = capture_backend._selected_chunk_action(
         actions,
         t_ref_ns=1_000_000_000,
         fps=30,
@@ -295,7 +295,7 @@ def test_policy_chunk_selection_uses_apply_time_rational_grid() -> None:
     assert index == 7
     assert np.array_equal(selected, actions[7])
     with pytest.raises(IntegratedCaptureError, match="CHUNK_EXPIRED"):
-        shadow_backend._selected_chunk_action(
+        capture_backend._selected_chunk_action(
             actions,
             t_ref_ns=1_000_000_000,
             fps=30,
@@ -306,7 +306,7 @@ def test_policy_chunk_selection_uses_apply_time_rational_grid() -> None:
 def test_policy_execution_artifacts_require_policy_ack_and_next_observation(
     tmp_path: Path,
 ) -> None:
-    store = ShadowArtifactStore(tmp_path / "execution-sidecar")
+    store = CaptureArtifactStore(tmp_path / "execution-sidecar")
     proposal = {
         "actual_action_source": "policy",
         "policy_execution": True,
@@ -362,9 +362,9 @@ def test_initial_gripper_authority_accepts_inference_only_metadata(
         gripper_open_width_m=0.085,
         gripper_closed_width_m=0.0,
     )
-    monkeypatch.setattr(shadow_backend.time, "monotonic_ns", lambda: captured_ns)
+    monkeypatch.setattr(capture_backend.time, "monotonic_ns", lambda: captured_ns)
 
-    authority = shadow_backend._initial_gripper_authority(
+    authority = capture_backend._initial_gripper_authority(
         observation,
         recorder_args,
         {"gripper_max_age_ms": None},
@@ -430,7 +430,7 @@ def test_session_binding_hydrates_frames_from_active_tool_profile() -> None:
         ).as_matrix(),
     )
 
-    shadow_backend._validate_session_binding(
+    capture_backend._validate_session_binding(
         deploy, session, metadata, _contract(), recorder_args
     )
 
@@ -440,7 +440,7 @@ def test_session_binding_hydrates_frames_from_active_tool_profile() -> None:
     assert recorder_args.wrench_measurement_frame == frames["wrench_measurement"]
     recorder_args.tcp_frame = "conflicting_tcp"
     with pytest.raises(IntegratedCaptureError, match="SHADOW_SESSION_FRAME_MISMATCH"):
-        shadow_backend._validate_session_binding(
+        capture_backend._validate_session_binding(
             deploy, session, metadata, _contract(), recorder_args
         )
 
@@ -466,7 +466,7 @@ def test_native_camera_tail_waits_for_complete_jpeg(tmp_path: Path) -> None:
     image.parent.mkdir(parents=True)
     image.write_bytes(b"\xff\xd8partial")
     cv2 = FakeCv2()
-    cameras = shadow_backend._NativeCameraPair(episode, cv2)
+    cameras = capture_backend._NativeCameraPair(episode, cv2)
 
     cameras._update_role("external")
     assert cv2.reads == 0
@@ -480,16 +480,16 @@ def test_native_camera_tail_waits_for_complete_jpeg(tmp_path: Path) -> None:
 
 
 def test_only_transient_camera_tuple_misses_are_retryable() -> None:
-    assert shadow_backend._retryable_camera_error(
+    assert capture_backend._retryable_camera_error(
         RuntimeError("CAMERA_AGE_EXCEEDED: camera1_age_ms=34.118")
     )
-    assert shadow_backend._retryable_camera_error(
+    assert capture_backend._retryable_camera_error(
         RuntimeError("INTERCAMERA_SKEW_EXCEEDED: intercamera_skew_ms=34.0")
     )
-    assert not shadow_backend._retryable_camera_error(
+    assert not capture_backend._retryable_camera_error(
         RuntimeError("CAMERA_TIMESTAMP_IN_FUTURE")
     )
-    assert not shadow_backend._retryable_camera_error(
+    assert not capture_backend._retryable_camera_error(
         RuntimeError("STATE_POSE_AGE_EXCEEDED")
     )
 
@@ -510,20 +510,20 @@ def test_policy_execution_waits_for_native_camera_first_frames(
         state["sleeps"] += 1
         state["camera_ready"] = True
 
-    monkeypatch.setattr(shadow_backend.time, "sleep", make_camera_ready)
-    shadow_backend._wait_for_policy_observation_ready(
+    monkeypatch.setattr(capture_backend.time, "sleep", make_camera_ready)
+    capture_backend._wait_for_policy_observation_ready(
         observation,
         process,
-        deadline=shadow_backend.time.monotonic() + 1.0,
+        deadline=capture_backend.time.monotonic() + 1.0,
     )
 
     assert state == {"camera_ready": True, "sleeps": 1}
     state["camera_ready"] = False
     with pytest.raises(IntegratedCaptureError, match="RECORDER_EXITED"):
-        shadow_backend._wait_for_policy_observation_ready(
+        capture_backend._wait_for_policy_observation_ready(
             observation,
             SimpleNamespace(poll=lambda: 1),
-            deadline=shadow_backend.time.monotonic() + 1.0,
+            deadline=capture_backend.time.monotonic() + 1.0,
         )
 
 
@@ -532,7 +532,7 @@ def test_takeover_and_episode_end_supersede_pending_policy_decision() -> None:
         def _safe_action_callback(self, _message: object) -> None:
             pass
 
-    observation_type = shadow_backend._shadow_observation_type(
+    observation_type = capture_backend._shadow_observation_type(
         SimpleNamespace(LiveForceSmolObservation=FakeObservation),
         policy_execution=True,
     )
@@ -595,9 +595,9 @@ def test_policy_gripper_reuses_native_integer_episode_token() -> None:
         }
     ]
 
-    assert shadow_backend._native_gripper_episode_token(targets) == 1
+    assert capture_backend._native_gripper_episode_token(targets) == 1
     with pytest.raises(IntegratedCaptureError, match="EPISODE_TOKEN_INVALID"):
-        shadow_backend._native_gripper_episode_token(
+        capture_backend._native_gripper_episode_token(
             [{**targets[0], "token": "stage3-policy-execute"}]
         )
 
@@ -610,9 +610,9 @@ def test_human_gripper_goal_temporarily_owns_authority() -> None:
         "authority": "policy_execution_backend",
     }
 
-    assert shadow_backend._human_gripper_goal_active([human, policy], []) is True
+    assert capture_backend._human_gripper_goal_active([human, policy], []) is True
     assert (
-        shadow_backend._human_gripper_goal_active(
+        capture_backend._human_gripper_goal_active(
             [human, policy],
             [{**human, "outcome": "stalled"}],
         )
@@ -637,9 +637,9 @@ def test_stalled_close_is_an_accepted_closed_gripper_state() -> None:
         "requested_closed": False,
     }
 
-    assert shadow_backend._completed_gripper_closed_state([close], [stalled]) is True
+    assert capture_backend._completed_gripper_closed_state([close], [stalled]) is True
     assert (
-        shadow_backend._completed_gripper_closed_state(
+        capture_backend._completed_gripper_closed_state(
             [close, opened],
             [stalled, {**opened, "outcome": "reached", "finished_monotonic_ns": 30}],
         )
@@ -832,7 +832,7 @@ def test_integrated_cli_passes_shadow_runtime_binding_without_launch(
 def test_async_runtime_binding_requires_exact_capture_identity() -> None:
     contract = _policy_contract()
     metadata = {
-        "stage3_async_actor_learner": True,
+        "online_actor_learner": True,
         "runtime_session_id": contract.identity.session_id,
         "runtime_episode_id": contract.identity.episode_id,
         "active_actor_revision": "stage3-cycle10",
@@ -843,13 +843,13 @@ def test_async_runtime_binding_requires_exact_capture_identity() -> None:
         "pending_candidate_published": False,
         "pending_candidate_activated": False,
     }
-    assert shadow_backend._async_runtime_identity(metadata, contract) == {
+    assert capture_backend._async_runtime_identity(metadata, contract) == {
         "session_id": contract.identity.session_id,
         "episode_id": contract.identity.episode_id,
         "policy_revision": contract.identity.policy_revision,
     }
     with pytest.raises(IntegratedCaptureError, match="RUNTIME_MISMATCH"):
-        shadow_backend._async_runtime_identity(
+        capture_backend._async_runtime_identity(
             {**metadata, "runtime_episode_id": "wrong"}, contract
         )
 
@@ -878,7 +878,7 @@ def test_async_runtime_completion_records_only_pending_candidate() -> None:
             return {}
 
     client = Client()
-    status = shadow_backend._complete_async_runtime(
+    status = capture_backend._complete_async_runtime(
         client,
         {
             "session_id": "session-1",
@@ -954,7 +954,7 @@ def test_takeover_between_request_and_decision_invalidates_old_context() -> None
     invalidated_requests = {"old-decision", "old-inflight"}
     current_observation = None
     old_decision_dispatch_count = int(
-        shadow_backend._policy_context_is_current(
+        capture_backend._policy_context_is_current(
             ledger,
             current_observation,
             policy_epoch=0,
@@ -974,7 +974,7 @@ def test_takeover_between_request_and_decision_invalidates_old_context() -> None
     )
     old_result_adopt_count = int(
         inflight_result["request_id"] not in invalidated_requests
-        and shadow_backend._policy_context_is_current(
+        and capture_backend._policy_context_is_current(
             ledger,
             current_observation,
             policy_epoch=inflight_result["policy_epoch"],
@@ -1010,7 +1010,7 @@ def test_takeover_between_request_and_decision_invalidates_old_context() -> None
         fresh_request_record["policy_epoch"],
         fresh_request_record["takeover_generation"],
     ) == (1, 1)
-    assert shadow_backend._policy_context_is_current(
+    assert capture_backend._policy_context_is_current(
         ledger,
         fresh_observation,
         policy_epoch=1,
@@ -1028,7 +1028,7 @@ def test_takeover_between_request_and_decision_invalidates_old_context() -> None
         recorded_monotonic_ns=1_700_000_000,
     )
     assert fresh_result["request_id"] not in invalidated_requests
-    assert shadow_backend._policy_context_is_current(
+    assert capture_backend._policy_context_is_current(
         ledger,
         fresh_observation,
         policy_epoch=fresh_result["policy_epoch"],

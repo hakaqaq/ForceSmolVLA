@@ -35,7 +35,7 @@ POLICY_EXECUTION_BACKEND_SCHEMA = (
 )
 DETECTOR_CONTRACT = Path(
     "/home/rlc123/ForceSmolVLA/"
-    "configs/stage3_reward_terminal_contract.v1.development.json"
+    "configs/online_replay_reward_terminal_contract.v1.development.json"
 )
 RETRYABLE_CAMERA_ERRORS = (
     "CAMERA_AGE_EXCEEDED:",

@@ -27,14 +27,14 @@ import validate_forcerft_candidate as validator  # noqa: E402
 
 JOINT_CHECKPOINT = validator.JOINT_CHECKPOINT
 DESTINATION = validator.PACKAGED_CHECKPOINT
-PROFILE = ROOT / "configs/deployment.stage3_joint_cycle000010_candidate.development.json"
+PROFILE = ROOT / "configs/deployment.online_actor_critic_cycle000010_candidate.development.json"
 BINDING = (
     ROOT
     / "artifacts/development/live"
-    / "task2_stage3_joint_cycle000010_candidate_deployment_binding.v1.json"
+    / "task2_online_actor_critic_cycle000010_candidate_deployment_binding.v1.json"
 )
 PARENT_BINDING = validator.PARENT_BINDING
-CYCLE210_PROFILE = ROOT / "configs/deployment.stage3_cycle210_shadow.development.json"
+CYCLE210_PROFILE = ROOT / "configs/deployment.offline_actor_critic_cycle000210_shadow.development.json"
 CYCLE210_BINDING = validator.EXECUTION_BINDING
 RULESPEC = validator.RULESPEC
 
