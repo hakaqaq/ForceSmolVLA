@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 import random
 import sys
+from types import SimpleNamespace
 
+import numpy as np
+import pytest
 import torch
 
 
@@ -19,6 +22,7 @@ from train_forcerft_actor_critic import (  # noqa: E402
     save_joint_checkpoint,
 )
 from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger  # noqa: E402
+from forcesmolvla.rft.online import replay_training  # noqa: E402
 from forcesmolvla.training_runtime import resolve_task_output_root  # noqa: E402
 
 
@@ -88,7 +92,170 @@ def test_joint_sampler_continues_rng_state() -> None:
 
     assert schedules == repeated
     assert [len(batch) for batch in schedules[0]] == [32] * 4
+    assert [len(batch) for batch in schedules[1]] == [32] * 4
     assert [len(batch) for batch in schedules[2]] == [12] * 2
+    assert [len(batch) for batch in schedules[3]] == [12] * 2
+
+
+def test_loader_partitions_human_expert_from_policy_training_start(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "online"
+    (root / "admissions").mkdir(parents=True)
+    (root / "replay").mkdir()
+    (root / "episodes").mkdir()
+    episode = tmp_path / "episode_000000"
+    episode.mkdir()
+    admission = {
+        "policy_execution_smoke_bridge": "PASS",
+        "source_episode_semantics": {
+            "formal_replay": False,
+            "real_online_r": False,
+        },
+        "episode_id": episode.name,
+        "source_episode": str(episode),
+        "accepted_unique_r_transition_count": 101,
+    }
+    (root / "admissions/episode.json").write_text(json.dumps(admission))
+    (root / "episodes/episode.json").write_text(
+        json.dumps(
+            {"episode_id": episode.name, "status": "SEALED_COMMITTED"}
+        )
+    )
+    eligibility = {
+        "formal_replay": True,
+        "formal_training_replay_eligible": True,
+        "real_online_r": True,
+        "replay_membership": "R_online",
+    }
+    policy_rows = []
+    for sequence in range(100):
+        policy_rows.append(
+            {
+                "classification": "recorded_live_policy_execution_smoke",
+                "action_source": "policy",
+                "expert": False,
+                "intervention": False,
+                "identity": {
+                    "episode_id": episode.name,
+                    "decision_id": sequence,
+                    "transition_uid": f"policy-{sequence}",
+                },
+                "generation": {
+                    "policy_epoch": 0,
+                    "takeover_generation": 0,
+                    "reset_generation": 0,
+                },
+                "policy_lineage": {"selection": {"sequence": sequence}},
+                "action_authority": {"executed_action_source": "policy"},
+                "outcome": {"terminated": sequence == 99},
+                "eligibility": eligibility,
+            }
+        )
+    mask = [[False] * 7 for _ in range(50)]
+    mask[1] = [True] * 7
+    human = {
+        "classification": "recorded_live_policy_execution_smoke",
+        "action_source": "human",
+        "expert": True,
+        "intervention": True,
+        "human_action_target": [[0.0] * 7 for _ in range(50)],
+        "human_action_valid_mask": mask,
+        "identity": {
+            "episode_id": episode.name,
+            "decision_id": 100,
+            "transition_uid": "human-100",
+        },
+        "generation": {
+            "policy_epoch": 1,
+            "takeover_generation": 1,
+            "reset_generation": 0,
+        },
+        "action_authority": {"executed_action_source": "human"},
+        "outcome": {"terminated": False},
+        "eligibility": eligibility,
+    }
+    for row in [*policy_rows, human]:
+        envelope = {"episode_sealed": True, "payload": row}
+        (root / "replay" / f"{row['identity']['transition_uid']}.json").write_text(
+            json.dumps(envelope)
+        )
+
+    policies, macros, sources, humans = replay_training.load_formal_online_r(root)
+
+    assert len(policies) == 100 and len(macros) == 98
+    assert policies[0]["expert"] is False
+    assert np.asarray(policies[0]["action_target"]).shape == (50, 7)
+    assert not np.asarray(policies[0]["action_valid_mask"]).any()
+    assert sources == {episode.name: episode}
+    assert len(humans) == 1
+    assert humans[0]["action_source"] == "human"
+    assert humans[0]["expert"] is True
+    assert np.asarray(humans[0]["action_target"]).shape == (50, 7)
+    assert np.asarray(humans[0]["action_valid_mask"]).sum() == 7
+    assert replay_training.count_sealed_autonomous_policy_transitions(root) == 100
+    (root / "replay/unsealed-policy.json").write_text(
+        json.dumps({"episode_sealed": False, "payload": policy_rows[0]})
+    )
+    assert replay_training.count_sealed_autonomous_policy_transitions(root) == 100
+
+
+def test_human_replay_builds_masked_h50_target_with_offline_adapter(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class IdentityNormalizer:
+        @staticmethod
+        def apply(value):
+            return np.asarray(value)
+
+    monkeypatch.setattr(
+        replay_training,
+        "_decode_path",
+        lambda _path: np.zeros((3, 480, 640), dtype=np.uint8),
+    )
+    state = np.asarray([0.5, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085])
+    target = np.zeros((50, 7), dtype=np.float64)
+    target[1] = state + np.asarray([0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    mask = np.zeros((50, 7), dtype=np.bool_)
+    mask[1] = True
+    observation = {
+        "camera_external": {"blob_reference": "external.jpg"},
+        "camera_wrist": {"blob_reference": "wrist.jpg"},
+        "state7_absolute": state.tolist(),
+        "wrench6_calibrated_tcp": [0.0] * 6,
+    }
+    row = {
+        "identity": {
+            "episode_id": "episode_000000",
+            "transition_uid": "human-1",
+        },
+        "observation": observation,
+        "next_observation": observation,
+        "action_target": target.tolist(),
+        "action_valid_mask": mask.tolist(),
+        "outcome": {
+            "reward": 0.0,
+            "terminated": False,
+            "bootstrap_mask": 1.0,
+            "discount": 0.99,
+        },
+    }
+    normalizer = SimpleNamespace(
+        state7=IdentityNormalizer(),
+        wrench6=IdentityNormalizer(),
+        delta_action7=IdentityNormalizer(),
+    )
+    replay = replay_training.HumanCorrectionReplay(
+        [row], {"episode_000000": tmp_path}, normalizer
+    )
+
+    sample = replay.materialize(0)
+
+    assert sample["expert"] is True and sample["action_source"] == "human"
+    assert sample["action_target"].shape == (50, 7)
+    assert sample["action_valid_mask"].sum() == 7
+    assert sample["behavior_mask"].tolist() == [False, True, False]
+    assert sample["action_target"][1, 0] == pytest.approx(0.01)
 
 
 def test_optimizer_ownership_is_disjoint() -> None:

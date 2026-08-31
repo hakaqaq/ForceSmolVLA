@@ -90,16 +90,21 @@ class ContinuousLearner:
     def _ensure_learner(self) -> bool:
         if self.learner is not None:
             return True
-        if len(tuple((self.replay_root / "replay").glob("*.json"))) < 100:
+        if (
+            warmup.count_sealed_autonomous_policy_transitions(
+                self.replay_root
+            )
+            < 100
+        ):
             return False
-        all_r, r_macros, source_episodes = warmup.load_formal_online_r(
+        all_r, r_macros, source_episodes, human_rows = warmup.load_formal_online_r(
             self.replay_root
         )
         if self.current_session_id is not None:
             require(
                 not any(
                     row["identity"].get("session_id") == self.current_session_id
-                    for row in all_r
+                    for row in [*all_r, *human_rows]
                 ),
                 "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
             )
@@ -110,6 +115,7 @@ class ContinuousLearner:
             all_r,
             r_macros,
             source_episodes,
+            human_rows,
             resume_checkpoint=self.resume_checkpoint,
             warmup_api=warmup,
             joint_api=joint,
@@ -131,14 +137,14 @@ class ContinuousLearner:
             }
         assert self.learner is not None
         learner = self.learner
-        all_r, r_macros, source_episodes = warmup.load_formal_online_r(
+        all_r, r_macros, source_episodes, human_rows = warmup.load_formal_online_r(
             self.replay_root
         )
         if self.current_session_id is not None:
             require(
                 not any(
                     row["identity"].get("session_id") == self.current_session_id
-                    for row in all_r
+                    for row in [*all_r, *human_rows]
                 ),
                 "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
             )
@@ -156,6 +162,10 @@ class ContinuousLearner:
         if len(r_macros) != len(learner["r_replay"].macros):
             learner["r_replay"] = warmup.FormalReplay(
                 r_macros, source_episodes, learner["normalizer"]
+            )
+        if len(human_rows) != len(learner["d_replay"].human_replay.rows):
+            learner["d_replay"].set_human_rows(
+                human_rows, source_episodes
             )
         self.unique_r_count = len(all_r)
         self.r_macro_count = len(r_macros)

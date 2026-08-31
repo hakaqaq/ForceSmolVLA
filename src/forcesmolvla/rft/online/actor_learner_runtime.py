@@ -185,6 +185,7 @@ def prepare_learner(
     all_r: Sequence[dict],
     r_macros: Sequence[dict],
     source_episodes: dict,
+    human_rows: Sequence[dict] = (),
     *,
     resume_checkpoint: Path,
     warmup_api: Any,
@@ -298,7 +299,9 @@ def prepare_learner(
         Path(binding["normalizer_binding"]["absolute_path"])
     )
     r_replay = warmup_api.FormalReplay(r_macros, source_episodes, normalizer)
-    d_replay = joint_api.JointDemoReplay(normalizer)
+    d_replay = joint_api.JointDemoReplay(
+        normalizer, human_rows, source_episodes
+    )
     critic_r, critic_d, actor_r, actor_d = joint_api.make_schedules(
         r_rng,
         d_rng,

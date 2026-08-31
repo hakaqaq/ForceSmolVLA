@@ -168,7 +168,18 @@ episode seal 后，操作者输入 success/failure。success episode 通过 prod
 outputs/task2/online/replay
 ```
 
-不再先 dry-run 后重复 admission。human override、旧 generation proposal、缺失 action7 authority 或 warmup transition 不进入 replay；same UID 幂等。当前仍在采集的 episode 永远不能被 Learner 采样。
+不再先 dry-run 后重复 admission。封口时按动作来源形成两个逻辑池：
+
+```text
+Expert pool = offline LeRobot demonstrations + sealed online human corrections
+Policy replay = sealed autonomous policy transitions
+```
+
+两类在线 transition 物理上仍只写入 `outputs/task2/online/replay`，通过 `action_source=human|policy`、`expert=true|false` 和 `intervention=true|false` 分区。人工纠正不转换为 LeRobot v3，也不复制图像；observation 继续引用原始 native episode。
+
+只有真实发布且由 Pose/gripper ACK 确认的人工命令才会物化为 expert transition。它保存实际执行的 post-adapter absolute7、takeover generation 和真实执行 provenance，不伪造 policy request/result/chunk/proposal/ACK。missing/rejected ACK、未执行输入、无法组成 observation/action/next-observation 的残缺记录，以及接管时作废的旧 policy chunk 后缀都不进入任何训练池；same UID 幂等。当前仍在采集、尚未封口的 episode 永远不能被 Learner 采样。
+
+人工纠正按同一 30 Hz action grid 因果投影，并使用与 offline demonstration 相同的 TCP6 delta + absolute gripper adapter 和冻结 normalizer。H50 中以 `human_action_target[H,7]` 和 `human_action_valid_mask[H,7]` 只监督实际执行的人工槽，mask 为 false 的槽不参与 Flow Matching。人工纠正参与 Actor Flow Matching 和 Critic TD；自主 policy transition 只参与 Critic TD 与 Actor Q-guidance，不产生 FM 梯度。接管开始时清空旧 chunk/pending request/旧 observation、接管期间暂停 policy dispatch、释放后 fresh observation + fresh inference 的控制语义保持不变。
 
 ## 10. 持续在线 Actor/Learner
 
@@ -188,7 +199,7 @@ outputs/task2/online/replay
   --allow-development-policy-execution-smoke
 ```
 
-Unified server 每次启动只选择并加载一次完整 exact-resume checkpoint，并跨 episode 常驻。Online-R 少于 100 条时只采集；达到 100 后 Learner 连续运行。batch 为 50% demonstration + 50% sealed online replay；每 learner cycle 为 2 Critic + 2 Polyak + 1 Actor。
+Unified server 每次启动只选择并加载一次完整 exact-resume checkpoint，并跨 episode 常驻。`training_starts=100` 只统计 sealed autonomous policy transitions，人工纠正不会提前启动 Learner，也不铸造 policy update credit。达到 100 后 Learner 连续运行。每个 batch 固定为 50% Expert pool + 50% Policy replay，不增加第三个 intervention ratio；两半都进入 Critic TD 和 Actor Q-guidance，只有 Expert 半的 offline demonstration 与有效 masked human correction 进入 FM。每 learner cycle 为 2 Critic + 2 Polyak + 1 Actor。
 
 server 本身不加载 registry 的 active/previous rollback Actor，也不需要 deployment profile、deployment binding 或 Actor-only export。启动时先选择 `outputs/task2/online/checkpoints/` 中 cycle 最大且结构完整的 online exact-resume checkpoint；没有可恢复的 online checkpoint 时，回退到 `outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210`。Inference Actor 固定为所选 checkpoint 的 `actor/`，Learner 从同一目录恢复 Critics、targets、两个 optimizer、scheduler、RNG、sampler、cycle counter 和 replay cursor，不允许混合启动。
 

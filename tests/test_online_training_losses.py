@@ -113,6 +113,46 @@ def test_expert_only_fm_zero_batch_is_graph_connected_exact_zero() -> None:
     assert torch.count_nonzero(raw.grad[1]) == 0
 
 
+def test_human_masked_fm_is_nonzero_and_autonomous_fm_is_zero() -> None:
+    per_feature = torch.arange(700, dtype=torch.float32).reshape(2, 50, 7)
+    per_feature.requires_grad_()
+    valid = torch.ones(2, 50, dtype=torch.bool)
+    expert = torch.zeros_like(per_feature, dtype=torch.bool)
+    expert[0, 3, :] = True
+
+    loss, count = compute_expert_only_flow_matching_loss(
+        per_feature, valid, expert
+    )
+    loss.backward()
+
+    assert count == 7
+    assert torch.count_nonzero(per_feature.grad[0, 3]) == 7
+    assert torch.count_nonzero(per_feature.grad[1]) == 0
+
+
+def test_human_partial_ack_action_still_enters_critic_td() -> None:
+    q1, q2 = ToyCritic(0.0), ToyCritic(1.0)
+    target1, target2 = ToyCritic(2.0), ToyCritic(3.0)
+    result = compute_online_twin_q_td_loss(
+        q1=q1,
+        q2=q2,
+        q1_target=target1,
+        q2_target=target2,
+        observation=torch.zeros(1, 1),
+        next_observation=torch.zeros(1, 1),
+        ack_behavior_action_k7=torch.ones(1, 3, 7),
+        behavior_mask=torch.tensor([[True, False, False]]),
+        reward=torch.tensor([1.0]),
+        discount=torch.tensor([0.0]),
+        terminated=torch.tensor([True]),
+        bootstrap_mask=torch.tensor([False]),
+        next_policy_action_fn=lambda _: (_ for _ in ()).throw(AssertionError),
+    )
+
+    assert torch.isfinite(result.total)
+    assert q1.calls == q2.calls == 1
+
+
 def test_actor_objective_uses_min_q_and_actioncontract_v2_stops_gripper_q_gradient() -> None:
     per_feature = torch.ones(2, 50, 7, requires_grad=True)
     expert = torch.zeros_like(per_feature, dtype=torch.bool); expert[0] = True

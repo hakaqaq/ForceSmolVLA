@@ -68,17 +68,30 @@ def build_ack_macros(rows: Iterable[Mapping[str, Any]]) -> tuple[tuple[Mapping[s
     return tuple(macros)
 
 
+def _sealed_episode_ids(root: Path) -> set[str]:
+    sealed = set()
+    for path in sorted((root / "episodes").glob("*.json")):
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if record.get("status") == "SEALED_COMMITTED":
+            sealed.add(str(record.get("episode_id", "")))
+    return sealed
+
+
 def load_formal_online_r(root: Path) -> tuple[
     list[dict[str, Any]],
     tuple[tuple[Mapping[str, Any], ...], ...],
     dict[str, Path],
+    list[dict[str, Any]],
 ]:
     admission_files = tuple(sorted((root / "admissions").glob("*.json")))
     require(admission_files, "FORCERFT_ONLINE_REPLAY_ADMISSION_RECORD_COUNT")
+    sealed_episodes = _sealed_episode_ids(root)
     expected = 0
     source_episodes: dict[str, Path] = {}
     for path in admission_files:
         admission = json.loads(path.read_text(encoding="utf-8"))
+        if str(admission.get("episode_id", "")) not in sealed_episodes:
+            continue
         require(admission.get("policy_execution_smoke_bridge") == "PASS", "FORCERFT_ONLINE_REPLAY_BRIDGE_NOT_PASS")
         require(admission.get("source_episode_semantics") == {"formal_replay": False, "real_online_r": False}, "FORCERFT_ONLINE_REPLAY_SOURCE_SEMANTICS")
         episode_id = str(admission["episode_id"])
@@ -86,13 +99,23 @@ def load_formal_online_r(root: Path) -> tuple[
         source_episodes[episode_id] = Path(admission["source_episode"])
         expected += int(admission["accepted_unique_r_transition_count"])
 
-    rows = []
-    for path in (root / "replay").glob("*.json"):
+    policy_rows: list[dict[str, Any]] = []
+    human_rows: list[dict[str, Any]] = []
+    for path in sorted((root / "replay").glob("*.json")):
         envelope = json.loads(path.read_text(encoding="utf-8"))
+        if envelope.get("episode_sealed") is not True:
+            continue
         row = envelope["payload"]
+        if str(row["identity"]["episode_id"]) not in source_episodes:
+            continue
+        source = row.get(
+            "action_source",
+            row.get("action_authority", {}).get("executed_action_source"),
+        )
         require(
             row["classification"] == "recorded_live_policy_execution_smoke"
-            and row["action_authority"]["executed_action_source"] == "policy"
+            and source in {"policy", "human"}
+            and row["action_authority"]["executed_action_source"] == source
             and row["eligibility"] == {
                 "formal_replay": True,
                 "formal_training_replay_eligible": True,
@@ -101,16 +124,71 @@ def load_formal_online_r(root: Path) -> tuple[
             },
             "FORCERFT_ONLINE_REPLAY_MEMBERSHIP",
         )
-        require(
-            str(row["identity"]["episode_id"]) in source_episodes,
-            "FORCERFT_ONLINE_REPLAY_SOURCE_EPISODE_MISSING",
+        row["action_source"] = source
+        row.setdefault("expert", source == "human")
+        row.setdefault("intervention", source == "human")
+        if source == "human":
+            target = np.asarray(row.get("human_action_target"), dtype=np.float64)
+            mask = np.asarray(
+                row.get("human_action_valid_mask"), dtype=np.bool_
+            )
+            require(
+                row["expert"] is True
+                and row["intervention"] is True
+                and target.shape == (50, 7)
+                and mask.shape == (50, 7)
+                and bool(mask.any())
+                and np.all(np.isfinite(target)),
+                "FORCERFT_ONLINE_HUMAN_EXPERT_TARGET_INVALID",
+            )
+            row["action_target"] = target.tolist()
+            row["action_valid_mask"] = mask.tolist()
+            human_rows.append(row)
+        else:
+            require(
+                row["expert"] is False and row["intervention"] is False,
+                "FORCERFT_ONLINE_POLICY_REPLAY_SEMANTICS_INVALID",
+            )
+            row.setdefault("action_target", [[0.0] * 7 for _ in range(50)])
+            row.setdefault(
+                "action_valid_mask", [[False] * 7 for _ in range(50)]
+            )
+            policy_rows.append(row)
+    all_rows = [*policy_rows, *human_rows]
+    require(len(all_rows) == expected, "FORCERFT_ONLINE_REPLAY_ADMISSION_COUNT")
+    require(
+        len(policy_rows) >= 100,
+        "FORCERFT_ONLINE_REPLAY_TRAINING_STARTS",
+    )
+    require(len({row["identity"]["transition_uid"] for row in all_rows}) == len(all_rows), "FORCERFT_ONLINE_REPLAY_UID_DUPLICATE")
+    macros = build_ack_macros(policy_rows)
+    require(
+        macros
+        and (
+            any(macro[-1]["outcome"]["terminated"] for macro in macros)
+            or any(row["outcome"]["terminated"] for row in human_rows)
+        ),
+        "FORCERFT_ONLINE_REPLAY_MACRO_TERMINAL_MISSING",
+    )
+    return policy_rows, macros, source_episodes, human_rows
+
+
+def count_sealed_autonomous_policy_transitions(root: Path) -> int:
+    count = 0
+    sealed_episodes = _sealed_episode_ids(root)
+    for path in sorted((root / "replay").glob("*.json")):
+        envelope = json.loads(path.read_text(encoding="utf-8"))
+        if envelope.get("episode_sealed") is not True:
+            continue
+        row = envelope.get("payload", {})
+        if str(row.get("identity", {}).get("episode_id", "")) not in sealed_episodes:
+            continue
+        source = row.get(
+            "action_source",
+            row.get("action_authority", {}).get("executed_action_source"),
         )
-        rows.append(row)
-    require(len(rows) == expected >= 100, "FORCERFT_ONLINE_REPLAY_TRAINING_STARTS")
-    require(len({row["identity"]["transition_uid"] for row in rows}) == len(rows), "FORCERFT_ONLINE_REPLAY_UID_DUPLICATE")
-    macros = build_ack_macros(rows)
-    require(macros and any(macro[-1]["outcome"]["terminated"] for macro in macros), "FORCERFT_ONLINE_REPLAY_MACRO_TERMINAL_MISSING")
-    return rows, macros, source_episodes
+        count += source == "policy"
+    return count
 
 
 @lru_cache(maxsize=512)
@@ -179,6 +257,72 @@ class FormalReplay:
             "bootstrap": bool(final["outcome"]["bootstrap_mask"]),
             "discount": float(final["outcome"]["discount"]),
             "identity": f"R:{uid}",
+        }
+
+
+class HumanCorrectionReplay:
+    def __init__(self, rows, source_episodes: Mapping[str, Path], normalizer) -> None:
+        self.rows = tuple(rows)
+        self.source_episodes = dict(source_episodes)
+        self.normalizer = normalizer
+
+    def _sample(
+        self, observation: Mapping[str, Any], identity: str, episode_id: str
+    ) -> dict[str, Any]:
+        source_episode = self.source_episodes[episode_id]
+        return {
+            "camera1": _decode_path(
+                str(source_episode / observation["camera_external"]["blob_reference"])
+            ),
+            "camera2": _decode_path(
+                str(source_episode / observation["camera_wrist"]["blob_reference"])
+            ),
+            "state7": self.normalizer.state7.apply(
+                np.asarray(observation["state7_absolute"], dtype=np.float64)
+            ).astype(np.float32),
+            "wrench6": self.normalizer.wrench6.apply(
+                np.asarray(
+                    observation["wrench6_calibrated_tcp"], dtype=np.float64
+                )
+            ).astype(np.float32),
+            "task": TASK,
+            "sample_identity": identity,
+        }
+
+    def materialize(self, index: int) -> dict[str, Any]:
+        from forcesmolvla.action_delta import ActionDeltaProcessor
+
+        row = self.rows[index]
+        target = np.asarray(row["action_target"], dtype=np.float64)
+        feature_mask = np.asarray(row["action_valid_mask"], dtype=np.bool_)
+        state = np.asarray(row["observation"]["state7_absolute"], dtype=np.float64)
+        absolute = np.where(feature_mask, target, state[None, :])
+        action_target = self.normalizer.delta_action7.apply(
+            ActionDeltaProcessor.to_delta(absolute, state)
+        ).astype(np.float32)
+        action_target[~feature_mask] = 0.0
+        behavior_mask = feature_mask[:3].any(axis=1)
+        require(bool(behavior_mask.any()), "FORCERFT_ONLINE_HUMAN_TD_ACTION_EMPTY")
+        uid = str(row["identity"]["transition_uid"])
+        episode_id = str(row["identity"]["episode_id"])
+        return {
+            "current": self._sample(
+                row["observation"], f"H:{uid}:current", episode_id
+            ),
+            "next": self._sample(
+                row["next_observation"], f"H:{uid}:next", episode_id
+            ),
+            "behavior_action": action_target[:3],
+            "behavior_mask": behavior_mask,
+            "reward": float(row["outcome"]["reward"]),
+            "terminated": bool(row["outcome"]["terminated"]),
+            "bootstrap": bool(row["outcome"]["bootstrap_mask"]),
+            "discount": float(row["outcome"]["discount"]),
+            "identity": f"H:{uid}",
+            "expert": True,
+            "action_source": "human",
+            "action_target": action_target,
+            "action_valid_mask": feature_mask,
         }
 
 
@@ -282,7 +426,14 @@ def build_batch(rows: list[dict[str, Any]], actor, feature: torch.Tensor, device
         "next_observation": _critic_observation(following, feature, device),
         "next_actor_batch": build_actor_batch(actor, following, device, include_action=False),
         "behavior_action": torch.from_numpy(np.stack([row["behavior_action"] for row in rows])).to(device),
-        "behavior_mask": torch.ones(len(rows), 3, dtype=torch.bool, device=device),
+        "behavior_mask": torch.from_numpy(
+            np.stack(
+                [
+                    row.get("behavior_mask", np.ones(3, dtype=np.bool_))
+                    for row in rows
+                ]
+            )
+        ).to(device),
         "reward": torch.tensor([row["reward"] for row in rows], dtype=torch.float32, device=device),
         "terminated": torch.tensor([row["terminated"] for row in rows], dtype=torch.bool, device=device),
         "bootstrap": torch.tensor([row["bootstrap"] for row in rows], dtype=torch.bool, device=device),

@@ -102,8 +102,8 @@ def compute_online_twin_q_td_loss(
         raise ValueError("ONLINE_REPLAY_BOOTSTRAP_MASK_MUST_BE_BOOL_VECTOR")
     if behavior_mask.dtype != torch.bool or tuple(behavior_mask.shape) != (batch, 3):
         raise ValueError("ONLINE_REPLAY_BEHAVIOR_MASK_MUST_BE_BOOL_BK")
-    if not bool(behavior_mask.all()):
-        raise ValueError("ONLINE_REPLAY_ONLINE_TD_REQUIRES_FULL_K3_MACRO")
+    if not bool(behavior_mask.any(dim=1).all()):
+        raise ValueError("ONLINE_REPLAY_ONLINE_TD_REQUIRES_EXECUTED_ACTION")
     if torch.any(terminated & bootstrap_mask) or not torch.equal(terminated, ~bootstrap_mask):
         raise ValueError("ONLINE_REPLAY_TERMINAL_BOOTSTRAP_CONTRACT")
     expected_discount = bootstrap_mask.float() * float(gamma_decision)

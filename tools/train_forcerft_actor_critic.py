@@ -88,13 +88,35 @@ def assert_optimizer_ownership(
 
 
 class JointDemoReplay(warmup.DemoReplay):
-    """Adds only the stored H=50 action targets needed by expert FM."""
+    """One expert pool: offline demonstrations plus online human corrections."""
 
-    def __init__(self, normalizer) -> None:
+    def __init__(
+        self,
+        normalizer,
+        human_rows=(),
+        source_episodes: Mapping[str, Path] | None = None,
+    ) -> None:
         super().__init__(normalizer)
+        self.offline_population = tuple(self.population)
+        self.offline_count = len(self.rows)
         conversion = json.loads((warmup.DATASET / "conversion_manifest.json").read_text(encoding="utf-8"))
         self.frame_counts = {item["raw_episode_id"]: int(item["frames"]) for item in conversion["episodes"]}
         self.actions: dict[tuple[str, int], list[float]] = {}
+        self.set_human_rows(human_rows, source_episodes or {})
+
+    def set_human_rows(
+        self, human_rows, source_episodes: Mapping[str, Path]
+    ) -> None:
+        self.human_replay = warmup.HumanCorrectionReplay(
+            human_rows, source_episodes, self.normalizer
+        )
+        self.population = (
+            *self.offline_population,
+            *range(
+                self.offline_count,
+                self.offline_count + len(self.human_replay.rows),
+            ),
+        )
 
     def prefetch_joint(
         self,
@@ -108,12 +130,16 @@ class JointDemoReplay(warmup.DemoReplay):
         all_batches = [*critic_batches, *actor_batches]
         for batch in all_batches:
             for index in batch:
+                if index >= self.offline_count:
+                    continue
                 row = self.rows[index]
                 for key in ("observation_row_reference", "next_observation_row_reference"):
                     ref = row[key]
                     observation_requested.setdefault(ref["data_relative_path"], set()).add(int(ref["row_index"]))
         for batch in actor_batches:
             for index in batch:
+                if index >= self.offline_count:
+                    continue
                 row = self.rows[index]
                 ref = row["observation_row_reference"]
                 anchor = int(ref["row_index"])
@@ -136,9 +162,24 @@ class JointDemoReplay(warmup.DemoReplay):
             if position % 10 == 0 or position == len(files):
                 print(f"[joint] prefetched demonstration files {position}/{len(files)}", file=sys.stderr, flush=True)
 
+    def materialize(self, index: int) -> dict[str, Any]:
+        if index >= self.offline_count:
+            return self.human_replay.materialize(index - self.offline_count)
+        result = super().materialize(index)
+        result["expert"] = True
+        result["action_source"] = "offline_demonstration"
+        return result
+
     def materialize_actor(self, index: int) -> dict[str, Any]:
         from forcesmolvla.action_delta import ActionDeltaProcessor
 
+        if index >= self.offline_count:
+            result = self.human_replay.materialize(index - self.offline_count)
+            feature_mask = result["action_valid_mask"]
+            result["current"]["delta_action7"] = result["action_target"]
+            result["current"]["action_valid_mask"] = feature_mask.any(axis=1)
+            result["expert_feature_mask"] = feature_mask
+            return result
         result = self.materialize(index)
         row = self.rows[index]
         ref = row["observation_row_reference"]
@@ -156,6 +197,9 @@ class JointDemoReplay(warmup.DemoReplay):
         result["current"]["delta_action7"] = self.normalizer.delta_action7.apply(delta).astype(np.float32)
         result["current"]["action_valid_mask"] = (anchor + np.arange(50) <= last)
         result["expert"] = True
+        result["expert_feature_mask"] = np.repeat(
+            result["current"]["action_valid_mask"][:, None], 7, axis=1
+        )
         return result
 
 
@@ -166,6 +210,8 @@ def _online_actor_row(replay: warmup.FormalReplay, index: int) -> dict[str, Any]
     # topology valid lets the same Actor batch serve Q-guidance without imitation.
     row["current"]["action_valid_mask"] = np.ones(50, dtype=np.bool_)
     row["expert"] = False
+    row["action_source"] = "policy"
+    row["expert_feature_mask"] = np.zeros((50, 7), dtype=np.bool_)
     return row
 
 
@@ -179,6 +225,10 @@ def build_actor_training_batch(
         "current_observation": warmup._critic_observation(samples, feature, device),
         "current_actor_batch": build_actor_batch(actor, samples, device, include_action=True),
         "expert_rows": torch.tensor([row["expert"] for row in rows], dtype=torch.bool, device=device),
+        "expert_feature_mask": torch.from_numpy(
+            np.stack([row["expert_feature_mask"] for row in rows])
+        ).to(device),
+        "action_sources": tuple(row["action_source"] for row in rows),
         "identities": tuple(row["identity"] for row in rows),
     }
 
@@ -361,7 +411,10 @@ def actor_step(
             critic.zero_grad(set_to_none=True)
         valid = batch["current_actor_batch"]["action_valid_mask"].bool()
         expert_rows = batch["expert_rows"]
-        total_expert_features = int((valid & expert_rows[:, None]).sum()) * 7
+        expert_feature_mask = batch["expert_feature_mask"].bool()
+        total_expert_features = int(
+            (expert_feature_mask & valid.unsqueeze(-1)).sum()
+        )
         require(total_expert_features > 0, "ONLINE_REPLAY_JOINT_NO_EXPERT_FM")
     fm_total = q_total = 0.0
     q1_values: list[torch.Tensor] = []
@@ -370,6 +423,7 @@ def actor_step(
     gripper_q_gradient_max = 0.0
     expert_gripper_fm_square = 0.0
     online_fm_gradient_max = 0.0
+    human_fm_gradient_square = 0.0
     actor.train(True)
 
     for start in range(0, batch_size, microbatch):
@@ -380,7 +434,13 @@ def actor_step(
             observation = batch["current_observation"].index(index)
             local_valid = valid[start : start + microbatch]
             local_expert = expert_rows[start : start + microbatch]
-            expert_mask = local_expert[:, None, None].expand(-1, 50, 7)
+            expert_mask = expert_feature_mask[start : start + microbatch]
+            local_sources = batch["action_sources"][start : start + microbatch]
+            local_human = torch.tensor(
+                [source == "human" for source in local_sources],
+                dtype=torch.bool,
+                device=device,
+            )
             fm_noise = torch.randn(microbatch, 50, 7, dtype=torch.float32, device=device)
             fm_time = torch.rand(microbatch, dtype=torch.float32, device=device)
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
@@ -423,7 +483,9 @@ def actor_step(
                     delta_action_std7=delta_std,
                 )
             actor.train(True)
-            expert_count = int((local_valid & local_expert[:, None]).sum()) * 7
+            expert_count = int(
+                (expert_mask & local_valid.unsqueeze(-1)).sum()
+            )
             fm_weight = expert_count / total_expert_features
             q_weight = microbatch / batch_size
             terms = compute_online_actor_objective(
@@ -453,6 +515,10 @@ def actor_step(
                     online_fm_gradient_max,
                     float(fm_gradient[~local_expert].abs().max().cpu()),
                 )
+            if bool(local_human.any()):
+                human_fm_gradient_square += float(
+                    fm_gradient[local_human].float().square().sum().cpu()
+                )
             if bool(local_expert.any()):
                 expert_gripper_fm_square += float(
                     fm_gradient[local_expert, :, 6].float().square().sum().cpu()
@@ -465,6 +531,11 @@ def actor_step(
 
     with slot("actor_optimizer"):
         require(online_fm_gradient_max == 0.0, "ONLINE_REPLAY_JOINT_ONLINE_SELF_IMITATION")
+        require(
+            "human" not in batch["action_sources"]
+            or human_fm_gradient_square > 0.0,
+            "ONLINE_REPLAY_JOINT_HUMAN_FM_MISSING",
+        )
         require(expert_gripper_fm_square > 0.0, "ONLINE_REPLAY_JOINT_EXPERT_GRIPPER_FM_MISSING")
         require(gripper_q_gradient_max == 0.0 and tcp_q_gradient_square > 0.0, "ONLINE_REPLAY_JOINT_Q_GRADIENT_SEMANTICS")
         require(
