@@ -1,0 +1,20 @@
+{
+  "approval": {
+    "approval_id": "forcesmolvla-online-replay-actor-critic-cycle000027-active-actor-export-20260831",
+    "approved_at": "2026-08-31T05:33:26Z",
+    "approver_identity": "rlc123",
+    "approver_role": "experiment_lead",
+    "status": "approved"
+  },
+  "artifact_status": "approved",
+  "camera_max_age_ms": 250.0,
+  "client_source_sha256": "dccfc274061d2fa296e14ffad45894bb63ad39707783f5b680e067f36f9ec7cf",
+  "controller_ack_timeout_ms": 20.0,
+  "gripper_max_age_ms": 300.0,
+  "max_intercamera_skew_ms": 250.0,
+  "model_sha256": "cd6cc8ba9defeb2bfb2f2bd160fc5ba57a868ed90e3bc6f4ce2b81237f5f4484",
+  "rulespec_sha256": "2619b9fe93af11cc021e193790e84261b0f0ae9524714c40a12ca97f5b28fcba",
+  "schema_version": "forcesmolvla-live-deployment-binding-v1",
+  "server_source_sha256": "b105eab987ef3dc9e217772316a60370c002417285084329f1297de71d82eff8",
+  "state_pose_max_age_ms": 250.0
+}

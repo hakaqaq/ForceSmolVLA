@@ -1,0 +1,12 @@
+{
+  "artifact_status": "development_only",
+  "checkpoint": "artifacts/development/online_replay/published/online_replay_actor_critic_cycle_000027_actor_export.v1",
+  "dataset_manifest": "datasets/task2_lerobotv3/conversion_manifest.json",
+  "deployment_binding": "artifacts/development/live/task2_online_replay_actor_critic_cycle000027_active_actor_export_deployment_binding.v1.json",
+  "deployment_binding_sha256": "279287e8a8eae7686eba2b4d980fe12b47c80bc54efc05829f112d0ddd515d1d",
+  "deployment_id": "task2-online-replay-actor-critic-cycle000027-active-actor-export",
+  "raw_session": "/home/rlc123/fr3_client_ws/datasets/task2/session.json",
+  "rulespec": "configs/live_action_safety.task2.development.yaml",
+  "schema_version": "forcesmolvla-deployment-profile-v1",
+  "tool_profile": "onrobot_robotiq"
+}
