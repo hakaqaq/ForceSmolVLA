@@ -619,7 +619,9 @@ def load_resume_modules(
     from forcesmolvla.rft.critic import build_twin_q
 
     binding = json.loads(warmup.PARENT_BINDING.read_text(encoding="utf-8"))
-    config = warmup.yaml.safe_load(warmup.GPU_CONFIG.read_text(encoding="utf-8"))
+    config = warmup.yaml.safe_load(
+        warmup.TRAINING_CONFIG.read_text(encoding="utf-8")
+    )
     candidate = json.loads(
         (actor_package / "candidate.json").read_text(encoding="utf-8")
     )
