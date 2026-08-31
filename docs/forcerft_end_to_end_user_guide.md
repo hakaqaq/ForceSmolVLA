@@ -49,9 +49,9 @@ export ROBOT_PYTHON="$FR3_WS/.venv/bin/python"
 export RAW_ROOT="$FR3_WS/datasets/task2"
 export LEROBOT_DATASET="$FORCESMOLVLA_ROOT/datasets/task2_lerobotv3"
 export REWARD_TRANSITION_ROOT=/absolute/path/to/reward_transition_view
-export CHECKPOINT_ROOT="$FORCESMOLVLA_ROOT/artifacts/development/stage3/formal_online_r/<formal-r-run>/checkpoints"
-export FORMAL_R_ROOT="$FORCESMOLVLA_ROOT/artifacts/development/stage3/formal_online_r/<formal-r-run>"
-export REVISION_REGISTRY="$FORCESMOLVLA_ROOT/artifacts/development/stage3/runtime/stage3_policy_revision_registry.json"
+export FORMAL_R_ROOT="<current-formal-online-replay-root>"
+export CHECKPOINT_ROOT="$FORMAL_R_ROOT/checkpoints"
+export REVISION_REGISTRY="<current-policy-revision-registry>"
 cd "$FORCESMOLVLA_ROOT"
 ```
 
@@ -199,7 +199,7 @@ export TRANSFORMERS_OFFLINE=1
 
 当前 recipe 的主要语义是 40,000 training samples、batch/GPU=4、AdamW、bf16 autocast、force adapter/action head fp32，以及 `L_flow + 0.01*L_balance + 0.001*L_z`。offline full-finetune 要求所有已有模型参数 trainable；VLM、force branch、router/action expert 一起更新。不要把在线 ForceRFT 的 frozen-VLM 规则错误套用到这一步。
 
-checkpoint 包含模型、optimizer、scheduler/RNG/dataloader 恢复契约及 runtime manifests。最终 offline SFT Actor parent 由 `configs/stage3_parent_binding.v1.development.json` 动态绑定；不要按历史 cycle 名称猜测。
+checkpoint 包含模型、optimizer、scheduler/RNG/dataloader 恢复契约及 runtime manifests。最终 offline SFT Actor parent 由 `configs/online_replay_bootstrap_parent_binding.v1.development.json` 动态绑定；不要按历史 cycle 名称猜测。
 
 ## 6. Reward 标注
 
@@ -285,7 +285,7 @@ Actor 输出 H=50 的 absolute action7；执行端以 10 Hz dispatch，Critic �
   --source-manifest artifacts/development/stage2/stage2_source_manifest.v4.json
 ```
 
-当前真实 bootstrap Critic 是 `configs/stage3_parent_binding.v1.development.json` 选定的 Q1/Q2 与 target Q1/Q2。canonical 训练入口是：
+当前真实 bootstrap Critic 是 `configs/online_replay_bootstrap_parent_binding.v1.development.json` 选定的 Q1/Q2 与 target Q1/Q2。canonical 训练入口是：
 
 ```bash
 "$MODEL_PYTHON" tools/train_twin_q_critic.py --run
@@ -297,7 +297,7 @@ Actor 输出 H=50 的 absolute action7；执行端以 10 Hz dispatch，Critic �
 
 ### 9.1 Parent binding
 
-在线 Actor/Critic 初始化 parent 必须从 `configs/stage3_parent_binding.v1.development.json` 读取：
+在线 Actor/Critic 初始化 parent 必须从 `configs/online_replay_bootstrap_parent_binding.v1.development.json` 读取：
 
 - Actor：已批准的 offline SFT Actor export；
 - Q1/Q2 与 target Q1/Q2：已绑定 Twin-Q bootstrap；
@@ -311,7 +311,7 @@ Actor 输出 H=50 的 absolute action7；执行端以 10 Hz dispatch，Critic �
 ```bash
 "$MODEL_PYTHON" tools/train_forcerft_critic_warmup.py \
   --steps 100 \
-  --checkpoint "$CHECKPOINT_ROOT/stage3_critic_warmup_<run>"
+  --checkpoint "$CHECKPOINT_ROOT/online_replay_critic_warmup_step_<step>"
 ```
 
 warmup 创建 fresh Critic optimizer，不创建 Actor optimizer；Actor frozen/eval/no-grad，仅用于 non-terminal TD target action；target Critics no-grad；每个 Critic step 后一次 Polyak update；terminal transition 不调用 next Actor/target Q。
@@ -562,7 +562,7 @@ bridge 中 takeover 后优先真实 NEW_COMMAND；只有显式 synchronization e
 
 checkpoint 可能早于最新 append-only admission。resume 必须恢复 checkpoint 模型、optimizer、RNG、sampler/credits，再只合并 checkpoint 后的新 UID；same UID 不重复加入或 mint credit。若 live replay count/credits 与恢复后 effective state 不一致，停止且不训练。
 
-### 13.7 `STAGE3_CONTINUOUS_CAPTURE_ROOT_EXISTS` / candidate output exists
+### 13.7 `ONLINE_REPLAY_CONTINUOUS_CAPTURE_ROOT_EXISTS` / candidate output exists
 
 continuous loop 要求新 root-prefix 和新 pending/candidate 输出路径。重新启动使用新的 root-prefix；Actor/revision/checkpoint 从 registry 自动接续。不要删除仍可能是 latest resume、active/previous package 或 current capture root 的路径来强行通过。
 
