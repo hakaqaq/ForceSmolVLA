@@ -252,7 +252,7 @@ def export_development_actor_checkpoint(
             "artifact_type": "forcesmolvla_training_checkpoint",
             "training_stage": parent_contract["training_stage"],
             "strict_loader_container_only": True,
-            "artifact_purpose": "stage3_development_candidate_actor",
+            "artifact_purpose": "online_replay_development_candidate_actor",
             "deployment_release": published,
             "training_parent_allowed": False,
             "online_update_allowed": False,
@@ -284,7 +284,7 @@ def export_development_actor_checkpoint(
             temporary,
             artifact_type="forcesmolvla_training_checkpoint",
             metadata={
-                "artifact_purpose": "stage3_development_candidate_actor",
+                "artifact_purpose": "online_replay_development_candidate_actor",
                 "candidate_revision_id": candidate_revision_id,
                 "model_revision": model_revision,
                 "published": published,

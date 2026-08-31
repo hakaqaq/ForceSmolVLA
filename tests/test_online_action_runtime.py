@@ -10,15 +10,15 @@ import threading
 import numpy as np
 import pytest
 
-from forcesmolvla.rft.stage3.runtime_contract import (
+from forcesmolvla.rft.online.action_runtime import (
     ACTION_DELTA_DENORMALIZATION_ONCE,
     ACTION_SLOT_FIFO_PRESENT,
     CONTRACT_TRANSITION_MACRO_HZ,
     CONTROLLER_INTERNAL_SERVO_HZ,
     CURRENT_LOW_WATERMARK_APPROVED,
     CURRENT_LOW_WATERMARK_COVERAGE_NS,
-    G7_CONCURRENT_MAX_SERVICE_LATENCY_NS,
-    G5_PRODUCTION_DURABLE_RESUME,
+    CONCURRENT_MAX_SERVICE_LATENCY_NS,
+    PRODUCTION_DURABLE_RESUME,
     GRIPPER_NOOP_ACK_POLICY,
     H50_ACTIONS_CACHED,
     H50_MODEL_TIMEBASE_HZ,
@@ -38,7 +38,7 @@ from forcesmolvla.rft.stage3.runtime_contract import (
     RUNTIME_LEDGER_PERSISTED,
     RUNTIME_THREAD_OWNERSHIP,
     SELECTED_INDEX_POLICY,
-    STAGE3_PROJECTION_GRID_HZ,
+    ONLINE_REPLAY_PROJECTION_GRID_HZ,
     ChunkRequestIdentity,
     ChunkResultIdentity,
     RationalH50SelectionLedger,
@@ -63,7 +63,7 @@ def limits(**overrides: int) -> RuntimeSafetyLimits:
         "max_chunk_age_ns": 1_500_000_000,
         "max_selected_index": 49,
         "max_dispatch_count": 8,
-        "refresh_worst_case_service_ns": G7_CONCURRENT_MAX_SERVICE_LATENCY_NS,
+        "refresh_worst_case_service_ns": CONCURRENT_MAX_SERVICE_LATENCY_NS,
         "refresh_additional_headroom_ns": 50_000_000,
         "pose_ack_deadline_ns": 20_000_000,
         "gripper_ack_deadline_ns": 30_000_000,
@@ -204,7 +204,7 @@ def test_single_owner_event_loop_rejects_cross_thread_call_and_latches_stop() ->
     thread.join(timeout=2.0)
     assert not thread.is_alive()
     assert len(failures) == 1
-    assert failures[0].reason == "STAGE3_RUNTIME_LEDGER_CROSS_THREAD_CALL"
+    assert failures[0].reason == "ONLINE_REPLAY_RUNTIME_LEDGER_CROSS_THREAD_CALL"
     assert failures[0].directive is SafetyDirective.STOP
     assert value.fail_closed_directive is SafetyDirective.STOP
     with pytest.raises(RuntimeSafetyViolation, match="STOP_LATCHED"):
@@ -408,8 +408,8 @@ def test_chunk_age_selected_index_and_dispatch_count_fail_closed() -> None:
 
 def test_low_watermark_is_time_based_and_current_400ms_is_not_approved() -> None:
     assert CURRENT_LOW_WATERMARK_COVERAGE_NS == 400_000_000
-    assert G7_CONCURRENT_MAX_SERVICE_LATENCY_NS == 443_161_677
-    assert CURRENT_LOW_WATERMARK_COVERAGE_NS < G7_CONCURRENT_MAX_SERVICE_LATENCY_NS
+    assert CONCURRENT_MAX_SERVICE_LATENCY_NS == 443_161_677
+    assert CURRENT_LOW_WATERMARK_COVERAGE_NS < CONCURRENT_MAX_SERVICE_LATENCY_NS
     assert CURRENT_LOW_WATERMARK_APPROVED is False
 
     value = ledger()
@@ -833,7 +833,7 @@ def test_no_safe_action_is_explicit_hold_and_unknown_command_outcome_is_stop() -
     assert value.fail_closed_directive is SafetyDirective.HOLD
 
 
-def test_stage3_import_has_no_ros_network_robot_or_cuda_side_effects() -> None:
+def test_online_import_has_no_ros_network_robot_or_cuda_side_effects() -> None:
     script = r'''
 import importlib.abc
 import json
@@ -864,7 +864,7 @@ def audit(event, args):
 sys.meta_path.insert(0, BlockRobotImports())
 sys.addaudithook(audit)
 threads_before = tuple(thread.ident for thread in threading.enumerate())
-import forcesmolvla.rft.stage3  # noqa: F401
+import forcesmolvla.rft.online  # noqa: F401
 import torch
 threads_after = tuple(thread.ident for thread in threading.enumerate())
 assert threads_after == threads_before

@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from forcesmolvla.rft.stage3.integrated_capture import (
+from forcesmolvla.rft.online.integrated_capture import (
     CaptureBackendCapabilities,
     IntegratedCaptureError,
     IntegratedCaptureLedger,
@@ -43,7 +43,7 @@ def _development_package(
     package.mkdir()
     metadata = {
         "artifact_purpose": (
-            "stage3_development_candidate_actor"
+            "online_replay_development_candidate_actor"
             if candidate
             else "evaluation_smoke_only"
         )

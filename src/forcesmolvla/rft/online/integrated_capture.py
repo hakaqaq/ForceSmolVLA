@@ -120,7 +120,10 @@ def validate_development_policy_package(
         or not isinstance(candidate.get("activated"), bool)
         or candidate.get("model_revision") != policy_revision
         or metadata.get("artifact_purpose")
-        != "stage3_development_candidate_actor"
+        not in {
+            "online_replay_development_candidate_actor",
+            "stage3_development_candidate_actor",
+        }
         or metadata.get("published") is not True
         or metadata.get("activated") != candidate.get("activated")
         or metadata.get("model_revision") != policy_revision
