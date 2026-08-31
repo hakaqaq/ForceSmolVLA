@@ -16,8 +16,8 @@ import time
 from types import SimpleNamespace
 from typing import Any, Mapping
 
-from .gripper_provenance import GripperGeneration
-from .integrated_capture import (
+from forcesmolvla.rft.online.gripper_authority import GripperGeneration
+from forcesmolvla.rft.online.integrated_capture import (
     CaptureBackendCapabilities,
     IntegratedCaptureContract,
     IntegratedCaptureError,
@@ -26,7 +26,7 @@ from .integrated_capture import (
     RECORDER_ENTRY,
     validate_development_policy_package,
 )
-from .policy_lineage import InitialGripperAuthority, UPPER_CLOCK_DOMAIN
+from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority, UPPER_CLOCK_DOMAIN
 
 
 SHADOW_BACKEND_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
@@ -51,7 +51,7 @@ def _async_runtime_identity(
     metadata: Mapping[str, Any], contract: IntegratedCaptureContract
 ) -> dict[str, Any]:
     if (
-        metadata.get("stage3_async_actor_learner") is not True
+        metadata.get("online_actor_learner") is not True
         or metadata.get("runtime_session_id") != contract.identity.session_id
         or metadata.get("runtime_episode_id") != contract.identity.episode_id
         or metadata.get("active_actor_model_revision")
@@ -157,7 +157,7 @@ def build_native_recorder_command(arguments: Mapping[str, Any]) -> list[str]:
     ]
 
 
-class ShadowArtifactStore:
+class CaptureArtifactStore:
     """Append-only integrated artifacts with mode-specific fail-closed rows."""
 
     def __init__(self, directory: Path) -> None:
@@ -1218,7 +1218,7 @@ def _record_live_observation(
     metadata: Mapping[str, Any],
     contract: IntegratedCaptureContract,
     ledger: IntegratedCaptureLedger,
-    store: ShadowArtifactStore,
+    store: CaptureArtifactStore,
     observations: list[dict[str, Any]],
     *,
     stream_name: str,
@@ -1276,7 +1276,7 @@ def _policy_context_is_current(
     )
 
 
-class IntegratedShadowBackend:
+class IntegratedCaptureBackend:
     """One native recorder with shadow inference or explicit policy smoke."""
 
     capabilities = CaptureBackendCapabilities(
@@ -1470,7 +1470,7 @@ class IntegratedShadowBackend:
             episode_start = _json(episode_start_path)
             episode_started_ns = int(episode_start["started_monotonic_ns"])
             artifact_work = root / "integrated_capture/.episode_000000.inprogress"
-            store = ShadowArtifactStore(artifact_work)
+            store = CaptureArtifactStore(artifact_work)
 
             authority = None
             while authority is None:
@@ -1771,7 +1771,7 @@ class IntegratedShadowBackend:
         contract: IntegratedCaptureContract,
         ledger: IntegratedCaptureLedger,
         observation: Any,
-        store: ShadowArtifactStore,
+        store: CaptureArtifactStore,
         authority: Mapping[str, Any],
         episode_started_ns: int,
         work_episode: Path,
@@ -2312,9 +2312,9 @@ class IntegratedShadowBackend:
 
 __all__ = [
     "ForbiddenPolicyPublisher",
-    "IntegratedShadowBackend",
+    "IntegratedCaptureBackend",
     "POLICY_EXECUTION_BACKEND_SCHEMA",
     "SHADOW_BACKEND_SCHEMA",
-    "ShadowArtifactStore",
+    "CaptureArtifactStore",
     "build_native_recorder_command",
 ]

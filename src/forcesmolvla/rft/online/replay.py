@@ -6,8 +6,8 @@ from dataclasses import dataclass
 import json
 from typing import Literal, Mapping
 
-from .transition import canonical_json_bytes, validate_ack_transition
-from .update_credit import UpdateCreditLedger
+from forcesmolvla.rft.online.transition_authority import canonical_json_bytes, validate_ack_transition
+from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
 
 
 R_ONLINE = "R_online"
@@ -33,12 +33,12 @@ def memberships_for_transition(payload: Mapping, *, origin: Origin) -> tuple[str
     if origin == "offline_demonstration":
         return (D_EXPERT,)
     if origin != "online":
-        raise ValueError("STAGE3_REPLAY_ORIGIN_INVALID")
+        raise ValueError("ONLINE_REPLAY_REPLAY_ORIGIN_INVALID")
     owners = payload["behavior_ack"]["slot_owner"]
     return (R_ONLINE, D_EXPERT) if "human_intervention" in owners else (R_ONLINE,)
 
 
-class Stage3Replay:
+class OnlineReplay:
     """In-memory replay core; persistence is owned by the durable replay layer."""
 
     def __init__(
@@ -48,7 +48,7 @@ class Stage3Replay:
         credit_ledger: UpdateCreditLedger | None = None,
     ) -> None:
         if max_online_transitions <= 0:
-            raise ValueError("STAGE3_REPLAY_ONLINE_CAPACITY_INVALID")
+            raise ValueError("ONLINE_REPLAY_REPLAY_ONLINE_CAPACITY_INVALID")
         self.max_online_transitions = int(max_online_transitions)
         self.credit_ledger = credit_ledger
         self._payload_bytes: dict[str, bytes] = {}
@@ -62,7 +62,7 @@ class Stage3Replay:
         memberships = memberships_for_transition(value, origin=origin)
         existing = self._digests.get(uid)
         if existing is not None and existing != digest:
-            raise ReplayDigestCollisionError(f"STAGE3_REPLAY_UID_DIGEST_COLLISION:{uid}")
+            raise ReplayDigestCollisionError(f"ONLINE_REPLAY_REPLAY_UID_DIGEST_COLLISION:{uid}")
         if existing == digest:
             return ReplayCommitResult(
                 transition_uid=uid,
@@ -106,7 +106,7 @@ class Stage3Replay:
 
     def membership_uids(self, pool: str) -> tuple[str, ...]:
         if pool not in self._memberships:
-            raise KeyError(f"STAGE3_REPLAY_POOL_UNKNOWN:{pool}")
+            raise KeyError(f"ONLINE_REPLAY_REPLAY_POOL_UNKNOWN:{pool}")
         return tuple(self._memberships[pool])
 
     def get_payload(self, transition_uid: str) -> dict:

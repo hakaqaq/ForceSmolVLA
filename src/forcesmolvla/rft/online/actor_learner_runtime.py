@@ -1,4 +1,4 @@
-"""Small coordination primitives for one-GPU Stage-3 Actor/Learner runtime."""
+"""Small coordination primitives for one-GPU online Actor/Learner runtime."""
 
 from __future__ import annotations
 
@@ -29,12 +29,12 @@ def reconcile_post_checkpoint_replay(credits: Any, all_r: Sequence[dict]) -> int
     """Mint credit exactly once for live replay UIDs admitted after checkpoint."""
 
     uids = [str(row["identity"]["transition_uid"]) for row in all_r]
-    require(len(set(uids)) == len(uids), "STAGE3_ASYNC_LIVE_REPLAY_UID_DUPLICATE")
+    require(len(set(uids)) == len(uids), "ONLINE_REPLAY_ASYNC_LIVE_REPLAY_UID_DUPLICATE")
     minted = sum(credits.mint_for_unique_online_transition(uid) for uid in uids)
     snapshot = credits.snapshot()
     require(
         snapshot.credited_transition_count == len(uids) and snapshot.available > 0,
-        "STAGE3_ASYNC_REPLAY_OR_CREDIT_MISMATCH",
+        "ONLINE_REPLAY_ASYNC_REPLAY_OR_CREDIT_MISMATCH",
     )
     return minted
 
@@ -57,7 +57,7 @@ def prepare_learner(
         apply_frozen_vlm_trainability,
         build_frozen_vlm_actor_optimizer,
     )
-    from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
+    from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
     from forcesmolvla.rft.throughput_v2 import FrozenPrefixFlowCounter
     from forcesmolvla.training_data import load_normalizer_manifest
 
@@ -117,7 +117,7 @@ def prepare_learner(
         and critic_optimizer.state
         and actor_optimizer.state
         and actor_scheduler.last_epoch == joint_cycles,
-        "STAGE3_ASYNC_LEARNER_EXACT_RESUME_INVALID",
+        "ONLINE_REPLAY_ASYNC_LEARNER_EXACT_RESUME_INVALID",
     )
     credits = UpdateCreditLedger.from_state_dict(runtime["sample_credit"])
     new_r_transition_count = reconcile_post_checkpoint_replay(credits, all_r)
@@ -144,7 +144,7 @@ def prepare_learner(
         actor_ownership["frozen_parameter_in_optimizer"] == 0
         and trainability.trainable_actor_parameter_tensors
         == actor_ownership["parameter_tensor_count"],
-        "STAGE3_ASYNC_OPTIMIZER_OWNERSHIP",
+        "ONLINE_REPLAY_ASYNC_OPTIMIZER_OWNERSHIP",
     )
 
     normalizer = load_normalizer_manifest(
@@ -221,7 +221,7 @@ class InferencePriorityCoordinator:
     @contextmanager
     def worker_alive(self, role: str) -> Iterator[None]:
         if role not in self._alive:
-            raise ValueError("STAGE3_ASYNC_WORKER_ROLE_INVALID")
+            raise ValueError("ONLINE_REPLAY_ASYNC_WORKER_ROLE_INVALID")
         with self._condition:
             self._alive[role] += 1
             self.concurrently_alive |= all(self._alive.values())
@@ -240,7 +240,7 @@ class InferencePriorityCoordinator:
                 self._inference_waiters += 1
                 self._condition.notify_all()
             elif self._inference_waiters < 1:
-                raise AsyncRuntimeError("STAGE3_ASYNC_INFERENCE_RESERVATION_MISSING")
+                raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_INFERENCE_RESERVATION_MISSING")
             try:
                 self._condition.wait_for(lambda: self._owner is None)
                 self._owner = "inference"
@@ -261,7 +261,7 @@ class InferencePriorityCoordinator:
     def cancel_inference_reservation(self) -> None:
         with self._condition:
             if self._inference_waiters < 1:
-                raise AsyncRuntimeError("STAGE3_ASYNC_INFERENCE_RESERVATION_MISSING")
+                raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_INFERENCE_RESERVATION_MISSING")
             self._inference_waiters -= 1
             self._condition.notify_all()
 
@@ -274,7 +274,7 @@ class InferencePriorityCoordinator:
         coverage_reserve_s: float = 0.10,
     ) -> Iterator[None]:
         if initial_estimate_s < 0 or coverage_reserve_s < 0:
-            raise ValueError("STAGE3_ASYNC_LEARNER_ESTIMATE_INVALID")
+            raise ValueError("ONLINE_REPLAY_ASYNC_LEARNER_ESTIMATE_INVALID")
         with self._condition:
             prior = [
                 milliseconds / 1000.0
@@ -313,7 +313,7 @@ class InferencePriorityCoordinator:
             if not self._condition.wait_for(
                 lambda: all(self._alive.values()), timeout=timeout_s
             ):
-                raise AsyncRuntimeError("STAGE3_ASYNC_WORKERS_NOT_CONCURRENT")
+                raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_WORKERS_NOT_CONCURRENT")
 
     @property
     def inference_pending(self) -> bool:
@@ -363,7 +363,7 @@ class TakeoverWindow:
             or self.resume_ns <= self.start_ns
             or self.takeover_generation < 1
         ):
-            raise ValueError("STAGE3_ASYNC_TAKEOVER_WINDOW_INVALID")
+            raise ValueError("ONLINE_REPLAY_ASYNC_TAKEOVER_WINDOW_INVALID")
 
 
 @dataclass(frozen=True)
@@ -399,7 +399,7 @@ class PinnedEpisode:
         if self.pin != self.expected:
             self.machine.end_episode()
             self.pin = None
-            raise AsyncRuntimeError("STAGE3_ASYNC_ACTIVE_REVISION_MISMATCH")
+            raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_ACTIVE_REVISION_MISMATCH")
         return self.expected
 
     def __exit__(self, exc_type, exc, traceback) -> None:
@@ -417,7 +417,7 @@ class H50ActionCache:
 
     def __init__(self, *, replan_steps: int = 8, low_watermark: int = 4) -> None:
         if not 1 <= low_watermark < replan_steps <= 50:
-            raise ValueError("STAGE3_ASYNC_ACTION_CACHE_CONFIG")
+            raise ValueError("ONLINE_REPLAY_ASYNC_ACTION_CACHE_CONFIG")
         self.replan_steps = replan_steps
         self.low_watermark = low_watermark
         self.chunk: np.ndarray | None = None
@@ -447,7 +447,7 @@ class H50ActionCache:
     ) -> None:
         value = np.asarray(chunk)
         if value.shape != (50, 7) or not np.isfinite(value).all():
-            raise AsyncRuntimeError("STAGE3_ASYNC_INFERENCE_ACTION_INVALID")
+            raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_INFERENCE_ACTION_INVALID")
         self.chunk = value.copy()
         self.anchor_ns = int(anchor_ns)
         self.revision_id = revision_id
@@ -515,18 +515,18 @@ def run_timed_actor(
     takeover_windows: Sequence[TakeoverWindow] = (),
 ) -> dict[str, Any]:
     if len(timestamps_ns) != len(samples) or not timestamps_ns:
-        raise ValueError("STAGE3_ASYNC_TIMING_FIXTURE_INVALID")
+        raise ValueError("ONLINE_REPLAY_ASYNC_TIMING_FIXTURE_INVALID")
     if realtime_scale <= 0:
-        raise ValueError("STAGE3_ASYNC_REALTIME_SCALE_INVALID")
+        raise ValueError("ONLINE_REPLAY_ASYNC_REALTIME_SCALE_INVALID")
     if any(right <= left for left, right in zip(timestamps_ns, timestamps_ns[1:])):
-        raise ValueError("STAGE3_ASYNC_TIMING_NOT_MONOTONIC")
+        raise ValueError("ONLINE_REPLAY_ASYNC_TIMING_NOT_MONOTONIC")
     windows = sorted(takeover_windows, key=lambda value: value.start_ns)
     if any(
         left.resume_ns > right.start_ns
         or right.takeover_generation != left.takeover_generation + 1
         for left, right in zip(windows, windows[1:])
     ):
-        raise ValueError("STAGE3_ASYNC_TAKEOVER_WINDOWS_INVALID")
+        raise ValueError("ONLINE_REPLAY_ASYNC_TAKEOVER_WINDOWS_INVALID")
 
     cache = H50ActionCache(
         replan_steps=replan_steps, low_watermark=low_watermark,
@@ -625,7 +625,7 @@ def run_timed_actor(
             time.sleep(delay)
 
     with coordinator.worker_alive("actor"), ThreadPoolExecutor(
-        max_workers=1, thread_name_prefix="stage3-actor-inference"
+        max_workers=1, thread_name_prefix="online-actor-inference"
     ) as pool:
         if initial_chunk is not None:
             cache.adopt(
@@ -654,7 +654,7 @@ def run_timed_actor(
                 if event == "takeover":
                     window = payload
                     if takeover_active or window.takeover_generation != takeover_generation + 1:
-                        raise AsyncRuntimeError("STAGE3_ASYNC_TAKEOVER_GENERATION_INVALID")
+                        raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_TAKEOVER_GENERATION_INVALID")
                     cache.flush()
                     if future is not None:
                         retired.append(future)
@@ -666,7 +666,7 @@ def run_timed_actor(
                     continue
                 if event == "resume":
                     if not takeover_active or payload.takeover_generation != takeover_generation:
-                        raise AsyncRuntimeError("STAGE3_ASYNC_TAKEOVER_RESUME_INVALID")
+                        raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_TAKEOVER_RESUME_INVALID")
                     takeover_active = False
                     resume_wait = True
                     continue
@@ -681,7 +681,7 @@ def run_timed_actor(
                 if resume_wait:
                     future = submit(pool, sample, timestamp_ns)
                     if not collect(future, adopt=True):
-                        raise AsyncRuntimeError("STAGE3_ASYNC_RESUME_RESULT_REJECTED")
+                        raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_RESUME_RESULT_REJECTED")
                     future = None
                     resume_wait = False
                     coordinator.begin_actor_window(cache.remaining / 10.0)
@@ -733,12 +733,12 @@ def run_concurrent_window(
     coordinator: InferencePriorityCoordinator,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     barrier = threading.Barrier(2)
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="stage3-async") as pool:
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="online-runtime") as pool:
         actor_future = pool.submit(actor, barrier)
         learner_future = pool.submit(learner, barrier)
         coordinator.wait_for_both_workers(timeout_s=30.0)
         actor_result = actor_future.result()
         learner_result = learner_future.result()
     if not coordinator.concurrently_alive:
-        raise AsyncRuntimeError("STAGE3_ASYNC_WORKERS_NOT_CONCURRENT")
+        raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_WORKERS_NOT_CONCURRENT")
     return actor_result, learner_result

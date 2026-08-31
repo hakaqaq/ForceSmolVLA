@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the CPU-only Stage-3 filesystem shadow bridge for one recorder episode."""
+"""Run the CPU-only ForceRFT production bridge for one recorder episode."""
 
 from __future__ import annotations
 
@@ -124,10 +124,10 @@ def _detector_worker(request_path: Path, output_path: Path) -> None:
 
 class OneShotFrozenRewardDetector:
     def __call__(self, prepared):
-        from forcesmolvla.rft.stage3.production_bridge import FrozenDetectorScores
+        from forcesmolvla.rft.online.production_bridge import FrozenDetectorScores
         from PIL import Image
 
-        with tempfile.TemporaryDirectory(prefix="stage3-frozen-g1-") as directory:
+        with tempfile.TemporaryDirectory(prefix="online-frozen-detector-") as directory:
             root = Path(directory)
             request = root / "request.json"
             output = root / "probabilities.npy"
@@ -218,8 +218,8 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("--detector-worker-output is required")
         _detector_worker(args.detector_worker_request, args.detector_worker_output)
         return 0
-    from forcesmolvla.rft.stage3.production_bridge import (
-        Stage3ProductionBridge,
+    from forcesmolvla.rft.online.production_bridge import (
+        ProductionBridge,
         frozen_episode_materializer,
         load_bridge_config,
     )
@@ -240,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
             / "streams/policy_execute_episode_seal.json"
         ).is_file()
     )
-    bridge = Stage3ProductionBridge(
+    bridge = ProductionBridge(
         config=config,
         state_root=state_root,
         episode_materializer=(

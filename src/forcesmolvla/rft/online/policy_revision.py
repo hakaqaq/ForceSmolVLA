@@ -145,14 +145,14 @@ def validate_immutable_revision(
     completion_path = revision_directory / REVISION_COMPLETION
     manifest_path = revision_directory / REVISION_MANIFEST
     if not completion_path.is_file():
-        raise RuntimeError("STAGE3_REVISION_COMPLETION_MARKER_MISSING")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_COMPLETION_MARKER_MISSING")
     if not manifest_path.is_file():
-        raise RuntimeError("STAGE3_REVISION_MANIFEST_MISSING")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_MANIFEST_MISSING")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         completion = json.loads(completion_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
-        raise RuntimeError("STAGE3_REVISION_JSON_INVALID") from error
+        raise RuntimeError("ONLINE_REPLAY_REVISION_JSON_INVALID") from error
     schema = json.loads(REVISION_SCHEMA_PATH.read_text(encoding="utf-8"))
     errors = sorted(
         Draft202012Validator(schema).iter_errors(manifest),
@@ -160,12 +160,12 @@ def validate_immutable_revision(
     )
     if errors:
         path = ".".join(str(item) for item in errors[0].absolute_path)
-        raise RuntimeError(f"STAGE3_REVISION_SCHEMA:{path}:{errors[0].message}")
+        raise RuntimeError(f"ONLINE_REPLAY_REVISION_SCHEMA:{path}:{errors[0].message}")
     entries = _artifact_entries(revision_directory)
     if entries != manifest["files"]:
-        raise RuntimeError("STAGE3_REVISION_FILE_SHA_MISMATCH")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_FILE_SHA_MISMATCH")
     if canonical_sha256(entries) != manifest["files_tree_sha256"]:
-        raise RuntimeError("STAGE3_REVISION_FILE_TREE_MISMATCH")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_FILE_TREE_MISMATCH")
     model_entries = [
         entry for entry in entries if entry["relative_path"].startswith("model/")
     ]
@@ -175,15 +175,15 @@ def validate_immutable_revision(
         or canonical_sha256(model_entries) != model["tree_sha256"]
         or model_entries[0]["sha256"] != model["payload_sha256"]
     ):
-        raise RuntimeError("STAGE3_REVISION_MODEL_TREE_MISMATCH")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_MODEL_TREE_MISMATCH")
     revision_id = canonical_sha256(_revision_identity(manifest))
     if revision_id != manifest["revision_id"] or revision_directory.name != revision_id:
-        raise RuntimeError("STAGE3_REVISION_CONTENT_ID_MISMATCH")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_CONTENT_ID_MISMATCH")
     manifest_without_digest = deepcopy(manifest)
     manifest_without_digest.pop("canonical_manifest_digest")
     manifest_digest = canonical_sha256(manifest_without_digest)
     if manifest_digest != manifest["canonical_manifest_digest"]:
-        raise RuntimeError("STAGE3_REVISION_MANIFEST_DIGEST_MISMATCH")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_MANIFEST_DIGEST_MISMATCH")
     expected_completion = {
         "schema_version": REVISION_SCHEMA_VERSION,
         "revision_id": revision_id,
@@ -192,16 +192,16 @@ def validate_immutable_revision(
         "complete": True,
     }
     if completion != expected_completion:
-        raise RuntimeError("STAGE3_REVISION_COMPLETION_MARKER_INVALID")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_COMPLETION_MARKER_INVALID")
     if expected_bindings is not None and manifest["bindings"] != _json_copy(expected_bindings):
-        raise RuntimeError("STAGE3_REVISION_SOURCE_CONFIG_BINDING_MISMATCH")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_SOURCE_CONFIG_BINDING_MISMATCH")
     writable = [
         path.relative_to(revision_directory).as_posix()
         for path in [revision_directory, *revision_directory.rglob("*")]
         if path.stat().st_mode & 0o222
     ]
     if writable:
-        raise RuntimeError(f"STAGE3_REVISION_NOT_IMMUTABLE:{writable[0]}")
+        raise RuntimeError(f"ONLINE_REPLAY_REVISION_NOT_IMMUTABLE:{writable[0]}")
     return {"manifest": manifest, "completion": completion}
 
 
@@ -215,7 +215,7 @@ def export_immutable_revision(
     """Publish a content-addressed revision by same-filesystem atomic rename."""
 
     if not isinstance(model_payload, bytes) or not model_payload:
-        raise ValueError("STAGE3_REVISION_MODEL_PAYLOAD_EMPTY")
+        raise ValueError("ONLINE_REPLAY_REVISION_MODEL_PAYLOAD_EMPTY")
     revision_root = Path(revision_root).resolve()
     revision_root.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=".revision-tmp-", dir=revision_root))
@@ -263,9 +263,9 @@ def export_immutable_revision(
             try:
                 existing = json.loads(existing_path.read_text(encoding="utf-8"))
             except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError) as error:
-                raise RuntimeError("STAGE3_REVISION_ID_DIGEST_COLLISION") from error
+                raise RuntimeError("ONLINE_REPLAY_REVISION_ID_DIGEST_COLLISION") from error
             if existing.get("canonical_manifest_digest") != manifest["canonical_manifest_digest"]:
-                raise RuntimeError("STAGE3_REVISION_ID_DIGEST_COLLISION")
+                raise RuntimeError("ONLINE_REPLAY_REVISION_ID_DIGEST_COLLISION")
             validate_immutable_revision(target, expected_bindings=bindings)
             _remove_tree(temporary)
             return RevisionArtifact(
@@ -277,9 +277,9 @@ def export_immutable_revision(
             )
         if fault == "before_atomic_rename":
             keep_temporary = True
-            raise SimulatedPublicationCrash("STAGE3_SIMULATED_CRASH_BEFORE_ATOMIC_RENAME")
+            raise SimulatedPublicationCrash("ONLINE_REPLAY_SIMULATED_CRASH_BEFORE_ATOMIC_RENAME")
         if fault is not None:
-            raise ValueError(f"STAGE3_REVISION_FAULT_UNKNOWN:{fault}")
+            raise ValueError(f"ONLINE_REPLAY_REVISION_FAULT_UNKNOWN:{fault}")
         os.replace(temporary, target)
         descriptor = os.open(revision_root, os.O_RDONLY)
         try:
@@ -320,7 +320,7 @@ class RevisionRecord:
 
     def validate(self) -> "RevisionRecord":
         if not self.revision_id:
-            raise ValueError("STAGE3_REVISION_ID_EMPTY")
+            raise ValueError("ONLINE_REPLAY_REVISION_ID_EMPTY")
         for name, value in (
             ("MODEL", self.model_sha256),
             ("ARTIFACT", self.artifact_digest),
@@ -328,14 +328,14 @@ class RevisionRecord:
             if value is not None and (
                 len(value) != 64 or any(char not in "0123456789abcdef" for char in value)
             ):
-                raise ValueError(f"STAGE3_REVISION_{name}_SHA_INVALID")
+                raise ValueError(f"ONLINE_REPLAY_REVISION_{name}_SHA_INVALID")
         if self.state in {RevisionState.REJECTED, RevisionState.ROLLED_BACK}:
             if not self.rejection_reason:
-                raise ValueError("STAGE3_REVISION_DISPOSITION_REASON_MISSING")
+                raise ValueError("ONLINE_REPLAY_REVISION_DISPOSITION_REASON_MISSING")
         elif self.rejection_reason is not None:
-            raise ValueError("STAGE3_REVISION_UNEXPECTED_DISPOSITION_REASON")
+            raise ValueError("ONLINE_REPLAY_REVISION_UNEXPECTED_DISPOSITION_REASON")
         if not isinstance(self.validation_complete, bool):
-            raise ValueError("STAGE3_REVISION_VALIDATION_STATE_INVALID")
+            raise ValueError("ONLINE_REPLAY_REVISION_VALIDATION_STATE_INVALID")
         return self
 
     def to_dict(self) -> dict[str, Any]:
@@ -386,7 +386,7 @@ class QuiescentBoundary:
 
     def validate_for_activation(self) -> None:
         if min(self.inflight_inference, self.queued_actions, self.unconsumed_acks) < 0:
-            raise ValueError("STAGE3_QUIESCENT_COUNTER_NEGATIVE")
+            raise ValueError("ONLINE_REPLAY_QUIESCENT_COUNTER_NEGATIVE")
         if (
             self.active_episode
             or self.inflight_inference != 0
@@ -396,7 +396,7 @@ class QuiescentBoundary:
             or not self.wal_sealed
             or not self.candidate_validation_complete
         ):
-            raise RuntimeError("STAGE3_REVISION_ACTIVATION_NOT_QUIESCENT")
+            raise RuntimeError("ONLINE_REPLAY_REVISION_ACTIVATION_NOT_QUIESCENT")
 
 
 _COUNTER_NAMES = (
@@ -421,9 +421,9 @@ class InMemoryRevisionStateMachine:
     ) -> None:
         active.validate()
         if active.state is not RevisionState.ACTIVE:
-            raise ValueError("STAGE3_INITIAL_REVISION_NOT_ACTIVE")
+            raise ValueError("ONLINE_REPLAY_INITIAL_REVISION_NOT_ACTIVE")
         if initial_epoch < 0:
-            raise ValueError("STAGE3_POLICY_EPOCH_INITIAL_STATE_INVALID")
+            raise ValueError("ONLINE_REPLAY_POLICY_EPOCH_INITIAL_STATE_INVALID")
         self._records = {active.revision_id: active}
         self.active_revision_id = active.revision_id
         self.pending_revision_id: str | None = None
@@ -449,7 +449,7 @@ class InMemoryRevisionStateMachine:
                 existing.model_sha256 != model_sha256
                 or existing.artifact_digest != artifact_digest
             ):
-                raise RuntimeError("STAGE3_REVISION_ID_SHA_COLLISION")
+                raise RuntimeError("ONLINE_REPLAY_REVISION_ID_SHA_COLLISION")
             return existing
         record = RevisionRecord(
             revision_id,
@@ -465,11 +465,11 @@ class InMemoryRevisionStateMachine:
     def stage(self, revision_id: str) -> RevisionRecord:
         record = self._records[revision_id]
         if record.state is not RevisionState.CANDIDATE:
-            raise RuntimeError("STAGE3_ONLY_CANDIDATE_CAN_BE_STAGED")
+            raise RuntimeError("ONLINE_REPLAY_ONLY_CANDIDATE_CAN_BE_STAGED")
         if not record.validation_complete:
-            raise RuntimeError("STAGE3_CANDIDATE_VALIDATION_INCOMPLETE")
+            raise RuntimeError("ONLINE_REPLAY_CANDIDATE_VALIDATION_INCOMPLETE")
         if self.pending_revision_id is not None:
-            raise RuntimeError("STAGE3_PENDING_REVISION_ALREADY_EXISTS")
+            raise RuntimeError("ONLINE_REPLAY_PENDING_REVISION_ALREADY_EXISTS")
         staged = replace(record, state=RevisionState.PENDING)
         self._records[revision_id] = staged
         self.pending_revision_id = revision_id
@@ -478,10 +478,10 @@ class InMemoryRevisionStateMachine:
 
     def reject(self, revision_id: str, reason: str) -> RevisionRecord:
         if not reason:
-            raise ValueError("STAGE3_REVISION_REJECTION_REASON_EMPTY")
+            raise ValueError("ONLINE_REPLAY_REVISION_REJECTION_REASON_EMPTY")
         record = self._records[revision_id]
         if record.state not in {RevisionState.CANDIDATE, RevisionState.PENDING}:
-            raise RuntimeError("STAGE3_ACTIVE_OR_PREVIOUS_REVISION_CANNOT_BE_REJECTED")
+            raise RuntimeError("ONLINE_REPLAY_ACTIVE_OR_PREVIOUS_REVISION_CANNOT_BE_REJECTED")
         rejected = replace(
             record, state=RevisionState.REJECTED, rejection_reason=reason,
         ).validate()
@@ -493,19 +493,19 @@ class InMemoryRevisionStateMachine:
 
     def _require_recovered_reset(self) -> None:
         if self.safe_reset_required:
-            raise RuntimeError("STAGE3_SAFE_RESET_REQUIRED_AFTER_RECOVERY")
+            raise RuntimeError("ONLINE_REPLAY_SAFE_RESET_REQUIRED_AFTER_RECOVERY")
 
     def activate_pending(self, boundary: QuiescentBoundary) -> RevisionRecord:
         self._require_recovered_reset()
         boundary.validate_for_activation()
         if self.episode_revision_id is not None:
-            raise RuntimeError("STAGE3_REVISION_ACTIVATION_DURING_EPISODE")
+            raise RuntimeError("ONLINE_REPLAY_REVISION_ACTIVATION_DURING_EPISODE")
         if self.pending_revision_id is None:
-            raise RuntimeError("STAGE3_NO_PENDING_REVISION")
+            raise RuntimeError("ONLINE_REPLAY_NO_PENDING_REVISION")
         current = self._records[self.active_revision_id]
         pending = self._records[self.pending_revision_id]
         if not pending.validation_complete:
-            raise RuntimeError("STAGE3_CANDIDATE_VALIDATION_INCOMPLETE")
+            raise RuntimeError("ONLINE_REPLAY_CANDIDATE_VALIDATION_INCOMPLETE")
         self._records[current.revision_id] = replace(current, state=RevisionState.PREVIOUS)
         activated = replace(pending, state=RevisionState.ACTIVE)
         self._records[activated.revision_id] = activated
@@ -519,7 +519,7 @@ class InMemoryRevisionStateMachine:
     def begin_episode(self) -> str:
         self._require_recovered_reset()
         if self.episode_revision_id is not None:
-            raise RuntimeError("STAGE3_EPISODE_ALREADY_ACTIVE")
+            raise RuntimeError("ONLINE_REPLAY_EPISODE_ALREADY_ACTIVE")
         active = self._records[self.active_revision_id]
         self.episode_revision_id = active.revision_id
         self.episode_model_sha256 = active.model_sha256
@@ -532,7 +532,7 @@ class InMemoryRevisionStateMachine:
             or self.episode_model_sha256 is None
             or self.episode_policy_epoch is None
         ):
-            raise RuntimeError("STAGE3_NO_ACTIVE_EPISODE")
+            raise RuntimeError("ONLINE_REPLAY_NO_ACTIVE_EPISODE")
         return EpisodeRevisionPin(
             self.episode_revision_id,
             self.episode_model_sha256,
@@ -541,17 +541,17 @@ class InMemoryRevisionStateMachine:
 
     def assert_episode_revision(self, revision_id: str) -> None:
         if self.episode_revision_id is None or revision_id != self.episode_revision_id:
-            raise RuntimeError("STAGE3_ONE_EPISODE_ONE_REVISION_VIOLATION")
+            raise RuntimeError("ONLINE_REPLAY_ONE_EPISODE_ONE_REVISION_VIOLATION")
 
     def assert_episode_binding(
         self, revision_id: str, model_sha256: str, policy_epoch: int,
     ) -> None:
         if self.episode_pin() != EpisodeRevisionPin(revision_id, model_sha256, policy_epoch):
-            raise RuntimeError("STAGE3_ONE_EPISODE_ONE_REVISION_VIOLATION")
+            raise RuntimeError("ONLINE_REPLAY_ONE_EPISODE_ONE_REVISION_VIOLATION")
 
     def end_episode(self) -> None:
         if self.episode_revision_id is None:
-            raise RuntimeError("STAGE3_NO_ACTIVE_EPISODE")
+            raise RuntimeError("ONLINE_REPLAY_NO_ACTIVE_EPISODE")
         self.episode_revision_id = None
         self.episode_model_sha256 = None
         self.episode_policy_epoch = None
@@ -565,13 +565,13 @@ class InMemoryRevisionStateMachine:
         self._require_recovered_reset()
         boundary.validate_for_activation()
         if self.episode_revision_id is not None:
-            raise RuntimeError("STAGE3_ROLLBACK_DURING_EPISODE")
+            raise RuntimeError("ONLINE_REPLAY_ROLLBACK_DURING_EPISODE")
         if self.previous_revision_id is None:
-            raise RuntimeError("STAGE3_NO_PREVIOUS_REVISION")
+            raise RuntimeError("ONLINE_REPLAY_NO_PREVIOUS_REVISION")
         current = self._records[self.active_revision_id]
         previous = self._records[self.previous_revision_id]
         if previous.state is not RevisionState.PREVIOUS:
-            raise RuntimeError("STAGE3_ROLLBACK_TARGET_NOT_PREVIOUS_STABLE")
+            raise RuntimeError("ONLINE_REPLAY_ROLLBACK_TARGET_NOT_PREVIOUS_STABLE")
         self._records[current.revision_id] = replace(
             current, state=RevisionState.ROLLED_BACK, rejection_reason=reason,
         ).validate()
@@ -586,7 +586,7 @@ class InMemoryRevisionStateMachine:
 
     def invalidate_policy_epoch(self, reason: str) -> int:
         if reason not in {"human_takeover", "reset_invalidation"}:
-            raise ValueError("STAGE3_POLICY_EPOCH_INVALIDATION_REASON")
+            raise ValueError("ONLINE_REPLAY_POLICY_EPOCH_INVALIDATION_REASON")
         self.policy_epoch += 1
         self.publication_counters["epoch_invalidations"] += 1
         return self.policy_epoch
@@ -640,32 +640,32 @@ class InMemoryRevisionStateMachine:
             "safe_reset_required",
         }
         if set(snapshot) != required or snapshot["schema_version"] != REGISTRY_SCHEMA_VERSION:
-            raise RuntimeError("STAGE3_REVISION_REGISTRY_SCHEMA_INVALID")
+            raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_SCHEMA_INVALID")
         records = [RevisionRecord.from_dict(record) for record in snapshot["records"]]
         record_map = {record.revision_id: record for record in records}
         if len(record_map) != len(records) or not records:
-            raise RuntimeError("STAGE3_REVISION_REGISTRY_RECORDS_INVALID")
+            raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_RECORDS_INVALID")
         active_id = snapshot["active_revision_id"]
         pending_id = snapshot["pending_revision_id"]
         previous_id = snapshot["previous_revision_id"]
         if active_id not in record_map or record_map[active_id].state is not RevisionState.ACTIVE:
-            raise RuntimeError("STAGE3_REVISION_REGISTRY_ACTIVE_INVALID")
+            raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_ACTIVE_INVALID")
         if pending_id is not None and (
             pending_id not in record_map or record_map[pending_id].state is not RevisionState.PENDING
         ):
-            raise RuntimeError("STAGE3_REVISION_REGISTRY_PENDING_INVALID")
+            raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_PENDING_INVALID")
         if previous_id is not None and (
             previous_id not in record_map or record_map[previous_id].state is not RevisionState.PREVIOUS
         ):
-            raise RuntimeError("STAGE3_REVISION_REGISTRY_PREVIOUS_INVALID")
+            raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_PREVIOUS_INVALID")
         counters = snapshot["publication_counters"]
         if set(counters) != set(_COUNTER_NAMES) or any(
             not isinstance(count, int) or count < 0 for count in counters.values()
         ):
-            raise RuntimeError("STAGE3_REVISION_REGISTRY_COUNTERS_INVALID")
+            raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_COUNTERS_INVALID")
         policy_epoch = snapshot["policy_epoch"]
         if not isinstance(policy_epoch, int) or policy_epoch < 0:
-            raise RuntimeError("STAGE3_REVISION_REGISTRY_EPOCH_INVALID")
+            raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_EPOCH_INVALID")
         machine = cls.__new__(cls)
         machine._records = record_map
         machine.active_revision_id = active_id
@@ -679,7 +679,7 @@ class InMemoryRevisionStateMachine:
         else:
             pin = EpisodeRevisionPin(**episode)
             if pin.policy_revision_id not in record_map:
-                raise RuntimeError("STAGE3_REVISION_REGISTRY_EPISODE_PIN_INVALID")
+                raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_EPISODE_PIN_INVALID")
             machine.episode_revision_id = pin.policy_revision_id
             machine.episode_model_sha256 = pin.model_sha256
             machine.episode_policy_epoch = pin.policy_epoch
@@ -715,7 +715,7 @@ def save_revision_registry(
             stream.flush()
             os.fsync(stream.fileno())
         if fault_before_replace:
-            raise SimulatedPublicationCrash("STAGE3_SIMULATED_REGISTRY_CRASH_BEFORE_REPLACE")
+            raise SimulatedPublicationCrash("ONLINE_REPLAY_SIMULATED_REGISTRY_CRASH_BEFORE_REPLACE")
         os.replace(temporary, registry_path)
         parent_descriptor = os.open(registry_path.parent, os.O_RDONLY)
         try:
@@ -735,13 +735,13 @@ def load_revision_registry(
     try:
         payload = json.loads(registry_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError) as error:
-        raise RuntimeError("STAGE3_REVISION_REGISTRY_INCOMPLETE") from error
+        raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_INCOMPLETE") from error
     if set(payload) != {"schema_version", "state", "canonical_registry_digest"}:
-        raise RuntimeError("STAGE3_REVISION_REGISTRY_SCHEMA_INVALID")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_SCHEMA_INVALID")
     if payload["schema_version"] != REGISTRY_SCHEMA_VERSION:
-        raise RuntimeError("STAGE3_REVISION_REGISTRY_SCHEMA_INVALID")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_SCHEMA_INVALID")
     if payload["canonical_registry_digest"] != canonical_sha256(payload["state"]):
-        raise RuntimeError("STAGE3_REVISION_REGISTRY_DIGEST_MISMATCH")
+        raise RuntimeError("ONLINE_REPLAY_REVISION_REGISTRY_DIGEST_MISMATCH")
     return InMemoryRevisionStateMachine.from_snapshot(
         payload["state"], fresh_process=fresh_process,
     )

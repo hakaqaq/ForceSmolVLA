@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Activate or query a published Stage-3 development policy revision."""
+"""Activate or query a published ForceRFT development policy revision."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from typing import Any, Mapping
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from forcesmolvla.rft.stage3.publication import (  # noqa: E402
+from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
     QuiescentBoundary,
     RevisionRecord,
@@ -38,7 +38,7 @@ def _json(path: Path, code: str) -> dict[str, Any]:
 
 
 def _activation_boundary(witness_path: Path) -> QuiescentBoundary:
-    witness = _json(witness_path, "STAGE3_REAL_HOME_WITNESS_REQUIRED")
+    witness = _json(witness_path, "ONLINE_REPLAY_REAL_HOME_WITNESS_REQUIRED")
     quiescent = witness.get("quiescent")
     home = witness.get("home_result")
     if (
@@ -53,7 +53,7 @@ def _activation_boundary(witness_path: Path) -> QuiescentBoundary:
         or home.get("controller_idle") is not True
         or int(home.get("controller_owner_count", -1)) != 1
     ):
-        raise PolicyActivationError("STAGE3_REAL_HOME_WITNESS_REQUIRED")
+        raise PolicyActivationError("ONLINE_REPLAY_REAL_HOME_WITNESS_REQUIRED")
     boundary = QuiescentBoundary(
         active_episode=bool(quiescent.get("active_episode", True)),
         inflight_inference=int(quiescent.get("inflight_inference", -1)),
@@ -66,7 +66,7 @@ def _activation_boundary(witness_path: Path) -> QuiescentBoundary:
     try:
         boundary.validate_for_activation()
     except (RuntimeError, ValueError) as error:
-        raise PolicyActivationError("STAGE3_RESET_HOME_NOT_QUIESCENT") from error
+        raise PolicyActivationError("ONLINE_REPLAY_RESET_HOME_NOT_QUIESCENT") from error
     return boundary
 
 
@@ -74,10 +74,10 @@ def _validate_published_candidate(
     package: Path, candidate_id: str, candidate_revision: str
 ) -> None:
     candidate = _json(
-        package / "candidate.json", "STAGE3_PUBLISHED_CANDIDATE_INVALID"
+        package / "candidate.json", "ONLINE_REPLAY_PUBLISHED_CANDIDATE_INVALID"
     )
     manifest = _json(
-        package / "artifact_manifest.json", "STAGE3_PUBLISHED_CANDIDATE_INVALID"
+        package / "artifact_manifest.json", "ONLINE_REPLAY_PUBLISHED_CANDIDATE_INVALID"
     )
     metadata = manifest.get("metadata")
     if (
@@ -91,7 +91,7 @@ def _validate_published_candidate(
         or metadata.get("model_revision") != candidate_revision
         or metadata.get("published") is not True
     ):
-        raise PolicyActivationError("STAGE3_PUBLISHED_CANDIDATE_INVALID")
+        raise PolicyActivationError("ONLINE_REPLAY_PUBLISHED_CANDIDATE_INVALID")
 
 
 def revision_status(registry: Path) -> dict[str, Any]:
@@ -126,7 +126,7 @@ def activate_published_candidate(
             status["candidate_activated"] = True
             return status
         if machine.active_revision_id != current_active_revision:
-            raise PolicyActivationError("STAGE3_ACTIVE_REVISION_MISMATCH")
+            raise PolicyActivationError("ONLINE_REPLAY_ACTIVE_REVISION_MISMATCH")
     else:
         machine = InMemoryRevisionStateMachine(
             RevisionRecord(
@@ -142,18 +142,18 @@ def activate_published_candidate(
         if candidate.state is RevisionState.CANDIDATE:
             machine.stage(candidate_id)
         elif candidate.state is not RevisionState.PENDING:
-            raise PolicyActivationError("STAGE3_CANDIDATE_NOT_STAGEABLE")
+            raise PolicyActivationError("ONLINE_REPLAY_CANDIDATE_NOT_STAGEABLE")
         activated = machine.activate_pending(boundary)
     except (KeyError, RuntimeError, ValueError) as error:
         if isinstance(error, PolicyActivationError):
             raise
-        raise PolicyActivationError(f"STAGE3_REVISION_ACTIVATION_FAILED:{error}") from error
+        raise PolicyActivationError(f"ONLINE_REPLAY_REVISION_ACTIVATION_FAILED:{error}") from error
     if (
         activated.revision_id != candidate_id
         or activated.model_sha256 != candidate_revision
         or machine.previous_revision_id != current_active_revision
     ):
-        raise PolicyActivationError("STAGE3_REVISION_ACTIVATION_STATE_INVALID")
+        raise PolicyActivationError("ONLINE_REPLAY_REVISION_ACTIVATION_STATE_INVALID")
     save_revision_registry(registry, machine)
     status = revision_status(registry)
     status["candidate_activated"] = True

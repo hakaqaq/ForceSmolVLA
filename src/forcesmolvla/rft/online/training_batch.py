@@ -9,7 +9,7 @@ from typing import Sequence
 import torch
 from torch import Tensor
 
-from .replay import D_EXPERT, R_ONLINE, Stage3Replay
+from forcesmolvla.rft.online.replay import D_EXPERT, R_ONLINE, OnlineReplay
 
 
 EXPERT_OWNERS = {"human_intervention", "offline_demonstration"}
@@ -30,18 +30,18 @@ class MixedReplayBatch:
 
 
 class MixedReplaySampler:
-    def __init__(self, replay: Stage3Replay, *, seed: int) -> None:
+    def __init__(self, replay: OnlineReplay, *, seed: int) -> None:
         self.replay = replay
         self._rng = random.Random(seed)
 
     def sample(self, *, R_count: int, D_count: int) -> MixedReplayBatch:
         if R_count <= 0 or D_count <= 0:
-            raise ValueError("STAGE3_MIXED_BATCH_COUNTS_MUST_BE_POSITIVE")
+            raise ValueError("ONLINE_REPLAY_MIXED_BATCH_COUNTS_MUST_BE_POSITIVE")
         selected: list[ReplaySample] = []
         for pool, count in ((R_ONLINE, R_count), (D_EXPERT, D_count)):
             population = self.replay.membership_uids(pool)
             if not population:
-                raise RuntimeError(f"STAGE3_REPLAY_POOL_EMPTY:{pool}")
+                raise RuntimeError(f"ONLINE_REPLAY_REPLAY_POOL_EMPTY:{pool}")
             for uid in self._rng.choices(population, k=count):
                 selected.append(ReplaySample(uid, pool, self.replay.get_payload(uid)))
         return MixedReplayBatch(tuple(selected), R_count=R_count, D_count=D_count)
@@ -51,7 +51,7 @@ class MixedReplaySampler:
 
     def load_state_dict(self, state: dict) -> None:
         if set(state) != {"python_random_state"}:
-            raise ValueError("STAGE3_MIXED_SAMPLER_STATE_INVALID")
+            raise ValueError("ONLINE_REPLAY_MIXED_SAMPLER_STATE_INVALID")
         self._rng.setstate(state["python_random_state"])
 
 
@@ -61,16 +61,16 @@ def build_expert_feature_mask(
     origin_pools: Sequence[str],
 ) -> Tensor:
     if action_valid_mask_h50.dtype != torch.bool or action_valid_mask_h50.ndim != 2:
-        raise ValueError("STAGE3_ACTION_VALID_MASK_MUST_BE_BOOL_BH")
+        raise ValueError("ONLINE_REPLAY_ACTION_VALID_MASK_MUST_BE_BOOL_BH")
     batch, horizon = action_valid_mask_h50.shape
     if len(slot_owners) != batch or len(origin_pools) != batch:
-        raise ValueError("STAGE3_EXPERT_MASK_BATCH_MISMATCH")
+        raise ValueError("ONLINE_REPLAY_EXPERT_MASK_BATCH_MISMATCH")
     expert = torch.zeros(batch, horizon, dtype=torch.bool, device=action_valid_mask_h50.device)
     for row, (owners, pool) in enumerate(zip(slot_owners, origin_pools, strict=True)):
         if len(owners) != horizon:
-            raise ValueError("STAGE3_SLOT_OWNER_HORIZON_MISMATCH")
+            raise ValueError("ONLINE_REPLAY_SLOT_OWNER_HORIZON_MISMATCH")
         if pool not in {R_ONLINE, D_EXPERT}:
-            raise ValueError("STAGE3_SAMPLE_ORIGIN_POOL_INVALID")
+            raise ValueError("ONLINE_REPLAY_SAMPLE_ORIGIN_POOL_INVALID")
         if pool == D_EXPERT:
             expert[row] = torch.tensor(
                 [owner in EXPERT_OWNERS for owner in owners],

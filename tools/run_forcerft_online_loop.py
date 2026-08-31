@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Coordinate the existing Stage-3 Actor/Learner episode-boundary loop."""
+"""Coordinate the ForceRFT Actor/Learner episode-boundary loop."""
 
 from __future__ import annotations
 
@@ -44,8 +44,8 @@ def _json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
-        raise ContinuousLoopError(f"STAGE3_CONTINUOUS_JSON_INVALID:{path}") from error
-    require(isinstance(value, dict), f"STAGE3_CONTINUOUS_JSON_OBJECT_REQUIRED:{path}")
+        raise ContinuousLoopError(f"ONLINE_REPLAY_CONTINUOUS_JSON_INVALID:{path}") from error
+    require(isinstance(value, dict), f"ONLINE_REPLAY_CONTINUOUS_JSON_OBJECT_REQUIRED:{path}")
     return value
 
 
@@ -75,10 +75,10 @@ class Candidate:
 
 def read_active_revision(registry: Path) -> ActiveRevision:
     state = _json(registry).get("state")
-    require(isinstance(state, Mapping), "STAGE3_CONTINUOUS_REGISTRY_STATE_INVALID")
+    require(isinstance(state, Mapping), "ONLINE_REPLAY_CONTINUOUS_REGISTRY_STATE_INVALID")
     active_id = str(state.get("active_revision_id", ""))
     records = state.get("records")
-    require(active_id and isinstance(records, list), "STAGE3_CONTINUOUS_ACTIVE_REVISION_MISSING")
+    require(active_id and isinstance(records, list), "ONLINE_REPLAY_CONTINUOUS_ACTIVE_REVISION_MISSING")
     active = next(
         (
             item for item in records
@@ -88,10 +88,10 @@ def read_active_revision(registry: Path) -> ActiveRevision:
         ),
         None,
     )
-    require(active is not None, "STAGE3_CONTINUOUS_ACTIVE_RECORD_MISSING")
+    require(active is not None, "ONLINE_REPLAY_CONTINUOUS_ACTIVE_RECORD_MISSING")
     model_revision = str(active.get("model_sha256", ""))
     epoch = state.get("policy_epoch")
-    require(model_revision and isinstance(epoch, int), "STAGE3_CONTINUOUS_ACTIVE_IDENTITY_INVALID")
+    require(model_revision and isinstance(epoch, int), "ONLINE_REPLAY_CONTINUOUS_ACTIVE_IDENTITY_INVALID")
     return ActiveRevision(active_id, model_revision, epoch)
 
 
@@ -124,8 +124,8 @@ def discover_active_deployment(active: ActiveRevision) -> Deployment:
                     trusted_binding=str(profile.get("deployment_binding_sha256", "")),
                 )
             )
-    require(len(matches) == 1, "STAGE3_CONTINUOUS_ACTIVE_DEPLOYMENT_NOT_UNIQUE")
-    require(matches[0].trusted_binding, "STAGE3_CONTINUOUS_TRUSTED_BINDING_MISSING")
+    require(len(matches) == 1, "ONLINE_REPLAY_CONTINUOUS_ACTIVE_DEPLOYMENT_NOT_UNIQUE")
+    require(matches[0].trusted_binding, "ONLINE_REPLAY_CONTINUOUS_TRUSTED_BINDING_MISSING")
     return matches[0]
 
 
@@ -142,7 +142,7 @@ def discover_checkpoint_for_revision(
             and revision.get("revision_id") == revision_id
         ):
             matches.append(metadata_path.parent.resolve())
-    require(len(matches) == 1, "STAGE3_CONTINUOUS_ACTIVE_CHECKPOINT_NOT_UNIQUE")
+    require(len(matches) == 1, "ONLINE_REPLAY_CONTINUOUS_ACTIVE_CHECKPOINT_NOT_UNIQUE")
     return matches[0]
 
 
@@ -155,7 +155,7 @@ def _checkpoint_identity(checkpoint: Path) -> tuple[str, int]:
         and isinstance(revision, Mapping)
         and isinstance(revision.get("revision_id"), str)
         and isinstance(cycle, int),
-        "STAGE3_CONTINUOUS_PENDING_CHECKPOINT_INVALID",
+        "ONLINE_REPLAY_CONTINUOUS_PENDING_CHECKPOINT_INVALID",
     )
     return str(revision["revision_id"]), cycle
 
@@ -203,19 +203,19 @@ def _run(command: list[str], *, capture: bool = False) -> subprocess.CompletedPr
             print(result.stdout, end="")
         if result.stderr:
             print(result.stderr, end="", file=sys.stderr)
-    require(result.returncode == 0, f"STAGE3_CONTINUOUS_COMMAND_FAILED:{command[1]}")
+    require(result.returncode == 0, f"ONLINE_REPLAY_CONTINUOUS_COMMAND_FAILED:{command[1]}")
     return result
 
 
 def _report(command: list[str]) -> dict[str, Any]:
     output = _run(command, capture=True).stdout
     start = output.find("{")
-    require(start >= 0, "STAGE3_CONTINUOUS_COMMAND_REPORT_MISSING")
+    require(start >= 0, "ONLINE_REPLAY_CONTINUOUS_COMMAND_REPORT_MISSING")
     try:
         value = json.loads(output[start:])
     except json.JSONDecodeError as error:
-        raise ContinuousLoopError("STAGE3_CONTINUOUS_COMMAND_REPORT_INVALID") from error
-    require(isinstance(value, dict), "STAGE3_CONTINUOUS_COMMAND_REPORT_INVALID")
+        raise ContinuousLoopError("ONLINE_REPLAY_CONTINUOUS_COMMAND_REPORT_INVALID") from error
+    require(isinstance(value, dict), "ONLINE_REPLAY_CONTINUOUS_COMMAND_REPORT_INVALID")
     return value
 
 
@@ -229,7 +229,7 @@ def _bridge(args: argparse.Namespace, episode: Path, outcome: str) -> None:
         and report.get("status") == "DRY_RUN_READY"
         and int(report.get("quarantined_count", -1)) == 0
         and report.get("detector_outcome") == "success",
-        "STAGE3_CONTINUOUS_BRIDGE_NOT_PASS",
+        "ONLINE_REPLAY_CONTINUOUS_BRIDGE_NOT_PASS",
     )
 
 
@@ -241,7 +241,7 @@ def _admit(args: argparse.Namespace, episode: Path) -> None:
     ])
     require(
         report.get("status") == "FORMAL_ONLINE_R_ADMITTED",
-        "STAGE3_CONTINUOUS_ADMISSION_FAILED",
+        "ONLINE_REPLAY_CONTINUOUS_ADMISSION_FAILED",
     )
 
 
@@ -249,7 +249,7 @@ def _publish(args: argparse.Namespace, checkpoint: Path) -> Candidate:
     candidate = candidate_artifacts(checkpoint)
     require(
         not any(path.exists() for path in (candidate.package, candidate.profile, candidate.binding)),
-        "STAGE3_CONTINUOUS_CANDIDATE_OUTPUT_EXISTS",
+        "ONLINE_REPLAY_CONTINUOUS_CANDIDATE_OUTPUT_EXISTS",
     )
     _run([
         str(args.model_python), str(ROOT / "tools/export_forcerft_candidate.py"),
@@ -270,7 +270,7 @@ def _publish(args: argparse.Namespace, checkpoint: Path) -> Candidate:
         and isinstance(published.get("model_revision"), str)
         and candidate.profile.is_file()
         and candidate.binding.is_file(),
-        "STAGE3_CONTINUOUS_CANDIDATE_PUBLICATION_INVALID",
+        "ONLINE_REPLAY_CONTINUOUS_CANDIDATE_PUBLICATION_INVALID",
     )
     return replace(candidate, model_revision=str(published["model_revision"]))
 
@@ -286,7 +286,7 @@ def _activate(
         args.registry.parent
         / f"{_slug(candidate.candidate_id)}_reset_home_quiescent.json"
     )
-    require(not witness.exists(), "STAGE3_CONTINUOUS_HOME_WITNESS_EXISTS")
+    require(not witness.exists(), "ONLINE_REPLAY_CONTINUOUS_HOME_WITNESS_EXISTS")
     _run([
         str(args.robot_python), str(ROOT / "robot/deployment/reset_home_witness.py"),
         "--output", str(witness), "--previous-episode-seal", str(previous_episode_seal),
@@ -305,7 +305,7 @@ def _activate(
         after.revision_id == candidate.candidate_id
         and after.model_revision == candidate.model_revision
         and after.policy_epoch == before.policy_epoch + 1,
-        "STAGE3_CONTINUOUS_BOUNDARY_ACTIVATION_FAILED",
+        "ONLINE_REPLAY_CONTINUOUS_BOUNDARY_ACTIVATION_FAILED",
     )
     return after
 
@@ -315,11 +315,11 @@ def _bootstrap(args: argparse.Namespace) -> None:
         return
     require(
         args.bootstrap_episode is not None and args.bootstrap_checkpoint is not None,
-        "STAGE3_CONTINUOUS_BOOTSTRAP_ARGUMENTS_INCOMPLETE",
+        "ONLINE_REPLAY_CONTINUOUS_BOOTSTRAP_ARGUMENTS_INCOMPLETE",
     )
     episode = args.bootstrap_episode.resolve()
     checkpoint = args.bootstrap_checkpoint.resolve()
-    require(episode.is_dir(), "STAGE3_CONTINUOUS_BOOTSTRAP_EPISODE_MISSING")
+    require(episode.is_dir(), "ONLINE_REPLAY_CONTINUOUS_BOOTSTRAP_EPISODE_MISSING")
     _admit(args, episode)
     candidate = _publish(args, checkpoint)
     _activate(
@@ -353,7 +353,7 @@ def _wait_json(
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
     while time.monotonic() < deadline:
-        require(process.poll() is None, "STAGE3_CONTINUOUS_SERVER_EXITED")
+        require(process.poll() is None, "ONLINE_REPLAY_CONTINUOUS_SERVER_EXITED")
         try:
             with urlopen(url, timeout=2.0) as response:
                 value = json.loads(response.read())
@@ -362,7 +362,7 @@ def _wait_json(
         except (OSError, URLError, json.JSONDecodeError) as error:
             last_error = error
         time.sleep(0.25)
-    raise ContinuousLoopError(f"STAGE3_CONTINUOUS_SERVER_TIMEOUT:{last_error}")
+    raise ContinuousLoopError(f"ONLINE_REPLAY_CONTINUOUS_SERVER_TIMEOUT:{last_error}")
 
 
 def _stop_server(process: subprocess.Popen[Any]) -> None:
@@ -393,8 +393,8 @@ def _episode_plan(
         args.formal_r_root / "checkpoints"
         / f"stage3_real_async_joint_cycle_{cycle + 1:06d}_pending_{session_id}"
     ).resolve()
-    require(not root.exists(), "STAGE3_CONTINUOUS_CAPTURE_ROOT_EXISTS")
-    require(not pending.exists(), "STAGE3_CONTINUOUS_PENDING_CHECKPOINT_EXISTS")
+    require(not root.exists(), "ONLINE_REPLAY_CONTINUOUS_CAPTURE_ROOT_EXISTS")
+    require(not pending.exists(), "ONLINE_REPLAY_CONTINUOUS_PENDING_CHECKPOINT_EXISTS")
     return root, session_id, active, deployment, resume, pending, pending_id
 
 
@@ -421,7 +421,7 @@ def _validate_capture(
         and seal.get("pending_candidate_published") is False
         and seal.get("pending_candidate_activated") is False
         and pending_revision == pending_id,
-        "STAGE3_CONTINUOUS_CAPTURE_SEAL_INVALID",
+        "ONLINE_REPLAY_CONTINUOUS_CAPTURE_SEAL_INVALID",
     )
 
 
@@ -455,7 +455,7 @@ def _run_episode(args: argparse.Namespace, index: int) -> None:
             and metadata.get("active_actor_model_revision") == active.model_revision
             and metadata.get("learner_resume_checkpoint") == str(resume)
             and metadata.get("pending_candidate_id") == pending_id,
-            "STAGE3_CONTINUOUS_SERVER_IDENTITY_MISMATCH",
+            "ONLINE_REPLAY_CONTINUOUS_SERVER_IDENTITY_MISMATCH",
         )
         _run([
             str(args.robot_python), str(ROOT / "tools/run_forcerft_integrated_capture.py"),
@@ -482,7 +482,7 @@ def _run_episode(args: argparse.Namespace, index: int) -> None:
         require(
             status.get("learner_state") == "complete"
             and status.get("current_episode_sampled") is False,
-            "STAGE3_CONTINUOUS_LEARNER_NOT_COMPLETE",
+            "ONLINE_REPLAY_CONTINUOUS_LEARNER_NOT_COMPLETE",
         )
         _validate_capture(
             root=root,
@@ -495,7 +495,7 @@ def _run_episode(args: argparse.Namespace, index: int) -> None:
         _stop_server(server)
 
     outcome = input("operator_task_outcome [success/failure]: ").strip().lower()
-    require(outcome in {"success", "failure"}, "STAGE3_CONTINUOUS_OPERATOR_OUTCOME_INVALID")
+    require(outcome in {"success", "failure"}, "ONLINE_REPLAY_CONTINUOUS_OPERATOR_OUTCOME_INVALID")
     _finish_episode(
         args,
         episode=_episode_dir(root),

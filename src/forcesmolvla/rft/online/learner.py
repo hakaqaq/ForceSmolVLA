@@ -1,8 +1,8 @@
-"""CPU-only provisional learner used by the synthetic Stage-3 loopback.
+"""CPU-only online-replay learner primitives.
 
 This module owns orchestration only.  Replay membership, credit accounting,
 online TD, expert masking, ActionContract-v2 Q guidance, and publication remain
-owned by the accepted Stage-3/ForceRFT primitives.
+owned by the accepted ForceRFT primitives.
 """
 
 from __future__ import annotations
@@ -17,15 +17,19 @@ from torch import Tensor, nn
 from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
 from forcesmolvla.rft.losses import CriticObservation
 
-from .batch import MixedReplayBatch, MixedReplaySampler, build_expert_feature_mask
-from .losses import (
+from forcesmolvla.rft.online.training_batch import (
+    MixedReplayBatch,
+    MixedReplaySampler,
+    build_expert_feature_mask,
+)
+from forcesmolvla.rft.online.training_losses import (
     compute_expert_only_flow_matching_loss,
     compute_online_twin_q_td_loss,
-    compute_stage3_actor_objective,
-    compute_stage3_min_twin_q_actor_loss,
+    compute_online_actor_objective,
+    compute_online_min_twin_q_actor_loss,
 )
-from .replay import R_ONLINE, Stage3Replay
-from .update_credit import UpdateCreditLedger
+from forcesmolvla.rft.online.replay import R_ONLINE, OnlineReplay
+from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
 
 
 class TrainingStartsBlocked(RuntimeError):
@@ -33,12 +37,12 @@ class TrainingStartsBlocked(RuntimeError):
 
 
 @dataclass(frozen=True)
-class Stage3LossAPI:
+class OnlineLossAPI:
     """Injectable references to the accepted production loss primitives."""
 
     online_td: Callable = compute_online_twin_q_td_loss
-    actor_objective: Callable = compute_stage3_actor_objective
-    actor_q: Callable = compute_stage3_min_twin_q_actor_loss
+    actor_objective: Callable = compute_online_actor_objective
+    actor_q: Callable = compute_online_min_twin_q_actor_loss
     expert_fm: Callable = compute_expert_only_flow_matching_loss
 
 
@@ -177,7 +181,7 @@ def _batch_tensors(batch: MixedReplayBatch) -> dict[str, Tensor | list[list[str]
     }
 
 
-class ProvisionalStage3Learner:
+class OnlineLearner:
     """One deterministic, test-only 2-Critic:1-Actor joint learner cycle."""
 
     training_starts_unique_R = 100
@@ -185,12 +189,12 @@ class ProvisionalStage3Learner:
     def __init__(
         self,
         *,
-        replay: Stage3Replay,
+        replay: OnlineReplay,
         credit_ledger: UpdateCreditLedger,
         delta_action_mean7: Tensor,
         delta_action_std7: Tensor,
         seed: int,
-        losses: Stage3LossAPI | None = None,
+        losses: OnlineLossAPI | None = None,
         actor: nn.Module | None = None,
         q1: nn.Module | None = None,
         q2: nn.Module | None = None,
@@ -198,7 +202,7 @@ class ProvisionalStage3Learner:
         torch.manual_seed(seed)
         self.replay = replay
         self.credit_ledger = credit_ledger
-        self.losses = losses or Stage3LossAPI()
+        self.losses = losses or OnlineLossAPI()
         self.actor = actor or TinyActor()
         self.q1 = q1 or TinyTwinQ(offset=0.0)
         self.q2 = q2 or TinyTwinQ(offset=0.2)
@@ -223,7 +227,7 @@ class ProvisionalStage3Learner:
         count = len(self.replay.membership_uids(R_ONLINE))
         if count < self.training_starts_unique_R:
             raise TrainingStartsBlocked(
-                f"STAGE3_TRAINING_STARTS_BLOCKED:{count}/{self.training_starts_unique_R}"
+                f"ONLINE_REPLAY_TRAINING_STARTS_BLOCKED:{count}/{self.training_starts_unique_R}"
             )
 
     def _next_action(self, observation: CriticObservation) -> Tensor:

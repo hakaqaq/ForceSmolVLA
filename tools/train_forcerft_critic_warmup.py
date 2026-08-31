@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the first formal Stage-3 online-R Critic-only warmup."""
+"""Run the formal online-replay Critic-only warmup."""
 
 from __future__ import annotations
 
@@ -86,15 +86,15 @@ def load_formal_online_r(root: Path) -> tuple[
     dict[str, Path],
 ]:
     admission_files = tuple(sorted((root / "admissions").glob("*.json")))
-    require(admission_files, "STAGE3_WARMUP_ADMISSION_RECORD_COUNT")
+    require(admission_files, "ONLINE_REPLAY_WARMUP_ADMISSION_RECORD_COUNT")
     expected = 0
     source_episodes: dict[str, Path] = {}
     for path in admission_files:
         admission = json.loads(path.read_text(encoding="utf-8"))
-        require(admission.get("policy_execution_smoke_bridge") == "PASS", "STAGE3_WARMUP_BRIDGE_NOT_PASS")
-        require(admission.get("source_episode_semantics") == {"formal_replay": False, "real_online_r": False}, "STAGE3_WARMUP_SOURCE_SEMANTICS")
+        require(admission.get("policy_execution_smoke_bridge") == "PASS", "ONLINE_REPLAY_WARMUP_BRIDGE_NOT_PASS")
+        require(admission.get("source_episode_semantics") == {"formal_replay": False, "real_online_r": False}, "ONLINE_REPLAY_WARMUP_SOURCE_SEMANTICS")
         episode_id = str(admission["episode_id"])
-        require(episode_id not in source_episodes, "STAGE3_WARMUP_ADMISSION_EPISODE_DUPLICATE")
+        require(episode_id not in source_episodes, "ONLINE_REPLAY_WARMUP_ADMISSION_EPISODE_DUPLICATE")
         source_episodes[episode_id] = Path(admission["source_episode"])
         expected += int(admission["accepted_unique_r_transition_count"])
 
@@ -111,17 +111,17 @@ def load_formal_online_r(root: Path) -> tuple[
                 "real_online_r": True,
                 "replay_membership": "R_online",
             },
-            "STAGE3_WARMUP_R_MEMBERSHIP",
+            "ONLINE_REPLAY_WARMUP_R_MEMBERSHIP",
         )
         require(
             str(row["identity"]["episode_id"]) in source_episodes,
-            "STAGE3_WARMUP_R_SOURCE_EPISODE_MISSING",
+            "ONLINE_REPLAY_WARMUP_R_SOURCE_EPISODE_MISSING",
         )
         rows.append(row)
-    require(len(rows) == expected >= 100, "STAGE3_WARMUP_TRAINING_STARTS")
-    require(len({row["identity"]["transition_uid"] for row in rows}) == len(rows), "STAGE3_WARMUP_R_UID_DUPLICATE")
+    require(len(rows) == expected >= 100, "ONLINE_REPLAY_WARMUP_TRAINING_STARTS")
+    require(len({row["identity"]["transition_uid"] for row in rows}) == len(rows), "ONLINE_REPLAY_WARMUP_R_UID_DUPLICATE")
     macros = build_ack_macros(rows)
-    require(macros and any(macro[-1]["outcome"]["terminated"] for macro in macros), "STAGE3_WARMUP_R_MACRO_TERMINAL_MISSING")
+    require(macros and any(macro[-1]["outcome"]["terminated"] for macro in macros), "ONLINE_REPLAY_WARMUP_R_MACRO_TERMINAL_MISSING")
     return rows, macros, source_episodes
 
 
@@ -131,7 +131,7 @@ def _decode_path(path: str) -> np.ndarray:
 
     with Image.open(path) as image:
         value = np.asarray(image.convert("RGB"), dtype=np.uint8)
-    require(value.shape == (480, 640, 3), "STAGE3_WARMUP_IMAGE_SHAPE")
+    require(value.shape == (480, 640, 3), "ONLINE_REPLAY_WARMUP_IMAGE_SHAPE")
     return np.ascontiguousarray(value.transpose(2, 0, 1))
 
 
@@ -140,7 +140,7 @@ def _decode_bytes(payload: bytes) -> np.ndarray:
 
     with Image.open(BytesIO(payload)) as image:
         value = np.asarray(image.convert("RGB"), dtype=np.uint8)
-    require(value.shape == (480, 640, 3), "STAGE3_WARMUP_DEMO_IMAGE_SHAPE")
+    require(value.shape == (480, 640, 3), "ONLINE_REPLAY_WARMUP_DEMO_IMAGE_SHAPE")
     return np.ascontiguousarray(value.transpose(2, 0, 1))
 
 
@@ -175,7 +175,7 @@ class FormalReplay:
         )
         for slot in range(3):
             width = absolute[slot, 6]
-            require(np.isclose(width, 0.0, atol=1e-6) or np.isclose(width, 0.085, atol=1e-6), "STAGE3_WARMUP_R_GRIPPER_ENDPOINT")
+            require(np.isclose(width, 0.0, atol=1e-6) or np.isclose(width, 0.085, atol=1e-6), "ONLINE_REPLAY_WARMUP_R_GRIPPER_ENDPOINT")
             absolute[slot, 6] = 0.0 if width < 0.0425 else 0.085
         action = self.normalizer.delta_action7.apply(
             ActionDeltaProcessor.to_delta(absolute, state)
@@ -195,7 +195,7 @@ class FormalReplay:
 
 
 class DemoReplay:
-    """Read the already converted, Stage-3-bound task2 demonstration replay."""
+    """Read the already converted online-training demonstration replay."""
 
     COLUMNS = (
         "observation.images.camera1",
@@ -214,7 +214,7 @@ class DemoReplay:
             index for index, row in enumerate(self.rows)
             if all(row["executed_action_mask"])
         )
-        require(self.population, "STAGE3_WARMUP_DEMO_POPULATION_EMPTY")
+        require(self.population, "ONLINE_REPLAY_WARMUP_DEMO_POPULATION_EMPTY")
         conversion = json.loads((DATASET / "conversion_manifest.json").read_text(encoding="utf-8"))
         self.tasks = {item["raw_episode_id"]: item["task"] for item in conversion["episodes"]}
         self.normalizer = normalizer
@@ -253,7 +253,7 @@ class DemoReplay:
         row = self.rows[index]
         identity = f"D:{row['episode_id']}:{row['transition_index']}"
         action = np.asarray(row["normalized_delta_action_exec_flat"], dtype=np.float32).reshape(3, 7)
-        require(action.shape == (3, 7), "STAGE3_WARMUP_D_ACTION_SHAPE")
+        require(action.shape == (3, 7), "ONLINE_REPLAY_WARMUP_D_ACTION_SHAPE")
         return {
             "current": self._sample(row["observation_row_reference"], identity + ":current", self.tasks[row["episode_id"]]),
             "next": self._sample(row["next_observation_row_reference"], identity + ":next", self.tasks[row["episode_id"]]),
@@ -277,7 +277,7 @@ def load_parents(device: torch.device):
 
     binding = json.loads(PARENT_BINDING.read_text(encoding="utf-8"))
     config = yaml.safe_load(TRAINING_CONFIG.read_text(encoding="utf-8"))
-    require(binding["binding_id"] == "approved_hybrid_cycle210_actor_g7a_r2_twin_q.v1", "STAGE3_WARMUP_PARENT_BINDING")
+    require(binding["binding_id"] == "approved_hybrid_cycle210_actor_g7a_r2_twin_q.v1", "ONLINE_REPLAY_WARMUP_PARENT_BINDING")
     actor = ForceSmolVLAPolicy.from_pretrained(
         Path(binding["actor_parent"]["architecture_binding"]["container_path"]),
         local_files_only=True,
@@ -307,7 +307,7 @@ def load_parents(device: torch.device):
     q1, q2, q1_target, q2_target = (
         module.to(device) for module in (q1, q2, q1_target, q2_target)
     )
-    require(not actor.training and all(not p.requires_grad for p in actor.parameters()), "STAGE3_WARMUP_ACTOR_NOT_FROZEN")
+    require(not actor.training and all(not p.requires_grad for p in actor.parameters()), "ONLINE_REPLAY_WARMUP_ACTOR_NOT_FROZEN")
     return actor, q1, q2, q1_target, q2_target, binding, config
 
 
@@ -353,7 +353,7 @@ def _gradient_norm(parameters: Iterable[torch.nn.Parameter]) -> float:
 
 def _range_update(current: list[float], value: torch.Tensor) -> None:
     value = value.detach().float()
-    require(bool(torch.isfinite(value).all()), "STAGE3_WARMUP_NONFINITE_METRIC")
+    require(bool(torch.isfinite(value).all()), "ONLINE_REPLAY_WARMUP_NONFINITE_METRIC")
     current[0] = min(current[0], float(value.min().cpu()))
     current[1] = max(current[1], float(value.max().cpu()))
 
@@ -366,7 +366,7 @@ def save_checkpoint(
     runtime_state: Mapping[str, Any],
     actor_parent: Mapping[str, Any],
 ) -> None:
-    require(not path.exists(), "STAGE3_WARMUP_CHECKPOINT_EXISTS")
+    require(not path.exists(), "ONLINE_REPLAY_WARMUP_CHECKPOINT_EXISTS")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=path.name + ".tmp-", dir=path.parent))
     try:
@@ -408,10 +408,10 @@ def load_checkpoint_once(
     optimizer: torch.optim.Optimizer,
     device: torch.device,
 ) -> dict[str, Any]:
-    from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
+    from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
 
     metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
-    require(metadata.get("complete") is True, "STAGE3_WARMUP_CHECKPOINT_INCOMPLETE")
+    require(metadata.get("complete") is True, "ONLINE_REPLAY_WARMUP_CHECKPOINT_INCOMPLETE")
     for name, module in modules.items():
         state = torch.load(path / "models" / f"{name}_state.pt", map_location=device, weights_only=True)
         module.load_state_dict(state, strict=True)
@@ -420,7 +420,7 @@ def load_checkpoint_once(
     ))
     runtime = torch.load(path / "state/runtime_state.pt", map_location="cpu", weights_only=False)
     restored = UpdateCreditLedger.from_state_dict(runtime["sample_credit"])
-    require(restored.snapshot().available == runtime["sample_credit"]["minted"] - runtime["sample_credit"]["consumed"], "STAGE3_WARMUP_CREDIT_RESTORE")
+    require(restored.snapshot().available == runtime["sample_credit"]["minted"] - runtime["sample_credit"]["consumed"], "ONLINE_REPLAY_WARMUP_CREDIT_RESTORE")
     probe = random.Random()
     probe.setstate(runtime["sampler_state"]["r_rng"])
     probe.setstate(runtime["sampler_state"]["d_rng"])
@@ -432,13 +432,13 @@ def load_checkpoint_once(
 def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
     from forcesmolvla.rft.critic import frozen_task_feature
     from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
-    from forcesmolvla.rft.stage3.losses import compute_online_twin_q_td_loss
-    from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
+    from forcesmolvla.rft.online.training_losses import compute_online_twin_q_td_loss
+    from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
     from forcesmolvla.rft.throughput_v2 import FrozenPrefixFlowCounter, fast_polyak_update, index_actor_batch
     from forcesmolvla.training_data import load_normalizer_manifest
 
-    require(steps == 100, "STAGE3_WARMUP_REQUIRES_100_STEPS")
-    require(torch.cuda.is_available(), "STAGE3_WARMUP_CUDA_UNAVAILABLE")
+    require(steps == 100, "ONLINE_REPLAY_WARMUP_REQUIRES_100_STEPS")
+    require(torch.cuda.is_available(), "ONLINE_REPLAY_WARMUP_CUDA_UNAVAILABLE")
     device = torch.device("cuda:0")
     torch.manual_seed(SEED)
     np.random.seed(SEED)
@@ -459,16 +459,16 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
 
     credits = UpdateCreditLedger(credits_per_transition=1, credits_per_joint_cycle=1)
     for row in all_r:
-        require(credits.mint_for_unique_online_transition(row["identity"]["transition_uid"]), "STAGE3_WARMUP_CREDIT_DUPLICATE")
-    require(credits.snapshot().credited_transition_count == len(all_r), "STAGE3_WARMUP_CREDIT_COUNT")
+        require(credits.mint_for_unique_online_transition(row["identity"]["transition_uid"]), "ONLINE_REPLAY_WARMUP_CREDIT_DUPLICATE")
+    require(credits.snapshot().credited_transition_count == len(all_r), "ONLINE_REPLAY_WARMUP_CREDIT_COUNT")
 
     trainable = [
         parameter for module in (q1, q2) for parameter in module.parameters()
         if parameter.requires_grad
     ]
-    require(trainable, "STAGE3_WARMUP_NO_CRITIC_PARAMETERS")
+    require(trainable, "ONLINE_REPLAY_WARMUP_NO_CRITIC_PARAMETERS")
     optimizer = torch.optim.Adam(trainable, lr=3e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0)
-    require(not optimizer.state, "STAGE3_WARMUP_CRITIC_OPTIMIZER_NOT_FRESH")
+    require(not optimizer.state, "ONLINE_REPLAY_WARMUP_CRITIC_OPTIMIZER_NOT_FRESH")
     feature = torch.from_numpy(frozen_task_feature()).to(device=device, dtype=torch.float32)
     delta_mean = torch.tensor(normalizer.delta_action7.mean, dtype=torch.float32, device=device)
     delta_std = torch.tensor(normalizer.delta_action7.std, dtype=torch.float32, device=device)
@@ -504,7 +504,7 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
         ]
 
         def next_action(_observation) -> torch.Tensor:
-            require(not actor.training, "STAGE3_WARMUP_ACTOR_TRAIN_MODE")
+            require(not actor.training, "ONLINE_REPLAY_WARMUP_ACTOR_TRAIN_MODE")
             noise = torch.randn(
                 nonterminal_count, 50, 7,
                 dtype=torch.float32, device=device, generator=noise_generator,
@@ -512,7 +512,7 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
             with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 chunk = flow.sample(
                     actor, next_actor_batch, noise,
-                    call_id=f"stage3-warmup-{step:03d}", purpose="td_next",
+                    call_id=f"online-critic-warmup-{step:03d}", purpose="td_next",
                 )
             return critic_action_for_q_guidance_v2(
                 chunk, delta_action_mean7=delta_mean, delta_action_std7=delta_std,
@@ -536,16 +536,16 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
             )
             require(
                 result.calql_candidate_calls == result.random_candidate_calls == result.mc_return_reads == 0,
-                "STAGE3_WARMUP_NOT_PURE_TD",
+                "ONLINE_REPLAY_WARMUP_NOT_PURE_TD",
             )
             result.total.backward()
             require(
                 all(parameter.grad is None for parameter in actor.parameters())
                 and all(parameter.grad is None for target in (q1_target, q2_target) for parameter in target.parameters()),
-                "STAGE3_WARMUP_GRADIENT_OWNERSHIP",
+                "ONLINE_REPLAY_WARMUP_GRADIENT_OWNERSHIP",
             )
             gradient = _gradient_norm(trainable)
-            require(math.isfinite(gradient), "STAGE3_WARMUP_GRADIENT_NONFINITE")
+            require(math.isfinite(gradient), "ONLINE_REPLAY_WARMUP_GRADIENT_NONFINITE")
             gradient_range[0] = min(gradient_range[0], gradient)
             gradient_range[1] = max(gradient_range[1], gradient)
             torch.nn.utils.clip_grad_norm_(trainable, 10.0)
@@ -556,7 +556,7 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
             losses.append(float(result.total.detach().cpu()))
             _range_update(q1_range, result.q1_value)
             _range_update(q2_range, result.q2_value)
-            require(len(target_outputs) == (2 if nonterminal_count else 0), "STAGE3_WARMUP_TARGET_CALL_COUNT")
+            require(len(target_outputs) == (2 if nonterminal_count else 0), "ONLINE_REPLAY_WARMUP_TARGET_CALL_COUNT")
             for value in target_outputs:
                 _range_update(target_range, value)
         except torch.cuda.OutOfMemoryError:
@@ -571,11 +571,11 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
         if (step + 1) % 10 == 0:
             print(f"[warmup] critic steps {step + 1}/{steps}", file=sys.stderr, flush=True)
 
-    require(len(losses) == steps and target_updates == steps, "STAGE3_WARMUP_STEP_COUNT")
-    require(terminal_samples > 0, "STAGE3_WARMUP_TERMINAL_NOT_SAMPLED")
-    require(nonfinite_count == oom_count == 0, "STAGE3_WARMUP_RUNTIME_FAILURE")
+    require(len(losses) == steps and target_updates == steps, "ONLINE_REPLAY_WARMUP_STEP_COUNT")
+    require(terminal_samples > 0, "ONLINE_REPLAY_WARMUP_TERMINAL_NOT_SAMPLED")
+    require(nonfinite_count == oom_count == 0, "ONLINE_REPLAY_WARMUP_RUNTIME_FAILURE")
     for module in (q1, q2, q1_target, q2_target):
-        require(all(bool(torch.isfinite(value).all()) for value in module.state_dict().values() if value.is_floating_point()), "STAGE3_WARMUP_MODEL_NONFINITE")
+        require(all(bool(torch.isfinite(value).all()) for value in module.state_dict().values() if value.is_floating_point()), "ONLINE_REPLAY_WARMUP_MODEL_NONFINITE")
 
     cpu_probe = torch.Generator(device="cpu")
     cpu_probe.set_state(torch.get_rng_state())
@@ -628,7 +628,7 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
     restored = load_checkpoint_once(
         checkpoint, modules=modules, optimizer=optimizer, device=device,
     )
-    require(restored["counters"]["critic_warmup_steps"] == steps, "STAGE3_WARMUP_CHECKPOINT_LOAD")
+    require(restored["counters"]["critic_warmup_steps"] == steps, "ONLINE_REPLAY_WARMUP_CHECKPOINT_LOAD")
 
     median = lambda values: float(np.median(np.asarray(values, dtype=np.float64)))
     return {
@@ -648,7 +648,7 @@ def run(*, steps: int, checkpoint: Path) -> dict[str, Any]:
         "ACTOR_Q_GUIDANCE_ENABLED": False,
         "TARGET_POLYAK_UPDATE_COUNT": target_updates,
         "REMAINING_SAMPLE_CREDITS": credits.snapshot().available,
-        "STAGE3_CHECKPOINT_PATH": str(checkpoint),
+        "ONLINE_REPLAY_CHECKPOINT_PATH": str(checkpoint),
     }
 
 

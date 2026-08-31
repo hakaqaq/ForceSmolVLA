@@ -1,4 +1,4 @@
-"""CPU-only fail-closed preflight for the approved hybrid Stage-3 parent."""
+"""CPU-only fail-closed validation for the online Actor/Critic bootstrap parent."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def sha256_file(path: Path) -> str:
 
 def tree_record(root: Path, known_hashes: Mapping[Path, str] | None = None) -> dict[str, Any]:
     root = Path(root).resolve()
-    _require(root.is_dir(), f"STAGE3_PARENT_TREE_MISSING:{root}")
+    _require(root.is_dir(), f"ONLINE_REPLAY_PARENT_TREE_MISSING:{root}")
     known = {Path(path).resolve(): value for path, value in (known_hashes or {}).items()}
     digest = hashlib.sha256()
     total = 0
@@ -57,13 +57,13 @@ def tree_record(root: Path, known_hashes: Mapping[Path, str] | None = None) -> d
 
 def _json(path: Path) -> dict[str, Any]:
     value = json.loads(Path(path).read_text(encoding="utf-8"))
-    _require(isinstance(value, dict), f"STAGE3_PARENT_JSON_ROOT:{path}")
+    _require(isinstance(value, dict), f"ONLINE_REPLAY_PARENT_JSON_ROOT:{path}")
     return value
 
 
 def _yaml(path: Path) -> dict[str, Any]:
     value = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    _require(isinstance(value, dict), f"STAGE3_PARENT_YAML_ROOT:{path}")
+    _require(isinstance(value, dict), f"ONLINE_REPLAY_PARENT_YAML_ROOT:{path}")
     return value
 
 
@@ -87,7 +87,7 @@ def validate_parent_binding_schema(value: Mapping[str, Any]) -> dict[str, Any]:
     if errors:
         location = ".".join(str(part) for part in errors[0].absolute_path)
         raise ParentBindingError(
-            f"STAGE3_PARENT_SCHEMA:{location}:{errors[0].message}"
+            f"ONLINE_REPLAY_PARENT_SCHEMA:{location}:{errors[0].message}"
         )
     return binding
 
@@ -95,7 +95,7 @@ def validate_parent_binding_schema(value: Mapping[str, Any]) -> dict[str, Any]:
 def validate_parent_binding_semantics(value: Mapping[str, Any]) -> dict[str, Any]:
     binding = validate_parent_binding_schema(value)
     continuation = binding["continuation_semantics"]
-    _require(binding["binding_type"] == "new_hybrid_stage3_bootstrap", "STAGE3_PARENT_TYPE")
+    _require(binding["binding_type"] == "new_hybrid_stage3_bootstrap", "ONLINE_REPLAY_PARENT_TYPE")
     _require(
         continuation == {
             "parent_binding_decision": "APPROVED_HYBRID",
@@ -109,58 +109,58 @@ def validate_parent_binding_semantics(value: Mapping[str, Any]) -> dict[str, Any
             "actor_source_role": "cycle210_evaluation_checkpoint_stage3_initial_actor",
             "critic_source_role": "g7a_r2_online_and_target_twin_q",
         },
-        "STAGE3_PARENT_CONTINUATION_SEMANTICS",
+        "ONLINE_REPLAY_PARENT_CONTINUATION_SEMANTICS",
     )
-    _require(binding["actor_parent"]["selected"], "STAGE3_PARENT_ACTOR_NOT_SELECTED")
-    _require(binding["actor_parent"]["full_learner_resume"] is False, "STAGE3_PARENT_ACTOR_RESUME")
+    _require(binding["actor_parent"]["selected"], "ONLINE_REPLAY_PARENT_ACTOR_NOT_SELECTED")
+    _require(binding["actor_parent"]["full_learner_resume"] is False, "ONLINE_REPLAY_PARENT_ACTOR_RESUME")
     for name in (
         "normalizer_binding", "action_contract_binding", "task_feature_binding",
         "calibration_binding", "runtime_contract_binding",
     ):
-        _require(binding[name]["selected"] is True, f"STAGE3_PARENT_BINDING_NOT_SELECTED:{name}")
-    _require(binding["critic_parent"]["source_id"] == "G7A-r2", "STAGE3_PARENT_CRITIC_SOURCE")
-    _require(binding["target_critic_parent"]["source_id"] == "G7A-r2", "STAGE3_PARENT_TARGET_SOURCE")
+        _require(binding[name]["selected"] is True, f"ONLINE_REPLAY_PARENT_BINDING_NOT_SELECTED:{name}")
+    _require(binding["critic_parent"]["source_id"] == "G7A-r2", "ONLINE_REPLAY_PARENT_CRITIC_SOURCE")
+    _require(binding["target_critic_parent"]["source_id"] == "G7A-r2", "ONLINE_REPLAY_PARENT_TARGET_SOURCE")
     for group_name in ("critic_parent", "target_critic_parent"):
         _require(
             all(item["selected"] is True for item in binding[group_name]["artifacts"]),
-            f"STAGE3_PARENT_GROUP_ARTIFACT_NOT_SELECTED:{group_name}",
+            f"ONLINE_REPLAY_PARENT_GROUP_ARTIFACT_NOT_SELECTED:{group_name}",
         )
     _require(
         binding["actor_parent"]["architecture_binding"]["module"]
         == "forcesmolvla.modeling_forcesmolvla.ForceSmolVLAPolicy",
-        "STAGE3_PARENT_ACTOR_ARCHITECTURE",
+        "ONLINE_REPLAY_PARENT_ACTOR_ARCHITECTURE",
     )
     _require(
         binding["critic_parent"]["architecture_binding"]["module"]
         == binding["target_critic_parent"]["architecture_binding"]["module"]
         == "forcesmolvla.rft.critic.ForceAwareMacroCritic",
-        "STAGE3_PARENT_CRITIC_ARCHITECTURE",
+        "ONLINE_REPLAY_PARENT_CRITIC_ARCHITECTURE",
     )
     optimizer = binding["optimizer_policy"]
     for name in (
         "inherit_actor_optimizer", "inherit_critic_optimizer", "inherit_scheduler",
         "inherit_rng", "inherit_sampler", "instantiated_in_this_round",
     ):
-        _require(optimizer[name] is False, f"STAGE3_PARENT_OPTIMIZER_POLICY:{name}")
-    _require(optimizer["rebuild_spec_status"] == "FROZEN", "STAGE3_PARENT_REBUILD_SPEC")
+        _require(optimizer[name] is False, f"ONLINE_REPLAY_PARENT_OPTIMIZER_POLICY:{name}")
+    _require(optimizer["rebuild_spec_status"] == "FROZEN", "ONLINE_REPLAY_PARENT_REBUILD_SPEC")
     safety = binding["initial_safety_state"]
-    _require(safety["initial_actor_update_enabled"] is False, "STAGE3_PARENT_ACTOR_UPDATE_LOCK")
-    _require(safety["initial_actor_q_guidance_enabled"] is False, "STAGE3_PARENT_Q_GUIDANCE_LOCK")
-    _require(safety["critic_warmup_required"] is True, "STAGE3_PARENT_WARMUP_REQUIRED")
-    _require(safety["critic_ready"] is False, "STAGE3_PARENT_CRITIC_NOT_READY")
-    _require(safety["unlock_requires_independent_critic_gate"] is True, "STAGE3_PARENT_UNLOCK_GATE")
-    _require(not any(binding["authorization"].values()), "STAGE3_PARENT_AUTHORIZATION_EXPANDED")
+    _require(safety["initial_actor_update_enabled"] is False, "ONLINE_REPLAY_PARENT_ACTOR_UPDATE_LOCK")
+    _require(safety["initial_actor_q_guidance_enabled"] is False, "ONLINE_REPLAY_PARENT_Q_GUIDANCE_LOCK")
+    _require(safety["critic_warmup_required"] is True, "ONLINE_REPLAY_PARENT_WARMUP_REQUIRED")
+    _require(safety["critic_ready"] is False, "ONLINE_REPLAY_PARENT_CRITIC_NOT_READY")
+    _require(safety["unlock_requires_independent_critic_gate"] is True, "ONLINE_REPLAY_PARENT_UNLOCK_GATE")
+    _require(not any(binding["authorization"].values()), "ONLINE_REPLAY_PARENT_AUTHORIZATION_EXPANDED")
     return binding
 
 
 def _verify_artifact(record: Mapping[str, Any], cache: dict[Path, str]) -> dict[str, Any]:
     path = Path(record["absolute_path"])
-    _require(path.is_file(), f"STAGE3_PARENT_ARTIFACT_MISSING:{record['logical_role']}")
+    _require(path.is_file(), f"ONLINE_REPLAY_PARENT_ARTIFACT_MISSING:{record['logical_role']}")
     resolved = path.resolve()
-    _require(str(resolved) == record["resolved_realpath"], f"STAGE3_PARENT_REALPATH:{record['logical_role']}")
-    _require(path.stat().st_size == record["size_bytes"], f"STAGE3_PARENT_SIZE:{record['logical_role']}")
+    _require(str(resolved) == record["resolved_realpath"], f"ONLINE_REPLAY_PARENT_REALPATH:{record['logical_role']}")
+    _require(path.stat().st_size == record["size_bytes"], f"ONLINE_REPLAY_PARENT_SIZE:{record['logical_role']}")
     digest = sha256_file(path)
-    _require(digest == record["sha256"], f"STAGE3_PARENT_SHA256:{record['logical_role']}")
+    _require(digest == record["sha256"], f"ONLINE_REPLAY_PARENT_SHA256:{record['logical_role']}")
     cache[resolved] = digest
     return {
         "path": str(path),
@@ -173,9 +173,9 @@ def _verify_artifact(record: Mapping[str, Any], cache: dict[Path, str]) -> dict[
 
 def _verify_named_file(path: str, expected: str, label: str, cache: dict[Path, str]) -> Path:
     resolved = _resolve(path).resolve()
-    _require(resolved.is_file(), f"STAGE3_PARENT_BOUND_FILE_MISSING:{label}")
+    _require(resolved.is_file(), f"ONLINE_REPLAY_PARENT_BOUND_FILE_MISSING:{label}")
     digest = sha256_file(resolved)
-    _require(digest == expected, f"STAGE3_PARENT_BOUND_FILE_SHA:{label}")
+    _require(digest == expected, f"ONLINE_REPLAY_PARENT_BOUND_FILE_SHA:{label}")
     cache[resolved] = digest
     return resolved
 
@@ -183,38 +183,38 @@ def _verify_named_file(path: str, expected: str, label: str, cache: dict[Path, s
 def _safetensors_header(path: Path) -> dict[str, Any]:
     with path.open("rb") as stream:
         raw_length = stream.read(8)
-        _require(len(raw_length) == 8, "STAGE3_PARENT_ACTOR_SAFETENSORS_LENGTH")
+        _require(len(raw_length) == 8, "ONLINE_REPLAY_PARENT_ACTOR_SAFETENSORS_LENGTH")
         header_length = struct.unpack("<Q", raw_length)[0]
-        _require(0 < header_length < path.stat().st_size - 8, "STAGE3_PARENT_ACTOR_HEADER_LENGTH")
+        _require(0 < header_length < path.stat().st_size - 8, "ONLINE_REPLAY_PARENT_ACTOR_HEADER_LENGTH")
         header = json.loads(stream.read(header_length))
-    _require(isinstance(header, dict), "STAGE3_PARENT_ACTOR_HEADER_ROOT")
+    _require(isinstance(header, dict), "ONLINE_REPLAY_PARENT_ACTOR_HEADER_ROOT")
     tensors = {name: item for name, item in header.items() if name != "__metadata__"}
-    _require(len(tensors) == 574, "STAGE3_PARENT_ACTOR_TENSOR_COUNT")
+    _require(len(tensors) == 574, "ONLINE_REPLAY_PARENT_ACTOR_TENSOR_COUNT")
     widths = {"F32": 4, "BF16": 2}
     ranges: list[tuple[int, int]] = []
     for name, item in tensors.items():
-        _require(isinstance(item, dict), f"STAGE3_PARENT_ACTOR_TENSOR_HEADER:{name}")
+        _require(isinstance(item, dict), f"ONLINE_REPLAY_PARENT_ACTOR_TENSOR_HEADER:{name}")
         dtype = item.get("dtype")
         shape = item.get("shape")
         offsets = item.get("data_offsets")
-        _require(dtype in widths, f"STAGE3_PARENT_ACTOR_DTYPE:{name}")
+        _require(dtype in widths, f"ONLINE_REPLAY_PARENT_ACTOR_DTYPE:{name}")
         _require(
             isinstance(shape, list) and all(isinstance(dim, int) and dim >= 0 for dim in shape),
-            f"STAGE3_PARENT_ACTOR_SHAPE:{name}",
+            f"ONLINE_REPLAY_PARENT_ACTOR_SHAPE:{name}",
         )
         _require(
             isinstance(offsets, list) and len(offsets) == 2
             and all(isinstance(offset, int) for offset in offsets),
-            f"STAGE3_PARENT_ACTOR_OFFSET:{name}",
+            f"ONLINE_REPLAY_PARENT_ACTOR_OFFSET:{name}",
         )
         start, end = offsets
         numel = math.prod(shape)
-        _require(0 <= start <= end and end - start == numel * widths[dtype], f"STAGE3_PARENT_ACTOR_SPAN:{name}")
+        _require(0 <= start <= end and end - start == numel * widths[dtype], f"ONLINE_REPLAY_PARENT_ACTOR_SPAN:{name}")
         ranges.append((start, end))
     ranges.sort()
-    _require(ranges[0][0] == 0, "STAGE3_PARENT_ACTOR_FIRST_OFFSET")
-    _require(all(left[1] == right[0] for left, right in zip(ranges, ranges[1:])), "STAGE3_PARENT_ACTOR_OFFSET_GAP")
-    _require(ranges[-1][1] == path.stat().st_size - 8 - header_length, "STAGE3_PARENT_ACTOR_LAST_OFFSET")
+    _require(ranges[0][0] == 0, "ONLINE_REPLAY_PARENT_ACTOR_FIRST_OFFSET")
+    _require(all(left[1] == right[0] for left, right in zip(ranges, ranges[1:])), "ONLINE_REPLAY_PARENT_ACTOR_OFFSET_GAP")
+    _require(ranges[-1][1] == path.stat().st_size - 8 - header_length, "ONLINE_REPLAY_PARENT_ACTOR_LAST_OFFSET")
     required = {
         "model.action_in_proj.weight": ("F32", [720, 32]),
         "model.action_out_proj.weight": ("F32", [32, 720]),
@@ -223,8 +223,8 @@ def _safetensors_header(path: Path) -> dict[str, Any]:
         "model.state_proj.weight": ("F32", [960, 32]),
     }
     for name, (dtype, shape) in required.items():
-        _require(name in tensors, f"STAGE3_PARENT_ACTOR_KEY:{name}")
-        _require(tensors[name]["dtype"] == dtype and tensors[name]["shape"] == shape, f"STAGE3_PARENT_ACTOR_KEY_SPEC:{name}")
+        _require(name in tensors, f"ONLINE_REPLAY_PARENT_ACTOR_KEY:{name}")
+        _require(tensors[name]["dtype"] == dtype and tensors[name]["shape"] == shape, f"ONLINE_REPLAY_PARENT_ACTOR_KEY_SPEC:{name}")
     return {
         "header_bytes": header_length,
         "tensor_count": len(tensors),
@@ -238,25 +238,25 @@ def _actor_compatibility(binding: Mapping[str, Any]) -> dict[str, Any]:
     actor = binding["actor_parent"]
     architecture = actor["architecture_binding"]
     config = _json(Path(architecture["config_path"]))
-    _require(config.get("type") == "force_smolvla", "STAGE3_PARENT_ACTOR_CONFIG_TYPE")
-    _require(config.get("chunk_size") == 50 and config.get("num_steps") == 10, "STAGE3_PARENT_ACTOR_H50_N10")
+    _require(config.get("type") == "force_smolvla", "ONLINE_REPLAY_PARENT_ACTOR_CONFIG_TYPE")
+    _require(config.get("chunk_size") == 50 and config.get("num_steps") == 10, "ONLINE_REPLAY_PARENT_ACTOR_H50_N10")
     inputs = config.get("input_features", {})
-    _require(inputs.get("observation.state", {}).get("shape") == [7], "STAGE3_PARENT_ACTOR_STATE7")
-    _require(inputs.get("observation.wrench", {}).get("shape") == [6], "STAGE3_PARENT_ACTOR_WRENCH6")
-    _require(config.get("output_features", {}).get("action", {}).get("shape") == [7], "STAGE3_PARENT_ACTOR_ACTION7")
+    _require(inputs.get("observation.state", {}).get("shape") == [7], "ONLINE_REPLAY_PARENT_ACTOR_STATE7")
+    _require(inputs.get("observation.wrench", {}).get("shape") == [6], "ONLINE_REPLAY_PARENT_ACTOR_WRENCH6")
+    _require(config.get("output_features", {}).get("action", {}).get("shape") == [7], "ONLINE_REPLAY_PARENT_ACTOR_ACTION7")
     cameras = [name for name in inputs if name.startswith("observation.images.")]
-    _require(len(cameras) == 2, "STAGE3_PARENT_ACTOR_CAMERAS")
+    _require(len(cameras) == 2, "ONLINE_REPLAY_PARENT_ACTOR_CAMERAS")
     manifest = _json(Path(architecture["actor_export_manifest_path"]))
     metadata = manifest.get("metadata", {})
     coverage = metadata.get("actor_state_coverage", {})
-    _require(coverage == {"coverage_fraction": 1.0, "full_actor_state": True, "loaded_tensor_count": 574, "source_tensor_count": 574}, "STAGE3_PARENT_ACTOR_EXPORT_COVERAGE")
-    _require(metadata.get("strict_load") == {"missing_keys": 0, "unexpected_keys": 0}, "STAGE3_PARENT_ACTOR_PRIOR_STRICT_LOAD")
-    _require(metadata.get("critic_exported") is False and metadata.get("optimizer_exported") is False, "STAGE3_PARENT_ACTOR_EXPORT_SCOPE")
-    _require(metadata.get("scheduler_exported") is False and metadata.get("rng_exported") is False and metadata.get("sampler_exported") is False, "STAGE3_PARENT_ACTOR_EXPORT_NOT_LEARNER")
-    _require(metadata.get("training_parent_allowed") is False, "STAGE3_PARENT_ACTOR_EXPORT_TRAINING_SCOPE")
+    _require(coverage == {"coverage_fraction": 1.0, "full_actor_state": True, "loaded_tensor_count": 574, "source_tensor_count": 574}, "ONLINE_REPLAY_PARENT_ACTOR_EXPORT_COVERAGE")
+    _require(metadata.get("strict_load") == {"missing_keys": 0, "unexpected_keys": 0}, "ONLINE_REPLAY_PARENT_ACTOR_PRIOR_STRICT_LOAD")
+    _require(metadata.get("critic_exported") is False and metadata.get("optimizer_exported") is False, "ONLINE_REPLAY_PARENT_ACTOR_EXPORT_SCOPE")
+    _require(metadata.get("scheduler_exported") is False and metadata.get("rng_exported") is False and metadata.get("sampler_exported") is False, "ONLINE_REPLAY_PARENT_ACTOR_EXPORT_NOT_LEARNER")
+    _require(metadata.get("training_parent_allowed") is False, "ONLINE_REPLAY_PARENT_ACTOR_EXPORT_TRAINING_SCOPE")
     sources = metadata.get("source_bindings", {})
-    _require(sources.get("cycle210_actor_state_sha256") == architecture["source_actor_state_sha256"], "STAGE3_PARENT_ACTOR_SOURCE_STATE")
-    _require(manifest.get("payloads", {}).get("model.safetensors", {}).get("sha256") == actor["sha256"], "STAGE3_PARENT_ACTOR_MANIFEST_MODEL_SHA")
+    _require(sources.get("cycle210_actor_state_sha256") == architecture["source_actor_state_sha256"], "ONLINE_REPLAY_PARENT_ACTOR_SOURCE_STATE")
+    _require(manifest.get("payloads", {}).get("model.safetensors", {}).get("sha256") == actor["sha256"], "ONLINE_REPLAY_PARENT_ACTOR_MANIFEST_MODEL_SHA")
     return {
         "status": "PASS",
         "validation_level": actor["load_validation_level"],
@@ -276,7 +276,7 @@ def _critic_compatibility(binding: Mapping[str, Any]) -> dict[str, Any]:
         frozen_task_feature,
     )
 
-    _require(not torch.cuda.is_initialized(), "STAGE3_PARENT_CUDA_ALREADY_INITIALIZED")
+    _require(not torch.cuda.is_initialized(), "ONLINE_REPLAY_PARENT_CUDA_ALREADY_INITIALIZED")
     module = ForceAwareMacroCritic(
         FrozenConRFTResNet10(), FrozenConRFTResNet10(), task_feature=frozen_task_feature()
     )
@@ -292,7 +292,7 @@ def _critic_compatibility(binding: Mapping[str, Any]) -> dict[str, Any]:
             )
             validate_critic_state_against_expected(state, expected, role)
             incompatible = module.load_state_dict(state, strict=True)
-            _require(not incompatible.missing_keys and not incompatible.unexpected_keys, f"STAGE3_PARENT_CRITIC_STRICT_LOAD:{role}")
+            _require(not incompatible.missing_keys and not incompatible.unexpected_keys, f"ONLINE_REPLAY_PARENT_CRITIC_STRICT_LOAD:{role}")
             results[role] = {
                 "status": "PASS",
                 "key_count": len(state),
@@ -309,7 +309,7 @@ def _critic_compatibility(binding: Mapping[str, Any]) -> dict[str, Any]:
             gc.collect()
     del expected, module
     gc.collect()
-    _require(not torch.cuda.is_initialized(), "STAGE3_PARENT_CUDA_INITIALIZED")
+    _require(not torch.cuda.is_initialized(), "ONLINE_REPLAY_PARENT_CUDA_INITIALIZED")
     return {
         "status": "PASS",
         "module": "forcesmolvla.rft.critic.ForceAwareMacroCritic",
@@ -332,21 +332,21 @@ def validate_critic_state_against_expected(
 
     import torch
 
-    _require(isinstance(state, Mapping), f"STAGE3_PARENT_CRITIC_STATE_ROOT:{role}")
+    _require(isinstance(state, Mapping), f"ONLINE_REPLAY_PARENT_CRITIC_STATE_ROOT:{role}")
     _require(
         all(isinstance(value, torch.Tensor) and value.device.type == "cpu" for value in state.values()),
-        f"STAGE3_PARENT_CRITIC_TENSOR:{role}",
+        f"ONLINE_REPLAY_PARENT_CRITIC_TENSOR:{role}",
     )
     missing = sorted(set(expected) - set(state))
     unexpected = sorted(set(state) - set(expected))
-    _require(not missing, f"STAGE3_PARENT_CRITIC_MISSING_KEYS:{role}:{missing[:3]}")
-    _require(not unexpected, f"STAGE3_PARENT_CRITIC_UNEXPECTED_KEYS:{role}:{unexpected[:3]}")
+    _require(not missing, f"ONLINE_REPLAY_PARENT_CRITIC_MISSING_KEYS:{role}:{missing[:3]}")
+    _require(not unexpected, f"ONLINE_REPLAY_PARENT_CRITIC_UNEXPECTED_KEYS:{role}:{unexpected[:3]}")
     mismatched = sorted(
         name for name in expected
         if tuple(expected[name].shape) != tuple(state[name].shape)
         or expected[name].dtype != state[name].dtype
     )
-    _require(not mismatched, f"STAGE3_PARENT_CRITIC_KEY_SPEC:{role}:{mismatched[:3]}")
+    _require(not mismatched, f"ONLINE_REPLAY_PARENT_CRITIC_KEY_SPEC:{role}:{mismatched[:3]}")
 
 
 def _cross_component_compatibility(binding: Mapping[str, Any]) -> dict[str, Any]:
@@ -360,16 +360,18 @@ def _cross_component_compatibility(binding: Mapping[str, Any]) -> dict[str, Any]
     calibration = _json(Path(binding["calibration_binding"]["absolute_path"]))
     runtime = _json(Path(binding["runtime_contract_binding"]["absolute_path"]))
     transition = _json(ROOT / "configs/stage3_transition_contract.v1.development.json")
-    g7a = _yaml(Path(binding["optimizer_policy"]["critic_candidate"]["source_path"]))
+    offline_critic_config = _yaml(
+        Path(binding["optimizer_policy"]["critic_candidate"]["source_path"])
+    )
     evidence = binding["compatibility_evidence"]
     actor_export = _json(Path(binding["actor_parent"]["architecture_binding"]["actor_export_manifest_path"]))
     features = normalizer.get("features", {})
     for name, width in (("state7", 7), ("wrench6", 6), ("delta_action7", 7)):
         record = features.get(name, {})
-        _require(len(record.get("mean", [])) == width and len(record.get("std", [])) == width, f"STAGE3_PARENT_NORMALIZER_SHAPE:{name}")
-        _require(all(math.isfinite(value) for value in record["mean"] + record["std"]), f"STAGE3_PARENT_NORMALIZER_FINITE:{name}")
-        _require(all(value > 0 for value in record["std"]), f"STAGE3_PARENT_NORMALIZER_STD:{name}")
-    _require(normalizer.get("calibration_bundle_sha256") == binding["calibration_binding"]["sha256"], "STAGE3_PARENT_CALIBRATION_NORMALIZER_BINDING")
+        _require(len(record.get("mean", [])) == width and len(record.get("std", [])) == width, f"ONLINE_REPLAY_PARENT_NORMALIZER_SHAPE:{name}")
+        _require(all(math.isfinite(value) for value in record["mean"] + record["std"]), f"ONLINE_REPLAY_PARENT_NORMALIZER_FINITE:{name}")
+        _require(all(value > 0 for value in record["std"]), f"ONLINE_REPLAY_PARENT_NORMALIZER_STD:{name}")
+    _require(normalizer.get("calibration_bundle_sha256") == binding["calibration_binding"]["sha256"], "ONLINE_REPLAY_PARENT_CALIBRATION_NORMALIZER_BINDING")
     export_payloads = actor_export.get("payloads", {})
     for name, artifact_name in (
         ("manifests/normalizer_manifest.json", "normalizer_binding"),
@@ -379,36 +381,36 @@ def _cross_component_compatibility(binding: Mapping[str, Any]) -> dict[str, Any]
     ):
         _require(
             export_payloads.get(name, {}).get("sha256") == binding[artifact_name]["sha256"],
-            f"STAGE3_PARENT_ACTOR_EXPORT_RUNTIME_BINDING:{artifact_name}",
+            f"ONLINE_REPLAY_PARENT_ACTOR_EXPORT_RUNTIME_BINDING:{artifact_name}",
         )
-    _require(action.get("critic_action_shape") == [3, 7], "STAGE3_PARENT_ACTION_CONTRACT_SHAPE")
-    _require(action.get("actor_q_guided_action_dims") == [0, 1, 2, 3, 4, 5], "STAGE3_PARENT_TCP6_CONTRACT")
-    _require(action.get("gripper_q_gradient") is False and action.get("gripper", {}).get("stop_gradient") is True, "STAGE3_PARENT_GRIPPER_CONTRACT")
-    _require(action.get("frozen_normalizer_manifest", {}).get("sha256") == binding["normalizer_binding"]["sha256"], "STAGE3_PARENT_ACTION_NORMALIZER_BINDING")
+    _require(action.get("critic_action_shape") == [3, 7], "ONLINE_REPLAY_PARENT_ACTION_CONTRACT_SHAPE")
+    _require(action.get("actor_q_guided_action_dims") == [0, 1, 2, 3, 4, 5], "ONLINE_REPLAY_PARENT_TCP6_CONTRACT")
+    _require(action.get("gripper_q_gradient") is False and action.get("gripper", {}).get("stop_gradient") is True, "ONLINE_REPLAY_PARENT_GRIPPER_CONTRACT")
+    _require(action.get("frozen_normalizer_manifest", {}).get("sha256") == binding["normalizer_binding"]["sha256"], "ONLINE_REPLAY_PARENT_ACTION_NORMALIZER_BINDING")
     task = topology.get("gpu_zero_update_preflight", {}).get("task_condition", {})
-    _require(task.get("frozen_task_feature_dim") == 256, "STAGE3_PARENT_TASK_DIM")
-    _require(task.get("frozen_task_feature_sha256") == binding["task_feature_binding"]["logical_object_sha256"], "STAGE3_PARENT_TASK_EVIDENCE_DIGEST")
-    _require(frozen_task_feature_sha256() == binding["task_feature_binding"]["logical_object_sha256"], "STAGE3_PARENT_TASK_RECOMPUTED_DIGEST")
-    _require(calibration.get("validated") is True and calibration.get("formal_ready") is False, "STAGE3_PARENT_CALIBRATION_STATUS")
-    _require(len(calibration.get("sensor_bias6", [])) == 6 and len(calibration.get("wrench_sign6", [])) == 6, "STAGE3_PARENT_CALIBRATION_SHAPE")
-    _require(runtime.get("controller_grid", {}).get("fps") == 30, "STAGE3_PARENT_RUNTIME_GRID")
-    _require(runtime.get("formal_ready") is False and runtime.get("artifact_status") == "development_only", "STAGE3_PARENT_RUNTIME_STATUS")
+    _require(task.get("frozen_task_feature_dim") == 256, "ONLINE_REPLAY_PARENT_TASK_DIM")
+    _require(task.get("frozen_task_feature_sha256") == binding["task_feature_binding"]["logical_object_sha256"], "ONLINE_REPLAY_PARENT_TASK_EVIDENCE_DIGEST")
+    _require(frozen_task_feature_sha256() == binding["task_feature_binding"]["logical_object_sha256"], "ONLINE_REPLAY_PARENT_TASK_RECOMPUTED_DIGEST")
+    _require(calibration.get("validated") is True and calibration.get("formal_ready") is False, "ONLINE_REPLAY_PARENT_CALIBRATION_STATUS")
+    _require(len(calibration.get("sensor_bias6", [])) == 6 and len(calibration.get("wrench_sign6", [])) == 6, "ONLINE_REPLAY_PARENT_CALIBRATION_SHAPE")
+    _require(runtime.get("controller_grid", {}).get("fps") == 30, "ONLINE_REPLAY_PARENT_RUNTIME_GRID")
+    _require(runtime.get("formal_ready") is False and runtime.get("artifact_status") == "development_only", "ONLINE_REPLAY_PARENT_RUNTIME_STATUS")
     temporal = transition.get("temporal", {})
     _require(
         (temporal.get("data_grid_hz"), temporal.get("policy_hz"), temporal.get("flow_horizon"), temporal.get("critic_slots"), temporal.get("critic_action_features"))
         == (30, 10, 50, 3, 7),
-        "STAGE3_PARENT_TEMPORAL_CONTRACT",
+        "ONLINE_REPLAY_PARENT_TEMPORAL_CONTRACT",
     )
     critic_interface = critic_config.get("critic_interface", {})
-    _require(critic_interface.get("f_policy_hz") == 10 and critic_interface.get("action_shape") == [3, 7], "STAGE3_PARENT_CRITIC_CONFIG_ACTION")
+    _require(critic_interface.get("f_policy_hz") == 10 and critic_interface.get("action_shape") == [3, 7], "ONLINE_REPLAY_PARENT_CRITIC_CONFIG_ACTION")
     observation = critic_config.get("observation", {})
-    _require(observation.get("normalized_state_features") == 7 and observation.get("normalized_wrench_features") == 6 and observation.get("frozen_task_feature_dim") == 256, "STAGE3_PARENT_CRITIC_CONFIG_OBSERVATION")
-    _require(g7a.get("transition_contract", {}).get("critic_action_shape") == [3, 7] and g7a.get("transition_contract", {}).get("policy_rate_hz") == 10, "STAGE3_PARENT_G7A_TEMPORAL_ACTION")
-    _require(actor_config.get("chunk_size") == 50 and actor_config.get("output_features", {}).get("action", {}).get("shape") == [7], "STAGE3_PARENT_ACTOR_ACTION_CONTRACT")
+    _require(observation.get("normalized_state_features") == 7 and observation.get("normalized_wrench_features") == 6 and observation.get("frozen_task_feature_dim") == 256, "ONLINE_REPLAY_PARENT_CRITIC_CONFIG_OBSERVATION")
+    _require(offline_critic_config.get("transition_contract", {}).get("critic_action_shape") == [3, 7] and offline_critic_config.get("transition_contract", {}).get("policy_rate_hz") == 10, "ONLINE_REPLAY_PARENT_OFFLINE_TWIN_Q_TEMPORAL_ACTION")
+    _require(actor_config.get("chunk_size") == 50 and actor_config.get("output_features", {}).get("action", {}).get("shape") == [7], "ONLINE_REPLAY_PARENT_ACTOR_ACTION_CONTRACT")
     actor_image_source = _resolve(evidence["actor_image_adapter_source"]["path"]).read_text(encoding="utf-8")
     critic_source = _resolve(evidence["critic_source"]["path"]).read_text(encoding="utf-8")
-    _require("def build_actor_batch(" in actor_image_source and ".float().div_(255)" in actor_image_source, "STAGE3_PARENT_ACTOR_IMAGE_RANGE_SOURCE")
-    _require("image.dtype != torch.uint8" in critic_source and "value / 255.0" in critic_source, "STAGE3_PARENT_CRITIC_IMAGE_RANGE_SOURCE")
+    _require("def build_actor_batch(" in actor_image_source and ".float().div_(255)" in actor_image_source, "ONLINE_REPLAY_PARENT_ACTOR_IMAGE_RANGE_SOURCE")
+    _require("image.dtype != torch.uint8" in critic_source and "value / 255.0" in critic_source, "ONLINE_REPLAY_PARENT_CRITIC_IMAGE_RANGE_SOURCE")
     return {
         "status": "PASS",
         "temporal": {"data_grid_hz": 30, "policy_hz": 10, "H": 50, "K": 3, "action_features": 7},
@@ -480,37 +482,37 @@ def preflight_parent_binding(config_path: Path = DEFAULT_CONFIG) -> dict[str, An
     payload = dict(checkpoint_manifest)
     claimed_payload_sha = payload.pop("manifest_payload_sha256", None)
     actual_payload_sha = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    _require(claimed_payload_sha == checkpoint["checkpoint_manifest_payload_sha256"] == actual_payload_sha, "STAGE3_PARENT_G7A_MANIFEST_PAYLOAD")
+    _require(claimed_payload_sha == checkpoint["checkpoint_manifest_payload_sha256"] == actual_payload_sha, "ONLINE_REPLAY_PARENT_OFFLINE_TWIN_Q_MANIFEST_PAYLOAD")
     file_records = {item["relative_path"]: item["sha256"] for item in checkpoint_manifest.get("files", [])}
     for group_name in ("critic_parent", "target_critic_parent"):
         for artifact in binding[group_name]["artifacts"]:
             relative = Path(artifact["absolute_path"]).relative_to(Path(critic_arch["container_path"])).as_posix()
-            _require(file_records.get(relative) == artifact["sha256"], f"STAGE3_PARENT_G7A_MANIFEST_ARTIFACT:{artifact['logical_role']}")
+            _require(file_records.get(relative) == artifact["sha256"], f"ONLINE_REPLAY_PARENT_OFFLINE_TWIN_Q_MANIFEST_ARTIFACT:{artifact['logical_role']}")
     protected_snapshot = _json(Path(critic_arch["container_path"]) / "manifests/protected_snapshot.json")
     _require(
         protected_snapshot.get("files", {}).get("action_contract_v2", {}).get("sha256")
         == binding["action_contract_binding"]["sha256"],
-        "STAGE3_PARENT_G7A_ACTION_CONTRACT_BINDING",
+        "ONLINE_REPLAY_PARENT_OFFLINE_TWIN_Q_ACTION_CONTRACT_BINDING",
     )
     _require(
         protected_snapshot.get("files", {}).get("action_adapter_v2", {}).get("sha256")
         == evidence["temporal_action_adapter_binding"]["critic_action_adapter_sha256"],
-        "STAGE3_PARENT_G7A_ACTION_ADAPTER_BINDING",
+        "ONLINE_REPLAY_PARENT_OFFLINE_TWIN_Q_ACTION_ADAPTER_BINDING",
     )
     _require(
         protected_snapshot.get("g5_protected", {}).get("files", {}).get("dataset_normalizer", {}).get("sha256")
         == binding["normalizer_binding"]["sha256"],
-        "STAGE3_PARENT_G7A_NORMALIZER_BINDING",
+        "ONLINE_REPLAY_PARENT_OFFLINE_TWIN_Q_NORMALIZER_BINDING",
     )
 
     actor_tree = tree_record(Path(actor_arch["container_path"]), cache)
     critic_tree = tree_record(Path(critic_arch["container_path"]), cache)
     for actual, architecture, label in ((actor_tree, actor_arch, "ACTOR"), (critic_tree, critic_arch, "CRITIC")):
-        _require(actual["tree_sha256"] == architecture["container_tree_sha256"], f"STAGE3_PARENT_{label}_TREE_SHA")
-        _require(actual["file_count"] == architecture["container_file_count"], f"STAGE3_PARENT_{label}_TREE_COUNT")
-        _require(actual["total_file_size"] == architecture["container_total_file_size"], f"STAGE3_PARENT_{label}_TREE_SIZE")
+        _require(actual["tree_sha256"] == architecture["container_tree_sha256"], f"ONLINE_REPLAY_PARENT_{label}_TREE_SHA")
+        _require(actual["file_count"] == architecture["container_file_count"], f"ONLINE_REPLAY_PARENT_{label}_TREE_COUNT")
+        _require(actual["total_file_size"] == architecture["container_total_file_size"], f"ONLINE_REPLAY_PARENT_{label}_TREE_SIZE")
     full_checkpoint = Path(binding["continuation_semantics"]["cycle210_full_learner_checkpoint_expected_path"])
-    _require(not full_checkpoint.exists(), "STAGE3_PARENT_FULL_LEARNER_AVAILABILITY_DRIFT")
+    _require(not full_checkpoint.exists(), "ONLINE_REPLAY_PARENT_FULL_LEARNER_AVAILABILITY_DRIFT")
 
     actor_result = _actor_compatibility(binding)
     critic_result = _critic_compatibility(binding)
@@ -575,9 +577,9 @@ def render_parent_binding_markdown(report: Mapping[str, Any]) -> str:
     tq2 = report["artifacts"]["target_q2"]
     task = report["cross_component_preflight"]["task_feature"]
     lines = [
-        "# Stage-3 G0A approved-hybrid parent binding preflight v1",
+        "# Online Actor/Critic bootstrap-parent validation",
         "",
-        "This report freezes the explicitly approved new hybrid Stage-3 bootstrap. It is not an exact Phase-2 cycle210 learner continuation and it does not authorize training, GPU model loading, publication, networking, ROS, or robot execution.",
+        "This report freezes the explicitly approved online Actor/Critic bootstrap. It is not an exact cycle210 learner continuation and it does not authorize training, GPU model loading, publication, networking, ROS, or robot execution.",
         "",
         "## Decision and boundary",
         "",
@@ -591,7 +593,7 @@ def render_parent_binding_markdown(report: Mapping[str, Any]) -> str:
         "- `PARENT_PAYLOAD_COMPLETE_FOR_HYBRID=true`",
         "- `STRICT_PHASE2_CONTINUATION_AVAILABLE=false`",
         "",
-        "The cycle210 evaluation export supplies only the Stage-3 initial Actor. It has no Critic, target, optimizer, scheduler, RNG, sampler, or learner cursor. G7A-r2 independently supplies Q1/Q2 and the stored target Q1/Q2. G7A-r5 remains present and explicitly unselected.",
+        "The cycle210 Actor export supplies only the online initial Actor. It has no Critic, target, optimizer, scheduler, RNG, sampler, or learner cursor. The recorded offline Twin-Q parent independently supplies Q1/Q2 and target Q1/Q2; the alternate historical parent remains explicitly unselected.",
         "",
         "## Selected payloads",
         "",
@@ -605,7 +607,7 @@ def render_parent_binding_markdown(report: Mapping[str, Any]) -> str:
         "",
         f"Actor container tree: `{report['container_trees']['actor']['tree_sha256']}` ({report['container_trees']['actor']['file_count']} files, {report['container_trees']['actor']['total_file_size']} bytes).",
         "",
-        f"G7A-r2 container tree: `{report['container_trees']['g7a_r2']['tree_sha256']}` ({report['container_trees']['g7a_r2']['file_count']} files, {report['container_trees']['g7a_r2']['total_file_size']} bytes).",
+        f"Offline Twin-Q container tree: `{report['container_trees']['g7a_r2']['tree_sha256']}` ({report['container_trees']['g7a_r2']['file_count']} files, {report['container_trees']['g7a_r2']['total_file_size']} bytes).",
         "",
         "## Compatibility result",
         "",

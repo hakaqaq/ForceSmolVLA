@@ -12,7 +12,7 @@ import numpy as np
 
 from forcesmolvla.raw_to_lerobot_v3 import RuntimeContract, prepare_episode
 
-from .temporal_parity import (
+from forcesmolvla.rft.online.temporal_parity import (
     DEFAULT_RECORDED_FIXTURE,
     ROOT,
     directory_tree_sha256,
@@ -390,14 +390,14 @@ def export_recorded_ack_fixture(
         "onrobot_robotiq tool profile identity missing",
     )
 
-    parent = _load_json(parent_binding_path.resolve(), "Stage-3 parent binding")
+    parent = _load_json(parent_binding_path.resolve(), "online bootstrap parent binding")
     try:
         calibration_path = Path(parent["calibration_binding"]["absolute_path"]).resolve()
         runtime_path = Path(parent["runtime_contract_binding"]["absolute_path"]).resolve()
         normalizer_path = Path(parent["normalizer_binding"]["absolute_path"]).resolve()
         action_contract_path = Path(parent["action_contract_binding"]["absolute_path"]).resolve()
     except (KeyError, TypeError, ValueError) as error:
-        raise RecordedAckExportError("Stage-3 parent converter bindings missing") from error
+        raise RecordedAckExportError("online bootstrap parent converter bindings missing") from error
     calibration = _load_json(calibration_path, "Stage-2 calibration bundle")
     prepared = prepare_episode(
         raw_episode,

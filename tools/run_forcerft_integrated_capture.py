@@ -14,10 +14,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 DEFAULT_SHADOW_BACKEND = (
-    "forcesmolvla.rft.stage3.integrated_shadow_backend:IntegratedShadowBackend"
+    "forcesmolvla.rft.online.integrated_capture_backend:IntegratedCaptureBackend"
 )
 
-from forcesmolvla.rft.stage3.integrated_capture import (  # noqa: E402
+from forcesmolvla.rft.online.integrated_capture import (  # noqa: E402
     IntegratedCaptureError,
     build_capture_contract,
     capture_mode_semantics,
@@ -68,7 +68,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--async-learner",
         action="store_true",
-        help="require the unified Stage-3 inference/Learner runtime",
+        help="require the unified online Actor/Learner runtime",
     )
     parser.add_argument(
         "--launch",

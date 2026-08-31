@@ -1,4 +1,4 @@
-"""CPU-only recorder-stream bridge to an episode-sealed Stage-3 shadow outbox.
+"""CPU-only recorder-stream bridge to an episode-sealed online replay outbox.
 
 The bridge deliberately stops at a filesystem outbox.  It imports no ROS,
 robot, serving, networking, CUDA, or replay implementation and never emits a
@@ -35,7 +35,7 @@ from forcesmolvla.rft.detector_reward_transitions import (
     detector_macro_transitions,
 )
 
-from .gripper_provenance import (
+from forcesmolvla.rft.online.gripper_authority import (
     GripperAuthorityEvidence,
     GripperAuthorityKind,
     GripperGeneration,
@@ -44,7 +44,7 @@ from .gripper_provenance import (
     VALID_TERMINAL_OUTCOMES,
     close_full_action7_authority,
 )
-from .policy_lineage import InitialGripperAuthority, POLICY_LINEAGE_SCHEMA
+from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority, POLICY_LINEAGE_SCHEMA
 
 
 SCHEMA_VERSION = "forcesmolvla_stage3_production_bridge_transition.v1"
@@ -600,7 +600,7 @@ class _Timeline:
         return self.records[index]
 
 
-class Stage3ProductionBridge:
+class ProductionBridge:
     """Single-process filesystem development bridge with immutable WAL records."""
 
     def __init__(

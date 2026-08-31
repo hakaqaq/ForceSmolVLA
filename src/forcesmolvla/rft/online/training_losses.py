@@ -1,4 +1,4 @@
-"""Pure Stage-3 CPU loss primitives: online TD and expert-only Actor terms."""
+"""Pure online-replay CPU losses: Twin-Q TD and expert-only Actor terms."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class OnlineTwinQTDLoss:
 
 
 @dataclass(frozen=True)
-class Stage3ActorLoss:
+class OnlineActorLoss:
     total: Tensor
     expert_flow_matching: Tensor
     actor_q: Tensor
@@ -38,12 +38,12 @@ class Stage3ActorLoss:
 
 def _finite_fp32(value: Tensor, name: str, shape: tuple[int, ...] | None = None) -> Tensor:
     if not isinstance(value, Tensor) or not value.is_floating_point():
-        raise TypeError(f"STAGE3_{name}_MUST_BE_FLOATING_TENSOR")
+        raise TypeError(f"ONLINE_REPLAY_{name}_MUST_BE_FLOATING_TENSOR")
     if shape is not None and tuple(value.shape) != shape:
-        raise ValueError(f"STAGE3_{name}_SHAPE_INVALID")
+        raise ValueError(f"ONLINE_REPLAY_{name}_SHAPE_INVALID")
     value = value.float()
     if not torch.isfinite(value).all():
-        raise FloatingPointError(f"STAGE3_{name}_NONFINITE")
+        raise FloatingPointError(f"ONLINE_REPLAY_{name}_NONFINITE")
     return value
 
 
@@ -62,7 +62,7 @@ def _slice_observation(observation: Any, mask: Tensor) -> Any:
             key: value[mask] if isinstance(value, Tensor) and value.ndim and value.shape[0] == batch else value
             for key, value in observation.items()
         }
-    raise TypeError(f"STAGE3_OBSERVATION_TYPE_UNSUPPORTED:{type(observation).__name__}")
+    raise TypeError(f"ONLINE_REPLAY_OBSERVATION_TYPE_UNSUPPORTED:{type(observation).__name__}")
 
 
 def _call_critic(critic: nn.Module, observation: Any, action: Tensor, mask: Tensor) -> Tensor:
@@ -97,18 +97,18 @@ def compute_online_twin_q_td_loss(
     discount = _finite_fp32(discount, "DISCOUNT", (batch,))
     action = _finite_fp32(ack_behavior_action_k7, "ACK_ACTION", (batch, 3, 7))
     if terminated.dtype != torch.bool or tuple(terminated.shape) != (batch,):
-        raise ValueError("STAGE3_TERMINATED_MUST_BE_BOOL_VECTOR")
+        raise ValueError("ONLINE_REPLAY_TERMINATED_MUST_BE_BOOL_VECTOR")
     if bootstrap_mask.dtype != torch.bool or tuple(bootstrap_mask.shape) != (batch,):
-        raise ValueError("STAGE3_BOOTSTRAP_MASK_MUST_BE_BOOL_VECTOR")
+        raise ValueError("ONLINE_REPLAY_BOOTSTRAP_MASK_MUST_BE_BOOL_VECTOR")
     if behavior_mask.dtype != torch.bool or tuple(behavior_mask.shape) != (batch, 3):
-        raise ValueError("STAGE3_BEHAVIOR_MASK_MUST_BE_BOOL_BK")
+        raise ValueError("ONLINE_REPLAY_BEHAVIOR_MASK_MUST_BE_BOOL_BK")
     if not bool(behavior_mask.all()):
-        raise ValueError("STAGE3_ONLINE_TD_REQUIRES_FULL_K3_MACRO")
+        raise ValueError("ONLINE_REPLAY_ONLINE_TD_REQUIRES_FULL_K3_MACRO")
     if torch.any(terminated & bootstrap_mask) or not torch.equal(terminated, ~bootstrap_mask):
-        raise ValueError("STAGE3_TERMINAL_BOOTSTRAP_CONTRACT")
+        raise ValueError("ONLINE_REPLAY_TERMINAL_BOOTSTRAP_CONTRACT")
     expected_discount = bootstrap_mask.float() * float(gamma_decision)
     if not torch.equal(discount, expected_discount):
-        raise ValueError("STAGE3_DISCOUNT_ALREADY_ENCODES_BOOTSTRAP")
+        raise ValueError("ONLINE_REPLAY_DISCOUNT_ALREADY_ENCODES_BOOTSTRAP")
 
     nonterminal = ~terminated
     count = int(nonterminal.sum())
@@ -166,12 +166,12 @@ def compute_expert_only_flow_matching_loss(
 ) -> tuple[Tensor, int]:
     loss = _finite_fp32(per_feature_flow_loss, "FLOW_FEATURE_LOSS")
     if loss.ndim != 3 or loss.shape[-1] != 7:
-        raise ValueError("STAGE3_FLOW_FEATURE_LOSS_MUST_BE_BH7")
+        raise ValueError("ONLINE_REPLAY_FLOW_FEATURE_LOSS_MUST_BE_BH7")
     batch, horizon, _ = loss.shape
     if action_valid_mask_h50.dtype != torch.bool or tuple(action_valid_mask_h50.shape) != (batch, horizon):
-        raise ValueError("STAGE3_ACTION_VALID_MASK_SHAPE")
+        raise ValueError("ONLINE_REPLAY_ACTION_VALID_MASK_SHAPE")
     if expert_feature_mask_h50x7.dtype != torch.bool or tuple(expert_feature_mask_h50x7.shape) != tuple(loss.shape):
-        raise ValueError("STAGE3_EXPERT_FEATURE_MASK_SHAPE")
+        raise ValueError("ONLINE_REPLAY_EXPERT_FEATURE_MASK_SHAPE")
     mask = expert_feature_mask_h50x7 & action_valid_mask_h50.unsqueeze(-1)
     count = int(mask.sum())
     if count == 0:
@@ -185,12 +185,12 @@ def compute_min_twin_q_guidance_from_values(
     actor_q_valid: Tensor,
 ) -> tuple[Tensor, int]:
     if tuple(q1_value.shape) != tuple(q2_value.shape) or q1_value.ndim != 1:
-        raise ValueError("STAGE3_ACTOR_Q_VALUE_SHAPE")
+        raise ValueError("ONLINE_REPLAY_ACTOR_Q_VALUE_SHAPE")
     batch = q1_value.shape[0]
     q1_value = _finite_fp32(q1_value, "ACTOR_Q1", (batch,))
     q2_value = _finite_fp32(q2_value, "ACTOR_Q2", (batch,))
     if actor_q_valid.dtype != torch.bool or tuple(actor_q_valid.shape) != (batch,):
-        raise ValueError("STAGE3_ACTOR_Q_VALID_MASK")
+        raise ValueError("ONLINE_REPLAY_ACTOR_Q_VALID_MASK")
     count = int(actor_q_valid.sum())
     minimum = torch.minimum(q1_value, q2_value)
     if count == 0:
@@ -198,7 +198,7 @@ def compute_min_twin_q_guidance_from_values(
     return -minimum[actor_q_valid].mean(), count
 
 
-def compute_stage3_actor_objective(
+def compute_online_actor_objective(
     *,
     per_feature_flow_loss: Tensor,
     action_valid_mask_h50: Tensor,
@@ -212,7 +212,7 @@ def compute_stage3_actor_objective(
     eta: float,
     balance_weight: float = 0.01,
     z_weight: float = 0.001,
-) -> Stage3ActorLoss:
+) -> OnlineActorLoss:
     fm, expert_count = compute_expert_only_flow_matching_loss(
         per_feature_flow_loss, action_valid_mask_h50, expert_feature_mask_h50x7,
     )
@@ -223,10 +223,10 @@ def compute_stage3_actor_objective(
     z = _finite_fp32(z_loss.reshape(1), "Z_LOSS", (1,))[0]
     total = float(beta) * fm + float(eta) * actor_q + balance_weight * balance + z_weight * z
     _finite_fp32(total.reshape(1), "ACTOR_TOTAL", (1,))
-    return Stage3ActorLoss(total, fm, actor_q, balance, z, expert_count, actor_q_count)
+    return OnlineActorLoss(total, fm, actor_q, balance, z, expert_count, actor_q_count)
 
 
-def compute_stage3_min_twin_q_actor_loss(**kwargs):
+def compute_online_min_twin_q_actor_loss(**kwargs):
     """Reuse the accepted ActionContract-v2 path for TCP-only Q gradients."""
 
     from forcesmolvla.rft.frozen_vlm_trainability import compute_min_twin_q_actor_loss

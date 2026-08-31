@@ -1,49 +1,41 @@
-"""Append-only Stage-3 online-training contracts and CPU primitives."""
+"""Append-only online-replay training contracts and CPU primitives."""
 
 from importlib import import_module
 from typing import Any
 
 
 _MODULE_EXPORTS = {
-    "batch": ("MixedReplaySampler", "build_expert_feature_mask"),
-    "checkpoint": (
+    "training_batch": ("MixedReplaySampler", "build_expert_feature_mask"),
+    "learner_checkpoint": (
         "cpu_round_trip_online_checkpoint",
         "validate_online_checkpoint_metadata",
     ),
-    "contracts": (
-        "apply_stage3_trainability",
-        "load_stage3_contracts",
-        "validate_stage3_contracts",
+    "training_contracts": (
+        "apply_online_trainability",
+        "load_online_contracts",
+        "validate_online_contracts",
     ),
-    "losses": (
+    "training_losses": (
         "compute_expert_only_flow_matching_loss",
         "compute_min_twin_q_guidance_from_values",
         "compute_online_twin_q_td_loss",
-        "compute_stage3_actor_objective",
-        "compute_stage3_min_twin_q_actor_loss",
+        "compute_online_actor_objective",
+        "compute_online_min_twin_q_actor_loss",
     ),
     "learner": (
-        "ProvisionalStage3Learner",
-        "Stage3LossAPI",
+        "OnlineLearner",
+        "OnlineLossAPI",
         "TrainingStartsBlocked",
     ),
-    "loopback": (
-        "FakeActor",
-        "FakeGateway",
-        "canonical_report_sha256",
-        "recorded_fixture_blocked_report",
-        "run_synthetic_loopback",
-        "validate_loopback_report",
-    ),
-    "parent": (
+    "bootstrap_parent": (
         "ParentBindingError",
         "load_parent_binding",
         "preflight_parent_binding",
         "validate_parent_binding_schema",
         "validate_parent_binding_semantics",
     ),
-    "protocol": ("InferenceDisposition", "PolicyEpochGate", "TransportEnvelope"),
-    "publication": (
+    "policy_protocol": ("InferenceDisposition", "PolicyEpochGate", "TransportEnvelope"),
+    "policy_revision": (
         "EpisodeRevisionPin",
         "InMemoryRevisionStateMachine",
         "QuiescentBoundary",
@@ -55,8 +47,8 @@ _MODULE_EXPORTS = {
         "save_revision_registry",
         "validate_immutable_revision",
     ),
-    "replay": ("D_EXPERT", "R_ONLINE", "Stage3Replay"),
-    "transition": (
+    "replay": ("D_EXPERT", "R_ONLINE", "OnlineReplay"),
+    "transition_authority": (
         "AcceptedAck",
         "causal_zoh_ack_macro",
         "finalize_ack_transition",
@@ -64,7 +56,7 @@ _MODULE_EXPORTS = {
         "validate_episode_revision_bindings",
         "validate_reward_terminal",
     ),
-    "update_credit": ("CreditsUnavailable", "UpdateCreditLedger"),
+    "sample_credit": ("CreditsUnavailable", "UpdateCreditLedger"),
 }
 _EXPORTS = {
     name: module_name

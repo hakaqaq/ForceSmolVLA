@@ -1,4 +1,4 @@
-"""Recorded ACK parity between the Phase-2 converter and Stage-3 projector."""
+"""Recorded ACK parity between the offline converter and online projector."""
 
 from __future__ import annotations
 
@@ -22,7 +22,11 @@ from forcesmolvla.raw_to_lerobot_v3 import (
 )
 from forcesmolvla.temporal import controller_reference_grid
 
-from .transition import AcceptedAck, causal_zoh_ack_macro, normalized_ack_behavior_action
+from forcesmolvla.rft.online.transition_authority import (
+    AcceptedAck,
+    causal_zoh_ack_macro,
+    normalized_ack_behavior_action,
+)
 
 
 ROOT = Path(__file__).parents[4]
@@ -64,7 +68,7 @@ def directory_tree_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     files = sorted(item for item in root.rglob("*") if item.is_file())
     if not files:
-        raise TemporalParityError("STAGE3_RECORDED_RAW_SESSION_EMPTY")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_RAW_SESSION_EMPTY")
     for item in files:
         relative = item.relative_to(root).as_posix().encode("utf-8")
         digest.update(len(relative).to_bytes(4, "little"))
@@ -89,13 +93,13 @@ def _validate(schema_path: Path, value: Mapping[str, Any], label: str) -> None:
 
 def validate_recorded_ack_fixture(value: Mapping[str, Any]) -> dict[str, Any]:
     fixture = json.loads(json.dumps(dict(value), allow_nan=False))
-    _validate(FIXTURE_SCHEMA, fixture, "STAGE3_RECORDED_ACK_FIXTURE_SCHEMA")
+    _validate(FIXTURE_SCHEMA, fixture, "ONLINE_REPLAY_RECORDED_ACK_FIXTURE_SCHEMA")
     return fixture
 
 
 def validate_temporal_parity_report(value: Mapping[str, Any]) -> dict[str, Any]:
     report = json.loads(json.dumps(dict(value), allow_nan=False))
-    _validate(REPORT_SCHEMA, report, "STAGE3_TEMPORAL_PARITY_REPORT_SCHEMA")
+    _validate(REPORT_SCHEMA, report, "ONLINE_REPLAY_TEMPORAL_PARITY_REPORT_SCHEMA")
     return report
 
 
@@ -217,7 +221,7 @@ def _runtime_contract(fixture: Mapping[str, Any]) -> RuntimeContract:
         return RuntimeContract.from_approved_json(path)
     if payload.get("artifact_status") == "development_only":
         return RuntimeContract.from_development_json(path)
-    raise TemporalParityError("STAGE3_PHASE2_RUNTIME_CONTRACT_STATUS")
+    raise TemporalParityError("ONLINE_REPLAY_PHASE2_RUNTIME_CONTRACT_STATUS")
 
 
 def _phase2_episode_inputs(
@@ -227,15 +231,15 @@ def _phase2_episode_inputs(
     raw_root = _resolve(provenance["raw_session_path"]).resolve()
     episode = _resolve(provenance["raw_episode_path"]).resolve()
     if not raw_root.is_dir():
-        raise TemporalParityError("STAGE3_RECORDED_RAW_SESSION_MISSING")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_RAW_SESSION_MISSING")
     if not episode.is_dir() or not episode.is_relative_to(raw_root):
-        raise TemporalParityError("STAGE3_RECORDED_RAW_EPISODE_MISSING_OR_OUTSIDE_SESSION")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_RAW_EPISODE_MISSING_OR_OUTSIDE_SESSION")
     session_path = raw_root / "session.json"
     if not session_path.is_file():
-        raise TemporalParityError("STAGE3_RECORDED_SESSION_MANIFEST_MISSING")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_SESSION_MANIFEST_MISSING")
     calibration_path = _resolve(fixture["bindings"]["calibration_bundle"]["path"])
     if not calibration_path.is_file():
-        raise TemporalParityError("STAGE3_PHASE2_CALIBRATION_BUNDLE_MISSING")
+        raise TemporalParityError("ONLINE_REPLAY_PHASE2_CALIBRATION_BUNDLE_MISSING")
     return (
         episode,
         json.loads(session_path.read_text(encoding="utf-8")),
@@ -247,11 +251,11 @@ def _phase2_episode_inputs(
 def _stream(episode: Path, name: str) -> list[dict[str, Any]]:
     path = episode / "streams" / f"{name}.jsonl"
     if not path.is_file():
-        raise TemporalParityError(f"STAGE3_RECORDED_STREAM_MISSING:{name}")
+        raise TemporalParityError(f"ONLINE_REPLAY_RECORDED_STREAM_MISSING:{name}")
     try:
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
     except (OSError, TypeError, ValueError) as error:
-        raise TemporalParityError(f"STAGE3_RECORDED_STREAM_INVALID:{name}") from error
+        raise TemporalParityError(f"ONLINE_REPLAY_RECORDED_STREAM_INVALID:{name}") from error
 
 
 def _pose_without_frame_id(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -276,7 +280,7 @@ def _validate_recorded_live_sources(
         fixture["synthetic"] is not False
         or fixture["capture_origin"] != "historical_native_real"
     ):
-        raise TemporalParityError("STAGE3_RECORDED_CAPTURE_CLASSIFICATION_INVALID")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_CAPTURE_CLASSIFICATION_INVALID")
 
     references = {
         int(row["accepted_receive_monotonic_ns"]): row
@@ -293,7 +297,7 @@ def _validate_recorded_live_sources(
     for reference in fixture["accepted_references"]:
         raw = references.get(int(reference["accepted_receive_monotonic_ns"]))
         if raw is None:
-            raise TemporalParityError("STAGE3_RECORDED_REFERENCE_IDENTITY_MISSING")
+            raise TemporalParityError("ONLINE_REPLAY_RECORDED_REFERENCE_IDENTITY_MISSING")
         if (
             int(raw.get("source_stamp_ns", 0)) != int(reference["source_stamp_ns"])
             or raw.get("frame_id") != reference["frame_id"]
@@ -303,7 +307,7 @@ def _validate_recorded_live_sources(
             or reference["gripper_command_id_origin"]
             != "recorded_gripper_target_and_goal_status"
         ):
-            raise TemporalParityError("STAGE3_RECORDED_REFERENCE_SOURCE_MISMATCH")
+            raise TemporalParityError("ONLINE_REPLAY_RECORDED_REFERENCE_SOURCE_MISMATCH")
 
     authority = fixture["selection"]["gripper_authority"]
     target_rows = [
@@ -315,7 +319,7 @@ def _validate_recorded_live_sources(
         if row.get("action_goal_id") == authority["action_goal_id"]
     ]
     if len(target_rows) != 1 or len(status_rows) != 1:
-        raise TemporalParityError("STAGE3_RECORDED_GRIPPER_ORIGIN_MISSING")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_GRIPPER_ORIGIN_MISSING")
     target, status = target_rows[0], status_rows[0]
     expected_authority = {
         "action_goal_id": target.get("action_goal_id"),
@@ -329,19 +333,19 @@ def _validate_recorded_live_sources(
         "outcome": status.get("outcome"),
     }
     if expected_authority != authority:
-        raise TemporalParityError("STAGE3_RECORDED_GRIPPER_ORIGIN_MISMATCH")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_GRIPPER_ORIGIN_MISMATCH")
     if int(authority["finished_monotonic_ns"]) > int(fixture["temporal"]["session_start_ack_ns"]):
-        raise TemporalParityError("STAGE3_INITIAL_GRIPPER_AUTHORITY_NOT_ESTABLISHED")
+        raise TemporalParityError("ONLINE_REPLAY_INITIAL_GRIPPER_AUTHORITY_NOT_ESTABLISHED")
     if any(
         reference["gripper_command_id"] != authority["action_goal_id"]
         for reference in fixture["accepted_references"]
     ):
-        raise TemporalParityError("STAGE3_RECORDED_REFERENCE_GRIPPER_ORIGIN_MISMATCH")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_REFERENCE_GRIPPER_ORIGIN_MISMATCH")
 
     for acknowledgement in fixture["reference_acks"]:
         raw = acknowledgements.get(int(acknowledgement["receive_monotonic_ns"]))
         if raw is None:
-            raise TemporalParityError("STAGE3_RECORDED_ACK_IDENTITY_MISSING")
+            raise TemporalParityError("ONLINE_REPLAY_RECORDED_ACK_IDENTITY_MISSING")
         payload = raw.get("payload", {})
         sequence = int(payload.get("request_sequence", -1))
         stamp = int(payload.get("request_stamp_ns", 0))
@@ -357,7 +361,7 @@ def _validate_recorded_live_sources(
             or _pose_without_frame_id(payload.get("accepted_pose", {}))
             != acknowledgement["payload"]["accepted_pose"]
         ):
-            raise TemporalParityError("STAGE3_RECORDED_ACK_SOURCE_MISMATCH")
+            raise TemporalParityError("ONLINE_REPLAY_RECORDED_ACK_SOURCE_MISMATCH")
         safe = safe_actions.get(int(acknowledgement["action_source_receive_monotonic_ns"]))
         safe_payload = {} if safe is None else safe.get("payload", {})
         arbitration = safe_payload.get("arbitration", {})
@@ -378,7 +382,7 @@ def _validate_recorded_live_sources(
             or acknowledgement["gripper_command_id"] != authority["action_goal_id"]
             or acknowledgement["gripper_ack_command_id"] != authority["action_goal_id"]
         ):
-            raise TemporalParityError("STAGE3_RECORDED_ACTION_SOURCE_LINEAGE_MISMATCH")
+            raise TemporalParityError("ONLINE_REPLAY_RECORDED_ACTION_SOURCE_LINEAGE_MISMATCH")
 
 
 def _validate_transition_selection(fixture: Mapping[str, Any]) -> None:
@@ -387,7 +391,7 @@ def _validate_transition_selection(fixture: Mapping[str, Any]) -> None:
     try:
         import pandas as pd
     except ImportError as error:
-        raise TemporalParityError("STAGE3_TERMINAL_INDEX_READER_MISSING") from error
+        raise TemporalParityError("ONLINE_REPLAY_TERMINAL_INDEX_READER_MISSING") from error
     selection = fixture["selection"]
     path = _resolve(fixture["bindings"]["terminal_transition_index"]["path"])
     try:
@@ -395,9 +399,9 @@ def _validate_transition_selection(fixture: Mapping[str, Any]) -> None:
         full_rows = frame[frame["transition_index"] == selection["full_macro_transition_index"]]
         terminal_rows = frame[frame["transition_index"] == selection["terminal_transition_index"]]
     except (OSError, KeyError, TypeError, ValueError) as error:
-        raise TemporalParityError("STAGE3_TERMINAL_INDEX_INVALID") from error
+        raise TemporalParityError("ONLINE_REPLAY_TERMINAL_INDEX_INVALID") from error
     if len(full_rows) != 1 or len(terminal_rows) != 1:
-        raise TemporalParityError("STAGE3_TERMINAL_TRANSITION_IDENTITY_MISSING")
+        raise TemporalParityError("ONLINE_REPLAY_TERMINAL_TRANSITION_IDENTITY_MISSING")
     full = full_rows.iloc[0]
     terminal = terminal_rows.iloc[0]
     start = int(selection["prepared_grid_start_index"])
@@ -421,7 +425,7 @@ def _validate_transition_selection(fixture: Mapping[str, Any]) -> None:
         and bool(terminal["terminated"]) is True
         and int(terminal["bootstrap_mask"]) == 0
     ):
-        raise TemporalParityError("STAGE3_TERMINAL_TRANSITION_SOURCE_MISMATCH")
+        raise TemporalParityError("ONLINE_REPLAY_TERMINAL_TRANSITION_SOURCE_MISMATCH")
 
 
 def _validate_selection_against_prepared(
@@ -438,7 +442,7 @@ def _validate_selection_against_prepared(
         and int(selection["next_observation_grid_index"]) == 3
         and last_executable == terminal_local - 1
     ):
-        raise TemporalParityError("STAGE3_RECORDED_SELECTION_BOUNDARY_INVALID")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_SELECTION_BOUNDARY_INVALID")
     grid = np.asarray(prepared.tuple_host_ns[start:stop], dtype=np.int64)
     temporal = fixture["temporal"]
     if not (
@@ -447,12 +451,12 @@ def _validate_selection_against_prepared(
         and int(temporal["terminal_boundary_ns"]) == int(grid[last_executable])
         and int(temporal["policy_anchor_phase_on_30hz_grid"]) == 0
     ):
-        raise TemporalParityError("STAGE3_RECORDED_SELECTION_TEMPORAL_MISMATCH")
+        raise TemporalParityError("ONLINE_REPLAY_RECORDED_SELECTION_TEMPORAL_MISMATCH")
 
     expected_roles = {"current": 0, "next": 3, "terminal": terminal_local}
     observations = selection["observation_provenance"]
     if {row["role"]: int(row["local_grid_index"]) for row in observations} != expected_roles:
-        raise TemporalParityError("STAGE3_OBSERVATION_BOUNDARY_ROLE_MISMATCH")
+        raise TemporalParityError("ONLINE_REPLAY_OBSERVATION_BOUNDARY_ROLE_MISMATCH")
     provenance_fields = (
         "state_pose_source_stamp_ns", "camera1_receive_monotonic_ns",
         "camera2_receive_monotonic_ns", "gripper_source_stamp_ns",
@@ -466,7 +470,7 @@ def _validate_selection_against_prepared(
             external_path = prepared.camera1_paths[global_index].relative_to(episode).as_posix()
             wrist_path = prepared.camera2_paths[global_index].relative_to(episode).as_posix()
         except ValueError as error:
-            raise TemporalParityError("STAGE3_OBSERVATION_CAMERA_OUTSIDE_EPISODE") from error
+            raise TemporalParityError("ONLINE_REPLAY_OBSERVATION_CAMERA_OUTSIDE_EPISODE") from error
         if not (
             int(row["global_grid_index"]) == global_index
             and int(row["grid_monotonic_ns"]) == int(prepared.tuple_host_ns[global_index])
@@ -479,7 +483,7 @@ def _validate_selection_against_prepared(
                 for field in provenance_fields
             )
         ):
-            raise TemporalParityError("STAGE3_OBSERVATION_BOUNDARY_SOURCE_MISMATCH")
+            raise TemporalParityError("ONLINE_REPLAY_OBSERVATION_BOUNDARY_SOURCE_MISMATCH")
     _validate_transition_selection(fixture)
     _validate_recorded_live_sources(fixture, episode)
     return slice(start, stop)
@@ -516,13 +520,13 @@ def _validate_gripper_identity(
     for acknowledgement in acknowledgements:
         index = int(np.searchsorted(reference_times, acknowledgement["receive_monotonic_ns"], side="right") - 1)
         if index < 0:
-            raise TemporalParityError("STAGE3_ACK_HAS_NO_CAUSAL_REFERENCE")
+            raise TemporalParityError("ONLINE_REPLAY_ACK_HAS_NO_CAUSAL_REFERENCE")
         expected = references[index]["gripper_command_id"]
         if not (
             expected == acknowledgement["gripper_command_id"]
             == acknowledgement["gripper_ack_command_id"]
         ):
-            raise TemporalParityError("STAGE3_RECORDED_GRIPPER_COMMAND_ID_MISMATCH")
+            raise TemporalParityError("ONLINE_REPLAY_RECORDED_GRIPPER_COMMAND_ID_MISMATCH")
 
 
 def _macro_plan(grid: np.ndarray, temporal: Mapping[str, Any]) -> tuple[list[int], list[dict[str, Any]]]:
@@ -551,7 +555,7 @@ def _anchor_states(fixture: Mapping[str, Any]) -> dict[int, np.ndarray]:
         for row in fixture["anchor_states"]
     }
     if len(result) != len(fixture["anchor_states"]):
-        raise TemporalParityError("STAGE3_DUPLICATE_ANCHOR_STATE")
+        raise TemporalParityError("ONLINE_REPLAY_DUPLICATE_ANCHOR_STATE")
     return result
 
 
@@ -575,12 +579,12 @@ def _identity_for_ack_times(
     for row in acknowledgements:
         timestamp = int(row["receive_monotonic_ns"])
         if timestamp in by_time:
-            raise TemporalParityError("STAGE3_DUPLICATE_RECORDED_ACK_TIMESTAMP")
+            raise TemporalParityError("ONLINE_REPLAY_DUPLICATE_RECORDED_ACK_TIMESTAMP")
         by_time[timestamp] = row
     try:
         selected = [by_time[int(timestamp)] for timestamp in ack_times]
     except KeyError as error:
-        raise TemporalParityError("STAGE3_CONVERTER_ACK_PROVENANCE_MISSING") from error
+        raise TemporalParityError("ONLINE_REPLAY_CONVERTER_ACK_PROVENANCE_MISSING") from error
     return {
         "ack_ids": [str(row["ack_id"]) for row in selected],
         "gripper_command_ids": [str(row["gripper_command_id"]) for row in selected],
@@ -659,7 +663,7 @@ def _stage2_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _stage3_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
+def _online_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
     temporal = fixture["temporal"]
     references = fixture["accepted_references"]
     acknowledgements = fixture["reference_acks"]
@@ -681,7 +685,7 @@ def _stage3_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
         for row, action in zip(acknowledgements, action7, strict=True)
     ]
     if not np.array_equal(event_ns, [record.receive_monotonic_ns for record in records]):
-        raise TemporalParityError("STAGE3_ACK_EVENT_ORDER_DRIFT")
+        raise TemporalParityError("ONLINE_REPLAY_ACK_EVENT_ORDER_DRIFT")
     grid = controller_reference_grid(
         session_start_ack_ns=int(temporal["session_start_ack_ns"]),
         episode_end_ns=int(temporal["episode_end_ns"]),
@@ -694,7 +698,7 @@ def _stage3_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
     identity_macros: list[dict[str, Any]] = []
     for anchor in full:
         if anchor not in states:
-            raise TemporalParityError(f"STAGE3_ANCHOR_STATE_MISSING:{anchor}")
+            raise TemporalParityError(f"ONLINE_REPLAY_ANCHOR_STATE_MISSING:{anchor}")
         macro = causal_zoh_ack_macro(
             records,
             grid[anchor:anchor + 3],
@@ -729,8 +733,8 @@ def _stage3_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
         })
     result = {
         "projector": {
-            "module": "forcesmolvla.rft.stage3.temporal_parity",
-            "symbol": "_stage3_project",
+            "module": "forcesmolvla.rft.online.temporal_parity",
+            "symbol": "_online_project",
         },
         "grid_monotonic_ns": grid.tolist(),
         "policy_anchor_phase_on_30hz_grid": int(temporal["policy_anchor_phase_on_30hz_grid"]),
@@ -747,18 +751,18 @@ def _stage3_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _comparison(stage2: Mapping[str, Any], stage3: Mapping[str, Any]) -> dict[str, bool]:
-    grid = np.asarray(stage3["grid_monotonic_ns"], dtype=np.int64)
+def _comparison(stage2: Mapping[str, Any], online: Mapping[str, Any]) -> dict[str, bool]:
+    grid = np.asarray(online["grid_monotonic_ns"], dtype=np.int64)
     indices = (grid * 30 + 500_000_000) // 1_000_000_000
     rational = np.array_equal(grid, (indices * 1_000_000_000 + 15) // 30)
-    anchors = stage3["anchor_grid_indices"]
-    phase = stage3["policy_anchor_phase_on_30hz_grid"]
-    paired = zip(stage2["macros"], stage3["macros"], strict=True)
+    anchors = online["anchor_grid_indices"]
+    phase = online["policy_anchor_phase_on_30hz_grid"]
+    paired = zip(stage2["macros"], online["macros"], strict=True)
     pairs = list(paired)
     has_macros = bool(pairs)
     identity_pairs = list(zip(
         stage2["raw_identity_provenance"]["macros"],
-        stage3["raw_identity_provenance"]["macros"],
+        online["raw_identity_provenance"]["macros"],
         strict=True,
     ))
 
@@ -777,7 +781,7 @@ def _comparison(stage2: Mapping[str, Any], stage3: Mapping[str, Any]) -> dict[st
         )
 
     result = {
-        "rational_30hz_grid": rational and stage2["grid_monotonic_ns"] == stage3["grid_monotonic_ns"],
+        "rational_30hz_grid": rational and stage2["grid_monotonic_ns"] == online["grid_monotonic_ns"],
         "policy_10hz_anchor_phase": (
             stage2["anchor_grid_indices"] == anchors
             and stage2["policy_anchor_phase_on_30hz_grid"] == phase
@@ -809,17 +813,17 @@ def _comparison(stage2: Mapping[str, Any], stage3: Mapping[str, Any]) -> dict[st
         "normalized_kx7": array_equal("normalized_delta_action_k7"),
         "macro_100ms": (
             has_macros
-            and all(len(row["grid_monotonic_ns"]) == 3 for row in stage3["macros"])
+            and all(len(row["grid_monotonic_ns"]) == 3 for row in online["macros"])
             and (len(anchors) < 2 or all(
                 grid[right] - grid[left] == 100_000_000
                 for left, right in zip(anchors, anchors[1:])
             ))
         ),
-        "terminal_boundary": stage2["terminal_boundary_ns"] == stage3["terminal_boundary_ns"],
-        "partial_macro_quarantine": stage2["partial_macro_quarantine"] == stage3["partial_macro_quarantine"],
+        "terminal_boundary": stage2["terminal_boundary_ns"] == online["terminal_boundary_ns"],
+        "partial_macro_quarantine": stage2["partial_macro_quarantine"] == online["partial_macro_quarantine"],
         "current_next_terminal_observations": (
-            stage2["observation_boundary"] == stage3["observation_boundary"]
-            and [row["role"] for row in stage3["observation_boundary"]]
+            stage2["observation_boundary"] == online["observation_boundary"]
+            and [row["role"] for row in online["observation_boundary"]]
             == ["current", "next", "terminal"]
         ),
     }
@@ -834,8 +838,8 @@ def run_recorded_ack_parity(
     value = validate_recorded_ack_fixture(fixture)
     bindings = _binding_checks(value)
     stage2 = _stage2_project(value)
-    stage3 = _stage3_project(value)
-    comparisons = _comparison(stage2, stage3)
+    online = _online_project(value)
+    comparisons = _comparison(stage2, online)
     eligible = (
         value["fixture_kind"] == "recorded_live"
         and value["provenance"]["recorded_live_evidence"] is True
@@ -860,7 +864,7 @@ def run_recorded_ack_parity(
         "comparisons": comparisons,
         "missing_required_fields": [] if eligible else list(MISSING_RECORDED_FIELDS),
         "stage2": stage2,
-        "stage3": stage3,
+        "stage3": online,
         "G1_TEMPORAL_PARITY_GATE": gate,
         "RECORDED_FIXTURE_CAPTURE_REQUIRED": not eligible,
         "G1_GATE_PASSED": gate_pass,

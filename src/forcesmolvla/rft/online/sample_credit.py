@@ -23,7 +23,7 @@ class CreditSnapshot:
 class UpdateCreditLedger:
     def __init__(self, *, credits_per_transition: int, credits_per_joint_cycle: int) -> None:
         if credits_per_transition <= 0 or credits_per_joint_cycle <= 0:
-            raise ValueError("STAGE3_CREDIT_RATE_MUST_BE_POSITIVE")
+            raise ValueError("ONLINE_REPLAY_CREDIT_RATE_MUST_BE_POSITIVE")
         self.credits_per_transition = int(credits_per_transition)
         self.credits_per_joint_cycle = int(credits_per_joint_cycle)
         self._minted = 0
@@ -37,7 +37,7 @@ class UpdateCreditLedger:
 
     def mint_for_unique_online_transition(self, transition_uid: str) -> bool:
         if not transition_uid:
-            raise ValueError("STAGE3_CREDIT_UID_EMPTY")
+            raise ValueError("ONLINE_REPLAY_CREDIT_UID_EMPTY")
         with self._condition:
             if transition_uid in self._credited_uids:
                 return False
@@ -57,10 +57,10 @@ class UpdateCreditLedger:
                 while self.available < self.credits_per_joint_cycle:
                     remaining = None if deadline is None else deadline - time.monotonic()
                     if remaining is not None and remaining <= 0:
-                        raise CreditsUnavailable("STAGE3_LEARNER_BLOCKED_NO_CREDITS")
+                        raise CreditsUnavailable("ONLINE_REPLAY_LEARNER_BLOCKED_NO_CREDITS")
                     self._condition.wait(remaining)
             elif self.available < self.credits_per_joint_cycle:
-                raise CreditsUnavailable("STAGE3_LEARNER_BLOCKED_NO_CREDITS")
+                raise CreditsUnavailable("ONLINE_REPLAY_LEARNER_BLOCKED_NO_CREDITS")
             self._consumed += self.credits_per_joint_cycle
 
     def snapshot(self) -> CreditSnapshot:
@@ -97,5 +97,5 @@ class UpdateCreditLedger:
             or ledger.available < 0
             or ledger._consumed % ledger.credits_per_joint_cycle != 0
         ):
-            raise ValueError("STAGE3_CREDIT_STATE_INCONSISTENT")
+            raise ValueError("ONLINE_REPLAY_CREDIT_STATE_INCONSISTENT")
         return ledger

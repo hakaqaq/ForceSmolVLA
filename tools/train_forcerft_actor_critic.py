@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Continue the real online-R warmup with ten Stage-3 joint cycles."""
+"""Continue online-replay warmup with Actor/Critic joint cycles."""
 
 from __future__ import annotations
 
@@ -76,10 +76,10 @@ def assert_optimizer_ownership(
     actor_ids = [id(p) for group in actor_optimizer.param_groups for p in group["params"]]
     critic_ids = [id(p) for group in critic_optimizer.param_groups for p in group["params"]]
     frozen_ids = {id(p) for p in frozen_parameters}
-    require(len(actor_ids) == len(set(actor_ids)), "STAGE3_JOINT_ACTOR_OPTIMIZER_DUPLICATE")
-    require(len(critic_ids) == len(set(critic_ids)), "STAGE3_JOINT_CRITIC_OPTIMIZER_DUPLICATE")
-    require(not (set(actor_ids) & set(critic_ids)), "STAGE3_JOINT_OPTIMIZER_OVERLAP")
-    require(not (set(actor_ids) & frozen_ids), "STAGE3_JOINT_FROZEN_PARAMETER_IN_ACTOR_OPTIMIZER")
+    require(len(actor_ids) == len(set(actor_ids)), "ONLINE_REPLAY_JOINT_ACTOR_OPTIMIZER_DUPLICATE")
+    require(len(critic_ids) == len(set(critic_ids)), "ONLINE_REPLAY_JOINT_CRITIC_OPTIMIZER_DUPLICATE")
+    require(not (set(actor_ids) & set(critic_ids)), "ONLINE_REPLAY_JOINT_OPTIMIZER_OVERLAP")
+    require(not (set(actor_ids) & frozen_ids), "ONLINE_REPLAY_JOINT_FROZEN_PARAMETER_IN_ACTOR_OPTIMIZER")
 
 
 class JointDemoReplay(warmup.DemoReplay):
@@ -180,7 +180,7 @@ def build_actor_training_batch(
 
 def _range_update(current: list[float], value: torch.Tensor) -> None:
     value = value.detach().float()
-    require(bool(torch.isfinite(value).all()), "STAGE3_JOINT_NONFINITE_Q")
+    require(bool(torch.isfinite(value).all()), "ONLINE_REPLAY_JOINT_NONFINITE_Q")
     current[0] = min(current[0], float(value.min().cpu()))
     current[1] = max(current[1], float(value.max().cpu()))
 
@@ -211,7 +211,7 @@ def critic_step(
     microbatch_slot=None,
 ) -> dict[str, Any]:
     from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
-    from forcesmolvla.rft.stage3.losses import compute_online_twin_q_td_loss
+    from forcesmolvla.rft.online.training_losses import compute_online_twin_q_td_loss
     from forcesmolvla.rft.throughput_v2 import fast_polyak_update, index_actor_batch
 
     device = batch["reward"].device
@@ -219,7 +219,7 @@ def critic_step(
     microbatch_size = batch_size if microbatch_size is None else int(microbatch_size)
     require(
         1 <= microbatch_size <= batch_size and batch_size % microbatch_size == 0,
-        "STAGE3_JOINT_CRITIC_MICROBATCH",
+        "ONLINE_REPLAY_JOINT_CRITIC_MICROBATCH",
     )
     slot = microbatch_slot or (lambda _kind: nullcontext())
     optimizer.zero_grad(set_to_none=True)
@@ -254,7 +254,7 @@ def critic_step(
                     chunk = flow.sample(
                         actor, next_actor_batch, noise,
                         call_id=(
-                            f"stage3-joint-critic-{step:03d}"
+                            f"online-actor-critic-critic-{step:03d}"
                             f"-micro={start}:{start + microbatch_size}"
                         ),
                         purpose="td_next",
@@ -285,7 +285,7 @@ def critic_step(
                 == result.random_candidate_calls
                 == result.mc_return_reads
                 == 0,
-                "STAGE3_JOINT_CRITIC_NOT_PURE_TD",
+                "ONLINE_REPLAY_JOINT_CRITIC_NOT_PURE_TD",
             )
             weight = microbatch_size / batch_size
             (result.total * weight).backward()
@@ -302,7 +302,7 @@ def critic_step(
             all(parameter.grad is None for parameter in actor.parameters())
             and all(parameter.grad is None for target in (q1_target, q2_target) for parameter in target.parameters())
             and all(parameter.grad is None or bool(torch.isfinite(parameter.grad).all()) for parameter in parameters),
-            "STAGE3_JOINT_CRITIC_GRADIENT_OWNERSHIP",
+            "ONLINE_REPLAY_JOINT_CRITIC_GRADIENT_OWNERSHIP",
         )
         torch.nn.utils.clip_grad_norm_(parameters, 10.0)
         optimizer.step()
@@ -337,14 +337,17 @@ def actor_step(
 ) -> dict[str, Any]:
     from forcesmolvla.force_token import RouterState
     from forcesmolvla.rft.frozen_vlm_trainability import FROZEN_PREFIXES, frozen_prefix_flow_matching_terms
-    from forcesmolvla.rft.stage3.losses import compute_stage3_actor_objective, compute_stage3_min_twin_q_actor_loss
+    from forcesmolvla.rft.online.training_losses import (
+        compute_online_actor_objective,
+        compute_online_min_twin_q_actor_loss,
+    )
     from forcesmolvla.rft.throughput_v2 import index_actor_batch
     from forcesmolvla.router_training import collect_pass_a_statistics, microbatch_two_pass_terms
 
     device = batch["expert_rows"].device
     batch_size = len(batch["identities"])
     microbatch = int(config["batching"]["flow_inference_subbatch"])
-    require(batch_size == 24 and microbatch == 4, "STAGE3_JOINT_ACTOR_BATCH")
+    require(batch_size == 24 and microbatch == 4, "ONLINE_REPLAY_JOINT_ACTOR_BATCH")
     parameters = [parameter for parameter in actor.parameters() if parameter.requires_grad]
     slot = microbatch_slot or (lambda _kind: nullcontext())
     with slot("actor_setup"):
@@ -354,7 +357,7 @@ def actor_step(
         valid = batch["current_actor_batch"]["action_valid_mask"].bool()
         expert_rows = batch["expert_rows"]
         total_expert_features = int((valid & expert_rows[:, None]).sum()) * 7
-        require(total_expert_features > 0, "STAGE3_JOINT_NO_EXPERT_FM")
+        require(total_expert_features > 0, "ONLINE_REPLAY_JOINT_NO_EXPERT_FM")
     fm_total = q_total = 0.0
     q1_values: list[torch.Tensor] = []
     q2_values: list[torch.Tensor] = []
@@ -381,7 +384,7 @@ def actor_step(
                     actor_micro,
                     noise=fm_noise,
                     time=fm_time,
-                    call_id=f"stage3-joint-cycle={cycle}-fm={start}",
+                    call_id=f"online-actor-critic-cycle={cycle}-fm={start}",
                 )
             detached_router = RouterState(
                 logits_fp32=router_state.logits_fp32.detach(),
@@ -402,11 +405,11 @@ def actor_step(
                     actor,
                     actor_micro,
                     q_noise,
-                    call_id=f"stage3-joint-cycle={cycle}-actor-q={start}",
+                    call_id=f"online-actor-critic-cycle={cycle}-actor-q={start}",
                     purpose="actor_guidance",
                 )
                 chunk.retain_grad()
-                q_contract_loss, q1_value, q2_value, _q_action = compute_stage3_min_twin_q_actor_loss(
+                q_contract_loss, q1_value, q2_value, _q_action = compute_online_min_twin_q_actor_loss(
                     q1=q1,
                     q2=q2,
                     observation=observation,
@@ -418,7 +421,7 @@ def actor_step(
             expert_count = int((local_valid & local_expert[:, None]).sum()) * 7
             fm_weight = expert_count / total_expert_features
             q_weight = microbatch / batch_size
-            terms = compute_stage3_actor_objective(
+            terms = compute_online_actor_objective(
                 per_feature_flow_loss=flow7,
                 action_valid_mask_h50=local_valid,
                 expert_feature_mask_h50x7=expert_mask,
@@ -432,7 +435,7 @@ def actor_step(
                 balance_weight=float(config["loss"]["balance_weight"]) / (batch_size / microbatch),
                 z_weight=float(config["loss"]["z_weight"]) / (batch_size / microbatch),
             )
-            require(torch.equal(q_contract_loss, terms.actor_q), "STAGE3_JOINT_ACTOR_Q_NOT_MIN_TWIN")
+            require(torch.equal(q_contract_loss, terms.actor_q), "ONLINE_REPLAY_JOINT_ACTOR_Q_NOT_MIN_TWIN")
             q_gradient = torch.autograd.grad(q_contract_loss, chunk, retain_graph=True)[0]
             tcp_q_gradient_square += float(q_gradient[:, :3, :6].float().square().sum().cpu())
             gripper_q_gradient_max = max(
@@ -456,12 +459,12 @@ def actor_step(
             q2_values.append(q2_value.detach())
 
     with slot("actor_optimizer"):
-        require(online_fm_gradient_max == 0.0, "STAGE3_JOINT_ONLINE_SELF_IMITATION")
-        require(expert_gripper_fm_square > 0.0, "STAGE3_JOINT_EXPERT_GRIPPER_FM_MISSING")
-        require(gripper_q_gradient_max == 0.0 and tcp_q_gradient_square > 0.0, "STAGE3_JOINT_Q_GRADIENT_SEMANTICS")
+        require(online_fm_gradient_max == 0.0, "ONLINE_REPLAY_JOINT_ONLINE_SELF_IMITATION")
+        require(expert_gripper_fm_square > 0.0, "ONLINE_REPLAY_JOINT_EXPERT_GRIPPER_FM_MISSING")
+        require(gripper_q_gradient_max == 0.0 and tcp_q_gradient_square > 0.0, "ONLINE_REPLAY_JOINT_Q_GRADIENT_SEMANTICS")
         require(
             all(parameter.grad is None for critic in (q1, q2, q1_target, q2_target) for parameter in critic.parameters()),
-            "STAGE3_JOINT_ACTOR_BACKWARD_TOUCHED_CRITIC",
+            "ONLINE_REPLAY_JOINT_ACTOR_BACKWARD_TOUCHED_CRITIC",
         )
         frozen_gradient_max = max(
             (
@@ -476,7 +479,7 @@ def actor_step(
             frozen_gradient_max == 0.0
             and math.isfinite(actor_gradient)
             and all(parameter.grad is None or bool(torch.isfinite(parameter.grad).all()) for parameter in parameters),
-            "STAGE3_JOINT_ACTOR_GRADIENT_INVALID",
+            "ONLINE_REPLAY_JOINT_ACTOR_GRADIENT_INVALID",
         )
         torch.nn.utils.clip_grad_norm_(parameters, 10.0)
         optimizer.step()
@@ -513,7 +516,7 @@ def save_joint_checkpoint(
 ) -> None:
     from forcesmolvla.checkpoint import export_development_actor_checkpoint
 
-    require(not path.exists(), "STAGE3_JOINT_CHECKPOINT_EXISTS")
+    require(not path.exists(), "ONLINE_REPLAY_JOINT_CHECKPOINT_EXISTS")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=path.name + ".tmp-", dir=path.parent))
     try:
@@ -576,14 +579,14 @@ def load_joint_checkpoint_once(
     device: torch.device,
 ) -> dict[str, Any]:
     from safetensors.torch import load_file
-    from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
+    from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
 
     metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
     require(
         metadata.get("complete") is True
         and metadata.get("critic_ready") is True
         and metadata.get("actor_q_guidance_enabled") is True,
-        "STAGE3_JOINT_CHECKPOINT_INCOMPLETE",
+        "ONLINE_REPLAY_JOINT_CHECKPOINT_INCOMPLETE",
     )
     actor_state = load_file(str(path / "candidate_policy/model.safetensors"), device="cpu")
     actor.load_state_dict(actor_state, strict=True)
@@ -601,7 +604,7 @@ def load_joint_checkpoint_once(
     ))
     runtime = torch.load(path / "state/runtime_state.pt", map_location="cpu", weights_only=False)
     credits = UpdateCreditLedger.from_state_dict(runtime["sample_credit"])
-    require(credits.snapshot().available == runtime["sample_credit"]["minted"] - runtime["sample_credit"]["consumed"], "STAGE3_JOINT_CREDIT_RESTORE")
+    require(credits.snapshot().available == runtime["sample_credit"]["minted"] - runtime["sample_credit"]["consumed"], "ONLINE_REPLAY_JOINT_CREDIT_RESTORE")
     for name in ("r_rng", "d_rng"):
         probe = random.Random()
         probe.setstate(runtime["sampler_state"][name])
@@ -641,7 +644,7 @@ def load_resume_modules(
     )
     require(
         source_matches and (published or internal_checkpoint_candidate),
-        "STAGE3_JOINT_RESUME_ACTOR_PACKAGE_MISMATCH",
+        "ONLINE_REPLAY_JOINT_RESUME_ACTOR_PACKAGE_MISMATCH",
     )
     actor = ForceSmolVLAPolicy.from_pretrained(
         actor_package,
@@ -676,12 +679,12 @@ def run(
 ) -> dict[str, Any]:
     from forcesmolvla.rft.critic import frozen_task_feature
     from forcesmolvla.rft.frozen_vlm_trainability import FROZEN_PREFIXES, apply_frozen_vlm_trainability, build_frozen_vlm_actor_optimizer
-    from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
+    from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
     from forcesmolvla.rft.throughput_v2 import FrozenPrefixFlowCounter
     from forcesmolvla.training_data import load_normalizer_manifest
 
-    require(cycles == 10, "STAGE3_JOINT_REQUIRES_10_CYCLES")
-    require(torch.cuda.is_available(), "STAGE3_JOINT_CUDA_UNAVAILABLE")
+    require(cycles == 10, "ONLINE_REPLAY_JOINT_REQUIRES_10_CYCLES")
+    require(torch.cuda.is_available(), "ONLINE_REPLAY_JOINT_CUDA_UNAVAILABLE")
     device = torch.device("cuda:0")
     all_r, r_macros, source_episodes = warmup.load_formal_online_r(
         warmup.FORMAL_R_ROOT
@@ -719,7 +722,7 @@ def run(
         and critic_optimizer.state
         and actor_optimizer.state
         and actor_scheduler.last_epoch == 10,
-        "STAGE3_JOINT_EXACT_RESUME_INVALID",
+        "ONLINE_REPLAY_JOINT_EXACT_RESUME_INVALID",
     )
     credits = UpdateCreditLedger.from_state_dict(resume_runtime["sample_credit"])
     new_r_transition_count = sum(
@@ -730,7 +733,7 @@ def run(
     )
     require(
         credits.snapshot().credited_transition_count == len(all_r),
-        "STAGE3_JOINT_REPLAY_CREDIT_MISMATCH",
+        "ONLINE_REPLAY_JOINT_REPLAY_CREDIT_MISMATCH",
     )
 
     random.setstate(resume_runtime["rng_state"]["python"])
@@ -756,7 +759,7 @@ def run(
     require(
         actor_ownership["frozen_parameter_in_optimizer"] == 0
         and trainability.trainable_actor_parameter_tensors == actor_ownership["parameter_tensor_count"],
-        "STAGE3_JOINT_ACTOR_OPTIMIZER_OWNERSHIP",
+        "ONLINE_REPLAY_JOINT_ACTOR_OPTIMIZER_OWNERSHIP",
     )
 
     normalizer = load_normalizer_manifest(Path(binding["normalizer_binding"]["absolute_path"]))
@@ -869,7 +872,7 @@ def run(
         and nonfinite_count == oom_count == 0
         and gripper_q_gradient_max == 0.0
         and frozen_vlm_gradient_max == 0.0,
-        "STAGE3_JOINT_COMPLETION_CONTRACT",
+        "ONLINE_REPLAY_JOINT_COMPLETION_CONTRACT",
     )
     total_joint_cycles = cycle_offset + cycles
     total_critic_steps = critic_step_offset + critic_steps
@@ -942,7 +945,7 @@ def run(
     )
     require(
         restored["counters"] == runtime_state["counters"],
-        "STAGE3_JOINT_CHECKPOINT_LOAD",
+        "ONLINE_REPLAY_JOINT_CHECKPOINT_LOAD",
     )
     return {
         "NEW_R_TRANSITION_COUNT": new_r_transition_count,
@@ -963,7 +966,7 @@ def run(
         "NONFINITE_COUNT": nonfinite_count,
         "OOM_COUNT": oom_count,
         "SAMPLE_CREDITS_REMAINING": credits.snapshot().available,
-        "STAGE3_JOINT_CHECKPOINT_PATH": str(checkpoint),
+        "ONLINE_REPLAY_JOINT_CHECKPOINT_PATH": str(checkpoint),
         "CRITIC_READY": True,
         "ACTOR_Q_GUIDANCE_ENABLED": True,
         "NEW_CANDIDATE_ID": candidate_revision_id,

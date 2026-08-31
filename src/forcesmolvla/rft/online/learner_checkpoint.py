@@ -1,4 +1,4 @@
-"""Stage-3 metadata validation and isolated exact-resume checkpoints."""
+"""Online-replay metadata validation and isolated exact-resume checkpoints."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ EXACT_RESUME_MARKERS = {
 _MODEL_NAMES = ("actor", "q1", "q2", "q1_target", "q2_target")
 
 
-class Stage3CheckpointSchemaError(ValueError):
+class OnlineCheckpointSchemaError(ValueError):
     pass
 
 
@@ -60,19 +60,19 @@ def validate_online_checkpoint_metadata(payload: Mapping) -> dict:
     )
     if errors:
         path = ".".join(str(item) for item in errors[0].absolute_path)
-        raise Stage3CheckpointSchemaError(
-            f"STAGE3_CHECKPOINT_SCHEMA:{path}:{errors[0].message}"
+        raise OnlineCheckpointSchemaError(
+            f"ONLINE_REPLAY_CHECKPOINT_SCHEMA:{path}:{errors[0].message}"
         )
     credits = value["credits"]
     if credits["available"] != credits["minted"] - credits["consumed"]:
-        raise Stage3CheckpointSchemaError("STAGE3_CHECKPOINT_CREDIT_LEDGER_MISMATCH")
+        raise OnlineCheckpointSchemaError("ONLINE_REPLAY_CHECKPOINT_CREDIT_LEDGER_MISMATCH")
     counters = value["counters"]
     if counters["critic_updates"] != 2 * counters["learner_cycles"]:
-        raise Stage3CheckpointSchemaError("STAGE3_CHECKPOINT_CRITIC_COUNTER_MISMATCH")
+        raise OnlineCheckpointSchemaError("ONLINE_REPLAY_CHECKPOINT_CRITIC_COUNTER_MISMATCH")
     if counters["actor_updates"] != counters["learner_cycles"]:
-        raise Stage3CheckpointSchemaError("STAGE3_CHECKPOINT_ACTOR_COUNTER_MISMATCH")
+        raise OnlineCheckpointSchemaError("ONLINE_REPLAY_CHECKPOINT_ACTOR_COUNTER_MISMATCH")
     if counters["polyak_updates_per_target"] != counters["critic_updates"]:
-        raise Stage3CheckpointSchemaError("STAGE3_CHECKPOINT_POLYAK_COUNTER_MISMATCH")
+        raise OnlineCheckpointSchemaError("ONLINE_REPLAY_CHECKPOINT_POLYAK_COUNTER_MISMATCH")
     return value
 
 
@@ -84,7 +84,7 @@ def cpu_round_trip_online_checkpoint(payload: Mapping) -> tuple[dict, bytes]:
     decoded = json.loads(encoded)
     validate_online_checkpoint_metadata(decoded)
     if decoded != value:
-        raise Stage3CheckpointSchemaError("STAGE3_CHECKPOINT_CPU_ROUND_TRIP_MISMATCH")
+        raise OnlineCheckpointSchemaError("ONLINE_REPLAY_CHECKPOINT_CPU_ROUND_TRIP_MISMATCH")
     return decoded, encoded
 
 
@@ -337,7 +337,7 @@ def _validate_control_state(state: Mapping[str, Any]) -> None:
         raise RuntimeError("G5P_DURABLE_STATE_MARKER_DRIFT")
 
 
-def stage3_exact_canonical_state(
+def online_exact_canonical_state(
     *,
     modules: Mapping[str, torch.nn.Module | Mapping[str, torch.Tensor]],
     actor_optimizer: torch.optim.Optimizer | Mapping[str, Any],
@@ -391,7 +391,7 @@ def stage3_exact_canonical_state(
     }
 
 
-def stage3_exact_live_state(
+def online_exact_live_state(
     *,
     modules: Mapping[str, torch.nn.Module],
     actor_optimizer: torch.optim.Optimizer,
@@ -409,7 +409,7 @@ def stage3_exact_live_state(
     scaler_state: Any = None,
 ) -> dict[str, Any]:
     scheduler_states = dict(scheduler_states or {"actor": None, "critic": None})
-    return stage3_exact_canonical_state(
+    return online_exact_canonical_state(
         modules=modules,
         actor_optimizer=actor_optimizer,
         critic_optimizer=critic_optimizer,
@@ -510,7 +510,7 @@ def save_exact_resume_checkpoint(
     if bindings.get("actor_frozen_parent_digest") != frozen_digest:
         raise RuntimeError("G5P_FROZEN_ACTOR_BINDING_MISMATCH")
     modes = _module_modes(modules)
-    canonical_state = stage3_exact_canonical_state(
+    canonical_state = online_exact_canonical_state(
         modules=modules,
         actor_optimizer=actor_optimizer,
         critic_optimizer=critic_optimizer,
@@ -693,7 +693,7 @@ def validate_exact_resume_checkpoint(checkpoint: Path) -> dict[str, Any]:
             for value in record["parameter_states"].values()
         ):
             raise RuntimeError(f"G5P_{name.upper()}_OPTIMIZER_STATE_MISSING")
-    canonical_state = stage3_exact_canonical_state(
+    canonical_state = online_exact_canonical_state(
         modules=payloads["models"],
         actor_optimizer=payloads["optimizers"]["actor"],
         critic_optimizer=payloads["optimizers"]["critic"],

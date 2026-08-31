@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline, zero-update validation for a Stage-3 joint candidate."""
+"""Offline, zero-update validation for an online Actor/Critic candidate."""
 
 from __future__ import annotations
 
@@ -152,7 +152,7 @@ def _fixed_samples(rows, source_episode: Path, normalizer):
         decisions.append(decision)
     require(
         ledger.counts == {"state7": FIXED_OBSERVATION_COUNT, "wrench6": FIXED_OBSERVATION_COUNT},
-        "STAGE3_OFFLINE_NORMALIZER_APPLICATION_COUNT",
+        "ONLINE_REPLAY_OFFLINE_NORMALIZER_APPLICATION_COUNT",
     )
     return samples, np.stack(raw_state), decisions, ledger
 
@@ -202,7 +202,7 @@ def _sample_actor(actor, batch, noise: torch.Tensor, *, label: str) -> torch.Ten
             actor,
             batch,
             noise.clone(),
-            call_id=f"stage3-offline-{label}",
+            call_id=f"online-candidate-validation-{label}",
             purpose="actor_guidance",
         )
     return action.detach().float()
@@ -216,8 +216,8 @@ def _frozen_state_equal(parent_file: Path, candidate_file: Path) -> bool:
         candidate_file, framework="pt", device="cpu"
     ) as candidate:
         names = tuple(name for name in parent.keys() if name.startswith(FROZEN_PREFIXES))
-        require(names, "STAGE3_OFFLINE_FROZEN_STATE_EMPTY")
-        require(all(name in candidate.keys() for name in names), "STAGE3_OFFLINE_FROZEN_STATE_KEY_MISSING")
+        require(names, "ONLINE_REPLAY_OFFLINE_FROZEN_STATE_EMPTY")
+        require(all(name in candidate.keys() for name in names), "ONLINE_REPLAY_OFFLINE_FROZEN_STATE_KEY_MISSING")
         return all(torch.equal(parent.get_tensor(name), candidate.get_tensor(name)) for name in names)
 
 
@@ -251,7 +251,7 @@ def _physical_actions(label, normalized, raw_state, normalizer, ledger):
     delta = decode_binary_gripper_width(delta)
     absolute = ActionDeltaProcessor.from_delta(delta, raw_state)
     roundtrip = ActionDeltaProcessor.to_delta(absolute, raw_state)
-    require(np.allclose(roundtrip, delta, rtol=0.0, atol=1e-6), "STAGE3_OFFLINE_ACTION_DELTA_ROUNDTRIP")
+    require(np.allclose(roundtrip, delta, rtol=0.0, atol=1e-6), "ONLINE_REPLAY_OFFLINE_ACTION_DELTA_ROUNDTRIP")
     return delta, absolute
 
 
@@ -292,7 +292,7 @@ def run(
     result = summarize_td_losses(extract_saved_td_losses(runtime))
     errors: list[str] = []
 
-    require(torch.cuda.is_available(), "STAGE3_OFFLINE_CUDA_UNAVAILABLE")
+    require(torch.cuda.is_available(), "ONLINE_REPLAY_OFFLINE_CUDA_UNAVAILABLE")
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     torch.manual_seed(FLOW_NOISE_SEED)
     torch.cuda.manual_seed_all(FLOW_NOISE_SEED)
@@ -307,16 +307,16 @@ def run(
     candidate_meta = json.loads(
         (packaged_checkpoint / "candidate.json").read_text(encoding="utf-8")
     )
-    require(candidate_meta["revision_id"] == expected_revision, "STAGE3_OFFLINE_CANDIDATE_REVISION")
-    require(candidate_meta["activated"] is False, "STAGE3_OFFLINE_CANDIDATE_ALREADY_ACTIVATED")
+    require(candidate_meta["revision_id"] == expected_revision, "ONLINE_REPLAY_OFFLINE_CANDIDATE_REVISION")
+    require(candidate_meta["activated"] is False, "ONLINE_REPLAY_OFFLINE_CANDIDATE_ALREADY_ACTIVATED")
 
     rows, _macros, source_episodes = warmup.load_formal_online_r(warmup.FORMAL_R_ROOT)
-    require(fixed_episode_id in source_episodes, "STAGE3_OFFLINE_FIXED_EPISODE_MISMATCH")
+    require(fixed_episode_id in source_episodes, "ONLINE_REPLAY_OFFLINE_FIXED_EPISODE_MISMATCH")
     rows = [
         row for row in rows
         if str(row["identity"]["episode_id"]) == fixed_episode_id
     ]
-    require(rows, "STAGE3_OFFLINE_FIXED_EPISODE_EMPTY")
+    require(rows, "ONLINE_REPLAY_OFFLINE_FIXED_EPISODE_EMPTY")
     source_episode = source_episodes[fixed_episode_id]
     normalizer = load_normalizer_manifest(Path(parent_binding["normalizer_binding"]["absolute_path"]))
     samples, raw_state, decisions, ledger = _fixed_samples(rows, source_episode, normalizer)
@@ -426,7 +426,7 @@ def run(
             q1(*observation.as_tuple(), candidate_q_action, mask),
             q2(*observation.as_tuple(), candidate_q_action, mask),
         )
-    require(bool(torch.isfinite(parent_q).all() and torch.isfinite(candidate_q).all()), "STAGE3_OFFLINE_Q_NONFINITE")
+    require(bool(torch.isfinite(parent_q).all() and torch.isfinite(candidate_q).all()), "ONLINE_REPLAY_OFFLINE_Q_NONFINITE")
 
     result.update(
         {

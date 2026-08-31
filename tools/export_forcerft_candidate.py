@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export, validate, and development-publish the Stage-3 joint Actor candidate."""
+"""Export, validate, and development-publish an online Actor candidate."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ def _deployment_artifacts(
         rulespec_sha256=rulespec_sha,
         server_source_sha256=server_sha,
     )
-    require(loaded == binding and actual_sha == binding_sha, "STAGE3_CANDIDATE_BINDING_RELOAD")
+    require(loaded == binding and actual_sha == binding_sha, "ONLINE_REPLAY_CANDIDATE_BINDING_RELOAD")
 
     base_profile = json.loads(CYCLE210_PROFILE.read_text(encoding="utf-8"))
     profile = {
@@ -125,7 +125,7 @@ def _deployment_artifacts(
     require(
         loaded_profile["checkpoint"].resolve() == checkpoint.resolve()
         and loaded_profile["deployment_binding"].resolve() == binding_path.resolve(),
-        "STAGE3_CANDIDATE_PROFILE_RELOAD",
+        "ONLINE_REPLAY_CANDIDATE_PROFILE_RELOAD",
     )
     return profile_path, binding_path
 
@@ -144,10 +144,10 @@ def run(
 
     joint_checkpoint = joint_checkpoint.resolve()
     destination = destination.resolve()
-    require(not destination.exists(), "STAGE3_CANDIDATE_EXPORT_DESTINATION_EXISTS")
-    require(not profile_path.exists(), "STAGE3_CANDIDATE_PROFILE_EXISTS")
-    require(not binding_path.exists(), "STAGE3_CANDIDATE_BINDING_EXISTS")
-    require(torch.cuda.is_available(), "STAGE3_CANDIDATE_EXPORT_CUDA_UNAVAILABLE")
+    require(not destination.exists(), "ONLINE_REPLAY_CANDIDATE_EXPORT_DESTINATION_EXISTS")
+    require(not profile_path.exists(), "ONLINE_REPLAY_CANDIDATE_PROFILE_EXISTS")
+    require(not binding_path.exists(), "ONLINE_REPLAY_CANDIDATE_BINDING_EXISTS")
+    require(torch.cuda.is_available(), "ONLINE_REPLAY_CANDIDATE_EXPORT_CUDA_UNAVAILABLE")
     device = torch.device("cuda:0")
     parent_binding = json.loads(PARENT_BINDING.read_text(encoding="utf-8"))
     parent_path = Path(
@@ -174,7 +174,7 @@ def run(
         )
         require(
             validation["CANDIDATE_OFFLINE_VALIDATION"] == "PASS",
-            f"STAGE3_CANDIDATE_OFFLINE_VALIDATION:{validation['HARD_ERRORS']}",
+            f"ONLINE_REPLAY_CANDIDATE_OFFLINE_VALIDATION:{validation['HARD_ERRORS']}",
         )
         os.replace(staging, destination)
         model_revision = manifest["payloads"]["model.safetensors"]["sha256"]

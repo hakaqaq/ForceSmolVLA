@@ -1,4 +1,4 @@
-"""CPU-only runtime temporal ledger and fail-closed Stage-3 primitives."""
+"""CPU-only runtime temporal ledger and fail-closed online-action primitives."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ NANOSECONDS_PER_SECOND = 1_000_000_000
 H50_MODEL_TIMEBASE_HZ = 30
 POSE_REFERENCE_DISPATCH_HZ = 10
 CONTROLLER_INTERNAL_SERVO_HZ = "UNVERIFIED"
-STAGE3_PROJECTION_GRID_HZ = 30
+ONLINE_REPLAY_PROJECTION_GRID_HZ = 30
 CONTRACT_TRANSITION_MACRO_HZ = 10
 PRODUCTION_TRANSITION_COMMIT_HZ = "UNVERIFIED"
 POLICY_REQUEST_TRIGGER = "event_driven_low_watermark"
@@ -68,7 +68,7 @@ def rational_h50_index(t_ref_ns: int, selection_ns: int) -> int:
 
     if t_ref_ns <= 0 or selection_ns < t_ref_ns:
         raise RuntimeSafetyViolation(
-            "STAGE3_H50_SELECTION_TIME_INVALID", SafetyDirective.HOLD
+            "ONLINE_REPLAY_H50_SELECTION_TIME_INVALID", SafetyDirective.HOLD
         )
     age_ns = selection_ns - t_ref_ns
     return (
@@ -80,7 +80,7 @@ def _absolute7(values: tuple[float, ...]) -> tuple[float, ...]:
     result = tuple(float(value) for value in values)
     if len(result) != 7 or not all(math.isfinite(value) for value in result):
         raise RuntimeSafetyViolation(
-            "STAGE3_POST_ADAPTER_ABSOLUTE7_INVALID", SafetyDirective.HOLD
+            "ONLINE_REPLAY_POST_ADAPTER_ABSOLUTE7_INVALID", SafetyDirective.HOLD
         )
     return result
 
@@ -104,11 +104,11 @@ class RuntimeSafetyLimits:
             self.gripper_ack_deadline_ns,
         )
         if any(isinstance(value, bool) or value <= 0 for value in positive):
-            raise ValueError("STAGE3_RUNTIME_SAFETY_LIMIT_NONPOSITIVE")
+            raise ValueError("ONLINE_REPLAY_RUNTIME_SAFETY_LIMIT_NONPOSITIVE")
         if not 0 <= self.max_selected_index < H50_ACTIONS_CACHED:
-            raise ValueError("STAGE3_MAX_SELECTED_INDEX_INVALID")
+            raise ValueError("ONLINE_REPLAY_MAX_SELECTED_INDEX_INVALID")
         if not 0 < self.max_dispatch_count <= MAX_SELECTIONS_PER_ADOPTED_CHUNK:
-            raise ValueError("STAGE3_MAX_DISPATCH_COUNT_INVALID")
+            raise ValueError("ONLINE_REPLAY_MAX_DISPATCH_COUNT_INVALID")
 
     @property
     def refresh_required_coverage_ns(self) -> int:
@@ -139,10 +139,10 @@ class ChunkRequestIdentity:
                 self.t_ref_clock_domain_id,
             )
         ):
-            raise ValueError("STAGE3_RUNTIME_IDENTITY_EMPTY")
+            raise ValueError("ONLINE_REPLAY_RUNTIME_IDENTITY_EMPTY")
         if self.request_clock_domain_id != self.t_ref_clock_domain_id:
             raise RuntimeSafetyViolation(
-                "STAGE3_REQUEST_T_REF_CLOCK_MISMATCH", SafetyDirective.HOLD
+                "ONLINE_REPLAY_REQUEST_T_REF_CLOCK_MISMATCH", SafetyDirective.HOLD
             )
         counters = (
             self.policy_epoch,
@@ -153,7 +153,7 @@ class ChunkRequestIdentity:
             isinstance(value, bool) or not isinstance(value, int) or value < 0
             for value in counters
         ) or self.t_ref_ns <= 0:
-            raise ValueError("STAGE3_RUNTIME_GENERATION_OR_TIME_INVALID")
+            raise ValueError("ONLINE_REPLAY_RUNTIME_GENERATION_OR_TIME_INVALID")
         return self
 
 
@@ -165,10 +165,10 @@ class ChunkResultIdentity(ChunkRequestIdentity):
     def validate(self) -> "ChunkResultIdentity":
         super().validate()
         if not self.result_id or not self.result_clock_domain_id:
-            raise ValueError("STAGE3_RESULT_ID_EMPTY")
+            raise ValueError("ONLINE_REPLAY_RESULT_ID_EMPTY")
         if self.result_clock_domain_id != self.request_clock_domain_id:
             raise RuntimeSafetyViolation(
-                "STAGE3_RESULT_CLOCK_MISMATCH", SafetyDirective.HOLD
+                "ONLINE_REPLAY_RESULT_CLOCK_MISMATCH", SafetyDirective.HOLD
             )
         return self
 
@@ -231,7 +231,7 @@ class SelectionLedgerEntry:
     failure_reason: str | None = None
 
     def to_accepted_ack(self, *, clock_domain_id: str):
-        """Expose only dual-ACK accepted post-adapter absolute7 to Stage-3."""
+        """Expose only dual-ACK accepted post-adapter absolute7 to online replay."""
 
         if (
             self.status != "accepted"
@@ -256,9 +256,9 @@ class SelectionLedgerEntry:
             )
         ):
             raise RuntimeSafetyViolation(
-                "STAGE3_SELECTION_NOT_ACK_AUTHORITATIVE", SafetyDirective.STOP
+                "ONLINE_REPLAY_SELECTION_NOT_ACK_AUTHORITATIVE", SafetyDirective.STOP
             )
-        from .transition import AcceptedAck
+        from forcesmolvla.rft.online.transition_authority import AcceptedAck
 
         return AcceptedAck(
             ack_id=self.pose_ack_id,
@@ -288,7 +288,7 @@ class RationalH50SelectionLedger:
         if not policy_revision or not clock_domain_id or min(
             policy_epoch, takeover_generation, reset_generation
         ) < 0:
-            raise ValueError("STAGE3_RUNTIME_INITIAL_STATE_INVALID")
+            raise ValueError("ONLINE_REPLAY_RUNTIME_INITIAL_STATE_INVALID")
         self.limits = limits
         self.policy_revision = policy_revision
         self.clock_domain_id = clock_domain_id
@@ -333,7 +333,7 @@ class RationalH50SelectionLedger:
             self._stop_latched = True
             self._directive = SafetyDirective.STOP
             raise RuntimeSafetyViolation(
-                "STAGE3_RUNTIME_LEDGER_CROSS_THREAD_CALL", SafetyDirective.STOP
+                "ONLINE_REPLAY_RUNTIME_LEDGER_CROSS_THREAD_CALL", SafetyDirective.STOP
             )
 
     def _identity_is_current(self, identity: ChunkRequestIdentity) -> bool:
@@ -382,18 +382,18 @@ class RationalH50SelectionLedger:
         self._assert_owner()
         identity.validate()
         if self._stop_latched:
-            self._raise("STAGE3_STOP_LATCHED", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_STOP_LATCHED", SafetyDirective.STOP)
         if (
             identity.request_clock_domain_id != self.clock_domain_id
             or identity.t_ref_clock_domain_id != self.clock_domain_id
         ):
-            self._raise("STAGE3_CROSS_CLOCK_REQUEST_REJECTED", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_CROSS_CLOCK_REQUEST_REJECTED", SafetyDirective.HOLD)
         if not self._identity_is_current(identity):
-            self._raise("STAGE3_STALE_REQUEST_GENERATION", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_STALE_REQUEST_GENERATION", SafetyDirective.HOLD)
         if self._pinned_request is not None:
-            self._raise("STAGE3_REQUEST_ALREADY_PINNED", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_REQUEST_ALREADY_PINNED", SafetyDirective.HOLD)
         if self._active is not None and identity.t_ref_ns < self._active.t_ref_ns:
-            self._raise("STAGE3_REFRESH_T_REF_REGRESSION", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_REFRESH_T_REF_REGRESSION", SafetyDirective.HOLD)
         self._pinned_request = identity
 
     def adopt_result(
@@ -402,21 +402,21 @@ class RationalH50SelectionLedger:
         self._assert_owner()
         identity.validate()
         if self._stop_latched:
-            self._raise("STAGE3_STOP_LATCHED", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_STOP_LATCHED", SafetyDirective.STOP)
         if actions_cached != H50_ACTIONS_CACHED:
-            self._raise("STAGE3_H50_CACHE_SIZE_MISMATCH", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_H50_CACHE_SIZE_MISMATCH", SafetyDirective.HOLD)
         if identity.result_clock_domain_id != self.clock_domain_id:
-            self._raise("STAGE3_CROSS_CLOCK_RESULT_REJECTED", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_CROSS_CLOCK_RESULT_REJECTED", SafetyDirective.HOLD)
         if not self._identity_is_current(identity):
-            self._raise("STAGE3_STALE_RESULT_GENERATION", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_STALE_RESULT_GENERATION", SafetyDirective.HOLD)
         if self._pinned_request is None or (
             identity.request_identity() != self._pinned_request
         ):
-            self._raise("STAGE3_RESULT_REQUEST_BINDING_MISMATCH", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_RESULT_REQUEST_BINDING_MISMATCH", SafetyDirective.HOLD)
         if identity.result_id in self._seen_result_ids:
-            self._raise("STAGE3_RESULT_REPLAY", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_RESULT_REPLAY", SafetyDirective.HOLD)
         if self._pending_entry_index is not None:
-            self._stop("STAGE3_RESULT_ADOPTED_WITH_UNACKED_DISPATCH")
+            self._stop("ONLINE_REPLAY_RESULT_ADOPTED_WITH_UNACKED_DISPATCH")
         self._seen_result_ids.add(identity.result_id)
         self._pinned_request = None
         self._active = identity
@@ -429,9 +429,9 @@ class RationalH50SelectionLedger:
     ) -> RefreshAssessment:
         self._assert_owner()
         if selection_clock_domain_id != self.clock_domain_id:
-            self._raise("STAGE3_CROSS_CLOCK_SELECTION_REJECTED", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_CROSS_CLOCK_SELECTION_REJECTED", SafetyDirective.HOLD)
         if self._active is None:
-            self._raise("STAGE3_NO_ADOPTED_CHUNK", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_NO_ADOPTED_CHUNK", SafetyDirective.HOLD)
         selected_index = rational_h50_index(self._active.t_ref_ns, selection_ns)
         remaining_slots = max(0, self.limits.max_selected_index - selected_index)
         remaining_time_ns = (
@@ -462,49 +462,49 @@ class RationalH50SelectionLedger:
     ) -> SelectionLedgerEntry:
         self._assert_owner()
         if self._stop_latched:
-            self._raise("STAGE3_STOP_LATCHED", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_STOP_LATCHED", SafetyDirective.STOP)
         if self._active is None:
-            self._raise("STAGE3_NO_SAFE_ACTION_HOLD", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_NO_SAFE_ACTION_HOLD", SafetyDirective.HOLD)
         if self._pending_entry_index is not None:
-            self._stop("STAGE3_PREVIOUS_DISPATCH_ACK_INCOMPLETE")
+            self._stop("ONLINE_REPLAY_PREVIOUS_DISPATCH_ACK_INCOMPLETE")
         if dispatch_sequence < 0 or (
             self._last_dispatch_sequence is not None
             and dispatch_sequence != self._last_dispatch_sequence + 1
         ):
-            self._raise("STAGE3_DISPATCH_SEQUENCE_INVALID", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_DISPATCH_SEQUENCE_INVALID", SafetyDirective.HOLD)
         if not pose_command_id or not gripper_command_id:
-            self._raise("STAGE3_COMMAND_IDENTITY_MISSING", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_COMMAND_IDENTITY_MISSING", SafetyDirective.HOLD)
         if (
             pose_command_id in self._seen_pose_command_ids
             or gripper_command_id in self._seen_gripper_command_ids
         ):
-            self._raise("STAGE3_COMMAND_IDENTITY_REUSED", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_COMMAND_IDENTITY_REUSED", SafetyDirective.HOLD)
         if (
             selection_clock_domain_id != self.clock_domain_id
             or dispatch_clock_domain_id != self.clock_domain_id
         ):
-            self._raise("STAGE3_CROSS_CLOCK_DISPATCH_REJECTED", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_CROSS_CLOCK_DISPATCH_REJECTED", SafetyDirective.HOLD)
         if dispatch_ns < selection_ns:
-            self._raise("STAGE3_DISPATCH_PRECEDES_SELECTION", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_DISPATCH_PRECEDES_SELECTION", SafetyDirective.HOLD)
 
         age_ns = selection_ns - self._active.t_ref_ns
         selected_index = rational_h50_index(self._active.t_ref_ns, selection_ns)
         if age_ns > self.limits.max_chunk_age_ns:
-            self._flush("STAGE3_MAX_CHUNK_AGE_EXCEEDED")
-            self._raise("STAGE3_MAX_CHUNK_AGE_EXCEEDED", SafetyDirective.HOLD)
+            self._flush("ONLINE_REPLAY_MAX_CHUNK_AGE_EXCEEDED")
+            self._raise("ONLINE_REPLAY_MAX_CHUNK_AGE_EXCEEDED", SafetyDirective.HOLD)
         if selected_index > self.limits.max_selected_index:
-            self._flush("STAGE3_MAX_SELECTED_INDEX_EXCEEDED")
-            self._raise("STAGE3_MAX_SELECTED_INDEX_EXCEEDED", SafetyDirective.HOLD)
+            self._flush("ONLINE_REPLAY_MAX_SELECTED_INDEX_EXCEEDED")
+            self._raise("ONLINE_REPLAY_MAX_SELECTED_INDEX_EXCEEDED", SafetyDirective.HOLD)
         if self._dispatch_count >= self.limits.max_dispatch_count:
-            self._flush("STAGE3_MAX_DISPATCH_COUNT_EXCEEDED")
-            self._raise("STAGE3_MAX_DISPATCH_COUNT_EXCEEDED", SafetyDirective.HOLD)
+            self._flush("ONLINE_REPLAY_MAX_DISPATCH_COUNT_EXCEEDED")
+            self._raise("ONLINE_REPLAY_MAX_DISPATCH_COUNT_EXCEEDED", SafetyDirective.HOLD)
         if (
             self._last_selected_index is not None
             and selected_index <= self._last_selected_index
         ):
-            self._flush("STAGE3_SELECTED_INDEX_NOT_STRICTLY_INCREASING")
+            self._flush("ONLINE_REPLAY_SELECTED_INDEX_NOT_STRICTLY_INCREASING")
             self._raise(
-                "STAGE3_SELECTED_INDEX_NOT_STRICTLY_INCREASING",
+                "ONLINE_REPLAY_SELECTED_INDEX_NOT_STRICTLY_INCREASING",
                 SafetyDirective.HOLD,
             )
 
@@ -513,12 +513,12 @@ class RationalH50SelectionLedger:
             selection_clock_domain_id=selection_clock_domain_id,
         )
         if refresh.service_headroom_exhausted:
-            self._flush("STAGE3_REFRESH_SERVICE_HEADROOM_EXHAUSTED")
+            self._flush("ONLINE_REPLAY_REFRESH_SERVICE_HEADROOM_EXHAUSTED")
             self._raise(
-                "STAGE3_REFRESH_SERVICE_HEADROOM_EXHAUSTED", SafetyDirective.HOLD
+                "ONLINE_REPLAY_REFRESH_SERVICE_HEADROOM_EXHAUSTED", SafetyDirective.HOLD
             )
         if refresh.refresh_due and self._pinned_request is None:
-            self._raise("STAGE3_REFRESH_REQUIRED_BEFORE_DISPATCH", SafetyDirective.HOLD)
+            self._raise("ONLINE_REPLAY_REFRESH_REQUIRED_BEFORE_DISPATCH", SafetyDirective.HOLD)
 
         entry = SelectionLedgerEntry(
             request_id=self._active.request_id,
@@ -557,17 +557,17 @@ class RationalH50SelectionLedger:
 
     def _pending(self, dispatch_sequence: int) -> SelectionLedgerEntry:
         if self._pending_entry_index is None:
-            self._raise("STAGE3_NO_PENDING_DISPATCH", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_NO_PENDING_DISPATCH", SafetyDirective.STOP)
         entry = self._entries[self._pending_entry_index]
         if entry.dispatch_sequence != dispatch_sequence:
-            self._stop("STAGE3_ACK_DISPATCH_SEQUENCE_MISMATCH")
+            self._stop("ONLINE_REPLAY_ACK_DISPATCH_SEQUENCE_MISMATCH")
         return entry
 
     def _entry_for_ack(
         self, dispatch_sequence: int, *, ack_kind: str
     ) -> tuple[int, SelectionLedgerEntry]:
         if self._stop_latched:
-            self._raise("STAGE3_STOP_LATCHED", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_STOP_LATCHED", SafetyDirective.STOP)
         for index in range(len(self._entries) - 1, -1, -1):
             entry = self._entries[index]
             if entry.dispatch_sequence != dispatch_sequence:
@@ -580,18 +580,18 @@ class RationalH50SelectionLedger:
                 or entry.request_clock_domain_id != self.clock_domain_id
                 or entry.result_clock_domain_id != self.clock_domain_id
             ):
-                self._stop(f"STAGE3_{ack_kind}_ACK_AFTER_FLUSH")
+                self._stop(f"ONLINE_REPLAY_{ack_kind}_ACK_AFTER_FLUSH")
             if entry.status == "quarantined":
-                self._stop(f"STAGE3_{ack_kind}_ACK_AFTER_FLUSH")
+                self._stop(f"ONLINE_REPLAY_{ack_kind}_ACK_AFTER_FLUSH")
             if entry.status not in {"awaiting_ack", "accepted"}:
-                self._stop(f"STAGE3_{ack_kind}_ACK_LIFECYCLE_INVALID")
+                self._stop(f"ONLINE_REPLAY_{ack_kind}_ACK_LIFECYCLE_INVALID")
             if (
                 entry.status == "awaiting_ack"
                 and index != self._pending_entry_index
             ):
-                self._stop(f"STAGE3_{ack_kind}_ACK_NOT_CURRENT")
+                self._stop(f"ONLINE_REPLAY_{ack_kind}_ACK_NOT_CURRENT")
             return index, entry
-        self._stop(f"STAGE3_{ack_kind}_ACK_BEFORE_COMMAND")
+        self._stop(f"ONLINE_REPLAY_{ack_kind}_ACK_BEFORE_COMMAND")
 
     def record_pose_ack(
         self,
@@ -612,18 +612,18 @@ class RationalH50SelectionLedger:
                 and ack_clock_domain_id == entry.pose_ack_clock_domain_id
             ):
                 return
-            self._stop("STAGE3_DUPLICATE_POSE_ACK_CONFLICT")
+            self._stop("ONLINE_REPLAY_DUPLICATE_POSE_ACK_CONFLICT")
         if ack_clock_domain_id != self.clock_domain_id:
-            self._stop("STAGE3_CROSS_CLOCK_POSE_ACK_REJECTED")
+            self._stop("ONLINE_REPLAY_CROSS_CLOCK_POSE_ACK_REJECTED")
         if ack_id != entry.pose_command_id:
-            self._stop("STAGE3_POSE_ACK_ID_MISMATCH")
+            self._stop("ONLINE_REPLAY_POSE_ACK_ID_MISMATCH")
         if accepted is not True:
-            self._stop("STAGE3_POSE_ACK_REJECTED")
+            self._stop("ONLINE_REPLAY_POSE_ACK_REJECTED")
         if (
             ack_ns < entry.dispatch_ns
             or ack_ns - entry.dispatch_ns > self.limits.pose_ack_deadline_ns
         ):
-            self._stop("STAGE3_POSE_ACK_STALE_OR_NONCAUSAL")
+            self._stop("ONLINE_REPLAY_POSE_ACK_STALE_OR_NONCAUSAL")
         self._entries[index] = replace(
             entry,
             pose_ack_id=ack_id,
@@ -651,18 +651,18 @@ class RationalH50SelectionLedger:
                 and ack_clock_domain_id == entry.gripper_ack_clock_domain_id
             ):
                 return
-            self._stop("STAGE3_DUPLICATE_GRIPPER_ACK_CONFLICT")
+            self._stop("ONLINE_REPLAY_DUPLICATE_GRIPPER_ACK_CONFLICT")
         if ack_clock_domain_id != self.clock_domain_id:
-            self._stop("STAGE3_CROSS_CLOCK_GRIPPER_ACK_REJECTED")
+            self._stop("ONLINE_REPLAY_CROSS_CLOCK_GRIPPER_ACK_REJECTED")
         if ack_id != entry.gripper_command_id:
-            self._stop("STAGE3_GRIPPER_ACK_ID_MISMATCH")
+            self._stop("ONLINE_REPLAY_GRIPPER_ACK_ID_MISMATCH")
         if accepted is not True:
-            self._stop("STAGE3_GRIPPER_ACK_REJECTED")
+            self._stop("ONLINE_REPLAY_GRIPPER_ACK_REJECTED")
         if (
             ack_ns < entry.dispatch_ns
             or ack_ns - entry.dispatch_ns > self.limits.gripper_ack_deadline_ns
         ):
-            self._stop("STAGE3_GRIPPER_ACK_STALE_OR_NONCAUSAL")
+            self._stop("ONLINE_REPLAY_GRIPPER_ACK_STALE_OR_NONCAUSAL")
         self._entries[index] = replace(
             entry,
             gripper_ack_id=ack_id,
@@ -676,9 +676,9 @@ class RationalH50SelectionLedger:
     ) -> None:
         self._assert_owner()
         if self._stop_latched:
-            self._raise("STAGE3_STOP_LATCHED", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_STOP_LATCHED", SafetyDirective.STOP)
         if now_clock_domain_id != self.clock_domain_id:
-            self._stop("STAGE3_CROSS_CLOCK_ACK_EXPIRY_REJECTED")
+            self._stop("ONLINE_REPLAY_CROSS_CLOCK_ACK_EXPIRY_REJECTED")
         if self._pending_entry_index is None:
             return
         entry = self._entries[self._pending_entry_index]
@@ -686,22 +686,22 @@ class RationalH50SelectionLedger:
             entry.pose_ack_accepted is not True
             and now_ns - entry.dispatch_ns > self.limits.pose_ack_deadline_ns
         ):
-            self._stop("STAGE3_POSE_ACK_MISSING")
+            self._stop("ONLINE_REPLAY_POSE_ACK_MISSING")
         if (
             entry.gripper_ack_accepted is not True
             and now_ns - entry.dispatch_ns > self.limits.gripper_ack_deadline_ns
         ):
-            self._stop("STAGE3_GRIPPER_ACK_MISSING")
+            self._stop("ONLINE_REPLAY_GRIPPER_ACK_MISSING")
 
     def commit_dispatch(self, dispatch_sequence: int) -> SelectionLedgerEntry:
         self._assert_owner()
         if self._stop_latched:
-            self._raise("STAGE3_STOP_LATCHED", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_STOP_LATCHED", SafetyDirective.STOP)
         entry = self._pending(dispatch_sequence)
         if entry.pose_ack_accepted is not True:
-            self._stop("STAGE3_POSE_ACK_MISSING")
+            self._stop("ONLINE_REPLAY_POSE_ACK_MISSING")
         if entry.gripper_ack_accepted is not True:
-            self._stop("STAGE3_GRIPPER_ACK_MISSING")
+            self._stop("ONLINE_REPLAY_GRIPPER_ACK_MISSING")
         accepted = replace(entry, status="accepted")
         self._entries[self._pending_entry_index] = accepted
         self._pending_entry_index = None
@@ -716,19 +716,19 @@ class RationalH50SelectionLedger:
             takeover_generation <= self.takeover_generation
             or policy_epoch <= self.policy_epoch
         ):
-            self._raise("STAGE3_TAKEOVER_GENERATION_INVALID", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_TAKEOVER_GENERATION_INVALID", SafetyDirective.STOP)
         self.takeover_generation = takeover_generation
         self.policy_epoch = policy_epoch
-        return self._flush("STAGE3_HUMAN_TAKEOVER_FLUSH")
+        return self._flush("ONLINE_REPLAY_HUMAN_TAKEOVER_FLUSH")
 
     def reset_home_flush(self, *, reset_generation: int) -> SafetyDirective:
         self._assert_owner()
         if reset_generation <= self.reset_generation:
-            self._raise("STAGE3_RESET_GENERATION_INVALID", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_RESET_GENERATION_INVALID", SafetyDirective.STOP)
         self.reset_generation = reset_generation
-        self._quarantine_pending("STAGE3_RESET_HOME_FLUSH")
+        self._quarantine_pending("ONLINE_REPLAY_RESET_HOME_FLUSH")
         self._stop_latched = False
-        return self._flush("STAGE3_RESET_HOME_FLUSH")
+        return self._flush("ONLINE_REPLAY_RESET_HOME_FLUSH")
 
     def policy_revision_flush(
         self, *, policy_revision: str, policy_epoch: int
@@ -738,10 +738,10 @@ class RationalH50SelectionLedger:
             policy_revision == self.policy_revision
             or policy_epoch <= self.policy_epoch
         ):
-            self._raise("STAGE3_POLICY_REVISION_GENERATION_INVALID", SafetyDirective.STOP)
+            self._raise("ONLINE_REPLAY_POLICY_REVISION_GENERATION_INVALID", SafetyDirective.STOP)
         self.policy_revision = policy_revision
         self.policy_epoch = policy_epoch
-        return self._flush("STAGE3_POLICY_REVISION_FLUSH")
+        return self._flush("ONLINE_REPLAY_POLICY_REVISION_FLUSH")
 
 
 def project_acknowledged_runtime_macro(
@@ -751,9 +751,9 @@ def project_acknowledged_runtime_macro(
     grid_clock_domain_id: str,
     max_ack_age_ms: float,
 ):
-    """Project only ACK-authoritative post-adapter actions into Stage-3."""
+    """Project only ACK-authoritative post-adapter actions into online replay."""
 
-    from .transition import causal_zoh_ack_macro
+    from forcesmolvla.rft.online.transition_authority import causal_zoh_ack_macro
 
     return causal_zoh_ack_macro(
         [

@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
-from .policy_lineage import (
+from forcesmolvla.rft.online.policy_lineage import (
     POLICY_LINEAGE_SCHEMA,
     UPPER_CLOCK_DOMAIN,
     PolicyLineageAudit,

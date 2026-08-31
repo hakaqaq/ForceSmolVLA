@@ -25,11 +25,11 @@ class TransportEnvelope:
             self.policy_revision_id, self.model_sha256, self.observation_id,
         )
         if any(not value for value in strings):
-            raise ValueError("STAGE3_PROTOCOL_IDENTITY_EMPTY")
+            raise ValueError("ONLINE_REPLAY_PROTOCOL_IDENTITY_EMPTY")
         if self.arbitration_epoch_at_request < 0 or self.t_ref_monotonic_ns <= 0:
-            raise ValueError("STAGE3_PROTOCOL_COUNTER_OR_TIMESTAMP_INVALID")
+            raise ValueError("ONLINE_REPLAY_PROTOCOL_COUNTER_OR_TIMESTAMP_INVALID")
         if len(self.model_sha256) != 64 or any(char not in "0123456789abcdef" for char in self.model_sha256):
-            raise ValueError("STAGE3_PROTOCOL_MODEL_SHA_INVALID")
+            raise ValueError("ONLINE_REPLAY_PROTOCOL_MODEL_SHA_INVALID")
         return self
 
 
@@ -47,12 +47,12 @@ class PolicyEpochGate:
         initial_epoch: int = 0,
     ) -> None:
         if not active_revision_id or initial_epoch < 0:
-            raise ValueError("STAGE3_POLICY_EPOCH_INITIAL_STATE_INVALID")
+            raise ValueError("ONLINE_REPLAY_POLICY_EPOCH_INITIAL_STATE_INVALID")
         if active_model_sha256 is not None and (
             len(active_model_sha256) != 64
             or any(char not in "0123456789abcdef" for char in active_model_sha256)
         ):
-            raise ValueError("STAGE3_POLICY_MODEL_SHA_INVALID")
+            raise ValueError("ONLINE_REPLAY_POLICY_MODEL_SHA_INVALID")
         self.active_revision_id = active_revision_id
         self.active_model_sha256 = active_model_sha256
         self.policy_epoch = int(initial_epoch)
@@ -67,12 +67,12 @@ class PolicyEpochGate:
         self, revision_id: str, model_sha256: str | None = None,
     ) -> int:
         if not revision_id:
-            raise ValueError("STAGE3_REVISION_ID_EMPTY")
+            raise ValueError("ONLINE_REPLAY_REVISION_ID_EMPTY")
         if model_sha256 is not None and (
             len(model_sha256) != 64
             or any(char not in "0123456789abcdef" for char in model_sha256)
         ):
-            raise ValueError("STAGE3_POLICY_MODEL_SHA_INVALID")
+            raise ValueError("ONLINE_REPLAY_POLICY_MODEL_SHA_INVALID")
         self.active_revision_id = revision_id
         self.active_model_sha256 = model_sha256
         return self.invalidate_queued_policy()

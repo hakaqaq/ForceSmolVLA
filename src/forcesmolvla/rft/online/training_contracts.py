@@ -1,4 +1,4 @@
-"""Frozen Stage-3 runtime contracts and cross-file consistency checks."""
+"""Frozen online runtime contracts and cross-file consistency checks."""
 
 from __future__ import annotations
 
@@ -34,9 +34,9 @@ class CriticReadiness:
 
     def validate(self) -> "CriticReadiness":
         if self.actor_q_guidance_enabled and not self.critic_ready:
-            raise ValueError("STAGE3_ACTOR_Q_ENABLED_BEFORE_CRITIC_READY")
+            raise ValueError("ONLINE_REPLAY_ACTOR_Q_ENABLED_BEFORE_CRITIC_READY")
         if not self.unlock_requires_explicit_approval:
-            raise ValueError("STAGE3_CRITIC_UNLOCK_MUST_REQUIRE_EXPLICIT_APPROVAL")
+            raise ValueError("ONLINE_REPLAY_CRITIC_UNLOCK_MUST_REQUIRE_EXPLICIT_APPROVAL")
         return self
 
 
@@ -44,20 +44,20 @@ def _load(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     value = json.loads(text) if path.suffix == ".json" else yaml.safe_load(text)
     if not isinstance(value, dict):
-        raise ValueError(f"STAGE3_CONTRACT_ROOT_NOT_MAPPING:{path.name}")
+        raise ValueError(f"ONLINE_REPLAY_CONTRACT_ROOT_NOT_MAPPING:{path.name}")
     return value
 
 
-def load_stage3_contracts() -> dict[str, dict[str, Any]]:
+def load_online_contracts() -> dict[str, dict[str, Any]]:
     return {name: _load(path) for name, path in CONFIG_PATHS.items()}
 
 
-def validate_stage3_contracts(
+def validate_online_contracts(
     contracts: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    values = dict(contracts or load_stage3_contracts())
+    values = dict(contracts or load_online_contracts())
     if set(values) != set(CONFIG_PATHS):
-        raise ValueError("STAGE3_CONTRACT_SET_INCOMPLETE")
+        raise ValueError("ONLINE_REPLAY_CONTRACT_SET_INCOMPLETE")
     trainability = values["trainability"]
     transition = values["transition"]
     replay = values["replay"]
@@ -65,9 +65,9 @@ def validate_stage3_contracts(
     runtime = values["online_hil"]
 
     if trainability["parent_binding"] != "PENDING":
-        raise ValueError("STAGE3_G0_PARENT_MUST_REMAIN_PENDING_IN_G1_G2")
+        raise ValueError("ONLINE_REPLAY_G0_PARENT_MUST_REMAIN_PENDING_IN_G1_G2")
     if trainability["cross_stage_optimizer_rebuilt"] != "NOT_RUN":
-        raise ValueError("STAGE3_CROSS_STAGE_OPTIMIZER_MUST_NOT_RUN_IN_G1_G2")
+        raise ValueError("ONLINE_REPLAY_CROSS_STAGE_OPTIMIZER_MUST_NOT_RUN_IN_G1_G2")
     CriticReadiness(**trainability["critic_readiness"]).validate()
     CriticReadiness(**runtime["critic_readiness"]).validate()
     temporal = transition["temporal"]
@@ -76,15 +76,15 @@ def validate_stage3_contracts(
         temporal["critic_slots"], temporal["critic_action_features"],
         temporal["macro_duration_ms"],
     ) != (30, 10, 50, 3, 7, 100):
-        raise ValueError("STAGE3_TEMPORAL_CONTRACT_DRIFT")
+        raise ValueError("ONLINE_REPLAY_TEMPORAL_CONTRACT_DRIFT")
     if transition["temporal_parity"]["status"] != "BLOCKED":
-        raise ValueError("STAGE3_RECORDED_TEMPORAL_PARITY_MUST_REMAIN_BLOCKED")
+        raise ValueError("ONLINE_REPLAY_RECORDED_TEMPORAL_PARITY_MUST_REMAIN_BLOCKED")
     if replay["intervention"]["canonical_payload_copies"] != 1:
-        raise ValueError("STAGE3_REPLAY_CANONICAL_PAYLOAD_NOT_DEDUPLICATED")
+        raise ValueError("ONLINE_REPLAY_REPLAY_CANONICAL_PAYLOAD_NOT_DEDUPLICATED")
     if reward["reward_gate"]["reward_bearing_online_update_authorized"]:
-        raise ValueError("STAGE3_REWARD_BEARING_UPDATE_NOT_AUTHORIZED")
+        raise ValueError("ONLINE_REPLAY_REWARD_BEARING_UPDATE_NOT_AUTHORIZED")
     if any(mode["authorized"] for mode in runtime["runtime_modes"].values()):
-        raise ValueError("STAGE3_RUNTIME_MODE_UNEXPECTEDLY_AUTHORIZED")
+        raise ValueError("ONLINE_REPLAY_RUNTIME_MODE_UNEXPECTEDLY_AUTHORIZED")
     for schema in SCHEMA_PATHS.values():
         Draft202012Validator.check_schema(_load(schema))
     return {
@@ -97,7 +97,7 @@ def validate_stage3_contracts(
     }
 
 
-def apply_stage3_trainability(policy):
+def apply_online_trainability(policy):
     """Delegate to the already accepted Frozen-VLM implementation, unchanged."""
 
     from forcesmolvla.rft.frozen_vlm_trainability import (
@@ -106,5 +106,5 @@ def apply_stage3_trainability(policy):
 
     manifest = apply_frozen_vlm_trainability(policy)
     if not manifest.frozen_names or not manifest.trainable_names:
-        raise RuntimeError("STAGE3_TRAINABILITY_EMPTY_OWNERSHIP")
+        raise RuntimeError("ONLINE_REPLAY_TRAINABILITY_EMPTY_OWNERSHIP")
     return manifest

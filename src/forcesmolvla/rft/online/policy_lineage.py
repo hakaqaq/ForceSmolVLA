@@ -7,7 +7,7 @@ import math
 import threading
 from typing import Any, Mapping
 
-from .gripper_provenance import (
+from forcesmolvla.rft.online.gripper_authority import (
     GripperGeneration,
     GripperProvenanceError,
     VALID_TERMINAL_OUTCOMES,

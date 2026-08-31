@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the active Stage-3 Actor and one exact-resume Learner cycle."""
+"""Serve the active online-replay Actor and one exact-resume Learner cycle."""
 
 from __future__ import annotations
 
@@ -27,13 +27,13 @@ for path in (SRC, ROOT / "tools"):
 import train_forcerft_critic_warmup as warmup  # noqa: E402
 import train_forcerft_actor_critic as joint  # noqa: E402
 import serve_policy  # noqa: E402
-from forcesmolvla.rft.stage3.async_runtime import (  # noqa: E402
+from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
     EpisodePin,
     InferencePriorityCoordinator,
     PinnedEpisode,
     prepare_learner,
 )
-from forcesmolvla.rft.stage3.publication import load_revision_registry  # noqa: E402
+from forcesmolvla.rft.online.policy_revision import load_revision_registry  # noqa: E402
 
 
 DEFAULT_RESUME_CHECKPOINT = (
@@ -72,7 +72,7 @@ class OneCycleLearner:
         pending_candidate_id: str,
         current_session_id: str,
     ) -> None:
-        require(not pending_checkpoint.exists(), "STAGE3_ASYNC_PENDING_CHECKPOINT_EXISTS")
+        require(not pending_checkpoint.exists(), "ONLINE_REPLAY_ASYNC_PENDING_CHECKPOINT_EXISTS")
         self.device = device
         self.resume_checkpoint = resume_checkpoint.resolve()
         self.pending_checkpoint = pending_checkpoint.resolve()
@@ -87,7 +87,7 @@ class OneCycleLearner:
                 row["identity"].get("session_id") == current_session_id
                 for row in all_r
             ),
-            "STAGE3_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
+            "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
         )
         self.unique_r_count = len(all_r)
         self.r_macro_count = len(r_macros)
@@ -211,7 +211,7 @@ class OneCycleLearner:
             and replay_after == self.replay_before
             and nonfinite_count == 0
             and oom_count == 0,
-            "STAGE3_ASYNC_LEARNER_COMPLETION_CONTRACT",
+            "ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT",
         )
         counters = {
             "joint_cycles": cycle + 1,
@@ -286,7 +286,7 @@ class OneCycleLearner:
             and candidate.get("state") == "candidate"
             and candidate.get("published") is False
             and candidate.get("activated") is False,
-            "STAGE3_ASYNC_PENDING_CANDIDATE_STATE_INVALID",
+            "ONLINE_REPLAY_ASYNC_PENDING_CANDIDATE_STATE_INVALID",
         )
         return {
             "learner_critic_steps": 2,
@@ -346,7 +346,7 @@ class AsyncPolicyLearnerRuntime:
     def metadata(self) -> dict[str, Any]:
         return {
             **self.engine.metadata,
-            "stage3_async_actor_learner": True,
+            "online_actor_learner": True,
             "runtime_session_id": self.session_id,
             "runtime_episode_id": self.episode_id,
             "learner_started": self._learner_started,
@@ -363,7 +363,7 @@ class AsyncPolicyLearnerRuntime:
         with self._lock:
             result = dict(self._learner_result)
             return {
-                "stage3_async_actor_learner": True,
+                "online_actor_learner": True,
                 "runtime_session_id": self.session_id,
                 "runtime_episode_id": self.episode_id,
                 "episode_active": self._episode_active,
@@ -395,8 +395,8 @@ class AsyncPolicyLearnerRuntime:
     def start_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         self._validate_identity(payload)
         with self._lock:
-            require(not self._episode_active, "STAGE3_ASYNC_EPISODE_ALREADY_ACTIVE")
-            require(not self._learner_started, "STAGE3_ASYNC_SERVER_SINGLE_EPISODE_ONLY")
+            require(not self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_ALREADY_ACTIVE")
+            require(not self._learner_started, "ONLINE_REPLAY_ASYNC_SERVER_SINGLE_EPISODE_ONLY")
             self._pin = PinnedEpisode(
                 self.machine,
                 EpisodePin(
@@ -417,7 +417,7 @@ class AsyncPolicyLearnerRuntime:
             payload.get("session_id") == self.session_id
             and payload.get("episode_id") == self.episode_id
             and payload.get("policy_revision") == self.active_model_revision,
-            "STAGE3_ASYNC_CAPTURE_IDENTITY_MISMATCH",
+            "ONLINE_REPLAY_ASYNC_CAPTURE_IDENTITY_MISMATCH",
         )
 
     def _start_learner(self) -> None:
@@ -440,15 +440,15 @@ class AsyncPolicyLearnerRuntime:
                     self._learner_state = "failed"
 
         threading.Thread(
-            target=run, name="stage3-async-learner", daemon=True
+            target=run, name="online-actor-learner", daemon=True
         ).start()
 
     def infer(self, request: dict[str, Any]) -> dict[str, Any]:
         provenance = request.get("provenance", {})
-        require(self._episode_active, "STAGE3_ASYNC_EPISODE_INACTIVE")
+        require(self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_INACTIVE")
         require(
             provenance.get("session_id") == self.session_id,
-            "STAGE3_ASYNC_INFERENCE_SESSION_MISMATCH",
+            "ONLINE_REPLAY_ASYNC_INFERENCE_SESSION_MISMATCH",
         )
         with self.coordinator.inference_slot():
             self._start_learner()
@@ -475,7 +475,7 @@ class AsyncPolicyLearnerRuntime:
 
     def _end_episode(self) -> None:
         with self._lock:
-            require(self._episode_active, "STAGE3_ASYNC_EPISODE_INACTIVE")
+            require(self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_INACTIVE")
             self.coordinator.end_actor_window()
             assert self._actor_alive is not None and self._pin is not None
             self._actor_alive.__exit__(None, None, None)
@@ -507,10 +507,10 @@ class RequestHandler(serve_policy.RequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "-1"))
             if length <= 0 or length > serve_policy.MAX_REQUEST_BYTES:
-                raise ValueError("STAGE3_ASYNC_RUNTIME_REQUEST_SIZE_INVALID")
+                raise ValueError("ONLINE_REPLAY_ASYNC_RUNTIME_REQUEST_SIZE_INVALID")
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
-                raise ValueError("STAGE3_ASYNC_RUNTIME_REQUEST_MUST_BE_OBJECT")
+                raise ValueError("ONLINE_REPLAY_ASYNC_RUNTIME_REQUEST_MUST_BE_OBJECT")
             method = {
                 "/runtime/episode-start": self.runtime.start_episode,
                 "/runtime/episode-end": self.runtime.end_episode,
@@ -545,7 +545,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
-    require(torch.cuda.is_available(), "STAGE3_ASYNC_CUDA_UNAVAILABLE")
+    require(torch.cuda.is_available(), "ONLINE_REPLAY_ASYNC_CUDA_UNAVAILABLE")
     profile = serve_policy.load_deployment_profile(args.deployment_profile, ROOT)
     binding_path = (
         Path(profile["deployment_binding"])
@@ -580,7 +580,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         and active.revision_id == deployed.get("revision_id")
         and active.model_sha256 == engine.model_sha256
         and active.model_sha256 == deployed.get("model_revision"),
-        "STAGE3_ASYNC_ACTIVE_DEPLOYMENT_MISMATCH",
+        "ONLINE_REPLAY_ASYNC_ACTIVE_DEPLOYMENT_MISMATCH",
     )
     learner = OneCycleLearner(
         device=device,
