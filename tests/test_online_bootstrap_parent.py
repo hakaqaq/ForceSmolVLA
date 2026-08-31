@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 import torch
 
-from forcesmolvla.rft.stage3 import parent as parent_module
-from forcesmolvla.rft.stage3.parent import (
+from forcesmolvla.rft.online import bootstrap_parent as parent_module
+from forcesmolvla.rft.online.bootstrap_parent import (
     DEFAULT_CONFIG,
     ParentBindingError,
     load_parent_binding,
@@ -52,7 +52,7 @@ def test_cycle210_evaluation_actor_is_selected_and_not_a_learner_resume(binding:
     assert "cycle210_evaluation_smoke_checkpoint.v1/model.safetensors" in actor["absolute_path"]
 
 
-def test_g7a_r2_online_and_target_twin_q_are_selected(binding: dict) -> None:
+def test_offline_twin_q_r2_online_and_target_twin_q_are_selected(binding: dict) -> None:
     assert binding["critic_parent"]["source_id"] == "G7A-r2"
     assert binding["target_critic_parent"]["source_id"] == "G7A-r2"
     assert [item["logical_role"] for item in binding["critic_parent"]["artifacts"]] == ["online_q1", "online_q2"]
@@ -75,7 +75,7 @@ def test_missing_cycle210_full_learner_payload_is_explicit_and_not_masked(
     assert real_preflight["STRICT_PHASE2_CONTINUATION_AVAILABLE"] is False
     changed = deepcopy(binding)
     changed["continuation_semantics"]["cycle210_full_learner_checkpoint_available"] = True
-    with pytest.raises(ParentBindingError, match="STAGE3_PARENT_SCHEMA"):
+    with pytest.raises(ParentBindingError, match="ONLINE_REPLAY_PARENT_SCHEMA"):
         validate_parent_binding_semantics(changed)
 
 
@@ -90,7 +90,7 @@ def test_missing_parent_artifact_fails_closed(tmp_path: Path, binding: dict, rol
     missing = tmp_path / f"missing-{role}.bin"
     record["absolute_path"] = str(missing)
     record["resolved_realpath"] = str(missing)
-    with pytest.raises(ParentBindingError, match="STAGE3_PARENT_ARTIFACT_MISSING"):
+    with pytest.raises(ParentBindingError, match="ONLINE_REPLAY_PARENT_ARTIFACT_MISSING"):
         parent_module._verify_artifact(record, {})
 
 
@@ -110,7 +110,7 @@ def test_mismatched_parent_sha_fails_closed(tmp_path: Path, binding: dict, role:
         "size_bytes": payload.stat().st_size,
         "sha256": "0" * 64,
     })
-    with pytest.raises(ParentBindingError, match="STAGE3_PARENT_SHA256"):
+    with pytest.raises(ParentBindingError, match="ONLINE_REPLAY_PARENT_SHA256"):
         parent_module._verify_artifact(record, {})
 
 
@@ -186,7 +186,7 @@ def test_inherited_optimizer_rng_sampler_or_instantiation_is_rejected(
 ) -> None:
     changed = deepcopy(binding)
     changed["optimizer_policy"][field] = True
-    with pytest.raises(ParentBindingError, match="STAGE3_PARENT_SCHEMA"):
+    with pytest.raises(ParentBindingError, match="ONLINE_REPLAY_PARENT_SCHEMA"):
         validate_parent_binding_semantics(changed)
 
 
@@ -218,7 +218,7 @@ def test_real_cpu_preflight_is_complete_for_hybrid_and_does_not_initialize_cuda(
     assert real_preflight["CROSS_COMPONENT_CONTRACT_COMPATIBILITY"] == "PASS"
     assert real_preflight["CUDA_INITIALIZED"] is False
     assert real_preflight["REAL_MODEL_FORWARD"] == "NOT_RUN"
-    assert real_preflight["optimizer"]["CROSS_STAGE_OPTIMIZER_REBUILT"] == "NOT_RUN"
+    assert real_preflight["optimizer"]["BOOTSTRAP_OPTIMIZER_REBUILT"] == "NOT_RUN"
     assert real_preflight["ROBOT_COMMAND_COUNT"] == 0
 
 
@@ -228,7 +228,7 @@ def test_parent_module_has_no_ros_robot_serve_deploy_or_network_imports() -> Non
         "requests", "httpx", "socket", "subprocess",
     }
     violations = []
-    for path in (ROOT / "src/forcesmolvla/rft/stage3/parent.py",):
+    for path in (ROOT / "src/forcesmolvla/rft/online/bootstrap_parent.py",):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             names = []
@@ -240,7 +240,7 @@ def test_parent_module_has_no_ros_robot_serve_deploy_or_network_imports() -> Non
                 if name.split(".", 1)[0] in banned:
                     violations.append((path.name, name))
     assert violations == []
-    source = (ROOT / "src/forcesmolvla/rft/stage3/parent.py").read_text(encoding="utf-8")
+    source = (ROOT / "src/forcesmolvla/rft/online/bootstrap_parent.py").read_text(encoding="utf-8")
     assert "serve_policy" not in source and "deploy_forcesmolvla" not in source
 
 

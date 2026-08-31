@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from forcesmolvla.rft.stage3.recorded_ack_export import (
+from forcesmolvla.rft.online.recorded_ack_export import (
     DEFAULT_TERMINAL_INDEX,
     RecordedAckExportError,
     _accepted_ack_rows,

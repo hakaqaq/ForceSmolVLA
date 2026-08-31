@@ -33,8 +33,8 @@ FORMAL_R_ROOT = (
     / "artifacts/development/stage3/formal_online_r"
     / "task2_policy_execute_stage3_cycle210_smoke_20260829_001"
 )
-CHECKPOINT = FORMAL_R_ROOT / "checkpoints/stage3_critic_warmup_step_000100"
-PARENT_BINDING = ROOT / "configs/stage3_parent_binding.v1.development.json"
+CHECKPOINT = FORMAL_R_ROOT / "checkpoints/online_replay_critic_warmup_step_000100"
+PARENT_BINDING = ROOT / "configs/online_replay_bootstrap_parent_binding.v1.development.json"
 TRAINING_CONFIG = ROOT / "configs/forcerft_actor_critic_training.development.yaml"
 DATASET = ROOT / "datasets/task2_lerobotv3"
 REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
@@ -378,7 +378,7 @@ def save_checkpoint(
         torch.save(optimizer.state_dict(), temporary / "optimizers/critic_optimizer_state.pt")
         torch.save(dict(runtime_state), temporary / "state/runtime_state.pt")
         metadata = {
-            "kind": "stage3_formal_online_r_critic_warmup",
+            "kind": "online_replay_critic_warmup",
             "complete": True,
             "critic_warmup_steps": int(runtime_state["counters"]["critic_warmup_steps"]),
             "actor_parent_binding": {

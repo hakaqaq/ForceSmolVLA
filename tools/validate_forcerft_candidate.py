@@ -31,14 +31,14 @@ JOINT_CHECKPOINT = (
     ROOT
     / "artifacts/development/stage3/formal_online_r"
     / "task2_policy_execute_stage3_cycle210_smoke_20260829_001"
-    / "checkpoints/stage3_joint_cycle_000010"
+    / "checkpoints/online_actor_critic_cycle_000010"
 )
 PACKAGED_CHECKPOINT = (
     ROOT
     / "artifacts/development/stage3/published"
-    / "stage3_joint_cycle_000010_candidate.v1"
+    / "online_actor_critic_cycle_000010_actor_export.v1"
 )
-PARENT_BINDING = ROOT / "configs/stage3_parent_binding.v1.development.json"
+PARENT_BINDING = ROOT / "configs/online_replay_bootstrap_parent_binding.v1.development.json"
 TRAINING_CONFIG = ROOT / "configs/forcerft_actor_critic_training.development.yaml"
 RULESPEC = ROOT / "configs/live_action_safety.task2.development.yaml"
 EXECUTION_BINDING = (

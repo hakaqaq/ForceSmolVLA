@@ -16,7 +16,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_CONFIG = ROOT / "configs/stage3_parent_binding.v1.development.json"
+DEFAULT_CONFIG = ROOT / "configs/online_replay_bootstrap_parent_binding.v1.development.json"
 SCHEMA = ROOT / "schemas/stage3_parent_binding.v1.schema.json"
 
 
@@ -359,7 +359,7 @@ def _cross_component_compatibility(binding: Mapping[str, Any]) -> dict[str, Any]
     topology = _json(Path(binding["task_feature_binding"]["absolute_path"]))
     calibration = _json(Path(binding["calibration_binding"]["absolute_path"]))
     runtime = _json(Path(binding["runtime_contract_binding"]["absolute_path"]))
-    transition = _json(ROOT / "configs/stage3_transition_contract.v1.development.json")
+    transition = _json(ROOT / "configs/online_replay_transition_contract.v1.development.json")
     offline_critic_config = _yaml(
         Path(binding["optimizer_policy"]["critic_candidate"]["source_path"])
     )
@@ -527,7 +527,7 @@ def preflight_parent_binding(config_path: Path = DEFAULT_CONFIG) -> dict[str, An
         "binding_config_sha256": sha256_file(Path(config_path)),
         "tool_status": "PASS",
         "G0A_HYBRID_PARENT_BINDING": "PASS",
-        "G0_FINAL_PARENT_BINDING": "BOUND_APPROVED_HYBRID",
+        "BOOTSTRAP_PARENT_BINDING": "BOUND_APPROVED_HYBRID",
         "PARENT_PAYLOAD_COMPLETE_FOR_HYBRID": True,
         "STRICT_PHASE2_CONTINUATION_AVAILABLE": False,
         "continuation_semantics": binding["continuation_semantics"],
@@ -541,8 +541,8 @@ def preflight_parent_binding(config_path: Path = DEFAULT_CONFIG) -> dict[str, An
         "critic_preflight": critic_result,
         "cross_component_preflight": cross_result,
         "optimizer": {
-            "CROSS_STAGE_OPTIMIZER_REBUILD_SPEC": "FROZEN",
-            "CROSS_STAGE_OPTIMIZER_REBUILT": "NOT_RUN",
+            "BOOTSTRAP_OPTIMIZER_REBUILD_SPEC": "FROZEN",
+            "BOOTSTRAP_OPTIMIZER_REBUILT": "NOT_RUN",
             "instantiated": False,
             "optimizer_steps": 0,
             "polyak_updates": 0,
@@ -556,7 +556,7 @@ def preflight_parent_binding(config_path: Path = DEFAULT_CONFIG) -> dict[str, An
         "G0_FORMAL_GATE_PASSED": False,
         "G4P_GPU_NUMERICAL_PREFLIGHT_READY": True,
         "REAL_MODEL_FORWARD": "NOT_RUN",
-        "G4_AND_LATER": "NOT_RUN",
+        "GPU_VALIDATION_AND_LATER": "NOT_RUN",
         "CUDA_INITIALIZED": False,
         "ROBOT_CONNECTION_COUNT": 0,
         "ROBOT_COMMAND_COUNT": 0,
@@ -585,7 +585,7 @@ def render_parent_binding_markdown(report: Mapping[str, Any]) -> str:
         "",
         f"- `tool_status={report['tool_status']}`",
         f"- `G0A_HYBRID_PARENT_BINDING={report['G0A_HYBRID_PARENT_BINDING']}`",
-        f"- `G0_FINAL_PARENT_BINDING={report['G0_FINAL_PARENT_BINDING']}`",
+        f"- `BOOTSTRAP_PARENT_BINDING={report['BOOTSTRAP_PARENT_BINDING']}`",
         "- `binding_type=new_hybrid_stage3_bootstrap`",
         "- `not_exact_phase2_cycle210_continuation=true`",
         "- `cycle210_full_learner_checkpoint_available=false`",
@@ -625,8 +625,8 @@ def render_parent_binding_markdown(report: Mapping[str, Any]) -> str:
         "",
         "Only the rebuild specification is frozen. Actor/Critic optimizers are fresh-by-policy but were not instantiated; no optimizer, scheduler, RNG, or sampler state is inherited. The G3P tiny CPU optimizer is not a cross-stage rebuild.",
         "",
-        "- `CROSS_STAGE_OPTIMIZER_REBUILD_SPEC=FROZEN`",
-        "- `CROSS_STAGE_OPTIMIZER_REBUILT=NOT_RUN`",
+        "- `BOOTSTRAP_OPTIMIZER_REBUILD_SPEC=FROZEN`",
+        "- `BOOTSTRAP_OPTIMIZER_REBUILT=NOT_RUN`",
         "- `INITIAL_ACTOR_UPDATE_ENABLED=false`",
         "- `CRITIC_WARMUP_REQUIRED=true`",
         "- `CRITIC_READY=false`",
@@ -640,7 +640,7 @@ def render_parent_binding_markdown(report: Mapping[str, Any]) -> str:
     lines.extend(f"- {item}" for item in report["unverified_items"])
     lines.extend([
         "",
-        "Therefore `G0_FORMAL_GATE_PASSED=false`, `REAL_MODEL_FORWARD=NOT_RUN`, and `G4_AND_LATER=NOT_RUN`. The next eligible activity is a separately authorized G4P GPU numerical preflight.",
+        "Therefore `BOOTSTRAP_VALIDATION_PASSED=false`, `REAL_MODEL_FORWARD=NOT_RUN`, and `GPU_VALIDATION_AND_LATER=NOT_RUN`. The next eligible activity is a separately authorized GPU numerical validation.",
         "",
         "## Safety footer",
         "",

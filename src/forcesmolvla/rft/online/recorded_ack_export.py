@@ -26,7 +26,7 @@ DEFAULT_RAW_EPISODE = DEFAULT_RAW_SESSION / "episodes/episode_000018"
 DEFAULT_CAPTURE_MANIFEST = (
     ROOT / "golden_fixtures/stage3_recorded_ack_fixture.v1.capture_manifest.json"
 )
-DEFAULT_PARENT_BINDING = ROOT / "configs/stage3_parent_binding.v1.development.json"
+DEFAULT_PARENT_BINDING = ROOT / "configs/online_replay_bootstrap_parent_binding.v1.development.json"
 DEFAULT_TERMINAL_INDEX = (
     ROOT
     / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"

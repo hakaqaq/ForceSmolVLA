@@ -2,7 +2,7 @@ configuration_kind: forcerft_actor_critic_training.development
 authorization: approved_offline_and_asynchronous_training
 
 parent_binding:
-  path: configs/stage3_parent_binding.v1.development.json
+  path: configs/online_replay_bootstrap_parent_binding.v1.development.json
   binding_id: approved_hybrid_cycle210_actor_g7a_r2_twin_q.v1
   binding_type: new_hybrid_stage3_bootstrap
   actor_source: cycle210_evaluation
