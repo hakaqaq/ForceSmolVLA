@@ -231,7 +231,7 @@ def main() -> None:
         "ACTOR_UPDATES": 0,
         "CRITIC_NUMERICALLY_STABLE": "yes",
         "Q_GUIDANCE_SCALE_MEASURED": "yes",
-        "ETA_G7B_APPROVED": "no", "G7B_STARTED": "no",
+        "ACTOR_Q_GUIDANCE_APPROVED": "no", "ACTOR_CRITIC_TRAINING_STARTED": "no",
         "LONG_RUN_AUTHORIZED": "no", "ROBOT_EXECUTION_AUTHORIZED": False,
         "NEXT_ALLOWED_ACTION": "request_G7B_eta_and_joint_smoke_approval",
         "ALL_SUCCESS_DEMOS": True, "REWARD_MODEL_TRAINING_OVERLAP": True,

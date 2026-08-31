@@ -1,5 +1,5 @@
 schema_version: forcesmolvla_stage2_g7a_critic_warmup.development.r2
-authorization: G7A_critic_only_warmup_and_q_gradient_measurement
+authorization: offline_twin_q_critic_only_warmup_and_q_gradient_measurement
 claim_scope: development_measurement_only
 
 action_contract_v2:
