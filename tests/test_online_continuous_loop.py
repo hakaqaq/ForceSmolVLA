@@ -85,8 +85,8 @@ def test_reads_active_deployment_and_latest_checkpoint_without_cycle_constants(
         1,
     )
     assert plan[4] == expected.resolve()
-    assert plan[5].name.startswith("stage3_real_async_joint_cycle_000023_pending_")
-    assert plan[6].startswith("stage3-online-r-real-async-joint-cycle-000023-pending-")
+    assert plan[5].name.startswith("online_replay_actor_critic_cycle_000023_pending_")
+    assert plan[6].startswith("online-replay-actor-critic-cycle-000023-pending-")
 
 
 def test_bootstrap_admits_007_before_publish_and_home_activation(

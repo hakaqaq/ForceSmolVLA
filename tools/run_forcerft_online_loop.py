@@ -172,7 +172,7 @@ def candidate_artifacts(checkpoint: Path) -> Candidate:
         candidate_id=candidate_id,
         model_revision="",
         checkpoint=checkpoint.resolve(),
-        package=(ROOT / "artifacts/development/stage3/published" / f"{slug}.v1"),
+        package=(ROOT / "artifacts/development/online_replay/published" / f"{slug}.v1"),
         profile=(ROOT / "configs" / f"deployment.{slug}.development.json"),
         binding=(ROOT / "artifacts/development/live" / f"task2_{slug}_deployment_binding.v1.json"),
     )
@@ -386,12 +386,12 @@ def _episode_plan(
     root = Path(f"{args.root_prefix}_{index:03d}").resolve()
     session_id = root.name
     pending_id = (
-        f"stage3-online-r-real-async-joint-cycle-{cycle + 1:06d}"
+        f"online-replay-actor-critic-cycle-{cycle + 1:06d}"
         f"-pending-{session_id}"
     )
     pending = (
         args.formal_r_root / "checkpoints"
-        / f"stage3_real_async_joint_cycle_{cycle + 1:06d}_pending_{session_id}"
+        / f"online_replay_actor_critic_cycle_{cycle + 1:06d}_pending_{session_id}"
     ).resolve()
     require(not root.exists(), "ONLINE_REPLAY_CONTINUOUS_CAPTURE_ROOT_EXISTS")
     require(not pending.exists(), "ONLINE_REPLAY_CONTINUOUS_PENDING_CHECKPOINT_EXISTS")

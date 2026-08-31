@@ -16,8 +16,8 @@ from serve_forcerft_actor_learner import (  # noqa: E402
     AsyncPolicyLearnerRuntime,
     RequestHandler,
 )
-from forcesmolvla.rft.stage3.async_runtime import reconcile_post_checkpoint_replay
-from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger
+from forcesmolvla.rft.online.actor_learner_runtime import reconcile_post_checkpoint_replay
+from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
 
 
 class FakeMachine:

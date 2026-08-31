@@ -30,14 +30,14 @@ import train_forcerft_critic_warmup as warmup  # noqa: E402
 
 
 RESUME_CHECKPOINT = (
-    warmup.FORMAL_R_ROOT / "checkpoints/stage3_joint_cycle_000010"
+    warmup.FORMAL_R_ROOT / "checkpoints/online_actor_critic_cycle_000010"
 )
 RESUME_ACTOR_PACKAGE = (
     ROOT
     / "artifacts/development/stage3/published"
-    / "stage3_joint_cycle_000010_candidate.v1"
+    / "online_actor_critic_cycle_000010_actor_export.v1"
 )
-JOINT_CHECKPOINT = warmup.FORMAL_R_ROOT / "checkpoints/stage3_joint_cycle_000020"
+JOINT_CHECKPOINT = warmup.FORMAL_R_ROOT / "checkpoints/online_actor_critic_cycle_000020"
 CANDIDATE_REVISION_ID = "stage3-online-r-joint-cycle-000020-candidate"
 
 
@@ -542,7 +542,7 @@ def save_joint_checkpoint(
         torch.save(actor_scheduler.state_dict(), temporary / "optimizers/actor_scheduler_state.pt")
         torch.save(dict(runtime_state), temporary / "state/runtime_state.pt")
         metadata = {
-            "kind": "stage3_formal_online_r_joint_update",
+            "kind": "online_replay_actor_critic_training",
             "complete": True,
             "source_checkpoint": str(source_checkpoint),
             "joint_cycles": total_joint_cycles,

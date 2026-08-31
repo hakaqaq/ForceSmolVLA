@@ -18,7 +18,7 @@ from train_forcerft_actor_critic import (  # noqa: E402
     make_schedules,
     save_joint_checkpoint,
 )
-from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger  # noqa: E402
+from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger  # noqa: E402
 
 
 class TinyPolicy(torch.nn.Module):

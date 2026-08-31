@@ -37,11 +37,11 @@ from forcesmolvla.rft.online.policy_revision import load_revision_registry  # no
 
 
 DEFAULT_RESUME_CHECKPOINT = (
-    warmup.FORMAL_R_ROOT / "checkpoints/stage3_joint_cycle_000020"
+    warmup.FORMAL_R_ROOT / "checkpoints/online_actor_critic_cycle_000020"
 )
 DEFAULT_PENDING_CHECKPOINT = (
     warmup.FORMAL_R_ROOT
-    / "checkpoints/stage3_real_async_joint_cycle_000021_pending_20260830_001"
+    / "checkpoints/online_replay_actor_critic_cycle_000021_pending"
 )
 DEFAULT_PENDING_CANDIDATE_ID = (
     "stage3-online-r-real-async-joint-cycle-000021-candidate"
