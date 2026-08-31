@@ -86,12 +86,12 @@ REQUIRED_STREAMS = (
     "wrist_camera",
 )
 REPO_ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_PARENT_BINDING = REPO_ROOT / "configs/stage3_parent_binding.v1.development.json"
+DEFAULT_PARENT_BINDING = REPO_ROOT / "configs/online_replay_bootstrap_parent_binding.v1.development.json"
 DEFAULT_REWARD_TRANSITION_CONFIG = (
     REPO_ROOT / "configs/reward_transition_materialization.development.json"
 )
 DEFAULT_REWARD_CONTRACT = (
-    REPO_ROOT / "configs/stage3_reward_terminal_contract.v1.development.json"
+    REPO_ROOT / "configs/online_replay_reward_terminal_contract.v1.development.json"
 )
 
 
@@ -137,7 +137,7 @@ class EpisodeMaterialization:
         if self.detector_scores.detector_id != CHECKPOINT_SHA256:
             raise ProductionBridgeError("BRIDGE_DETECTOR_IDENTITY_MISMATCH")
         if self.detection_trace.trigger_frame is None or not self.macros:
-            raise ProductionBridgeError("BRIDGE_FROZEN_G1_DETECTOR_MISS")
+            raise ProductionBridgeError("BRIDGE_FROZEN_DETECTOR_DETECTOR_MISS")
         if self.macros[-1].next_frame != self.detection_trace.trigger_frame:
             raise ProductionBridgeError("BRIDGE_DETECTOR_MACRO_CLOSURE_INVALID")
         if not np.all(np.isfinite(self.prepared.wrench6)):
@@ -193,7 +193,7 @@ def frozen_episode_materializer(
         or reward_contract.get("reward_source") != REWARD_SOURCE
         or reward_contract.get("detector_miss_policy") != "exclude_without_fallback"
     ):
-        raise ProductionBridgeError("BRIDGE_FROZEN_G1_CONFIG_MISMATCH")
+        raise ProductionBridgeError("BRIDGE_FROZEN_DETECTOR_CONFIG_MISMATCH")
     calibration_path = Path(parent["calibration_binding"]["absolute_path"])
     runtime_path = Path(parent["runtime_contract_binding"]["absolute_path"])
     calibration_payload = _read_json(calibration_path)
@@ -3430,7 +3430,7 @@ class ProductionBridge:
         )
         detector_trigger = materialization.detection_trace.trigger_frame
         if detector_trigger is None:
-            raise ProductionBridgeError("BRIDGE_FROZEN_G1_DETECTOR_MISS")
+            raise ProductionBridgeError("BRIDGE_FROZEN_DETECTOR_DETECTOR_MISS")
         payload = {
             "schema_version": SCHEMA_VERSION,
             "classification": (
@@ -4344,7 +4344,7 @@ class ProductionBridge:
                 operator_task_outcome=operator_task_outcome,
                 detector_outcome=(
                     "miss"
-                    if str(error) == "BRIDGE_FROZEN_G1_DETECTOR_MISS"
+                    if str(error) == "BRIDGE_FROZEN_DETECTOR_DETECTOR_MISS"
                     else "not_evaluated"
                 ),
             )

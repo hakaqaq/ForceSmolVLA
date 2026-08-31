@@ -17,7 +17,7 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG = ROOT / "configs/stage3_production_bridge.v1.development.yaml"
+DEFAULT_CONFIG = ROOT / "configs/online_replay_production_bridge.v1.development.yaml"
 REWARD_DETECTOR_CHECKPOINT = (
     ROOT
     / "artifacts/development/stage2/reward_classifier/r0_training/checkpoints/best_checkpoint.msgpack"
@@ -47,7 +47,7 @@ def _detector_worker(request_path: Path, output_path: Path) -> None:
     if not batches:
         raise RuntimeError("BRIDGE_DETECTOR_BATCHES_MISSING")
     training_tool = _import_path(
-        "stage3_reward_classifier_tool", REWARD_CLASSIFIER_TOOL
+        "reward_classifier_tool", REWARD_CLASSIFIER_TOOL
     )
     training_tool.install_type_only_octo_shim()
     sys.path.insert(0, str(CONRFT_RUNTIME_ROOT))
@@ -57,7 +57,7 @@ def _detector_worker(request_path: Path, output_path: Path) -> None:
     from serl_launcher.networks.reward_classifier import create_classifier
 
     if jax.default_backend() != "gpu":
-        raise RuntimeError(f"BRIDGE_FROZEN_G1_GPU_REQUIRED:{jax.default_backend()}")
+        raise RuntimeError(f"BRIDGE_FROZEN_DETECTOR_GPU_REQUIRED:{jax.default_backend()}")
     safe_tree, _ = training_tool.npz_encoder_tree()
     sample = {
         key: jnp.zeros((1, 1, *IMAGE_SHAPE), dtype=jnp.uint8)
@@ -90,7 +90,7 @@ def _detector_worker(request_path: Path, output_path: Path) -> None:
         ]
         count = int(batch["count"])
         if any(value.shape != (count, *IMAGE_SHAPE) for value in arrays):
-            raise RuntimeError("BRIDGE_FROZEN_G1_IMAGE_BATCH_INVALID")
+            raise RuntimeError("BRIDGE_FROZEN_DETECTOR_IMAGE_BATCH_INVALID")
         observations = {
             key: jnp.asarray(np.asarray(value))[:, None]
             for key, value in zip(CAMERA_KEYS, arrays, strict=True)
@@ -107,7 +107,7 @@ def _detector_worker(request_path: Path, output_path: Path) -> None:
         np.exp(values) / (1.0 + np.exp(values)),
     )
     if len(probabilities) != frame_count or not np.all(np.isfinite(probabilities)):
-        raise RuntimeError("BRIDGE_FROZEN_G1_OUTPUT_INVALID")
+        raise RuntimeError("BRIDGE_FROZEN_DETECTOR_OUTPUT_INVALID")
     np.save(output_path, probabilities, allow_pickle=False)
     print(
         json.dumps(
@@ -148,7 +148,7 @@ class OneShotFrozenRewardDetector:
                             rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
                         if rgb.shape != IMAGE_SHAPE:
                             raise RuntimeError(
-                                "BRIDGE_FROZEN_G1_IMAGE_SHAPE_INVALID"
+                                "BRIDGE_FROZEN_DETECTOR_IMAGE_SHAPE_INVALID"
                             )
                         decoded.append(rgb)
                     batch_path = root / f"{name}_{start:06d}.npy"

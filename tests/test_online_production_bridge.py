@@ -7,29 +7,29 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from forcesmolvla.rft.stage3 import production_bridge as bridge_module
+from forcesmolvla.rft.online import production_bridge as bridge_module
 from forcesmolvla.raw_to_lerobot_v3 import PreparedEpisode
 from forcesmolvla.rft.detector_reward_transitions import (
     causal_detection_trace,
     detector_macro_transitions,
 )
-from forcesmolvla.rft.stage3.gripper_provenance import GripperGeneration
-from forcesmolvla.rft.stage3.policy_lineage import InitialGripperAuthority
-from forcesmolvla.rft.stage3.production_bridge import (
+from forcesmolvla.rft.online.gripper_authority import GripperGeneration
+from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority
+from forcesmolvla.rft.online.production_bridge import (
     BridgeConfig,
     BridgeDigestCollisionError,
     EpisodeMaterialization,
     FrozenDetectorScores,
     InjectedBridgeCrash,
     ProductionBridgeError,
-    Stage3ProductionBridge,
+    ProductionBridge,
     frozen_episode_materializer,
     load_bridge_config,
 )
 
 
 ROOT = Path(__file__).parents[1]
-CONFIG = ROOT / "configs/stage3_production_bridge.v1.development.yaml"
+CONFIG = ROOT / "configs/online_replay_production_bridge.v1.development.yaml"
 REAL_EPISODE = Path(
     "/home/rlc123/fr3_client_ws/datasets/task2/episodes/episode_000018"
 )
@@ -1209,8 +1209,8 @@ def _fake_materialization(episode: Path, *, trigger_frame: int = 9) -> EpisodeMa
     ).validate()
 
 
-def _bridge(state: Path, **overrides) -> Stage3ProductionBridge:
-    return Stage3ProductionBridge(
+def _bridge(state: Path, **overrides) -> ProductionBridge:
+    return ProductionBridge(
         config=BridgeConfig(**overrides),
         state_root=state,
         episode_materializer=_fake_materialization,
@@ -1232,7 +1232,7 @@ def test_config_is_json_compatible_yaml_and_development_only() -> None:
 
 
 def test_core_source_has_no_ros_network_robot_or_cuda_imports() -> None:
-    source = (ROOT / "src/forcesmolvla/rft/stage3/production_bridge.py").read_text()
+    source = (ROOT / "src/forcesmolvla/rft/online/production_bridge.py").read_text()
     for forbidden in ("import rclpy", "import requests", "import torch", "import socket"):
         assert forbidden not in source
 
@@ -2053,14 +2053,14 @@ def test_policy_execution_generation_uses_independent_initial_offsets() -> None:
     }
 
     generations = [
-        Stage3ProductionBridge._policy_execution_generation(
+        ProductionBridge._policy_execution_generation(
             {**identity, "policy_epoch": epoch, "takeover_generation": takeover},
             identity,
         )
         for epoch, takeover in ((1, 0), (2, 1), (3, 2))
     ]
     for previous, current in zip(generations[:-1], generations[1:], strict=True):
-        Stage3ProductionBridge._validate_policy_execution_generation_step(
+        ProductionBridge._validate_policy_execution_generation_step(
             previous, current
         )
 
@@ -2069,7 +2069,7 @@ def test_policy_execution_generation_uses_independent_initial_offsets() -> None:
             ProductionBridgeError,
             match="BRIDGE_POLICY_EXECUTION_GENERATION_INVALID",
         ):
-            Stage3ProductionBridge._policy_execution_generation(
+            ProductionBridge._policy_execution_generation(
                 {
                     **identity,
                     "policy_epoch": epoch,
@@ -2085,7 +2085,7 @@ def test_policy_execution_generation_uses_independent_initial_offsets() -> None:
             ProductionBridgeError,
             match="BRIDGE_POLICY_EXECUTION_GENERATION_INVALID",
         ):
-            Stage3ProductionBridge._validate_policy_execution_generation_step(
+            ProductionBridge._validate_policy_execution_generation_step(
                 previous, current
             )
 
@@ -2212,7 +2212,7 @@ def test_sealed_episode_closes_new_and_held_authority_into_wal_outbox(tmp_path: 
 def test_sealed_episode_without_materializer_is_quarantined(tmp_path: Path) -> None:
     episode = _fixture(tmp_path)
     state = tmp_path / "state"
-    report = Stage3ProductionBridge(
+    report = ProductionBridge(
         config=BridgeConfig(), state_root=state
     ).process_episode(episode)
     assert report.status == "SEALED_QUARANTINED"
@@ -2247,16 +2247,16 @@ def test_detector_miss_quarantines_episode_before_wal(tmp_path: Path) -> None:
     episode = _fixture(tmp_path)
 
     def detector_miss(_: Path) -> EpisodeMaterialization:
-        raise ProductionBridgeError("BRIDGE_FROZEN_G1_DETECTOR_MISS")
+        raise ProductionBridgeError("BRIDGE_FROZEN_DETECTOR_DETECTOR_MISS")
 
     state = tmp_path / "state"
-    report = Stage3ProductionBridge(
+    report = ProductionBridge(
         config=BridgeConfig(),
         state_root=state,
         episode_materializer=detector_miss,
     ).process_episode(episode)
     assert report.status == "SEALED_QUARANTINED"
-    assert report.quarantine_reasons == ("BRIDGE_FROZEN_G1_DETECTOR_MISS",)
+    assert report.quarantine_reasons == ("BRIDGE_FROZEN_DETECTOR_DETECTOR_MISS",)
     assert not (state / "wal").exists()
     assert not (state / "outbox").exists()
 
@@ -2602,7 +2602,7 @@ def test_rejected_pose_ack_is_quarantined_and_never_outboxed(tmp_path: Path) -> 
 def test_frozen_g1_partial_terminal_macro_is_materialized_with_mask(tmp_path: Path) -> None:
     episode = _fixture(tmp_path)
     state = tmp_path / "state"
-    report = Stage3ProductionBridge(
+    report = ProductionBridge(
         config=BridgeConfig(),
         state_root=state,
         episode_materializer=lambda path: _fake_materialization(
@@ -2691,7 +2691,7 @@ def test_task2_episode18_materialization_matches_existing_g1_row_4922(
 
     config, _ = load_bridge_config(CONFIG)
     state = tmp_path / "state"
-    report = Stage3ProductionBridge(
+    report = ProductionBridge(
         config=config,
         state_root=state,
         episode_materializer=frozen_episode_materializer(detector),
