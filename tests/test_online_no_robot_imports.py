@@ -9,17 +9,17 @@ import sys
 
 
 ROOT = Path(__file__).parents[1]
-STAGE3 = ROOT / "src/forcesmolvla/rft/stage3"
+ONLINE = ROOT / "src/forcesmolvla/rft/online"
 BANNED_IMPORT_ROOTS = {
     "rclpy", "rospy", "roslib", "franka", "franka_msgs", "moveit",
     "requests", "httpx", "socket", "subprocess",
 }
 
 
-def test_stage3_cpu_modules_have_no_ros_robot_or_network_imports() -> None:
+def test_online_cpu_modules_have_no_ros_robot_or_network_imports() -> None:
     violations = []
-    for path in sorted(STAGE3.glob("*.py")):
-        if path.name == "integrated_shadow_backend.py":
+    for path in sorted(ONLINE.glob("*.py")):
+        if path.name == "integrated_capture_backend.py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
@@ -34,15 +34,24 @@ def test_stage3_cpu_modules_have_no_ros_robot_or_network_imports() -> None:
     assert violations == []
 
 
-def test_importing_stage3_stays_cpu_only_and_does_not_connect_or_command() -> None:
+def test_importing_online_runtime_stays_cpu_only_and_does_not_connect_or_command() -> None:
     assert os.environ.get("CUDA_VISIBLE_DEVICES") == ""
     before = set(sys.modules)
     for name in (
-        "contracts", "transition", "replay", "batch", "losses", "update_credit",
-            "protocol", "publication", "checkpoint", "temporal_parity", "learner",
-        "parent",
+        "training_contracts",
+        "transition_authority",
+        "replay",
+        "training_batch",
+        "training_losses",
+        "sample_credit",
+        "policy_protocol",
+        "policy_revision",
+        "learner_checkpoint",
+        "temporal_parity",
+        "learner",
+        "bootstrap_parent",
     ):
-        importlib.import_module(f"forcesmolvla.rft.stage3.{name}")
+        importlib.import_module(f"forcesmolvla.rft.online.{name}")
     added = set(sys.modules) - before
     ros = [name for name in added if name.split(".", 1)[0] in {"rclpy", "rospy", "roslib"}]
     assert ros == []
@@ -61,7 +70,7 @@ class BlockTorch(importlib.abc.MetaPathFinder):
         return None
 
 sys.meta_path.insert(0, BlockTorch())
-import forcesmolvla.rft.stage3.integrated_capture
+import forcesmolvla.rft.online.integrated_capture
 assert "torch" not in sys.modules
 """
     environment = os.environ.copy()

@@ -4,11 +4,11 @@ from dataclasses import replace
 
 import pytest
 
-from forcesmolvla.rft.stage3.gripper_provenance import (
+from forcesmolvla.rft.online.gripper_authority import (
     GripperGeneration,
     GripperProvenanceError,
 )
-from forcesmolvla.rft.stage3.policy_lineage import (
+from forcesmolvla.rft.online.policy_lineage import (
     InitialGripperAuthority,
     PolicyLineageAudit,
     PolicyLineageError,

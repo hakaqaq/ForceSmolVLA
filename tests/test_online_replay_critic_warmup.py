@@ -17,7 +17,7 @@ from train_forcerft_critic_warmup import (  # noqa: E402
     load_checkpoint_once,
     save_checkpoint,
 )
-from forcesmolvla.rft.stage3.update_credit import UpdateCreditLedger  # noqa: E402
+from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger  # noqa: E402
 
 
 def _row(

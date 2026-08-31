@@ -6,7 +6,7 @@ import time
 import numpy as np
 import pytest
 
-from forcesmolvla.rft.stage3.async_runtime import (
+from forcesmolvla.rft.online.actor_learner_runtime import (
     AsyncRuntimeError,
     EpisodePin,
     H50ActionCache,

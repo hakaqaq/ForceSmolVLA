@@ -9,7 +9,7 @@ import pytest
 import torch
 from torch import nn
 
-from forcesmolvla.rft.stage3 import temporal_parity as temporal_parity_module
+from forcesmolvla.rft.online import temporal_parity as temporal_parity_module
 from forcesmolvla.rft.critic import (
     ForceAwareMacroCritic,
     FrozenConRFTResNet10,
@@ -17,8 +17,8 @@ from forcesmolvla.rft.critic import (
 )
 from forcesmolvla.rft.losses import CriticObservation
 from forcesmolvla.rft.frozen_vlm_trainability import frozen_prefix_flow_matching_terms
-from forcesmolvla.rft.stage3.losses import compute_online_twin_q_td_loss
-from forcesmolvla.rft.stage3.temporal_parity import (
+from forcesmolvla.rft.online.training_losses import compute_online_twin_q_td_loss
+from forcesmolvla.rft.online.temporal_parity import (
     ROOT,
     TemporalParityError,
     blocked_temporal_parity_report,
@@ -337,16 +337,16 @@ def test_synthetic_fixture_exercises_both_paths_but_cannot_open_formal_gate(tmp_
         "numeric_output_source": "PreparedEpisode",
     }
     assert "not PreparedEpisode" in report["stage2"]["raw_identity_provenance"]["source"]
-    for stage2_macro, stage3_macro in zip(
+    for recorded_macro, online_macro in zip(
         report["stage2"]["macros"], report["stage3"]["macros"], strict=True,
     ):
         for field in (
             "grid_monotonic_ns", "anchor_state7", "accepted_absolute_action_k7",
             "anchor_relative_delta_k7", "normalized_delta_action_k7",
         ):
-            np.testing.assert_array_equal(stage2_macro[field], stage3_macro[field])
-        assert stage2_macro["normalizer_application_count"] == 1
-        assert stage3_macro["normalizer_application_count"] == 1
+            np.testing.assert_array_equal(recorded_macro[field], online_macro[field])
+        assert recorded_macro["normalizer_application_count"] == 1
+        assert online_macro["normalizer_application_count"] == 1
     assert report["stage3"]["partial_macro_quarantine"] == [{
         "anchor_grid_index": 6,
         "available_slots": 2,

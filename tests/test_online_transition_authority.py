@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from forcesmolvla.rft.stage3.transition import (
+from forcesmolvla.rft.online.transition_authority import (
     AcceptedAck,
     TransitionContractError,
     canonical_payload_sha256,

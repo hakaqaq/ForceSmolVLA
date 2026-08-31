@@ -5,24 +5,24 @@ from copy import deepcopy
 import pytest
 import torch
 
-from forcesmolvla.rft.stage3.batch import MixedReplaySampler, build_expert_feature_mask
-from forcesmolvla.rft.stage3.replay import (
+from forcesmolvla.rft.online.training_batch import MixedReplaySampler, build_expert_feature_mask
+from forcesmolvla.rft.online.replay import (
     D_EXPERT,
     R_ONLINE,
     ReplayDigestCollisionError,
-    Stage3Replay,
+    OnlineReplay,
 )
-from forcesmolvla.rft.stage3.transition import (
+from forcesmolvla.rft.online.transition_authority import (
     canonical_payload_sha256,
     finalize_ack_transition,
 )
-from forcesmolvla.rft.stage3.update_credit import CreditsUnavailable, UpdateCreditLedger
-from test_stage3_ack_transition import transition_payload
+from forcesmolvla.rft.online.sample_credit import CreditsUnavailable, UpdateCreditLedger
+from test_online_transition_authority import transition_payload
 
 
 def test_R_D_membership_payload_dedupe_uid_and_credit_rules() -> None:
     ledger = UpdateCreditLedger(credits_per_transition=1, credits_per_joint_cycle=1)
-    replay = Stage3Replay(max_online_transitions=10, credit_ledger=ledger)
+    replay = OnlineReplay(max_online_transitions=10, credit_ledger=ledger)
     autonomous = finalize_ack_transition(transition_payload(macro_index=0))
     intervention = finalize_ack_transition(
         transition_payload(owner="human_intervention", macro_index=1)
@@ -62,7 +62,7 @@ def test_credits_block_at_zero_and_round_trip_exactly() -> None:
 
 
 def test_mixed_sampler_origin_and_expert_mask_prevent_R_self_imitation() -> None:
-    replay = Stage3Replay(max_online_transitions=10)
+    replay = OnlineReplay(max_online_transitions=10)
     intervention = finalize_ack_transition(
         transition_payload(owner="human_intervention", macro_index=3)
     )

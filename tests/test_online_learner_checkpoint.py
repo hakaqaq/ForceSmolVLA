@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import pytest
 
-from forcesmolvla.rft.stage3.checkpoint import (
-    Stage3CheckpointSchemaError,
+from forcesmolvla.rft.online.learner_checkpoint import (
+    OnlineCheckpointSchemaError,
     cpu_round_trip_online_checkpoint,
     validate_online_checkpoint_metadata,
 )
@@ -63,11 +63,11 @@ def test_checkpoint_schema_and_cpu_json_round_trip() -> None:
 
 def test_checkpoint_fails_nonboundary_and_counter_or_credit_drift() -> None:
     pending = checkpoint_payload(); pending["boundary"]["pending_optimizer_steps"] = 1
-    with pytest.raises(Stage3CheckpointSchemaError, match="SCHEMA"):
+    with pytest.raises(OnlineCheckpointSchemaError, match="SCHEMA"):
         validate_online_checkpoint_metadata(pending)
     counter = checkpoint_payload(); counter["counters"]["critic_updates"] = 3
-    with pytest.raises(Stage3CheckpointSchemaError, match="CRITIC_COUNTER"):
+    with pytest.raises(OnlineCheckpointSchemaError, match="CRITIC_COUNTER"):
         validate_online_checkpoint_metadata(counter)
     credit = checkpoint_payload(); credit["credits"]["available"] = 1
-    with pytest.raises(Stage3CheckpointSchemaError, match="CREDIT_LEDGER"):
+    with pytest.raises(OnlineCheckpointSchemaError, match="CREDIT_LEDGER"):
         validate_online_checkpoint_metadata(credit)

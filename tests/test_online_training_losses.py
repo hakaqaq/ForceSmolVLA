@@ -7,11 +7,11 @@ import torch
 from torch import nn
 
 from forcesmolvla.rft.losses import CriticObservation
-from forcesmolvla.rft.stage3.losses import (
+from forcesmolvla.rft.online.training_losses import (
     compute_expert_only_flow_matching_loss,
     compute_online_twin_q_td_loss,
-    compute_stage3_actor_objective,
-    compute_stage3_min_twin_q_actor_loss,
+    compute_online_actor_objective,
+    compute_online_min_twin_q_actor_loss,
 )
 
 
@@ -116,7 +116,7 @@ def test_expert_only_fm_zero_batch_is_graph_connected_exact_zero() -> None:
 def test_actor_objective_uses_min_q_and_actioncontract_v2_stops_gripper_q_gradient() -> None:
     per_feature = torch.ones(2, 50, 7, requires_grad=True)
     expert = torch.zeros_like(per_feature, dtype=torch.bool); expert[0] = True
-    terms = compute_stage3_actor_objective(
+    terms = compute_online_actor_objective(
         per_feature_flow_loss=per_feature,
         action_valid_mask_h50=torch.ones(2, 50, dtype=torch.bool),
         expert_feature_mask_h50x7=expert,
@@ -132,7 +132,7 @@ def test_actor_objective_uses_min_q_and_actioncontract_v2_stops_gripper_q_gradie
     observation = CriticObservation(zeros, zeros, zeros, torch.zeros(2, 7), torch.zeros(2, 6))
     mean = torch.tensor([0.0] * 6 + [0.028491082421846097])
     std = torch.tensor([1.0] * 6 + [0.04012480845771951])
-    loss, _q1, _q2, action = compute_stage3_min_twin_q_actor_loss(
+    loss, _q1, _q2, action = compute_online_min_twin_q_actor_loss(
         q1=ActionOnlyCritic(0.0), q2=ActionOnlyCritic(1.0), observation=observation,
         normalized_flow_action_chunk7=chunk,
         delta_action_mean7=mean, delta_action_std7=std,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from forcesmolvla.rft.stage3.transition import (
+from forcesmolvla.rft.online.transition_authority import (
     AcceptedAck,
     TransitionContractError,
     causal_zoh_ack_macro,

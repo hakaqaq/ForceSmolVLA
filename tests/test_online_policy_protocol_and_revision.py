@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from forcesmolvla.rft.stage3.protocol import (
+from forcesmolvla.rft.online.policy_protocol import (
     InferenceDisposition,
     PolicyEpochGate,
     TransportEnvelope,
 )
-from forcesmolvla.rft.stage3.publication import (
+from forcesmolvla.rft.online.policy_revision import (
     InMemoryRevisionStateMachine,
     QuiescentBoundary,
     RevisionRecord,
