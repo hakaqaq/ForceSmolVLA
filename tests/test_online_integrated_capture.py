@@ -139,7 +139,7 @@ def _result() -> dict:
     }
 
 
-def test_policy_execute_requires_explicit_flag_and_approved_revision_binding(
+def test_policy_execute_requires_explicit_flag_and_accepts_direct_runtime(
     tmp_path: Path,
 ) -> None:
     contract = _contract()
@@ -160,7 +160,6 @@ def test_policy_execute_requires_explicit_flag_and_approved_revision_binding(
         "activation_authorized": False,
         "unlock_requires": [
             "explicit_development_policy_execution_smoke_flag",
-            "approved_development_deployment_binding",
         ],
     }
     with pytest.raises(IntegratedCaptureError, match="EXPLICIT_FLAG_REQUIRED"):
@@ -194,7 +193,6 @@ def test_policy_execute_requires_explicit_flag_and_approved_revision_binding(
         policy_epoch=0,
         reset_generation=0,
         takeover_generation=0,
-        deployment_binding=BASELINE_DEPLOYMENT_BINDING,
         allow_development_policy_execution_smoke=True,
     )
     assert policy.actual_action_source == "policy"
@@ -202,6 +200,7 @@ def test_policy_execute_requires_explicit_flag_and_approved_revision_binding(
     assert policy.formal_replay is policy.real_online_r is False
     assert policy.controller_process_count == 1
     assert policy.deploy_controller is False
+    assert policy.deployment_binding is None
 
 
 def test_development_package_accepts_baseline_and_published_inactive_candidate(
@@ -449,20 +448,6 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
     assert payload["robot_or_ros_started"] is False
 
     revision = "f" * 64
-    package = _development_package(tmp_path, revision, candidate=True)
-    binding = _development_binding(tmp_path, revision)
-    profile = tmp_path / "candidate-profile.json"
-    profile.write_text(
-        json.dumps(
-            {
-                "schema_version": "forcesmolvla-deployment-profile-v1",
-                "artifact_status": "development_only",
-                "checkpoint": str(package),
-                "deployment_binding": str(binding),
-            }
-        ),
-        encoding="utf-8",
-    )
     policy_command = [
         sys.executable,
         str(ROOT / "tools/run_forcerft_integrated_capture.py"),
@@ -480,8 +465,6 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
         revision,
         "--policy-epoch",
         "1",
-        "--deployment-profile",
-        str(profile),
     ]
     blocked = subprocess.run(
         policy_command,
@@ -504,22 +487,7 @@ def test_integrated_capture_cli_modes_are_explicit_and_validate_without_ros(tmp_
     assert payload["robot_or_ros_started"] is False
     assert payload["contract"]["policy_execution"] is True
     assert payload["contract"]["deploy_controller"] is False
-    assert payload["contract"]["deployment_binding"] == str(binding.resolve())
+    assert payload["contract"]["deployment_binding"] is None
+    assert "deployment_profile" not in payload["recorder_arguments"]
     assert payload["recorder_arguments"]["async_learner"] is True
     assert payload["recorder_arguments"]["initial_policy_epoch"] == 1
-
-    other_binding = _development_binding(tmp_path, revision, "other-binding")
-    mismatch = subprocess.run(
-        [
-            *policy_command,
-            "--deployment-binding",
-            str(other_binding),
-            "--allow-development-policy-execution-smoke",
-        ],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert mismatch.returncode == 2
-    assert "APPROVED_DEVELOPMENT_BINDING_MISMATCH" in mismatch.stdout

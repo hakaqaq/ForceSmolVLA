@@ -40,7 +40,6 @@ CAPTURE_MODE_SEMANTICS: dict[str, dict[str, Any]] = {
         "activation_authorized": False,
         "unlock_requires": [
             "explicit_development_policy_execution_smoke_flag",
-            "approved_development_deployment_binding",
         ],
     },
 }
@@ -202,32 +201,30 @@ def build_capture_contract(
     if mode == "policy-execute":
         if not allow_development_policy_execution_smoke:
             raise IntegratedCaptureError("POLICY_EXECUTE_EXPLICIT_FLAG_REQUIRED")
-        if deployment_binding is None:
-            raise IntegratedCaptureError(
-                "POLICY_EXECUTE_APPROVED_DEVELOPMENT_BINDING_REQUIRED"
-            )
-        resolved_binding = deployment_binding.expanduser().resolve()
-        try:
-            binding = json.loads(resolved_binding.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise IntegratedCaptureError(
-                "POLICY_EXECUTE_APPROVED_DEVELOPMENT_BINDING_UNREADABLE"
-            ) from error
-        if (
-            not isinstance(binding, Mapping)
-            or binding.get("schema_version")
-            != "forcesmolvla-live-deployment-binding-v1"
-            or binding.get("artifact_status") != "approved"
-            or not isinstance(binding.get("approval"), Mapping)
-            or binding["approval"].get("status") != "approved"
-        ):
-            raise IntegratedCaptureError(
-                "POLICY_EXECUTE_APPROVED_DEVELOPMENT_BINDING_INVALID"
-            )
-        if binding.get("model_sha256") != policy_revision:
-            raise IntegratedCaptureError(
-                "POLICY_EXECUTE_APPROVED_DEVELOPMENT_REVISION_MISMATCH"
-            )
+        resolved_binding = None
+        if deployment_binding is not None:
+            resolved_binding = deployment_binding.expanduser().resolve()
+            try:
+                binding = json.loads(resolved_binding.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise IntegratedCaptureError(
+                    "POLICY_EXECUTE_APPROVED_DEVELOPMENT_BINDING_UNREADABLE"
+                ) from error
+            if (
+                not isinstance(binding, Mapping)
+                or binding.get("schema_version")
+                != "forcesmolvla-live-deployment-binding-v1"
+                or binding.get("artifact_status") != "approved"
+                or not isinstance(binding.get("approval"), Mapping)
+                or binding["approval"].get("status") != "approved"
+            ):
+                raise IntegratedCaptureError(
+                    "POLICY_EXECUTE_APPROVED_DEVELOPMENT_BINDING_INVALID"
+                )
+            if binding.get("model_sha256") != policy_revision:
+                raise IntegratedCaptureError(
+                    "POLICY_EXECUTE_APPROVED_DEVELOPMENT_REVISION_MISMATCH"
+                )
     elif allow_development_policy_execution_smoke:
         raise IntegratedCaptureError("POLICY_EXECUTE_FLAG_REQUIRES_POLICY_EXECUTE_MODE")
     else:

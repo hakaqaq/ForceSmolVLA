@@ -13,7 +13,6 @@ import subprocess
 import sys
 import threading
 import time
-from types import SimpleNamespace
 from typing import Any, Mapping
 
 from forcesmolvla.rft.online.gripper_authority import GripperGeneration
@@ -24,7 +23,6 @@ from forcesmolvla.rft.online.integrated_capture import (
     IntegratedCaptureLedger,
     RECORDER_CONTROL_CHAIN,
     RECORDER_ENTRY,
-    validate_development_policy_package,
 )
 from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority, UPPER_CLOCK_DOMAIN
 
@@ -32,10 +30,6 @@ from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority, UPPE
 SHADOW_BACKEND_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
 POLICY_EXECUTION_BACKEND_SCHEMA = (
     "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
-)
-DETECTOR_CONTRACT = Path(
-    "/home/rlc123/ForceSmolVLA/"
-    "configs/online_replay_reward_terminal_contract.v1.development.json"
 )
 RETRYABLE_CAMERA_ERRORS = (
     "CAMERA_AGE_EXCEEDED:",
@@ -50,6 +44,11 @@ DEFAULT_DEPLOYMENT_PROFILE = Path(
 def _async_runtime_identity(
     metadata: Mapping[str, Any], contract: IntegratedCaptureContract
 ) -> dict[str, Any]:
+    try:
+        resume_checkpoint = Path(str(metadata["learner_resume_checkpoint"])).resolve()
+        inference_actor = Path(str(metadata["checkpoint"])).resolve()
+    except (KeyError, TypeError, ValueError) as error:
+        raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_RUNTIME_MISMATCH") from error
     if (
         metadata.get("online_actor_learner") is not True
         or metadata.get("runtime_session_id") != contract.identity.session_id
@@ -62,6 +61,7 @@ def _async_runtime_identity(
         or not metadata["learner_resume_checkpoint"]
         or metadata.get("server_persistent") is not True
         or metadata.get("current_episode_sampling") is not False
+        or inference_actor != resume_checkpoint / "actor"
     ):
         raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_RUNTIME_MISMATCH")
     return {
@@ -905,7 +905,6 @@ def _validate_policy_execution_contract(contract: IntegratedCaptureContract) -> 
         or contract.formal_replay is not False
         or contract.real_online_r is not False
         or contract.development_policy_execution_smoke is not True
-        or not contract.deployment_binding
         or contract.controller_owner != "recorder"
         or contract.controller_process_count != 1
         or contract.recorder_controller is not True
@@ -914,65 +913,6 @@ def _validate_policy_execution_contract(contract: IntegratedCaptureContract) -> 
         or Path(contract.recorder_entry) != RECORDER_ENTRY
     ):
         raise IntegratedCaptureError("POLICY_EXECUTE_BACKEND_CONTRACT_NOT_AUTHORIZED")
-
-
-def _validate_policy_execution_profile(
-    deploy: Any,
-    profile: Mapping[str, Any],
-    metadata: Mapping[str, Any],
-    contract: IntegratedCaptureContract,
-) -> None:
-    detector = _json(DETECTOR_CONTRACT)
-    detector_smoke = detector.get("reward_gate", {}).get(
-        "development_policy_execution_smoke", {}
-    )
-    profile_binding = Path(profile["deployment_binding"]).resolve()
-    checkpoint = Path(profile["checkpoint"]).resolve()
-    if (
-        profile.get("artifact_status") != "development_only"
-        or profile_binding != Path(str(contract.deployment_binding)).resolve()
-    ):
-        raise IntegratedCaptureError(
-            "POLICY_EXECUTE_APPROVED_DEVELOPMENT_DEPLOYMENT_MISMATCH"
-        )
-    validate_development_policy_package(
-        checkpoint, contract.identity.policy_revision
-    )
-    try:
-        deploy.validate_execution_authorization(
-            SimpleNamespace(
-                allow_development_robot_execution=True,
-                execute=True,
-                trusted_deployment_binding_sha256=profile[
-                    "deployment_binding_sha256"
-                ],
-                yes=False,
-            ),
-            dict(metadata),
-        )
-    except (OSError, PermissionError, RuntimeError, TypeError, ValueError) as error:
-        raise IntegratedCaptureError(
-            "POLICY_EXECUTE_SERVER_AUTHORIZATION_MISMATCH"
-        ) from error
-    expected_metadata = {
-        "model_sha256": contract.identity.policy_revision,
-        "checkpoint": str(checkpoint),
-        "deployment_binding_sha256": profile["deployment_binding_sha256"],
-        "rulespec_mode": "development_only",
-        "rulespec_approval_status": "approved",
-    }
-    if any(metadata.get(key) != value for key, value in expected_metadata.items()):
-        raise IntegratedCaptureError("POLICY_EXECUTE_SERVER_AUTHORIZATION_MISMATCH")
-    if (
-        detector_smoke.get("approved") is not True
-        or detector_smoke.get("scope")
-        != "single_episode_cycle210_policy_execution_smoke"
-        or detector.get("reward_gate", {}).get(
-            "reward_bearing_online_update_authorized"
-        )
-        is not False
-    ):
-        raise IntegratedCaptureError("POLICY_EXECUTE_DETECTOR_SCOPE_NOT_APPROVED")
 
 
 def _selected_chunk_action(
@@ -1318,14 +1258,7 @@ class IntegratedCaptureBackend:
             raise IntegratedCaptureError("SHADOW_ROOT_MUST_BE_NEW")
         if contract.identity.episode_id != "episode_000000":
             raise IntegratedCaptureError("SHADOW_NEW_ROOT_REQUIRES_EPISODE_000000")
-        profile_path = Path(
-            str(arguments.get("deployment_profile", DEFAULT_DEPLOYMENT_PROFILE))
-        ).resolve()
-        profile = deploy.load_deployment_profile(profile_path)
-        if str(profile["tool_profile"]) != str(arguments["tool_profile"]):
-            raise IntegratedCaptureError("SHADOW_DEPLOYMENT_TOOL_PROFILE_MISMATCH")
-        manifest_path = Path(profile["dataset_manifest"]).resolve()
-        manifest = _json(manifest_path)
+        async_learner = bool(arguments.get("async_learner", False))
         client = deploy.PolicyHttpClient(
             str(arguments.get("policy_host", "127.0.0.1")),
             int(arguments.get("policy_port", 8000)),
@@ -1333,21 +1266,31 @@ class IntegratedCaptureBackend:
         )
         metadata = client.metadata()
         deploy.validate_metadata(metadata)
-        if contract.mode == "policy-execute":
-            _validate_policy_execution_profile(
-                deploy, profile, metadata, contract
+        if async_learner:
+            async_runtime_identity = _async_runtime_identity(metadata, contract)
+            manifest_path = (
+                Path(str(metadata["checkpoint"])).resolve()
+                / "manifests/conversion_manifest.json"
             )
+        else:
+            profile_path = Path(
+                str(arguments.get("deployment_profile", DEFAULT_DEPLOYMENT_PROFILE))
+            ).resolve()
+            profile = deploy.load_deployment_profile(profile_path)
+            if str(profile["tool_profile"]) != str(arguments["tool_profile"]):
+                raise IntegratedCaptureError("SHADOW_DEPLOYMENT_TOOL_PROFILE_MISMATCH")
+            manifest_path = Path(profile["dataset_manifest"]).resolve()
+            async_runtime_identity = None
+        manifest = _json(manifest_path)
         manifest_task = deploy.validate_manifest(manifest, metadata, manifest_path)
         if manifest_task != str(arguments["task"]).strip():
             raise IntegratedCaptureError("SHADOW_DEPLOYMENT_TASK_MISMATCH")
         if metadata.get("model_sha256") != contract.identity.policy_revision:
             raise IntegratedCaptureError("SHADOW_POLICY_REVISION_MISMATCH")
 
-        async_runtime_identity = None
-        if bool(arguments.get("async_learner", False)):
+        if async_learner:
             if contract.mode != "policy-execute":
                 raise IntegratedCaptureError("ASYNC_LEARNER_REQUIRES_POLICY_EXECUTE")
-            async_runtime_identity = _async_runtime_identity(metadata, contract)
 
         recorder_args = _parse_recorder_arguments(recorder, command)
         start_timeout = float(arguments.get("backend_start_timeout", 180.0))

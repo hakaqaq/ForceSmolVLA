@@ -56,7 +56,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--deployment-profile",
         type=Path,
-        default=ROOT / "configs/deployment.active.development.json",
     )
     parser.add_argument("--inference-timeout", type=float, default=30.0)
     parser.add_argument("--shadow-inference-period", type=float, default=0.1)
@@ -167,11 +166,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "policy-execute":
             if not args.allow_development_policy_execution_smoke:
                 raise IntegratedCaptureError("POLICY_EXECUTE_EXPLICIT_FLAG_REQUIRED")
-            deployment_binding = _policy_execution_deployment(
-                args.deployment_profile,
-                deployment_binding,
-                args.policy_revision,
-            )
+            if args.async_learner:
+                deployment_binding = None
+            else:
+                if args.deployment_profile is None:
+                    raise IntegratedCaptureError(
+                        "POLICY_EXECUTE_APPROVED_DEVELOPMENT_PROFILE_REQUIRED"
+                    )
+                deployment_binding = _policy_execution_deployment(
+                    args.deployment_profile,
+                    deployment_binding,
+                    args.policy_revision,
+                )
         contract = build_capture_contract(
             mode=args.mode,
             session_id=args.session_id,
@@ -194,7 +200,6 @@ def main(argv: list[str] | None = None) -> int:
             "initial_policy_epoch": args.policy_epoch,
             "policy_host": args.policy_host,
             "policy_port": args.policy_port,
-            "deployment_profile": str(args.deployment_profile.resolve()),
             "inference_timeout": args.inference_timeout,
             "shadow_inference_period": args.shadow_inference_period,
             "backend_start_timeout": args.backend_start_timeout,
@@ -204,6 +209,10 @@ def main(argv: list[str] | None = None) -> int:
             "max_torque_nm": args.max_torque_nm,
             "async_learner": args.async_learner,
         }
+        if args.deployment_profile is not None:
+            recorder_arguments["deployment_profile"] = str(
+                args.deployment_profile.resolve()
+            )
         if args.launch:
             result = run_integrated_capture(
                 contract=contract,

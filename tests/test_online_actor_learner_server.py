@@ -8,15 +8,20 @@ import time
 from types import SimpleNamespace
 
 import pytest
+import torch
 
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from serve_forcerft_actor_learner import (  # noqa: E402
     AsyncPolicyLearnerRuntime,
+    ContinuousLearner,
     RequestHandler,
 )
-from forcesmolvla.rft.online.actor_learner_runtime import reconcile_post_checkpoint_replay
+from forcesmolvla.rft.online.actor_learner_runtime import (
+    InferencePriorityCoordinator,
+    reconcile_post_checkpoint_replay,
+)
 from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
 
 
@@ -78,6 +83,7 @@ class FakePolicy:
 class FakeLearner:
     def __init__(self) -> None:
         self.cycle = 0
+        self.save_calls = 0
 
     def set_current_session(self, _session_id: str) -> None:
         pass
@@ -86,12 +92,15 @@ class FakeLearner:
         pass
 
     def save_checkpoint(self):
+        self.save_calls += 1
         return None
 
     def __call__(self, coordinator):
         with coordinator.learner_step_slot("critic", initial_estimate_s=0.0):
             time.sleep(0.005)
         self.cycle += 1
+        actor = FakePolicy()
+        actor.value = self.cycle
         return {
             "learner_critic_steps": 2,
             "learner_actor_steps": 1,
@@ -100,12 +109,14 @@ class FakeLearner:
             "nonfinite_count": 0,
             "oom_count": 0,
             "online_joint_cycle": self.cycle,
-            "learner_actor": FakePolicy(),
+            "learner_actor": actor,
             "latest_checkpoint_path": None,
         }
 
 
-def _runtime() -> AsyncPolicyLearnerRuntime:
+def _runtime(
+    *, learner: FakeLearner | None = None, checkpoint_root: Path | None = None
+) -> AsyncPolicyLearnerRuntime:
     return AsyncPolicyLearnerRuntime(
         engine=FakeEngine(),
         machine=FakeMachine(),
@@ -114,8 +125,8 @@ def _runtime() -> AsyncPolicyLearnerRuntime:
         active_revision_id="active-cycle10",
         active_model_revision="model-cycle10",
         learner_resume_checkpoint=Path("/tmp/cycle20"),
-        online_checkpoint_root=Path("/tmp/online-checkpoints"),
-        learner_job=FakeLearner(),
+        online_checkpoint_root=checkpoint_root or Path("/tmp/online-checkpoints"),
+        learner_job=learner or FakeLearner(),
     )
 
 
@@ -159,6 +170,44 @@ def test_resume_reconciles_append_only_replay_and_credits_once() -> None:
     } == set(post_checkpoint_uids)
     assert reconcile_post_checkpoint_replay(credits, rows) == 0
     assert credits.snapshot().available == 698
+
+
+def test_less_than_100_online_rows_runs_no_optimizer_step(tmp_path: Path) -> None:
+    learner = ContinuousLearner(
+        device=torch.device("cpu"),
+        resume_checkpoint=tmp_path / "resume",
+        checkpoint_root=tmp_path / "checkpoints",
+        replay_root=tmp_path / "online",
+        current_session_id=None,
+    )
+    result = learner(InferencePriorityCoordinator())
+    assert result["waiting_for_replay"] is True
+    assert result["learner_critic_steps"] == 0
+    assert result["learner_actor_steps"] == 0
+    assert result["learner_polyak_steps"] == 0
+    assert learner.learner is None
+
+
+def test_cycle_five_broadcast_is_memory_only_and_stop_saves_once(
+    tmp_path: Path,
+) -> None:
+    learner = FakeLearner()
+    checkpoint_root = tmp_path / "online-checkpoints"
+    runtime = _runtime(learner=learner, checkpoint_root=checkpoint_root)
+    runtime.start_episode(_identity())
+    runtime.infer({
+        "request_id": "request-1",
+        "provenance": {"session_id": "session-1"},
+    })
+    deadline = time.monotonic() + 2.0
+    while runtime.status()["actor_parameter_broadcast_count"] < 1:
+        assert time.monotonic() < deadline
+        time.sleep(0.005)
+    assert runtime.engine.policy.value >= 5
+    assert not checkpoint_root.exists()
+    runtime.abort_episode(_identity())
+    runtime.stop()
+    assert learner.save_calls == 1
 
 
 def test_runtime_pins_actor_and_runs_persistent_learner() -> None:

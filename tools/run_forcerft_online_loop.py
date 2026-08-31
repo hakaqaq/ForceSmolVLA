@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -22,6 +21,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
+    select_exact_resume_checkpoint,
+)
+
 MODEL_PYTHON = Path("/home/rlc123/anaconda3/envs/forcesmolvla/bin/python")
 ROBOT_PYTHON = Path("/home/rlc123/fr3_client_ws/.venv/bin/python")
 EPISODE_ID = "episode_000000"
@@ -32,38 +35,6 @@ class ContinuousLoopError(RuntimeError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ContinuousLoopError(message)
-
-
-def _json(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise ContinuousLoopError(f"FORCERFT_ONLINE_JSON_INVALID:{path}") from error
-    require(isinstance(value, dict), f"FORCERFT_ONLINE_JSON_OBJECT_REQUIRED:{path}")
-    return value
-
-
-@dataclass(frozen=True)
-class Deployment:
-    profile: Path
-    binding: Path
-    trusted_binding: str
-
-
-def _deployment(args: argparse.Namespace) -> Deployment:
-    profile = _json(args.deployment_profile)
-    require(
-        profile.get("artifact_status") == "development_only",
-        "FORCERFT_ONLINE_DEPLOYMENT_PROFILE_INVALID",
-    )
-    binding = args.deployment_binding or Path(str(profile["deployment_binding"]))
-    if not binding.is_absolute():
-        binding = ROOT / binding
-    trusted = args.trusted_deployment_binding_sha256 or str(
-        profile["deployment_binding_sha256"]
-    )
-    require(binding.is_file() and len(trusted) == 64, "FORCERFT_ONLINE_BINDING_INVALID")
-    return Deployment(args.deployment_profile.resolve(), binding.resolve(), trusted)
 
 
 def _run(command: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
@@ -173,7 +144,6 @@ def _run_episode(
     index: int,
     *,
     server: subprocess.Popen[Any],
-    deployment: Deployment,
     model_revision: str,
     policy_epoch: int,
 ) -> bool:
@@ -202,8 +172,6 @@ def _run_episode(
         "--tool-profile", args.tool_profile, "--session-id", session_id,
         "--episode-id", EPISODE_ID, "--policy-revision", model_revision,
         "--policy-epoch", str(policy_epoch), "--takeover-generation", "0",
-        "--deployment-profile", str(deployment.profile),
-        "--deployment-binding", str(deployment.binding),
         "--policy-host", "127.0.0.1", "--policy-port", str(args.policy_port),
         "--policy-replan-steps", str(args.policy_replan_steps),
         "--policy-queue-low-watermark", str(args.policy_queue_low_watermark),
@@ -230,14 +198,17 @@ def _run_episode(
 
 
 def run_loop(args: argparse.Namespace) -> int:
-    deployment = _deployment(args)
-    resume = args.output_root / "offline/checkpoints/offline_actor_critic_cycle_000210"
-    require(resume.is_dir(), "FORCERFT_OFFLINE_EXACT_RESUME_MISSING")
+    require(
+        args.allow_development_policy_execution_smoke,
+        "FORCERFT_ONLINE_ROBOT_EXECUTION_FLAG_REQUIRED",
+    )
+    resume = select_exact_resume_checkpoint(args.output_root)
     server_command = [
         str(args.model_python), str(ROOT / "tools/serve_forcerft_actor_learner.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
         "--session-id", "waiting-for-episode", "--episode-id", EPISODE_ID,
         "--learner-resume-checkpoint", str(resume),
+        "--allow-development-policy-execution-smoke",
         "--host", "127.0.0.1", "--port", str(args.policy_port),
     ]
     server = subprocess.Popen(server_command, cwd=ROOT, env=os.environ.copy())
@@ -261,7 +232,6 @@ def run_loop(args: argparse.Namespace) -> int:
                 args,
                 index,
                 server=server,
-                deployment=deployment,
                 model_revision=model_revision,
                 policy_epoch=policy_epoch,
             ):
@@ -286,9 +256,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-force-n", type=float, default=25.0)
     parser.add_argument("--max-torque-nm", type=float, default=2.0)
     parser.add_argument("--formal-r-root", type=Path)
-    parser.add_argument("--deployment-profile", type=Path, required=True)
-    parser.add_argument("--deployment-binding", type=Path)
-    parser.add_argument("--trusted-deployment-binding-sha256")
+    parser.add_argument(
+        "--allow-development-policy-execution-smoke",
+        action="store_true",
+        help="explicitly enable the existing supervised HIL robot-execution path",
+    )
     parser.add_argument("--model-python", type=Path, default=MODEL_PYTHON)
     parser.add_argument("--robot-python", type=Path, default=ROBOT_PYTHON)
     parser.add_argument("--policy-port", type=int, default=8000)
@@ -313,9 +285,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         args.output_root / "online"
         if args.formal_r_root is None else args.formal_r_root.resolve()
     )
-    args.deployment_profile = args.deployment_profile.resolve()
-    if args.deployment_binding is not None:
-        args.deployment_binding = args.deployment_binding.resolve()
     return args
 
 

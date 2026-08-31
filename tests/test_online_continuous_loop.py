@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
-import subprocess
 import sys
 
 import pytest
@@ -13,22 +11,18 @@ sys.path.insert(0, str(ROOT / "tools"))
 import run_forcerft_online_loop as loop  # noqa: E402
 
 
-def _write(path: Path, value: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value), encoding="utf-8")
-
-
 def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> None:
-    profile = tmp_path / "deployment.json"
-    _write(profile, {})
     args = loop.parse_args([
         "--task-id", "task2", "--output-root", str(tmp_path / "outputs/task2"),
         "--max-episodes", "1", "--root-prefix", str(tmp_path / "capture"),
-        "--task", "ring", "--deployment-profile", str(profile),
+        "--task", "ring",
     ])
 
     assert args.output_root == (tmp_path / "outputs/task2").resolve()
     assert args.formal_r_root == (tmp_path / "outputs/task2/online").resolve()
+    assert args.allow_development_policy_execution_smoke is False
+    assert not hasattr(args, "deployment_profile")
+    assert not hasattr(args, "deployment_binding")
 
 
 def test_episode_admission_is_called_once_only_for_success(
@@ -45,16 +39,60 @@ def test_episode_admission_is_called_once_only_for_success(
     assert calls == [episode]
 
 
+def test_loop_passes_selected_exact_resume_directly_to_unified_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resume = tmp_path / "online/checkpoints/online_actor_critic_cycle_000100"
+    commands: list[list[str]] = []
+
+    class Process:
+        pass
+
+    monkeypatch.setattr(loop, "select_exact_resume_checkpoint", lambda _root: resume)
+    monkeypatch.setattr(
+        loop.subprocess,
+        "Popen",
+        lambda command, **_kwargs: commands.append(command) or Process(),
+    )
+    monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
+        "server_persistent": True,
+        "learner_resume_checkpoint": str(resume.resolve()),
+        "active_actor_model_revision": "model",
+        "policy_epoch": 0,
+    })
+    monkeypatch.setattr(loop, "_run_episode", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(loop, "_stop_server", lambda _process: None)
+    args = type("Args", (), {
+        "allow_development_policy_execution_smoke": True,
+        "output_root": tmp_path,
+        "model_python": Path("python"),
+        "task_id": "task2",
+        "policy_port": 8000,
+        "server_start_timeout": 1.0,
+        "max_episodes": 1,
+    })()
+
+    assert loop.run_loop(args) == 0
+    command = commands[0]
+    assert command[command.index("--learner-resume-checkpoint") + 1] == str(resume)
+    assert "--allow-development-policy-execution-smoke" in command
+    assert "--deployment-profile" not in command
+    assert "--deployment-binding" not in command
+
+
 def test_q_stops_before_admission_and_server_gets_graceful_signal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
+    commands: list[list[str]] = []
     monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
         "runtime_session_id": "capture_001",
         "runtime_episode_id": loop.EPISODE_ID,
         "server_persistent": True,
     })
-    monkeypatch.setattr(loop, "_run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        loop, "_run", lambda command, **_kwargs: commands.append(command)
+    )
     monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
         "learner_state": "waiting_for_replay",
         "current_episode_sampled": False,
@@ -63,7 +101,6 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
     monkeypatch.setattr("builtins.input", lambda _prompt: "q")
     monkeypatch.setattr(loop, "_admit", lambda *_args: calls.append("admit"))
 
-    deployment = loop.Deployment(tmp_path / "profile", tmp_path / "binding", "a" * 64)
     args = type("Args", (), {
         "root_prefix": tmp_path / "capture",
         "policy_port": 8000,
@@ -73,10 +110,13 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
         "max_force_n": 25.0, "max_torque_nm": 2.0,
     })()
     assert loop._run_episode(
-        args, 1, server=object(), deployment=deployment,
+        args, 1, server=object(),
         model_revision="model", policy_epoch=0,
     ) is False
     assert calls == []
+    assert "--allow-development-policy-execution-smoke" in commands[0]
+    assert "--deployment-profile" not in commands[0]
+    assert "--deployment-binding" not in commands[0]
 
     class Process:
         def __init__(self) -> None:

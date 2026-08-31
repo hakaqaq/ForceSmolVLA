@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
+import json
 import math
 import os
 from pathlib import Path
@@ -62,6 +63,76 @@ class OnlineTrainingPolicy:
 def online_checkpoint_path(checkpoint_root: Path, completed_cycle: int) -> Path:
     require(completed_cycle >= 0, "FORCERFT_ONLINE_CYCLE_INVALID")
     return checkpoint_root / f"online_actor_critic_cycle_{completed_cycle:06d}"
+
+
+_EXACT_RESUME_FILES = (
+    "actor/model.safetensors",
+    "actor/config.json",
+    "actor/artifact_manifest.json",
+    "models/q1_state.pt",
+    "models/q2_state.pt",
+    "models/q1_target_state.pt",
+    "models/q2_target_state.pt",
+    "optimizers/actor_optimizer_state.pt",
+    "optimizers/critic_optimizer_state.pt",
+    "optimizers/actor_scheduler_state.pt",
+    "optimizers/critic_scheduler_state.pt",
+    "state/runtime_state.pt",
+    "artifacts/normalizer_manifest.json",
+    "artifacts/action_delta_spec.json",
+)
+
+
+def exact_resume_checkpoint_is_recoverable(
+    checkpoint: Path, *, expected_kind: str
+) -> bool:
+    """Reject incomplete checkpoint directories before selecting a resume parent."""
+
+    try:
+        metadata = json.loads(
+            (checkpoint / "metadata.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return False
+    return bool(
+        isinstance(metadata, dict)
+        and metadata.get("complete") is True
+        and metadata.get("kind") == expected_kind
+        and metadata.get("actor_directory") == "actor"
+        and all((checkpoint / relative).is_file() for relative in _EXACT_RESUME_FILES)
+    )
+
+
+def select_exact_resume_checkpoint(output_root: Path) -> Path:
+    """Choose the newest recoverable online checkpoint, else offline cycle 210."""
+
+    online_root = output_root.resolve() / "online/checkpoints"
+    candidates: list[tuple[int, Path]] = []
+    for path in online_root.glob("online_actor_critic_cycle_*"):
+        if not path.is_dir():
+            continue
+        try:
+            cycle = int(path.name.rsplit("_", 1)[1])
+        except ValueError:
+            continue
+        if exact_resume_checkpoint_is_recoverable(
+            path, expected_kind="online_actor_critic_exact_resume"
+        ):
+            candidates.append((cycle, path.resolve()))
+    if candidates:
+        return max(candidates)[1]
+
+    offline = (
+        output_root.resolve()
+        / "offline/checkpoints/offline_actor_critic_cycle_000210"
+    )
+    require(
+        exact_resume_checkpoint_is_recoverable(
+            offline, expected_kind="offline_actor_critic_exact_resume"
+        ),
+        "FORCERFT_OFFLINE_EXACT_RESUME_MISSING_OR_INCOMPLETE",
+    )
+    return offline.resolve()
 
 
 def retain_latest_online_checkpoints(checkpoint_root: Path, *, keep: int = 2) -> tuple[Path, ...]:

@@ -239,6 +239,7 @@ class InferenceEngine:
         device: torch.device,
         *,
         allow_development_robot_execution: bool = False,
+        allow_development_policy_execution_smoke: bool = False,
         deployment_binding_path: Path | None = None,
         trusted_deployment_binding_sha256: str | None = None,
     ) -> None:
@@ -256,6 +257,8 @@ class InferenceEngine:
         self.model_sha256 = sha256_file(self.checkpoint / "model.safetensors")
         self.deployment_binding: dict[str, Any] | None = None
         self.deployment_binding_sha256: str | None = None
+        if allow_development_robot_execution and allow_development_policy_execution_smoke:
+            raise PermissionError("ROBOT_EXECUTION_MODE_CONFLICT")
         if allow_development_robot_execution:
             if (
                 deployment_binding_path is None
@@ -275,6 +278,8 @@ class InferenceEngine:
                 rulespec_sha256=self.rulespec_sha256,
                 server_source_sha256=self.server_source_sha256,
             )
+        elif allow_development_policy_execution_smoke:
+            _approved_rulespec_for_execution(self.rulespec)
         elif (
             deployment_binding_path is not None
             or trusted_deployment_binding_sha256 is not None
@@ -296,7 +301,10 @@ class InferenceEngine:
             self.policy,
             self.rulespec,
             rules_sha256=self.rulespec_sha256,
-            approved_development_execution=self.deployment_binding is not None,
+            approved_development_execution=(
+                self.deployment_binding is not None
+                or allow_development_policy_execution_smoke
+            ),
         )
         self.policy.to(self.device)
         self.policy.eval()

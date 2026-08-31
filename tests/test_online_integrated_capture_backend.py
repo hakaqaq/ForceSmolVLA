@@ -712,6 +712,7 @@ def test_async_runtime_binding_requires_exact_capture_identity() -> None:
         "active_actor_revision": "stage3-cycle10",
         "active_actor_model_revision": contract.identity.policy_revision,
         "learner_resume_checkpoint": "/tmp/cycle20",
+        "checkpoint": "/tmp/cycle20/actor",
         "learner_started": False,
         "pending_candidate_id": "stage3-cycle21",
         "pending_candidate_published": False,
@@ -727,6 +728,10 @@ def test_async_runtime_binding_requires_exact_capture_identity() -> None:
     with pytest.raises(IntegratedCaptureError, match="RUNTIME_MISMATCH"):
         capture_backend._async_runtime_identity(
             {**metadata, "runtime_episode_id": "wrong"}, contract
+        )
+    with pytest.raises(IntegratedCaptureError, match="RUNTIME_MISMATCH"):
+        capture_backend._async_runtime_identity(
+            {**metadata, "checkpoint": "/tmp/other/actor"}, contract
         )
 
 

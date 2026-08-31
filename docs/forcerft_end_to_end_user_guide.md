@@ -27,8 +27,6 @@ export LEROBOT_DATASET="$FORCESMOLVLA_ROOT/datasets/task2_lerobotv3"
 export OFFLINE_REPLAY="$FORCESMOLVLA_ROOT/artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
 export MODEL_PYTHON=/home/rlc123/anaconda3/envs/forcesmolvla/bin/python
 export ROBOT_PYTHON="$FR3_WS/.venv/bin/python"
-# 只在用户明确部署某个完整 checkpoint 后设置；本 pipeline 不提供默认部署 profile。
-export DEPLOYMENT_PROFILE=/absolute/path/to/explicitly_deployed_profile.json
 ```
 
 训练机使用 Conda/PyTorch/CUDA；机器人侧使用 ROS 2 Humble。硬件链为 FR3、HEX-E、Robotiq、D435、D405 和 SpaceMouse。机器人运行前加载：
@@ -187,12 +185,14 @@ outputs/task2/online/replay
   --policy-queue-low-watermark 7 \
   --max-force-n 25 \
   --max-torque-nm 2 \
-  --deployment-profile "$DEPLOYMENT_PROFILE"
+  --allow-development-policy-execution-smoke
 ```
 
-Unified server只加载一次 offline exact-resume checkpoint，并跨 episode 常驻。Online-R 少于 100 条时只采集；达到 100 后 Learner 连续运行。batch 为 50% demonstration + 50% sealed online replay；每 learner cycle 为 2 Critic + 2 Polyak + 1 Actor。
+Unified server 每次启动只选择并加载一次完整 exact-resume checkpoint，并跨 episode 常驻。Online-R 少于 100 条时只采集；达到 100 后 Learner 连续运行。batch 为 50% demonstration + 50% sealed online replay；每 learner cycle 为 2 Critic + 2 Polyak + 1 Actor。
 
-server 本身不加载 registry 的 active/previous rollback Actor，也不需要 deployment binding；它始终从 `outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210/actor` 读取推理 Actor，并由同一完整 checkpoint 恢复 Learner。机器人 policy-execute 只在用户明确部署某个完整 checkpoint 后才传入对应 deployment profile；本轮不会创建 actor export、candidate、binding 或 approval 文件。
+server 本身不加载 registry 的 active/previous rollback Actor，也不需要 deployment profile、deployment binding 或 Actor-only export。启动时先选择 `outputs/task2/online/checkpoints/` 中 cycle 最大且结构完整的 online exact-resume checkpoint；没有可恢复的 online checkpoint 时，回退到 `outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210`。Inference Actor 固定为所选 checkpoint 的 `actor/`，Learner 从同一目录恢复 Critics、targets、两个 optimizer、scheduler、RNG、sampler、cycle counter 和 replay cursor，不允许混合启动。
+
+`--allow-development-policy-execution-smoke` 是已有的显式机器人执行开关；它不选择模型，也不触发 publication、activation、candidate、profile 或 binding 流程。力限、takeover generation、stale-result rejection、ACK 和 recorder 单控制链保持不变。
 
 每 5 cycles 只在内存广播 Actor，新参数从下一次 inference request 的新 H50 chunk 生效；同步点不写 checkpoint、不导出 package、不做 candidate validation。每 50 cycles 保存完整 checkpoint：
 
@@ -213,4 +213,4 @@ Actor export 只在用户以后明确要求部署某个完整 checkpoint 时，�
 
 必须保留：原始 D 数据和 LeRobot v3、SFT、reward classifier、materialized demo replay、offline Critic、offline exact-resume、最新两个 online exact-resume、formal replay/WAL/outbox/admission 引用的所有 raw episode、registry 和 active/previous rollback export。
 
-常见 fail-closed 原因：deployment binding 不匹配、原始 JPEG 缺失、takeover 后旧 result、gripper origin 不完整、ACK 缺失、checkpoint/replay UID 或 credit 不一致。不得用其他 episode 图片、虚假 command ID/ACK、重绑旧 generation 或修改原始 episode绕过。
+常见 fail-closed 原因：exact-resume checkpoint 不完整、推理 Actor 与 Learner checkpoint 不同源、原始 JPEG 缺失、takeover 后旧 result、gripper origin 不完整、ACK 缺失、checkpoint/replay UID 或 credit 不一致。不得用其他 episode 图片、虚假 command ID/ACK、重绑旧 generation 或修改原始 episode绕过。

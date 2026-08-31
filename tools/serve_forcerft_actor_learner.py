@@ -30,6 +30,7 @@ import serve_policy  # noqa: E402
 from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
     OnlineTrainingPolicy,
     broadcast_actor_parameters,
+    exact_resume_checkpoint_is_recoverable,
     online_checkpoint_path,
     retain_latest_online_checkpoints,
     EpisodePin,
@@ -37,6 +38,7 @@ from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
     PinnedEpisode,
     prepare_learner,
     reconcile_post_checkpoint_replay,
+    select_exact_resume_checkpoint,
 )
 from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
@@ -45,9 +47,6 @@ from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
 )
 
 
-DEFAULT_RESUME_CHECKPOINT = (
-    ROOT / "outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210"
-)
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise RuntimeError(message)
@@ -646,6 +645,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--episode-id", required=True)
     parser.add_argument("--learner-resume-checkpoint", type=Path)
+    parser.add_argument(
+        "--allow-development-policy-execution-smoke",
+        action="store_true",
+        help="explicitly enable the existing supervised HIL robot-execution path",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
@@ -657,32 +661,54 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     from forcesmolvla.training_runtime import resolve_task_output_root
 
+    require(
+        args.allow_development_policy_execution_smoke,
+        "ONLINE_REPLAY_ASYNC_ROBOT_EXECUTION_FLAG_REQUIRED",
+    )
     require(torch.cuda.is_available(), "ONLINE_REPLAY_ASYNC_CUDA_UNAVAILABLE")
     output_root = resolve_task_output_root(
         ROOT, task_id=args.task_id, output_root=args.output_root
     )
     resume_checkpoint = (
-        args.learner_resume_checkpoint
-        or output_root / "offline/checkpoints/offline_actor_critic_cycle_000210"
-    ).resolve()
-    actor_package = resume_checkpoint / "actor"
-    require(actor_package.is_dir(), "FORCERFT_OFFLINE_EXACT_RESUME_ACTOR_MISSING")
+        select_exact_resume_checkpoint(output_root)
+        if args.learner_resume_checkpoint is None
+        else args.learner_resume_checkpoint.resolve()
+    )
+    checkpoint_metadata = json.loads(
+        (resume_checkpoint / "metadata.json").read_text(encoding="utf-8")
+    )
+    checkpoint_kind = str(checkpoint_metadata.get("kind", ""))
+    require(
+        checkpoint_kind
+        in {"offline_actor_critic_exact_resume", "online_actor_critic_exact_resume"}
+        and exact_resume_checkpoint_is_recoverable(
+            resume_checkpoint, expected_kind=checkpoint_kind
+        ),
+        "FORCERFT_EXACT_RESUME_CHECKPOINT_INVALID",
+    )
+    actor_package = resume_checkpoint / str(checkpoint_metadata["actor_directory"])
     device = torch.device("cuda:0")
     engine = serve_policy.InferenceEngine(
         actor_package,
         ROOT / "configs/live_action_safety.task2.development.yaml",
         ROOT / "schemas/rulespec.schema.json",
         device,
+        allow_development_policy_execution_smoke=True,
     )
-    checkpoint_metadata = json.loads(
-        (resume_checkpoint / "metadata.json").read_text(encoding="utf-8")
-    )
+    engine.metadata.update({
+        "robot_execution_allowed": True,
+        "robot_execution_mode": "supervised_development",
+        "development_execution_override": True,
+        "gripper_max_age_ms": 300.0,
+        "controller_ack_timeout_ms": 20.0,
+    })
     actor_checkpoint = checkpoint_metadata.get("actor_checkpoint", {})
     active_revision_id = str(actor_checkpoint.get("checkpoint_id", ""))
     require(
-        checkpoint_metadata.get("kind") == "offline_actor_critic_exact_resume"
+        checkpoint_kind
+        in {"offline_actor_critic_exact_resume", "online_actor_critic_exact_resume"}
         and active_revision_id,
-        "FORCERFT_OFFLINE_EXACT_RESUME_METADATA_INVALID",
+        "FORCERFT_EXACT_RESUME_METADATA_INVALID",
     )
     machine = InMemoryRevisionStateMachine(
         RevisionRecord(
@@ -730,7 +756,7 @@ def main() -> int:
     )
     print(
         f"[server] listening on http://{args.host}:{args.port} "
-        "robot_io=false execution=disabled",
+        "robot_io=false execution=supervised-development",
         flush=True,
     )
     try:

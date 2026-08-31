@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 import threading
 import time
 
@@ -19,7 +21,29 @@ from forcesmolvla.rft.online.actor_learner_runtime import (
     run_timed_actor,
     online_checkpoint_path,
     retain_latest_online_checkpoints,
+    select_exact_resume_checkpoint,
 )
+
+
+EXACT_RESUME_FILES = (
+    "actor/model.safetensors", "actor/config.json", "actor/artifact_manifest.json",
+    "models/q1_state.pt", "models/q2_state.pt", "models/q1_target_state.pt",
+    "models/q2_target_state.pt", "optimizers/actor_optimizer_state.pt",
+    "optimizers/critic_optimizer_state.pt", "optimizers/actor_scheduler_state.pt",
+    "optimizers/critic_scheduler_state.pt", "state/runtime_state.pt",
+    "artifacts/normalizer_manifest.json", "artifacts/action_delta_spec.json",
+)
+
+
+def _exact_checkpoint(path: Path, kind: str) -> None:
+    path.mkdir(parents=True)
+    (path / "metadata.json").write_text(json.dumps({
+        "complete": True, "kind": kind, "actor_directory": "actor",
+    }), encoding="utf-8")
+    for relative in EXACT_RESUME_FILES:
+        target = path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.touch()
 
 
 class FakeRegistry:
@@ -65,6 +89,21 @@ def test_fixed_online_training_schedule_and_checkpoint_retention(tmp_path) -> No
         "online_actor_critic_cycle_000107",
     ]
     assert not online_checkpoint_path(tmp_path, 50).exists()
+
+
+def test_resume_selection_prefers_latest_recoverable_online_then_offline(tmp_path) -> None:
+    offline = tmp_path / "offline/checkpoints/offline_actor_critic_cycle_000210"
+    _exact_checkpoint(offline, "offline_actor_critic_exact_resume")
+    assert select_exact_resume_checkpoint(tmp_path) == offline.resolve()
+
+    checkpoint_root = tmp_path / "online/checkpoints"
+    cycle_50 = online_checkpoint_path(checkpoint_root, 50)
+    cycle_100 = online_checkpoint_path(checkpoint_root, 100)
+    cycle_107_incomplete = online_checkpoint_path(checkpoint_root, 107)
+    _exact_checkpoint(cycle_50, "online_actor_critic_exact_resume")
+    _exact_checkpoint(cycle_100, "online_actor_critic_exact_resume")
+    cycle_107_incomplete.mkdir(parents=True)
+    assert select_exact_resume_checkpoint(tmp_path) == cycle_100.resolve()
 
 
 def test_episode_revision_is_pinned_for_whole_window() -> None:
