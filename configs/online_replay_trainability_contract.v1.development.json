@@ -1,11 +1,11 @@
 {
   "schema_version": "forcesmolvla_stage3_trainability_contract.v1.development",
-  "status": "frozen_for_g1_g2_cpu",
+  "status": "frozen_for_cpu_contract_validation",
   "scope": "development_only",
-  "parent_binding": "PENDING",
-  "cross_stage_optimizer_rebuilt": "NOT_RUN",
+  "bootstrap_parent_binding": "PENDING",
+  "bootstrap_optimizer_rebuilt": "NOT_RUN",
   "implementation": {
-    "owner": "forcesmolvla.rft.stage3.contracts.apply_stage3_trainability",
+    "owner": "forcesmolvla.rft.online.training_contracts.apply_online_trainability",
     "required_delegate": "forcesmolvla.rft.frozen_vlm_trainability.apply_frozen_vlm_trainability"
   },
   "frozen_actor_prefixes": [

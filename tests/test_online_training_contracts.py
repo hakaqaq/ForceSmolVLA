@@ -3,10 +3,10 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from forcesmolvla.rft.stage3.contracts import (
-    apply_stage3_trainability,
-    load_stage3_contracts,
-    validate_stage3_contracts,
+from forcesmolvla.rft.online.training_contracts import (
+    apply_online_trainability,
+    load_online_contracts,
+    validate_online_contracts,
 )
 
 
@@ -27,23 +27,23 @@ class DummyPolicy(nn.Module):
 
 
 def test_g1_contracts_are_cross_consistent_and_locked() -> None:
-    result = validate_stage3_contracts()
+    result = validate_online_contracts()
     assert result == {
-        "G0_FINAL_PARENT_BINDING": "PENDING",
-        "CROSS_STAGE_OPTIMIZER_REBUILT": "NOT_RUN",
+        "bootstrap_parent_binding": "PENDING",
+        "bootstrap_optimizer_rebuilt": "NOT_RUN",
         "temporal_parity": "BLOCKED",
         "critic_ready": False,
         "actor_q_guidance_enabled": False,
         "robot_execution_authorized": False,
     }
-    values = load_stage3_contracts()
+    values = load_online_contracts()
     assert values["transition"]["temporal_parity"]["recorded_live_fixture"] is None
-    assert values["online_hil"]["phase_gates"]["G3_recorded_loopback"] == "NOT_RUN"
+    assert values["online_hil"]["readiness"]["recorded_loopback"] == "NOT_RUN"
 
 
-def test_stage3_trainability_reuses_frozen_vlm_contract() -> None:
+def test_online_trainability_reuses_frozen_vlm_contract() -> None:
     policy = DummyPolicy().train()
-    manifest = apply_stage3_trainability(policy)
+    manifest = apply_online_trainability(policy)
     named = dict(policy.named_parameters())
     assert manifest.frozen_parameter_count > 0
     assert manifest.trainable_actor_parameter_count > 0

@@ -1,6 +1,6 @@
 {
   "schema_version": "forcesmolvla_stage3_reward_terminal_contract.v1.development",
-  "status": "frozen_for_g1_g2_cpu",
+  "status": "frozen_for_cpu_contract_validation",
   "scope": "development_only",
   "gamma_decision": 0.99,
   "decision_interval_ms": 100,

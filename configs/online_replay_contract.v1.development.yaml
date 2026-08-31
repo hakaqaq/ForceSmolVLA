@@ -1,5 +1,5 @@
 schema_version: forcesmolvla_stage3_replay_contract.v1.development
-status: frozen_for_g1_g2_cpu
+status: frozen_for_cpu_contract_validation
 scope: development_only
 
 pools:

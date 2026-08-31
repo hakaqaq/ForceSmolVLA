@@ -13,12 +13,12 @@ import yaml
 
 ROOT = Path(__file__).parents[4]
 CONFIG_PATHS = {
-    "trainability": ROOT / "configs/stage3_trainability_contract.v1.development.json",
-    "transition": ROOT / "configs/stage3_transition_contract.v1.development.json",
-    "replay": ROOT / "configs/stage3_replay_contract.v1.development.yaml",
-    "reward_terminal": ROOT / "configs/stage3_reward_terminal_contract.v1.development.json",
-    "online_hil": ROOT / "configs/stage3_online_hil.v1.development.yaml",
-    "publication": ROOT / "configs/stage3_policy_publication.v1.development.json",
+    "trainability": ROOT / "configs/online_replay_trainability_contract.v1.development.json",
+    "transition": ROOT / "configs/online_replay_transition_contract.v1.development.json",
+    "replay": ROOT / "configs/online_replay_contract.v1.development.yaml",
+    "reward_terminal": ROOT / "configs/online_replay_reward_terminal_contract.v1.development.json",
+    "online_hil": ROOT / "configs/online_replay_hil.v1.development.yaml",
+    "publication": ROOT / "configs/online_replay_policy_revision.v1.development.json",
 }
 SCHEMA_PATHS = {
     "transition": ROOT / "schemas/stage3_ack_transition.v1.schema.json",
@@ -64,10 +64,10 @@ def validate_online_contracts(
     reward = values["reward_terminal"]
     runtime = values["online_hil"]
 
-    if trainability["parent_binding"] != "PENDING":
-        raise ValueError("ONLINE_REPLAY_G0_PARENT_MUST_REMAIN_PENDING_IN_G1_G2")
-    if trainability["cross_stage_optimizer_rebuilt"] != "NOT_RUN":
-        raise ValueError("ONLINE_REPLAY_CROSS_STAGE_OPTIMIZER_MUST_NOT_RUN_IN_G1_G2")
+    if trainability["bootstrap_parent_binding"] != "PENDING":
+        raise ValueError("ONLINE_REPLAY_BOOTSTRAP_PARENT_MUST_REMAIN_PENDING")
+    if trainability["bootstrap_optimizer_rebuilt"] != "NOT_RUN":
+        raise ValueError("ONLINE_REPLAY_BOOTSTRAP_OPTIMIZER_MUST_NOT_RUN")
     CriticReadiness(**trainability["critic_readiness"]).validate()
     CriticReadiness(**runtime["critic_readiness"]).validate()
     temporal = transition["temporal"]
@@ -88,8 +88,8 @@ def validate_online_contracts(
     for schema in SCHEMA_PATHS.values():
         Draft202012Validator.check_schema(_load(schema))
     return {
-        "G0_FINAL_PARENT_BINDING": "PENDING",
-        "CROSS_STAGE_OPTIMIZER_REBUILT": "NOT_RUN",
+        "bootstrap_parent_binding": "PENDING",
+        "bootstrap_optimizer_rebuilt": "NOT_RUN",
         "temporal_parity": "BLOCKED",
         "critic_ready": False,
         "actor_q_guidance_enabled": False,
