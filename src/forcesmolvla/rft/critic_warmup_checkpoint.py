@@ -39,20 +39,20 @@ CRITIC_WARMUP_COUNTERS = {
 
 
 def verify_source_manifest(root: Path, manifest_path: Path) -> dict:
-    """Fail closed on the immutable G7-A source/config closure."""
+    """Fail closed on the immutable offline Twin-Q source/config closure."""
     payload = json.loads(Path(manifest_path).read_text())
     if payload.get("schema_version") != "forcesmolvla_stage2_source_manifest.v9_g7a":
-        raise RuntimeError("G7A_SOURCE_MANIFEST_SCHEMA_INVALID")
+        raise RuntimeError("OFFLINE_TWIN_Q_SOURCE_MANIFEST_SCHEMA_INVALID")
     if payload.get("manual_g1_or_manual_label_in_runtime_closure") is not False:
-        raise RuntimeError("G7A_MANUAL_SOURCE_IN_RUNTIME_CLOSURE")
+        raise RuntimeError("OFFLINE_TWIN_Q_MANUAL_SOURCE_IN_RUNTIME_CLOSURE")
     for name, record in payload.get("files", {}).items():
         path = Path(root) / record["path"]
         if not path.is_file():
-            raise RuntimeError(f"G7A_SOURCE_FILE_MISSING:{name}")
+            raise RuntimeError(f"OFFLINE_TWIN_Q_SOURCE_FILE_MISSING:{name}")
         if path.stat().st_size != int(record["file_size"]):
-            raise RuntimeError(f"G7A_SOURCE_FILE_SIZE_MISMATCH:{name}")
+            raise RuntimeError(f"OFFLINE_TWIN_Q_SOURCE_FILE_SIZE_MISMATCH:{name}")
         if sha256_file(path) != record["sha256"]:
-            raise RuntimeError(f"G7A_SOURCE_FILE_SHA_MISMATCH:{name}")
+            raise RuntimeError(f"OFFLINE_TWIN_Q_SOURCE_FILE_SHA_MISMATCH:{name}")
     return payload
 
 
@@ -104,7 +104,7 @@ def describe(values: Sequence[float]) -> dict:
         return {"count": 0, "mean": None, "minimum": None, "p10": None,
                 "median": None, "p90": None, "maximum": None}
     if not np.isfinite(array).all():
-        raise FloatingPointError("G7A_NONFINITE_STATISTIC_INPUT")
+        raise FloatingPointError("OFFLINE_TWIN_Q_NONFINITE_STATISTIC_INPUT")
     return {
         "count": int(array.size),
         "mean": float(array.mean()),
@@ -133,12 +133,12 @@ def spearman_correlation(left: Sequence[float], right: Sequence[float]) -> float
     x = np.asarray(left, dtype=np.float64)
     y = np.asarray(right, dtype=np.float64)
     if x.shape != y.shape or x.ndim != 1:
-        raise ValueError("G7A_SPEARMAN_SHAPE_MISMATCH")
+        raise ValueError("OFFLINE_TWIN_Q_SPEARMAN_SHAPE_MISMATCH")
     if x.size < 2 or np.all(x == x[0]) or np.all(y == y[0]):
         return None
     value = float(np.corrcoef(_average_ranks(x), _average_ranks(y))[0, 1])
     if not math.isfinite(value):
-        raise FloatingPointError("G7A_SPEARMAN_NONFINITE")
+        raise FloatingPointError("OFFLINE_TWIN_Q_SPEARMAN_NONFINITE")
     return value
 
 
@@ -146,7 +146,7 @@ def regression_metrics(q: Sequence[float], mc_return: Sequence[float]) -> dict:
     prediction = np.asarray(q, dtype=np.float64)
     target = np.asarray(mc_return, dtype=np.float64)
     if prediction.shape != target.shape or prediction.ndim != 1:
-        raise ValueError("G7A_REGRESSION_SHAPE_MISMATCH")
+        raise ValueError("OFFLINE_TWIN_Q_REGRESSION_SHAPE_MISMATCH")
     if prediction.size == 0:
         return {"count": 0, "mae": None, "rmse": None, "bias": None,
                 "spearman": None}
@@ -204,7 +204,7 @@ def select_fixed_critic_probe(
         if bool(row["terminated"]) or int(row["executed_steps"]) < 3
     ]
     if len(mandatory) > size:
-        raise ValueError("G7A_TRAIN_PROBE_TOO_SMALL_FOR_RARE_ROWS")
+        raise ValueError("OFFLINE_TWIN_Q_TRAIN_PROBE_TOO_SMALL_FOR_RARE_ROWS")
     remaining = np.asarray(
         [index for index in range(len(rows)) if index not in set(mandatory)],
         dtype=np.int64,
@@ -215,7 +215,7 @@ def select_fixed_critic_probe(
         mandatory.extend(int(index) for index in remaining[:needed])
     result = sorted(set(mandatory))
     if len(result) != size:
-        raise RuntimeError("G7A_TRAIN_PROBE_SELECTION_NOT_EXACT")
+        raise RuntimeError("OFFLINE_TWIN_Q_TRAIN_PROBE_SELECTION_NOT_EXACT")
     return result
 
 
@@ -247,7 +247,7 @@ def aggregate_gradient_probes(
     probes: Sequence[Mapping[str, Any]], eta_candidates: Sequence[float], band: Sequence[float]
 ) -> dict:
     if len(band) != 2 or band[0] > band[1]:
-        raise ValueError("G7A_REFERENCE_RATIO_BAND_INVALID")
+        raise ValueError("OFFLINE_TWIN_Q_REFERENCE_RATIO_BAND_INVALID")
 
     def aggregate(items: Sequence[Mapping[str, float]]) -> dict:
         return {
@@ -334,7 +334,7 @@ def save_critic_warmup_checkpoint(
 ) -> dict:
     destination = Path(destination).resolve()
     if destination.exists() or dict(counters) != CRITIC_WARMUP_COUNTERS:
-        raise RuntimeError("G7A_CHECKPOINT_TARGET_OR_COUNTER_INVALID")
+        raise RuntimeError("OFFLINE_TWIN_Q_CHECKPOINT_TARGET_OR_COUNTER_INVALID")
     ensure_all_gradients_none(*critics.values())
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=f".{destination.name}.", dir=destination.parent))
@@ -356,7 +356,7 @@ def save_critic_warmup_checkpoint(
         for relative, value in sorted(startup_snapshot_bytes.items()):
             target = Path(relative)
             if target.is_absolute() or ".." in target.parts:
-                raise ValueError("G7A_STARTUP_SNAPSHOT_PATH_INVALID")
+                raise ValueError("OFFLINE_TWIN_Q_STARTUP_SNAPSHOT_PATH_INVALID")
             target_path = temporary / "startup_snapshot" / target
             target_path.parent.mkdir(parents=True, exist_ok=True)
             with target_path.open("xb") as stream:
@@ -403,24 +403,24 @@ def validate_critic_warmup_checkpoint(checkpoint: Path) -> dict:
     manifest_path = checkpoint / "checkpoint_manifest.json"
     manifest = json.loads(manifest_path.read_text())
     if any(manifest.get(key) != value for key, value in CRITIC_WARMUP_CHECKPOINT_MARKERS.items()):
-        raise RuntimeError("G7A_CHECKPOINT_MARKER_MISMATCH")
+        raise RuntimeError("OFFLINE_TWIN_Q_CHECKPOINT_MARKER_MISMATCH")
     if manifest.get("manifest_payload_sha256") != _manifest_payload_sha256(manifest):
-        raise RuntimeError("G7A_CHECKPOINT_MANIFEST_PAYLOAD_MISMATCH")
+        raise RuntimeError("OFFLINE_TWIN_Q_CHECKPOINT_MANIFEST_PAYLOAD_MISMATCH")
     if manifest.get("counters") != CRITIC_WARMUP_COUNTERS or not manifest.get("complete_update_boundary"):
-        raise RuntimeError("G7A_CHECKPOINT_COUNTER_OR_BOUNDARY_INVALID")
+        raise RuntimeError("OFFLINE_TWIN_Q_CHECKPOINT_COUNTER_OR_BOUNDARY_INVALID")
     if any(manifest.get(key) for key in (
         "pending_optimizer_step", "pending_polyak_update", "pending_gradient"
     )):
-        raise RuntimeError("G7A_CHECKPOINT_PENDING_WORK")
+        raise RuntimeError("OFFLINE_TWIN_Q_CHECKPOINT_PENDING_WORK")
     entries = directory_entries(checkpoint)
     if entries != manifest.get("files"):
-        raise RuntimeError("G7A_CHECKPOINT_INTERNAL_FILE_SHA_MISMATCH")
+        raise RuntimeError("OFFLINE_TWIN_Q_CHECKPOINT_INTERNAL_FILE_SHA_MISMATCH")
     digest = hashlib.sha256(
         json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     if digest != manifest.get("files_sha256"):
-        raise RuntimeError("G7A_CHECKPOINT_FILE_DIGEST_MISMATCH")
+        raise RuntimeError("OFFLINE_TWIN_Q_CHECKPOINT_FILE_DIGEST_MISMATCH")
     counters = json.loads((checkpoint / "state/counters.json").read_text())
     if counters != CRITIC_WARMUP_COUNTERS:
-        raise RuntimeError("G7A_CHECKPOINT_COUNTER_FILE_MISMATCH")
+        raise RuntimeError("OFFLINE_TWIN_Q_CHECKPOINT_COUNTER_FILE_MISMATCH")
     return manifest

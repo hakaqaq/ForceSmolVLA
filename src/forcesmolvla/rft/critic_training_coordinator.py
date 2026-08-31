@@ -19,8 +19,8 @@ import torch
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = ROOT / "configs/twin_q_critic_warmup.development.yaml"
 WORKER_MODULE = "forcesmolvla.rft.critic_training"
-OUTPUT = ROOT / "artifacts/development/stage2/g7a_r2_critic_warmup"
-CHECKPOINT = ROOT / "artifacts/development/stage2/g7a_r2_critic_warmup_checkpoint"
+OUTPUT = ROOT / "artifacts/development/offline/twin_q_critic_warmup_step_000256_run"
+CHECKPOINT = ROOT / "artifacts/development/offline/offline_twin_q_critic_warmup_step_000256"
 
 
 def require(condition: bool, message: str) -> None:
@@ -113,11 +113,11 @@ def report_markdown(artifact: dict) -> str:
                 f"{value['q_vs_mc_return']['spearman']} |"
             )
     candidates = gradient["candidates_with_median_in_reference_band"]
-    return f"""# Stage-2 G7-A Critic-only warm-up report
+    return f"""# Offline Twin-Q Critic warm-up report
 
-Status: `G7A_CRITIC_WARMUP_MECHANICS = pass`.
+Status: `OFFLINE_TWIN_Q_CRITIC_WARMUP_MECHANICS = pass`.
 
-The worker started from the frozen Stage-1 r5 Actor and fresh G2 seed-0 Twin-Q; no G5/G6 checkpoint training state was loaded. Exactly 256 Critic optimizer/scheduler steps and 256 Polyak updates per target ran. Actor optimizer/scheduler/update counts remained zero, and Actor parameters plus floating buffers matched r5 bitwise before and after.
+The worker started from the frozen SFT Actor and a fresh seed-0 Twin-Q; no earlier Actor–Critic training state was loaded. Exactly 256 Critic optimizer/scheduler steps and 256 Polyak updates per target ran. Actor optimizer/scheduler/update counts remained zero, and Actor parameters plus floating buffers matched the SFT parent bitwise before and after.
 
 | Update | Dataset | Rows | TD MSE | Cal-QL term | Total critic loss | Q/MC MAE | Spearman |
 |---:|---|---:|---:|---:|---:|---:|---:|
@@ -125,11 +125,11 @@ The worker started from the frozen Stage-1 r5 Actor and fresh G2 seed-0 Twin-Q; 
 
 The fixed 32-batch train-only scale probe measured median raw `||g_Q||/||g_FM|| = {gradient['global']['raw_q_over_fm']['median']:.6g}` with p10/p90 `{gradient['global']['raw_q_over_fm']['p10']:.6g}/{gradient['global']['raw_q_over_fm']['p90']:.6g}` and maximum `{gradient['global']['raw_q_over_fm']['maximum']:.6g}`. Median cosine similarity was `{gradient['global']['cosine_similarity']['median']:.6g}`. Measurement-only eta candidates whose median weighted ratio fell in `[0.01, 0.10]`: `{candidates}`. No eta was selected or approved, and no Actor update occurred.
 
-All fixed train/validation row IDs, Flow noises, timesteps, and proposals were frozen before update 0. Validation was evaluated only at updates 0 and 256 and was not used for search, early stopping, or checkpoint selection. Test transition/image reads, manual G1/label reads, and Reward Classifier inference/updates were zero.
+All fixed train/validation row IDs, Flow noises, timesteps, and proposals were frozen before update 0. Validation was evaluated only at updates 0 and 256 and was not used for search, early stopping, or checkpoint selection. Test transition/image reads, manual label reads, and Reward Classifier inference/updates were zero.
 
-The checkpoint is `DEVELOPMENT_G7A_CRITIC_WARMUP_ONLY`, `NOT_FOR_DEPLOYMENT`, `NOT_FOR_POLICY_EVALUATION`, `NOT_AN_APPROVED_LONG_TRAIN_PARENT`, and `APPROVED_ONLY_FOR_G7B_IF_EXPLICITLY_AUTHORIZED`. A second fresh process strictly loaded it without an update or sampler draw.
+The checkpoint is `DEVELOPMENT_OFFLINE_TWIN_Q_CRITIC_WARMUP_ONLY`, `NOT_FOR_DEPLOYMENT`, `NOT_FOR_POLICY_EVALUATION`, `NOT_AN_APPROVED_LONG_TRAIN_PARENT`, and `APPROVED_ONLY_IF_EXPLICITLY_AUTHORIZED`. A second fresh process strictly loaded it without an update or sampler draw.
 
-All demonstrations are successes; Reward Classifier training overlaps the RL train episodes; unbiased policy evaluation is false. G7-A establishes only Critic warm-up numerical behavior and Q-gradient scale. It does not demonstrate policy improvement, failure recovery, OOD conservatism, or reward-model generalization.
+All demonstrations are successes; Reward Classifier training overlaps the RL train episodes; unbiased policy evaluation is false. This run establishes only Critic warm-up numerical behavior and Q-gradient scale. It does not demonstrate policy improvement, failure recovery, OOD conservatism, or reward-model generalization.
 """
 
 
@@ -137,11 +137,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true")
     args = parser.parse_args()
-    require(args.run, "pass --run for authorized G7-A")
-    require(not torch.cuda.is_initialized(), "G7A_COORDINATOR_MUST_NOT_CREATE_CUDA_CONTEXT")
-    require(CONFIG.is_file() and SOURCE_MANIFEST.is_file(), "G7A_CONFIG_OR_SOURCE_MANIFEST_MISSING")
+    require(args.run, "pass --run for authorized offline Twin-Q warmup")
+    require(not torch.cuda.is_initialized(), "OFFLINE_TWIN_Q_COORDINATOR_MUST_NOT_CREATE_CUDA_CONTEXT")
+    require(CONFIG.is_file() and SOURCE_MANIFEST.is_file(), "OFFLINE_TWIN_Q_CONFIG_OR_SOURCE_MANIFEST_MISSING")
     for target in (OUTPUT, CHECKPOINT, ARTIFACT, REPORT):
-        require(not target.exists(), f"G7A_APPEND_ONLY_TARGET_EXISTS:{target}")
+        require(not target.exists(), f"OFFLINE_TWIN_Q_APPEND_ONLY_TARGET_EXISTS:{target}")
 
     from forcesmolvla.rft.exact_resume import checkpoint_tree
     from forcesmolvla.rft.critic_warmup_checkpoint import (
@@ -153,10 +153,10 @@ def main() -> None:
     verify_source_manifest(ROOT, SOURCE_MANIFEST)
     tests = run_tests()
     before = protected_snapshot()
-    work = Path(tempfile.mkdtemp(prefix=".g7a_work.", dir=OUTPUT.parent))
+    work = Path(tempfile.mkdtemp(prefix=".offline_twin_q_work.", dir=OUTPUT.parent))
     protected_path = work / "protected_before.json"
     atomic_json(protected_path, before)
-    temp_checkpoint = work / "g7a_critic_warmup_checkpoint.development"
+    temp_checkpoint = work / "offline_twin_q_critic_warmup.development"
     fixed_path = work / "fixed_diagnostics.pt"
     warmup_result_path = work / "warmup_result.json"
     verify_result_path = work / "fresh_load_result.json"
@@ -172,7 +172,7 @@ def main() -> None:
             ], cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             wait_process(warmup_process, warmup_log, "WARMUP")
         warmup = json.loads(warmup_result_path.read_text())
-        require(warmup["counters"] == CRITIC_WARMUP_COUNTERS, "G7A_WARMUP_COUNTERS_INVALID")
+        require(warmup["counters"] == CRITIC_WARMUP_COUNTERS, "OFFLINE_TWIN_Q_WARMUP_COUNTERS_INVALID")
         warmup_pid = warmup["environment"]["pid"]
 
         verify_log = work / "fresh_load_worker.log"
@@ -183,20 +183,20 @@ def main() -> None:
             ], cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             wait_process(verify_process, verify_log, "FRESH_LOAD")
         fresh_load = json.loads(verify_result_path.read_text())
-        require(fresh_load["strict_model_load"] and fresh_load["parameter_updates"] == 0, "G7A_FRESH_LOAD_INVALID")
-        require(warmup_pid != fresh_load["environment"]["pid"], "G7A_FRESH_LOAD_PID_REUSED")
+        require(fresh_load["strict_model_load"] and fresh_load["parameter_updates"] == 0, "OFFLINE_TWIN_Q_FRESH_LOAD_INVALID")
+        require(warmup_pid != fresh_load["environment"]["pid"], "OFFLINE_TWIN_Q_FRESH_LOAD_PID_REUSED")
         validate_critic_warmup_checkpoint(temp_checkpoint)
         os.replace(temp_checkpoint, CHECKPOINT)
         os.replace(work, OUTPUT)
     except BaseException:
-        failure = OUTPUT.parent / f"g7a_failed_{os.getpid()}"
+        failure = OUTPUT.parent / f"offline_twin_q_failed_{os.getpid()}"
         if work.exists():
             os.replace(work, failure)
         raise
 
     after = protected_snapshot()
-    require(before == after, "G7A_FROZEN_INPUT_MUTATION")
-    require(not torch.cuda.is_initialized(), "G7A_COORDINATOR_CREATED_CUDA_CONTEXT")
+    require(before == after, "OFFLINE_TWIN_Q_FROZEN_INPUT_MUTATION")
+    require(not torch.cuda.is_initialized(), "OFFLINE_TWIN_Q_COORDINATOR_CREATED_CUDA_CONTEXT")
     warmup = json.loads((OUTPUT / "warmup_result.json").read_text())
     fresh_load = json.loads((OUTPUT / "fresh_load_result.json").read_text())
     gradient = warmup["gradient_scale"]
@@ -220,13 +220,13 @@ def main() -> None:
         "gripper_q_gradient_zero": gradient["gripper_q_gradient_exact_zero_all_probes"],
         "gripper_fm_gradient_nonzero": gradient["gripper_flow_matching_gradient_nonzero_all_probes"],
         "validation_fixed_two_timepoints_only": set(warmup["evaluation"]) == {"update_0", "update_256"},
-        "g7b_not_started": True,
+        "actor_critic_training_not_started": True,
     }
-    require(all(acceptance.values()), f"G7A_ACCEPTANCE_FAILED:{acceptance}")
+    require(all(acceptance.values()), f"OFFLINE_TWIN_Q_ACCEPTANCE_FAILED:{acceptance}")
     artifact = {
         "schema_version": "forcesmolvla_s2_g7a_critic_warmup_preflight.v1",
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "G7A_CRITIC_WARMUP_MECHANICS": "pass",
+        "OFFLINE_TWIN_Q_CRITIC_WARMUP_MECHANICS": "pass",
         "CRITIC_WARMUP_UPDATES": 256,
         "ACTOR_UPDATES": 0,
         "CRITIC_NUMERICALLY_STABLE": "yes",
@@ -266,10 +266,10 @@ def production_main() -> None:
     parser.add_argument("--run", action="store_true")
     args = parser.parse_args()
     require(args.run, "pass --run for authorized Twin-Q warmup")
-    require(not torch.cuda.is_initialized(), "G7A_COORDINATOR_MUST_NOT_CREATE_CUDA_CONTEXT")
-    require(CONFIG.is_file(), "G7A_CONFIG_MISSING")
+    require(not torch.cuda.is_initialized(), "OFFLINE_TWIN_Q_COORDINATOR_MUST_NOT_CREATE_CUDA_CONTEXT")
+    require(CONFIG.is_file(), "OFFLINE_TWIN_Q_CONFIG_MISSING")
     for target in (OUTPUT, CHECKPOINT):
-        require(not target.exists(), f"G7A_APPEND_ONLY_TARGET_EXISTS:{target}")
+        require(not target.exists(), f"OFFLINE_TWIN_Q_APPEND_ONLY_TARGET_EXISTS:{target}")
 
     from forcesmolvla.rft.critic_warmup_checkpoint import (
         CRITIC_WARMUP_COUNTERS,
@@ -277,10 +277,10 @@ def production_main() -> None:
     )
 
     before = protected_snapshot()
-    work = Path(tempfile.mkdtemp(prefix=".g7a_work.", dir=OUTPUT.parent))
+    work = Path(tempfile.mkdtemp(prefix=".offline_twin_q_work.", dir=OUTPUT.parent))
     protected_path = work / "protected_before.json"
     atomic_json(protected_path, before)
-    temp_checkpoint = work / "g7a_r2_critic_warmup_checkpoint"
+    temp_checkpoint = work / "offline_twin_q_critic_warmup_step_000256"
     fixed_path = work / "fixed_diagnostics.pt"
     warmup_result_path = work / "warmup_result.json"
     verify_result_path = work / "fresh_load_result.json"
@@ -312,7 +312,7 @@ def production_main() -> None:
             )
             wait_process(warmup_process, warmup_log, "WARMUP")
         warmup = json.loads(warmup_result_path.read_text(encoding="utf-8"))
-        require(warmup["counters"] == CRITIC_WARMUP_COUNTERS, "G7A_WARMUP_COUNTERS_INVALID")
+        require(warmup["counters"] == CRITIC_WARMUP_COUNTERS, "OFFLINE_TWIN_Q_WARMUP_COUNTERS_INVALID")
 
         verify_log = work / "fresh_load_worker.log"
         with verify_log.open("w", encoding="utf-8") as log:
@@ -339,19 +339,19 @@ def production_main() -> None:
         require(
             fresh_load["strict_model_load"]
             and fresh_load["parameter_updates"] == 0,
-            "G7A_FRESH_LOAD_INVALID",
+            "OFFLINE_TWIN_Q_FRESH_LOAD_INVALID",
         )
         validate_critic_warmup_checkpoint(temp_checkpoint)
         os.replace(temp_checkpoint, CHECKPOINT)
         os.replace(work, OUTPUT)
     except BaseException:
-        failure = OUTPUT.parent / f"g7a_failed_{os.getpid()}"
+        failure = OUTPUT.parent / f"offline_twin_q_failed_{os.getpid()}"
         if work.exists():
             os.replace(work, failure)
         raise
 
-    require(before == protected_snapshot(), "G7A_FROZEN_INPUT_MUTATION")
-    require(not torch.cuda.is_initialized(), "G7A_COORDINATOR_CREATED_CUDA_CONTEXT")
+    require(before == protected_snapshot(), "OFFLINE_TWIN_Q_FROZEN_INPUT_MUTATION")
+    require(not torch.cuda.is_initialized(), "OFFLINE_TWIN_Q_COORDINATOR_CREATED_CUDA_CONTEXT")
     print(
         json.dumps(
             {

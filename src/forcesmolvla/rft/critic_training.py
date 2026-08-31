@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fresh G7-A warm-up worker and independent strict-load verifier."""
+"""Fresh offline Twin-Q warm-up worker and strict-load verifier."""
 
 from __future__ import annotations
 
@@ -135,10 +135,10 @@ def environment_audit() -> dict:
 
 
 def configure_runtime() -> torch.device:
-    require(torch.cuda.is_available(), "G7A_CUDA_REQUIRED_NO_CPU_FALLBACK")
-    require("4090" in torch.cuda.get_device_name(0), "G7A_RTX4090D_REQUIRED")
-    require(os.environ.get("PYTHONHASHSEED") == "42", "G7A_PYTHONHASHSEED_REQUIRED")
-    require(os.environ.get("CUBLAS_WORKSPACE_CONFIG") == ":4096:8", "G7A_CUBLAS_REQUIRED")
+    require(torch.cuda.is_available(), "OFFLINE_TWIN_Q_CUDA_REQUIRED_NO_CPU_FALLBACK")
+    require("4090" in torch.cuda.get_device_name(0), "OFFLINE_TWIN_Q_RTX4090D_REQUIRED")
+    require(os.environ.get("PYTHONHASHSEED") == "42", "OFFLINE_TWIN_Q_PYTHONHASHSEED_REQUIRED")
+    require(os.environ.get("CUBLAS_WORKSPACE_CONFIG") == ":4096:8", "OFFLINE_TWIN_Q_CUBLAS_REQUIRED")
     random.seed(42)
     np.random.seed(42)
     torch.manual_seed(42)
@@ -170,9 +170,9 @@ def verify_config() -> tuple[dict, dict]:
             "calql_alpha": 0.1, "calql_candidates_per_source": 2,
             "calql_temperature": 1.0, "calql_clipping_enabled": False,
         },
-        "G7A_RESOLVED_RECIPE_DRIFT",
+        "OFFLINE_TWIN_Q_RESOLVED_RECIPE_DRIFT",
     )
-    require(config["initialization"]["g5_or_g6_checkpoint_parent"] is False, "G7A_SMOKE_PARENT_FORBIDDEN")
+    require(config["initialization"]["g5_or_g6_checkpoint_parent"] is False, "OFFLINE_TWIN_Q_SMOKE_PARENT_FORBIDDEN")
     require(
         training_cycle["loss"]["alpha_calql"] == warmup["calql_alpha"]
         and training_cycle["loss"]["cql_candidates_per_source_M"]
@@ -180,7 +180,7 @@ def verify_config() -> tuple[dict, dict]:
         and training_cycle["loss"]["cql_temperature"]
         == warmup["calql_temperature"]
         and training_cycle["targets"]["polyak_tau"] == warmup["polyak_tau"],
-        "G7A_G4_G5_LOSS_SEMANTICS_DRIFT",
+        "OFFLINE_TWIN_Q_G4_G5_LOSS_SEMANTICS_DRIFT",
     )
     return config, training_cycle
 
@@ -195,20 +195,20 @@ def load_split_rows(split: str) -> list[dict]:
     import pyarrow.parquet as pq
     from forcesmolvla.rft.losses import AUTHORIZED_G4_COLUMNS
 
-    require(split in {"train", "val"}, "G7A_TEST_SPLIT_FORBIDDEN")
+    require(split in {"train", "val"}, "OFFLINE_TWIN_Q_TEST_SPLIT_FORBIDDEN")
     columns = list(AUTHORIZED_G4_COLUMNS) + ["detector_terminal_frame"]
     table = pq.read_table(
         REWARD_TRANSITION_ROOT / "transition_index.parquet", columns=columns,
         filters=[("split", "=", split)],
     )
-    require(set(table.column("split").to_pylist()) == {split}, "G7A_SPLIT_FILTER_LEAK")
+    require(set(table.column("split").to_pylist()) == {split}, "OFFLINE_TWIN_Q_SPLIT_FILTER_LEAK")
     return table.to_pylist()
 
 
 def attach_distance(rows: list[dict]) -> None:
     for row in rows:
         remaining = int(row["detector_terminal_frame"]) - int(row["next_frame"])
-        require(remaining >= 0, "G7A_NEGATIVE_TERMINAL_DISTANCE")
+        require(remaining >= 0, "OFFLINE_TWIN_Q_NEGATIVE_TERMINAL_DISTANCE")
         row["policy_decision_distance"] = int(math.ceil(remaining / 3))
 
 
@@ -242,7 +242,7 @@ def create_fixed_diagnostics(
     )
     actor_generator = named_generator("cpu", int(seeds["actor_probe_rows"]))
     actor_sampler = SerializableUniqueSampler(
-        "G7A_actor_gradient_probe", train_data.actor_population, actor_generator
+        "offline_twin_q_actor_gradient_probe", train_data.actor_population, actor_generator
     )
     actor_indices = actor_sampler.draw(int(diag["actor_gradient_probe_batches"]))
     m = 2
@@ -366,7 +366,7 @@ def evaluate_critic_split(
                     next_actor_batch=batch["next_actor_batch"], next_noise7=td_noise,
                     actor=policy, q1_target=q1_target, q2_target=q2_target,
                     delta_action_mean7=batch["delta_mean"], delta_action_std7=batch["delta_std"],
-                    call_id=f"g7a-{label}-{start}-td", sample_action_fn=sampled,
+                    call_id=f"offline-twin-q-{label}-{start}-td", sample_action_fn=sampled,
                 )
                 q1_data = compute_behavior_q(
                     q1, batch["current_observation"], batch["behavior_action"], batch["behavior_mask"]
@@ -404,12 +404,12 @@ def evaluate_critic_split(
                     policy_current = sample_policy_candidates(
                         policy, current_batch, current_noise, batch["delta_mean"], batch["delta_std"],
                         flow_counter, purpose="cql_current",
-                        call_id=f"g7a-{label}-{start}-current",
+                        call_id=f"offline-twin-q-{label}-{start}-current",
                     )
                     policy_next = sample_policy_candidates(
                         policy, next_batch, next_noise, batch["delta_mean"], batch["delta_std"],
                         flow_counter, purpose="cql_next",
-                        call_id=f"g7a-{label}-{start}-next",
+                        call_id=f"offline-twin-q-{label}-{start}-next",
                     )
                     proposal_indices = fixed["proposal_indices"][fixed_slice][valid.cpu()].reshape(-1).tolist()
                     random_candidates = train_data.proposal_actions[proposal_indices].to(device).reshape(
@@ -513,7 +513,7 @@ def evaluate_critic_split(
     require(all(math.isfinite(value) for value in (
         td1, td2, calql1, calql2, result["total_critic_loss"],
         result["candidate_mc_return_clamp_rate"],
-    )), "G7A_DIAGNOSTIC_NONFINITE")
+    )), "OFFLINE_TWIN_Q_DIAGNOSTIC_NONFINITE")
     return result
 
 
@@ -565,7 +565,7 @@ def measure_actor_gradient_scale(
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 action_chunk = flow_counter.sample(
                     policy, batch["current_actor_batch"], q_noise,
-                    call_id=f"g7a-gradient-probe={probe_index}", purpose="actor_guidance",
+                    call_id=f"offline-twin-q-gradient-probe={probe_index}", purpose="actor_guidance",
                 )
                 action_chunk.retain_grad()
                 q_loss = compute_actor_q_loss(
@@ -575,14 +575,14 @@ def measure_actor_gradient_scale(
                     delta_action_mean7=batch["delta_mean"], delta_action_std7=batch["delta_std"],
                 )
             q_loss.backward()
-            require(action_chunk.grad is not None, "G7A_ACTOR_Q_ACTION_GRADIENT_MISSING")
+            require(action_chunk.grad is not None, "OFFLINE_TWIN_Q_ACTOR_Q_ACTION_GRADIENT_MISSING")
             tcp_norm = float(action_chunk.grad[:, :3, :6].float().norm().cpu())
             gripper_q = float(action_chunk.grad[:, :3, 6].float().abs().max().cpu())
             tcp_nonzero &= tcp_norm > 0.0
             gripper_q_zero &= gripper_q == 0.0
             require(
                 all(parameter.grad is None for critic in (q1, q2) for parameter in critic.parameters()),
-                "G7A_Q_PROBE_CRITIC_PARAMETER_GRADIENT",
+                "OFFLINE_TWIN_Q_Q_PROBE_CRITIC_PARAMETER_GRADIENT",
             )
             q_gradients = {
                 name: parameter.grad.detach().cpu().clone()
@@ -608,7 +608,7 @@ def measure_actor_gradient_scale(
                 fm_loss.backward()
             finally:
                 hook.remove()
-            require(len(velocity_outputs) == 1 and velocity_outputs[0].grad is not None, "G7A_FM_OUTPUT_GRADIENT_MISSING")
+            require(len(velocity_outputs) == 1 and velocity_outputs[0].grad is not None, "OFFLINE_TWIN_Q_FM_OUTPUT_GRADIENT_MISSING")
             gripper_fm = float(velocity_outputs[0].grad[..., 6].float().norm().cpu())
             gripper_fm_nonzero &= gripper_fm > 0.0
 
@@ -657,20 +657,20 @@ def measure_actor_gradient_scale(
                 probe["L_FM"], probe["L_actor_Q_unweighted"], tcp_norm,
                 gripper_q, gripper_fm, probe["global"]["raw_q_over_fm"],
                 probe["global"]["cosine_similarity"],
-            )), "G7A_GRADIENT_PROBE_NONFINITE")
+            )), "OFFLINE_TWIN_Q_GRADIENT_PROBE_NONFINITE")
             probes.append(probe)
             for _name, parameter in actor_parameters:
                 parameter.grad = None
             del batch, action_chunk, q_loss, q_gradients, losses, feature_mask, fm_loss, velocity_outputs
             gc.collect(); torch.cuda.empty_cache()
-            print(f"G7A_GRADIENT_PROBE {probe_index + 1}/{len(actor_indices)}", flush=True)
+            print(f"OFFLINE_TWIN_Q_GRADIENT_PROBE {probe_index + 1}/{len(actor_indices)}", flush=True)
     finally:
         policy.train(policy_mode); q1.train(q_modes[0]); q2.train(q_modes[1])
         for _name, parameter in actor_parameters:
             parameter.grad = None
     actor_after = module_component_digests(policy)
-    require(actor_before == actor_after, "G7A_ACTOR_CHANGED_DURING_GRADIENT_MEASUREMENT")
-    require(tcp_nonzero and gripper_q_zero and gripper_fm_nonzero, "G7A_ACTION_GRADIENT_CONTRACT_FAILED")
+    require(actor_before == actor_after, "OFFLINE_TWIN_Q_ACTOR_CHANGED_DURING_GRADIENT_MEASUREMENT")
+    require(tcp_nonzero and gripper_q_zero and gripper_fm_nonzero, "OFFLINE_TWIN_Q_ACTION_GRADIENT_CONTRACT_FAILED")
     result = aggregate_gradient_probes(probes, eta_candidates, band)
     result.update({
         "per_probe": probes,
@@ -805,7 +805,7 @@ def initialize_fresh(*, device: torch.device, with_data: bool) -> dict:
         and modules_storage_independent(q1, q1_target)
         and modules_storage_independent(q2, q2_target)
         and state_exact(q1, q1_target) and state_exact(q2, q2_target),
-        "G7A_FRESH_TWIN_Q_INITIALIZATION_INVALID",
+        "OFFLINE_TWIN_Q_FRESH_TWIN_Q_INITIALIZATION_INVALID",
     )
     q1.train(True); q2.train(True)
     q1_target.make_permanent_eval_target(); q2_target.make_permanent_eval_target()
@@ -826,7 +826,7 @@ def initialize_fresh(*, device: torch.device, with_data: bool) -> dict:
         not actor_ids.intersection(critic_ids)
         and not target_ids.intersection(critic_ids)
         and len(critic_ids) == len(set(critic_ids)),
-        "G7A_CRITIC_OPTIMIZER_OWNERSHIP_INVALID",
+        "OFFLINE_TWIN_Q_CRITIC_OPTIMIZER_OWNERSHIP_INVALID",
     )
     ownership = {
         "actor_optimizer_created": 0, "actor_scheduler_created": 0,
@@ -841,7 +841,7 @@ def initialize_fresh(*, device: torch.device, with_data: bool) -> dict:
         ),
         "q1_q2_storage_independent": modules_storage_independent(q1, q2),
     }
-    require(ownership["frozen_backbone_in_optimizer"] == 0, "G7A_FROZEN_BACKBONE_IN_OPTIMIZER")
+    require(ownership["frozen_backbone_in_optimizer"] == 0, "OFFLINE_TWIN_Q_FROZEN_BACKBONE_IN_OPTIMIZER")
     return {
         "actor": policy, "q1": q1, "q2": q2,
         "q1_target": q1_target, "q2_target": q2_target,
@@ -924,7 +924,7 @@ def run_warmup(args) -> None:
     fixed, fixed_manifest = create_fixed_diagnostics(
         config, data, validation_rows, device
     )
-    require(not args.fixed_diagnostics.exists(), "G7A_FIXED_DIAGNOSTIC_TARGET_EXISTS")
+    require(not args.fixed_diagnostics.exists(), "OFFLINE_TWIN_Q_FIXED_DIAGNOSTIC_TARGET_EXISTS")
     args.fixed_diagnostics.parent.mkdir(parents=True, exist_ok=True)
     torch.save(fixed, args.fixed_diagnostics)
     with args.fixed_diagnostics.open("rb") as stream:
@@ -948,7 +948,7 @@ def run_warmup(args) -> None:
         q1_target=q1_target, q2_target=q2_target, train_data=data,
         device=device, batch_size=16,
     )
-    print("G7A_UPDATE0_DIAGNOSTICS_COMPLETE", flush=True)
+    print("OFFLINE_TWIN_Q_UPDATE0_DIAGNOSTICS_COMPLETE", flush=True)
 
     sampler_initial = {name: sampler.state_dict() for name, sampler in samplers.items()}
     rng_initial = capture_rng_states(generators)
@@ -977,7 +977,7 @@ def run_warmup(args) -> None:
         del td_batch, calql_batch, report
         gc.collect(); torch.cuda.empty_cache()
         if step % 16 == 0:
-            print(f"G7A_CRITIC_UPDATE {step}/256", flush=True)
+            print(f"OFFLINE_TWIN_Q_CRITIC_UPDATE {step}/256", flush=True)
     torch.cuda.synchronize()
     warmup_runtime = {
         "latency_seconds": time.perf_counter() - started,
@@ -986,17 +986,17 @@ def run_warmup(args) -> None:
         "flow_counts": flow_counter.report(),
     }
 
-    require(context["scheduler"].last_epoch == 256, "G7A_CRITIC_SCHEDULER_COUNTER_INVALID")
-    require(module_component_digests(policy) == actor_initial, "G7A_ACTOR_CHANGED_DURING_WARMUP")
-    require(all(parameter.grad is None for parameter in policy.parameters()), "G7A_ACTOR_GRADIENT_FROM_CRITIC")
-    require(optimizer_state_storage_independent(context["optimizer"], q1, q2), "G7A_Q_OPTIMIZER_STORAGE_SHARED")
-    require(modules_storage_independent(q1, q2), "G7A_Q_STORAGE_SHARED_AFTER_WARMUP")
+    require(context["scheduler"].last_epoch == 256, "OFFLINE_TWIN_Q_CRITIC_SCHEDULER_COUNTER_INVALID")
+    require(module_component_digests(policy) == actor_initial, "OFFLINE_TWIN_Q_ACTOR_CHANGED_DURING_WARMUP")
+    require(all(parameter.grad is None for parameter in policy.parameters()), "OFFLINE_TWIN_Q_ACTOR_GRADIENT_FROM_CRITIC")
+    require(optimizer_state_storage_independent(context["optimizer"], q1, q2), "OFFLINE_TWIN_Q_Q_OPTIMIZER_STORAGE_SHARED")
+    require(modules_storage_independent(q1, q2), "OFFLINE_TWIN_Q_Q_STORAGE_SHARED_AFTER_WARMUP")
     backbone_final = {
         f"{name}.{camera}": module_state_sha256(getattr(critic, camera))
         for name, critic in (("q1", q1), ("q2", q2))
         for camera in ("camera1_backbone", "camera2_backbone")
     }
-    require(backbone_initial == backbone_final, "G7A_FROZEN_BACKBONE_CHANGED")
+    require(backbone_initial == backbone_final, "OFFLINE_TWIN_Q_FROZEN_BACKBONE_CHANGED")
     q_after_warmup = {name: module_state_sha256(module) for name, module in (
         ("q1", q1), ("q2", q2), ("q1_target", q1_target), ("q2_target", q2_target)
     )}
@@ -1005,7 +1005,7 @@ def run_warmup(args) -> None:
         and q_after_warmup["q2"] != q_initial["q2"]
         and q_after_warmup["q1_target"] != q_initial["q1_target"]
         and q_after_warmup["q2_target"] != q_initial["q2_target"],
-        "G7A_Q_OR_TARGET_DID_NOT_UPDATE",
+        "OFFLINE_TWIN_Q_Q_OR_TARGET_DID_NOT_UPDATE",
     )
 
     evaluation["update_256"]["train_probe"] = evaluate_critic_split(
@@ -1026,9 +1026,9 @@ def run_warmup(args) -> None:
         {name: module_state_sha256(module) for name, module in (
             ("q1", q1), ("q2", q2), ("q1_target", q1_target), ("q2_target", q2_target)
         )} == q_after_warmup,
-        "G7A_READONLY_DIAGNOSTIC_CHANGED_CRITICS",
+        "OFFLINE_TWIN_Q_READONLY_DIAGNOSTIC_CHANGED_CRITICS",
     )
-    print("G7A_UPDATE256_DIAGNOSTICS_COMPLETE", flush=True)
+    print("OFFLINE_TWIN_Q_UPDATE256_DIAGNOSTICS_COMPLETE", flush=True)
 
     gradient_scale = measure_actor_gradient_scale(
         policy=policy, q1=q1, q2=q2, train_data=data,
@@ -1036,19 +1036,19 @@ def run_warmup(args) -> None:
         device=device, eta_candidates=config["diagnostics"]["eta_candidates"],
         band=config["diagnostics"]["reference_weighted_ratio_band"],
     )
-    require(module_component_digests(policy) == actor_initial, "G7A_ACTOR_CHANGED_AFTER_Q_SCALE_MEASUREMENT")
+    require(module_component_digests(policy) == actor_initial, "OFFLINE_TWIN_Q_ACTOR_CHANGED_AFTER_Q_SCALE_MEASUREMENT")
     require(
         {name: module_state_sha256(module) for name, module in (
             ("q1", q1), ("q2", q2), ("q1_target", q1_target), ("q2_target", q2_target)
         )} == q_after_warmup,
-        "G7A_Q_CHANGED_DURING_SCALE_MEASUREMENT",
+        "OFFLINE_TWIN_Q_Q_CHANGED_DURING_SCALE_MEASUREMENT",
     )
     ensure_all_gradients_none(policy, q1, q2, q1_target, q2_target)
     require(all(
         bool(torch.isfinite(parameter).all())
         for module in (policy, q1, q2, q1_target, q2_target)
         for parameter in module.parameters()
-    ), "G7A_NONFINITE_PARAMETER")
+    ), "OFFLINE_TWIN_Q_NONFINITE_PARAMETER")
 
     counters = dict(CRITIC_WARMUP_COUNTERS)
     sampler_final = {name: sampler.state_dict() for name, sampler in samplers.items()}
@@ -1080,7 +1080,7 @@ def run_warmup(args) -> None:
         fixed_diagnostics_manifest=fixed_manifest, protected_snapshot=protected,
         startup_snapshot_bytes=startup,
     )
-    require(canonical_digest(capture_rng_states(generators)) == rng_before_save, "G7A_CHECKPOINT_CONSUMED_RNG")
+    require(canonical_digest(capture_rng_states(generators)) == rng_before_save, "OFFLINE_TWIN_Q_CHECKPOINT_CONSUMED_RNG")
     validate_critic_warmup_checkpoint(args.checkpoint)
 
     result = {
@@ -1155,19 +1155,19 @@ def run_verify(args) -> None:
     require(
         (args.checkpoint / "startup_snapshot/g7a/stage2_g7a_critic_warmup.development.yaml").read_bytes()
         == CONFIG.read_bytes(),
-        "G7A_VERIFY_CONFIG_BINDING_MISMATCH",
+        "OFFLINE_TWIN_Q_VERIFY_CONFIG_BINDING_MISMATCH",
     )
     require(
         (args.checkpoint / "startup_snapshot/g7a/critic_training.py").read_bytes()
         == Path(__file__).read_bytes(),
-        "G7A_VERIFY_SOURCE_BINDING_MISMATCH",
+        "OFFLINE_TWIN_Q_VERIFY_SOURCE_BINDING_MISMATCH",
     )
     context = initialize_fresh(device=device, with_data=False)
     modules = {name: context[name] for name in ("q1", "q2", "q1_target", "q2_target")}
     for name, module in modules.items():
         state = torch.load(args.checkpoint / f"models/{name}_state.pt", map_location="cpu", weights_only=False)
         incompatible = module.load_state_dict(state, strict=True)
-        require(not incompatible.missing_keys and not incompatible.unexpected_keys, f"G7A_STRICT_MODEL_LOAD_FAILED:{name}")
+        require(not incompatible.missing_keys and not incompatible.unexpected_keys, f"OFFLINE_TWIN_Q_STRICT_MODEL_LOAD_FAILED:{name}")
     optimizer_state = torch.load(
         args.checkpoint / "optimizers/critic_optimizer_state.pt", map_location="cpu", weights_only=False
     )
@@ -1177,7 +1177,7 @@ def run_verify(args) -> None:
     )
     context["scheduler"].load_state_dict(scheduler_state)
     counters = json.loads((args.checkpoint / "state/counters.json").read_text())
-    require(counters == CRITIC_WARMUP_COUNTERS, "G7A_VERIFY_COUNTER_MISMATCH")
+    require(counters == CRITIC_WARMUP_COUNTERS, "OFFLINE_TWIN_Q_VERIFY_COUNTER_MISMATCH")
     sampler_states = torch.load(
         args.checkpoint / "state/sampler_states.pt", map_location="cpu", weights_only=False
     )
@@ -1207,7 +1207,7 @@ def run_verify(args) -> None:
         ),
     }
     for name, sampler in samplers.items():
-        require(sampler.draws == 256, f"G7A_VERIFY_SAMPLER_DRAWS:{name}")
+        require(sampler.draws == 256, f"OFFLINE_TWIN_Q_VERIFY_SAMPLER_DRAWS:{name}")
     sampler_to_generator = {
         "td": "td_sampler", "calql": "calql_sampler",
         "empirical_random_proposal": "empirical_random_proposal",
@@ -1218,39 +1218,39 @@ def run_verify(args) -> None:
             rng_states["named_generator_states"][generator_name],
         )
         for sampler_name, generator_name in sampler_to_generator.items()
-    ), "G7A_VERIFY_SAMPLER_RNG_STATE_MISMATCH")
+    ), "OFFLINE_TWIN_Q_VERIFY_SAMPLER_RNG_STATE_MISMATCH")
     context["actor"].eval(); context["q1"].train(True); context["q2"].train(True)
     context["q1_target"].make_permanent_eval_target()
     context["q2_target"].make_permanent_eval_target()
     ensure_all_gradients_none(context["actor"], *modules.values())
     actor_binding = json.loads((args.checkpoint / "manifests/actor_binding.json").read_text())
-    require(module_component_digests(context["actor"]) == actor_binding["state_final"], "G7A_VERIFY_R5_ACTOR_BINDING_MISMATCH")
+    require(module_component_digests(context["actor"]) == actor_binding["state_final"], "OFFLINE_TWIN_Q_VERIFY_R5_ACTOR_BINDING_MISMATCH")
     steps = {
         int(value["step"].item())
         for value in context["optimizer"].state_dict()["state"].values()
         if "step" in value
     }
-    require(steps == {256}, f"G7A_VERIFY_OPTIMIZER_STEP_MISMATCH:{steps}")
+    require(steps == {256}, f"OFFLINE_TWIN_Q_VERIFY_OPTIMIZER_STEP_MISMATCH:{steps}")
     require(
         context["scheduler"].last_epoch == 256
         and context["scheduler"].state_dict()["_step_count"] == 257,
-        "G7A_VERIFY_SCHEDULER_STEP_MISMATCH",
+        "OFFLINE_TWIN_Q_VERIFY_SCHEDULER_STEP_MISMATCH",
     )
     require(
         modules_storage_independent(context["q1"], context["q2"])
         and optimizer_state_storage_independent(context["optimizer"], context["q1"], context["q2"]),
-        "G7A_VERIFY_Q_STORAGE_NOT_INDEPENDENT",
+        "OFFLINE_TWIN_Q_VERIFY_Q_STORAGE_NOT_INDEPENDENT",
     )
     require(
         not context["q1_target"].training and not context["q2_target"].training
         and not any(parameter.requires_grad for target in (context["q1_target"], context["q2_target"]) for parameter in target.parameters()),
-        "G7A_VERIFY_TARGET_OWNERSHIP_INVALID",
+        "OFFLINE_TWIN_Q_VERIFY_TARGET_OWNERSHIP_INVALID",
     )
     require(all(
         bool(torch.isfinite(parameter).all())
         for module in (*modules.values(), context["actor"])
         for parameter in module.parameters()
-    ), "G7A_VERIFY_NONFINITE_PARAMETER")
+    ), "OFFLINE_TWIN_Q_VERIFY_NONFINITE_PARAMETER")
     # Restoring all global/named RNG is deliberately the final operation.
     restore_rng_states_last(rng_states, generators)
     result = {
@@ -1278,10 +1278,10 @@ def main() -> None:
     parser.add_argument("--fixed-diagnostics", type=Path)
     parser.add_argument("--protected-snapshot", type=Path)
     args = parser.parse_args()
-    require(CONFIG.is_file(), "G7A_STARTUP_CONFIG_MISSING")
+    require(CONFIG.is_file(), "OFFLINE_TWIN_Q_STARTUP_CONFIG_MISSING")
     flow_sampling.critic_action_for_q_guidance = audited_action_contract_v2_adapter
     losses.critic_action_for_q_guidance = audited_action_contract_v2_adapter
-    forbidden = RuntimeError("G7A_R2_PUBLIC_EXECUTION_PATH_CALLED")
+    forbidden = RuntimeError("OFFLINE_TWIN_Q_PUBLIC_EXECUTION_PATH_CALLED")
     with (
         patch.object(
             action_delta.ActionDeltaProcessor,
@@ -1313,7 +1313,7 @@ def main() -> None:
             require(
                 args.fixed_diagnostics is not None
                 and args.protected_snapshot is not None,
-                "G7A_WARMUP_INPUT_MISSING",
+                "OFFLINE_TWIN_Q_WARMUP_INPUT_MISSING",
             )
             run_warmup(args)
         else:
@@ -1325,7 +1325,7 @@ def main() -> None:
         "RuleSpec_calls": rulespec.call_count,
         "predict_action_chunk_calls": predict.call_count,
     }
-    require(not any(calls.values()), f"G7A_R2_PUBLIC_PATH_CALL:{calls}")
+    require(not any(calls.values()), f"OFFLINE_TWIN_Q_PUBLIC_PATH_CALL:{calls}")
     finalize_action_contract_v2_result(args.result, calls)
 
 

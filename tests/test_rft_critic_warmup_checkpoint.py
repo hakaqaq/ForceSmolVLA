@@ -70,7 +70,7 @@ def test_eta_candidates_are_measurement_only() -> None:
     assert math.isfinite(result["modules"]["router"]["raw_q_over_fm"]["median"])
 
 
-def test_g7a_checkpoint_is_atomic_integrity_bound_and_critic_only(tmp_path: Path) -> None:
+def test_offline_twin_q_checkpoint_is_atomic_integrity_bound_and_critic_only(tmp_path: Path) -> None:
     critics = {
         name: torch.nn.Linear(2, 1)
         for name in ("q1", "q2", "q1_target", "q2_target")
@@ -100,7 +100,7 @@ def test_g7a_checkpoint_is_atomic_integrity_bound_and_critic_only(tmp_path: Path
 
     target = checkpoint / "manifests/actor_binding.json"
     target.write_bytes(target.read_bytes() + b" ")
-    with pytest.raises(RuntimeError, match="G7A_CHECKPOINT_INTERNAL_FILE_SHA_MISMATCH"):
+    with pytest.raises(RuntimeError, match="OFFLINE_TWIN_Q_CHECKPOINT_INTERNAL_FILE_SHA_MISMATCH"):
         validate_critic_warmup_checkpoint(checkpoint)
 
 
@@ -119,5 +119,5 @@ def test_source_manifest_fails_closed_on_drift(tmp_path: Path) -> None:
     }))
     verify_source_manifest(tmp_path, manifest)
     source.write_text("frozen = False\n")
-    with pytest.raises(RuntimeError, match="G7A_SOURCE_FILE_(SIZE|SHA)_MISMATCH"):
+    with pytest.raises(RuntimeError, match="OFFLINE_TWIN_Q_SOURCE_FILE_(SIZE|SHA)_MISMATCH"):
         verify_source_manifest(tmp_path, manifest)
