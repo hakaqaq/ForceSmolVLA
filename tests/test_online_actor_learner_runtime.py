@@ -7,6 +7,7 @@ import time
 
 import numpy as np
 import pytest
+import torch
 
 from forcesmolvla.rft.online.actor_learner_runtime import (
     AsyncRuntimeError,
@@ -17,6 +18,7 @@ from forcesmolvla.rft.online.actor_learner_runtime import (
     OnlineTrainingPolicy,
     PinnedEpisode,
     TakeoverWindow,
+    prepare_learner,
     run_concurrent_window,
     run_timed_actor,
     online_checkpoint_path,
@@ -44,6 +46,25 @@ def _exact_checkpoint(path: Path, kind: str) -> None:
         target = path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.touch()
+    online_cycles = (
+        int(path.name.rsplit("_", 1)[1])
+        if kind == "online_actor_critic_exact_resume"
+        else 0
+    )
+    joint_cycles = 210 + online_cycles
+    torch.save({
+        "online_joint_cycles": online_cycles,
+        "counters": {
+            "joint_cycles": joint_cycles,
+            "critic_optimizer_steps": joint_cycles * 2,
+            "actor_optimizer_steps": joint_cycles,
+            "target_polyak_steps": joint_cycles * 2,
+        },
+    }, path / "state/runtime_state.pt")
+    torch.save(
+        {"last_epoch": joint_cycles},
+        path / "optimizers/actor_scheduler_state.pt",
+    )
 
 
 class FakeRegistry:
@@ -102,8 +123,42 @@ def test_resume_selection_prefers_latest_recoverable_online_then_offline(tmp_pat
     cycle_107_incomplete = online_checkpoint_path(checkpoint_root, 107)
     _exact_checkpoint(cycle_50, "online_actor_critic_exact_resume")
     _exact_checkpoint(cycle_100, "online_actor_critic_exact_resume")
+    torch.save(
+        {"last_epoch": 999},
+        cycle_100 / "optimizers/actor_scheduler_state.pt",
+    )
     cycle_107_incomplete.mkdir(parents=True)
-    assert select_exact_resume_checkpoint(tmp_path) == cycle_100.resolve()
+    assert select_exact_resume_checkpoint(tmp_path) == cycle_50.resolve()
+
+
+def test_prepare_learner_uses_exact_resume_loader_signature(tmp_path) -> None:
+    checkpoint = tmp_path / "offline_actor_critic_cycle_000210"
+    checkpoint.mkdir()
+    (checkpoint / "metadata.json").write_text(
+        json.dumps({"actor_directory": "actor"}), encoding="utf-8"
+    )
+
+    class LoaderReached(RuntimeError):
+        pass
+
+    class JointApi:
+        @staticmethod
+        def load_resume_modules(checkpoint_path, actor_path, device):
+            assert checkpoint_path == checkpoint
+            assert actor_path == checkpoint / "actor"
+            assert device == torch.device("cpu")
+            raise LoaderReached
+
+    with pytest.raises(LoaderReached):
+        prepare_learner(
+            torch.device("cpu"),
+            [],
+            [],
+            {},
+            resume_checkpoint=checkpoint,
+            warmup_api=object(),
+            joint_api=JointApi(),
+        )
 
 
 def test_episode_revision_is_pinned_for_whole_window() -> None:

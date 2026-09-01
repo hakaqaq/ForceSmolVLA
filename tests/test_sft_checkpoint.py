@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from forcesmolvla.checkpoint import (
+    export_development_actor_checkpoint,
     load_sft_training_state,
     optimizer_state_sha256,
     parameter_trainability_manifest,
@@ -69,6 +70,53 @@ def test_training_payload_contract_requires_bound_files_and_constructor(tmp_path
     (tmp_path / "model.safetensors").unlink()
     with pytest.raises(RuntimeError, match="REQUIRED_PAYLOAD_MISSING"):
         validate_training_payload_contract(tmp_path)
+
+
+def test_actor_checkpoint_export_does_not_duplicate_candidate_payload(tmp_path):
+    parent = tmp_path / "parent"
+    constructor = parent / "base_assets/smolvlm_constructor"
+    constructor.mkdir(parents=True)
+    (constructor / "config.json").write_text("{}", encoding="utf-8")
+    (parent / "config.json").write_text("{}", encoding="utf-8")
+    (parent / "model.safetensors").write_bytes(b"parent")
+    (parent / "candidate.json").write_text("{}", encoding="utf-8")
+    contract_path = parent / "manifests/training_checkpoint_contract.development.json"
+    contract_path.parent.mkdir(parents=True)
+    contract_path.write_text(json.dumps({
+        "schema_version": "1.0",
+        "training_stage": OFFLINE_FULL_FINETUNE,
+        "required_payloads": [
+            "config.json",
+            "model.safetensors",
+            "base_assets/smolvlm_constructor",
+            "manifests/training_checkpoint_contract.development.json",
+            "candidate.json",
+        ],
+    }), encoding="utf-8")
+
+    class Policy:
+        @staticmethod
+        def save_pretrained(path: Path) -> None:
+            path.mkdir(parents=True, exist_ok=True)
+            (path / "model.safetensors").write_bytes(b"updated")
+            (path / "config.json").write_text("{}", encoding="utf-8")
+
+    destination = tmp_path / "export"
+    export_development_actor_checkpoint(
+        policy=Policy(),
+        destination=destination,
+        runtime_parent=parent,
+        source_joint_checkpoint=tmp_path / "online-checkpoint",
+        candidate_revision_id="online-actor-critic-cycle-000001",
+        parent_binding_id="task2-offline-exact-resume",
+        published=False,
+    )
+
+    exported = json.loads(
+        (destination / "manifests/training_checkpoint_contract.development.json").read_text()
+    )
+    assert exported["required_payloads"].count("candidate.json") == 1
+    validate_training_payload_contract(destination)
 
 
 def test_manifest_rejects_extra_file_and_formal_use(tmp_path):

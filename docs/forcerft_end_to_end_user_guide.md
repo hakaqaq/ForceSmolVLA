@@ -22,6 +22,7 @@ export FORCESMOLVLA_ROOT=/home/rlc123/ForceSmolVLA
 export FR3_WS=/home/rlc123/fr3_client_ws
 export TASK_ID=task2
 export TASK_OUTPUT_ROOT="$FORCESMOLVLA_ROOT/outputs/$TASK_ID"
+export ONLINE_CAPTURE_PREFIX="$FORCESMOLVLA_ROOT/datasets/${TASK_ID}_forcerft_online"
 export RAW_ROOT="$FR3_WS/datasets/task2"
 export LEROBOT_DATASET="$FORCESMOLVLA_ROOT/datasets/task2_lerobotv3"
 export OFFLINE_REPLAY="$FORCESMOLVLA_ROOT/artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
@@ -171,6 +172,8 @@ outputs/task2/online/replay
 
 不再先 dry-run 后重复 admission。封口时按动作来源形成两个逻辑池：
 
+task2 封口物化在 30 Hz 因果网格上允许双相机样本年龄不超过 `100 ms`，以覆盖正常调度抖动和偶发丢帧；双相机 skew 仍不得超过 `33 ms`，样本年龄超过 `100 ms` 仍拒绝进入 replay。历史 checkpoint 内保存的 provenance 不重写。
+
 ```text
 Expert pool = offline LeRobot demonstrations + sealed online human corrections
 Policy replay = sealed autonomous policy transitions
@@ -189,7 +192,7 @@ Policy replay = sealed autonomous policy transitions
   --task-id "$TASK_ID" \
   --output-root "$TASK_OUTPUT_ROOT" \
   --max-episodes 100 \
-  --root-prefix "$FR3_WS/datasets/task2_forcerft_online" \
+  --root-prefix "$ONLINE_CAPTURE_PREFIX" \
   --task "Pick up the purple ring and place it onto the red peg." \
   --episode-time 120 \
   --tool-profile onrobot_robotiq \
@@ -200,11 +203,20 @@ Policy replay = sealed autonomous policy transitions
   --allow-development-policy-execution-smoke
 ```
 
-Unified server 每次启动只选择并加载一次完整 exact-resume checkpoint，并跨 episode 常驻。`training_starts=100` 只统计 sealed autonomous policy transitions，人工纠正不会提前启动 Learner，也不铸造 policy update credit。达到 100 后 Learner 连续运行。每个 batch 固定为 50% Expert pool + 50% Policy replay，不增加第三个 intervention ratio；两半都进入 Critic TD 和 Actor Q-guidance，只有 Expert 半的 offline demonstration 与有效 masked human correction 进入 FM。每 learner cycle 为 2 Critic + 2 Polyak + 1 Actor。
+在线 native episode 固定保存在 ForceSmolVLA 数据目录下，例如第一个 session 为
+`/home/rlc123/ForceSmolVLA/datasets/task2_forcerft_online_001`；不写入
+`/home/rlc123/fr3_client_ws/datasets`。省略 `--root-prefix` 时也使用这一仓库内默认前缀。
 
-server 本身不加载 registry 的 active/previous rollback Actor，也不需要 deployment profile、deployment binding 或 Actor-only export。启动时先选择 `outputs/task2/online/checkpoints/` 中 cycle 最大且结构完整的 online exact-resume checkpoint；没有可恢复的 online checkpoint 时，回退到 `outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210`。Inference Actor 固定为所选 checkpoint 的 `actor/`，Learner 从同一目录恢复 Critics、targets、两个 optimizer、scheduler、RNG、sampler、cycle counter 和 replay cursor，不允许混合启动。
+Unified server 每次启动只选择并加载一次完整 exact-resume checkpoint，并跨 episode 常驻。`training_starts=100` 只统计 sealed autonomous policy transitions，人工纠正不会提前启动 Learner，也不铸造 policy update credit。达到 100 后 Learner 连续运行。每个 batch 固定为 50% Expert pool + 50% Policy replay，不增加第三个 intervention ratio；两半都进入 Critic TD 和 Actor Q-guidance，只有 Expert 半的 offline demonstration 与有效 masked human correction 进入 FM。每 learner cycle 为 2 Critic + 2 Polyak + 1 Actor。
+因此 async capture manifest 中 `learner_started=false`（未达 100 条）和 `learner_started=true`（已达 100 条）都是合法状态；两种情况下 `current_episode_sampled_by_learner` 都必须为 `false`。
+
+canonical online loop 在每个 episode 后只打印两行 capture/learner 摘要和一行 admission 摘要；完整 contract、stream quality 与 episode seal 继续保存在 session 文件中，不在终端重复展开。
+
+server 本身不加载 registry 的 active/previous rollback Actor，也不需要 deployment profile、deployment binding 或 Actor-only export。启动时先选择 `outputs/task2/online/checkpoints/` 中 cycle 最大且结构、optimizer counter 与 scheduler 计数一致的 online exact-resume checkpoint；不一致的 online checkpoint 会被跳过，没有可恢复的 online checkpoint 时回退到 `outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210`。Inference Actor 固定为所选 checkpoint 的 `actor/`，Learner 从同一目录恢复 Critics、targets、两个 optimizer、scheduler、RNG、sampler、cycle counter 和 replay cursor，不允许混合启动。
 
 `--allow-development-policy-execution-smoke` 是已有的显式机器人执行开关；它不选择模型，也不触发 publication、activation、candidate、profile 或 binding 流程。力限、takeover generation、stale-result rejection、ACK 和 recorder 单控制链保持不变。
+
+在线推理只对反归一化后的 gripper candidate 做有限值饱和：低于 `-0.01 m` 按闭合端处理，高于 `0.095 m` 按打开端处理，二值判定阈值保持 `0.0425 m`，随后只输出精确的 `0.0 m` 或 `0.085 m`。`NaN/Inf` 继续拒绝；TCP6、力限和 action normalizer 不做裁剪或改写。
 
 每 5 cycles 只在内存广播 Actor，新参数从下一次 inference request 的新 H50 chunk 生效；同步点不写 checkpoint、不导出 package、不做 candidate validation。每 50 cycles 保存完整 checkpoint：
 
@@ -215,7 +227,8 @@ outputs/task2/online/checkpoints/online_actor_critic_cycle_000100
 
 只保留最新两个 checkpoint。online cycle 从在线 optimizer 首次启动时的 0 开始，与 episode 编号无关。
 
-正常停止使用 recorder 的 `q`。系统停止新 learner cycle，等待正在进行的 optimizer step 完成，并保存最后完成 cycle；若该 cycle 恰好是 50 的倍数，只保存一次。异常失败时不修改原始 episode，不把未封口 episode 加入 replay。
+正常停止使用 recorder 的 `q`。系统停止新 learner cycle，等待正在进行的 optimizer step 完成，并保存最后完成 cycle；若该 cycle 恰好是 50 的倍数，只保存一次。Learner 异常失败时不保存可能只完成部分 optimizer step 的 checkpoint，也不修改原始 episode或把未封口 episode 加入 replay。
+采集途中若因控制器、通信或进程错误退出，canonical online-loop 会自动删除本次未封口 session root 及 `.inprogress` 内容，不保留半条 episode。已存在 technical seal 的 session 不自动删除，即使后续 admission 失败，也保留供修复后重试。
 
 例如 cycle45 退出保存 cycle45；cycle55 保留 cycle50 与 cycle55；cycle107 保留 cycle100 与 cycle107。每 5-cycle 广播不写磁盘，也不导出 Actor package。
 

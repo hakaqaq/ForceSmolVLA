@@ -9,6 +9,7 @@ import pytest
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import run_forcerft_online_loop as loop  # noqa: E402
+import run_forcerft_integrated_capture as capture  # noqa: E402
 
 
 def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> None:
@@ -23,6 +24,98 @@ def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> 
     assert args.allow_development_policy_execution_smoke is False
     assert not hasattr(args, "deployment_profile")
     assert not hasattr(args, "deployment_binding")
+
+
+def test_online_capture_defaults_to_repository_dataset_root() -> None:
+    args = loop.parse_args([
+        "--task-id", "task2", "--max-episodes", "1", "--task", "ring",
+    ])
+
+    assert args.root_prefix == (ROOT / "datasets/task2_forcerft_online").resolve()
+
+
+def test_online_capture_restart_uses_next_session_index(tmp_path: Path) -> None:
+    prefix = tmp_path / "task2_forcerft_online"
+    (tmp_path / "task2_forcerft_online_001").mkdir()
+    (tmp_path / "task2_forcerft_online_002").mkdir()
+
+    assert loop._next_capture_index(prefix) == 3
+
+
+@pytest.mark.parametrize("sealed", [False, True])
+def test_failed_capture_discards_only_unsealed_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sealed: bool,
+) -> None:
+    root_prefix = tmp_path / "capture"
+    root = tmp_path / "capture_001"
+    monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
+        "runtime_session_id": root.name,
+        "runtime_episode_id": loop.EPISODE_ID,
+        "server_persistent": True,
+    })
+
+    def fail_capture(_command, **_kwargs):
+        root.mkdir()
+        if sealed:
+            seal = (
+                root / "integrated_capture" / loop.EPISODE_ID
+                / "streams" / "policy_execute_episode_seal.json"
+            )
+            seal.parent.mkdir(parents=True)
+            seal.write_text("{}\n", encoding="utf-8")
+        else:
+            (root / ".episode_000000.inprogress").mkdir()
+        raise loop.ContinuousLoopError("capture failed")
+
+    monkeypatch.setattr(loop, "_run", fail_capture)
+    args = type("Args", (), {
+        "root_prefix": root_prefix, "policy_port": 8000,
+        "robot_python": Path("python"), "task": "ring",
+        "episode_time": 10.0, "tool_profile": "tool",
+        "policy_replan_steps": 8, "policy_queue_low_watermark": 7,
+        "max_force_n": 25.0, "max_torque_nm": 2.0,
+    })()
+
+    with pytest.raises(loop.ContinuousLoopError, match="capture failed"):
+        loop._run_episode(
+            args, 1, server=object(), model_revision="model", policy_epoch=0,
+        )
+    assert root.exists() is sealed
+
+
+def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
+    capture._print_payload({
+        "status": "CAPTURE_SEALED",
+        "episode_seal": {
+            "episode_id": "episode_000000",
+            "observation_count": 370,
+            "policy_action_ack_count": 364,
+            "human_action_ack_count": 2,
+            "intervention_count": 69,
+            "critic_updates": 2,
+            "actor_updates": 1,
+            "actor_parameter_broadcast_count": 0,
+            "online_checkpoint_path": None,
+            "current_episode_sampled_by_learner": False,
+            "native_episode_result": {"stream_counts": {"camera": 99999}},
+        },
+    }, compact=True)
+    output = capsys.readouterr().out
+    assert output.count("\n") == 2
+    assert "observations=370" in output
+    assert "stream_counts" not in output
+
+    monkeypatch.setattr(loop, "_report", lambda _command: {
+        "status": "FORMAL_ONLINE_R_ADMITTED",
+        "accepted_unique_r_transition_count": 364,
+        "human_override_replay_count": 2,
+        "total_unique_r_transition_count": 748,
+        "training_starts_reached": True,
+    })
+    loop._admit(type("Args", (), {"model_python": Path("python"), "formal_r_root": Path("r")})(), Path("episode"))
+    output = capsys.readouterr().out
+    assert output.count("\n") == 1
+    assert "human_expert=2" in output
 
 
 def test_episode_admission_is_called_once_only_for_success(
@@ -70,6 +163,7 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
         "policy_port": 8000,
         "server_start_timeout": 1.0,
         "max_episodes": 1,
+        "root_prefix": tmp_path / "capture",
     })()
 
     assert loop.run_loop(args) == 0
@@ -115,6 +209,7 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
     ) is False
     assert calls == []
     assert "--allow-development-policy-execution-smoke" in commands[0]
+    assert "--compact-output" in commands[0]
     assert "--deployment-profile" not in commands[0]
     assert "--deployment-binding" not in commands[0]
 

@@ -116,7 +116,7 @@ def test_public_action_api_is_absolute_safe_no_grad_and_batch_atomic():
     assert policy._consumed_chunk_ids == {"chunk-0", "chunk-1"}
 
 
-def test_public_action_api_binary_gripper_decode_is_atomic_and_strict():
+def test_public_action_api_saturates_finite_gripper_and_rejects_nonfinite():
     root = Path(__file__).parents[1]
     rules_path = root / "tests/fixtures/shadow_safety_thresholds.test_only.yaml"
     profile = ActionSafetyProfile.from_rulespec(
@@ -140,10 +140,23 @@ def test_public_action_api_binary_gripper_decode_is_atomic_and_strict():
         sample_id=("sample-2", "sample-3"),
     )
     policy.normalized_delta7 = normalized.clone()
-    policy.normalized_delta7[1, 0, 6] = 0.0951
-    with pytest.raises(ActionInferenceError, match="frozen.*tolerance"):
+    policy.normalized_delta7[0, 0, 6] = -0.0101
+    policy.normalized_delta7[1, 0, 6] = 0.097404
+    saturated = policy.predict_action_chunk({}, context)
+    assert saturated[0, 0, 6] == 0.0
+    assert saturated[1, 0, 6] == 0.085
+    assert policy._consumed_chunk_ids == {
+        "chunk-0", "chunk-1", "chunk-2", "chunk-3",
+    }
+
+    context = replace(
+        context,
+        chunk_id=("chunk-4", "chunk-5"),
+        sample_id=("sample-4", "sample-5"),
+    )
+    policy.normalized_delta7[1, 0, 6] = float("inf")
+    with pytest.raises(ActionInferenceError, match="nonfinite|must be finite"):
         policy.predict_action_chunk({}, context)
-    assert policy._consumed_chunk_ids == {"chunk-0", "chunk-1"}
 
 
 def test_public_action_api_sets_eval_and_zeroes_invalid_tail():

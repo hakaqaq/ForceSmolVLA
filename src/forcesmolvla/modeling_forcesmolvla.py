@@ -34,6 +34,7 @@ from .configuration_forcesmolvla import OFFLINE_FULL_FINETUNE, ONLINE_HIL_VLM_FR
 from .action_delta import (
     ActionDeltaProcessor,
     ActionSafetyProfile,
+    MODEL_GRIPPER_CANDIDATE_RANGE_M,
     decode_binary_gripper_width,
 )
 from .context import ChunkContext
@@ -812,6 +813,12 @@ class ForceSmolVLAPolicy(SmolVLAPolicy):
         )
         unnormalized_delta7 = self._runtime_artifacts.normalizer.delta_action7.inverse(
             normalized_numpy
+        )
+        gripper_candidate = unnormalized_delta7[..., 6]
+        if not np.all(np.isfinite(gripper_candidate)):
+            raise ValueError("model gripper candidate must be finite")
+        unnormalized_delta7[..., 6] = np.clip(
+            gripper_candidate, *MODEL_GRIPPER_CANDIDATE_RANGE_M
         )
         unnormalized_delta7 = decode_binary_gripper_width(unnormalized_delta7)
         raw_state7 = chunk_context.raw_state_snapshot.detach().cpu().numpy().astype(np.float64)

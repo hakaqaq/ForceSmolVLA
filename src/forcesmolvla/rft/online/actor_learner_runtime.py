@@ -94,13 +94,43 @@ def exact_resume_checkpoint_is_recoverable(
         )
     except (OSError, json.JSONDecodeError):
         return False
-    return bool(
+    files_complete = bool(
         isinstance(metadata, dict)
         and metadata.get("complete") is True
         and metadata.get("kind") == expected_kind
         and metadata.get("actor_directory") == "actor"
         and all((checkpoint / relative).is_file() for relative in _EXACT_RESUME_FILES)
     )
+    if not files_complete:
+        return False
+    try:
+        runtime = torch.load(
+            checkpoint / "state/runtime_state.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        actor_scheduler = torch.load(
+            checkpoint / "optimizers/actor_scheduler_state.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        counters = runtime["counters"]
+        joint_cycles = int(counters["joint_cycles"])
+        online_cycles = int(runtime.get("online_joint_cycles", 0))
+        counters_match = (
+            int(counters["critic_optimizer_steps"]) == joint_cycles * 2
+            and int(counters["actor_optimizer_steps"]) == joint_cycles
+            and int(counters["target_polyak_steps"]) == joint_cycles * 2
+            and int(actor_scheduler["last_epoch"]) == joint_cycles
+        )
+        if expected_kind == "online_actor_critic_exact_resume":
+            counters_match = (
+                counters_match
+                and online_cycles == int(checkpoint.name.rsplit("_", 1)[1])
+            )
+        return counters_match
+    except (KeyError, OSError, TypeError, ValueError):
+        return False
 
 
 def select_exact_resume_checkpoint(output_root: Path) -> Path:
@@ -214,7 +244,6 @@ def prepare_learner(
             resume_checkpoint,
             actor_package,
             device,
-            allow_checkpoint_candidate=True,
         )
     )
     trainability = apply_frozen_vlm_trainability(actor)

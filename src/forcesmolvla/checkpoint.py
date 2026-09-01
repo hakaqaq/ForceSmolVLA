@@ -262,7 +262,11 @@ def export_development_actor_checkpoint(
             "scheduler_exported": False,
             "rng_exported": False,
             "sampler_exported": False,
-            "required_payloads": [*required, "candidate.json"],
+            "required_payloads": (
+                required
+                if "candidate.json" in required
+                else [*required, "candidate.json"]
+            ),
             "runtime_parent": str(runtime_parent),
             "weight_source": str(
                 Path(source_joint_checkpoint).resolve()

@@ -59,6 +59,25 @@ def _replay_snapshot(replay_root: Path) -> tuple[tuple[str, int, int], ...]:
     ))
 
 
+def _refresh_training_schedules(learner: dict[str, Any]) -> None:
+    schedules = joint.make_schedules(
+        learner["r_rng"],
+        learner["d_rng"],
+        r_population_size=len(learner["r_replay"].macros),
+        d_population=learner["d_replay"].population,
+        cycles=1,
+    )
+    (
+        learner["critic_r"],
+        learner["critic_d"],
+        learner["actor_r"],
+        learner["actor_d"],
+    ) = schedules
+    learner["d_replay"].prefetch_joint(
+        learner["critic_d"], learner["actor_d"]
+    )
+
+
 class ContinuousLearner:
     """Persistent Learner over sealed replay, independent of episode boundaries."""
 
@@ -111,7 +130,7 @@ class ContinuousLearner:
         self.unique_r_count = len(all_r)
         self.r_macro_count = len(r_macros)
         self.learner = prepare_learner(
-            device,
+            self.device,
             all_r,
             r_macros,
             source_episodes,
@@ -327,11 +346,7 @@ class ContinuousLearner:
         }
         learner["runtime"] = runtime_state
         learner["online_joint_cycles"] = online_cycle + 1
-        learner["critic_r"], learner["critic_d"], learner["actor_r"], learner["actor_d"] = joint.make_schedules(
-            learner["r_rng"], learner["d_rng"],
-            r_population_size=len(learner["r_replay"].macros),
-            d_population=learner["d_replay"].population, cycles=1,
-        )
+        _refresh_training_schedules(learner)
         latest_checkpoint = None
         if OnlineTrainingPolicy().checkpoint_due(online_cycle + 1):
             latest_checkpoint = self.save_checkpoint()
@@ -605,7 +620,10 @@ class AsyncPolicyLearnerRuntime:
         self._stop_learner.set()
         if self._learner_thread is not None:
             self._learner_thread.join()
-        self.learner_job.save_checkpoint()
+        with self._lock:
+            learner_failed = self._learner_state == "failed"
+        if not learner_failed:
+            self.learner_job.save_checkpoint()
 
 
 class RequestHandler(serve_policy.RequestHandler):

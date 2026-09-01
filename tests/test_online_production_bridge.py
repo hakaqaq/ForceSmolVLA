@@ -1101,14 +1101,14 @@ def _make_policy_execution_fixture_async(episode: Path) -> Path:
     dataset = episode.parent.parent
     manifest_path = dataset / "integrated_capture_session.json"
     manifest = json.loads(manifest_path.read_text())
-    resume = "/tmp/online_actor_critic_cycle_000020"
-    active = "stage3-online-r-joint-cycle-000010-candidate"
-    pending = "stage3-online-r-real-async-joint-cycle-000021-pending"
+    resume = "/tmp/offline_actor_critic_cycle_000210"
+    active = "offline-actor-critic-cycle-000210"
     manifest.update(
         {
+            "learner_started": True,
             "learner_resume_checkpoint": resume,
             "active_actor_revision": active,
-            "pending_candidate_id": pending,
+            "pending_candidate_id": None,
         }
     )
     _write_json(manifest_path, manifest)
@@ -1128,15 +1128,13 @@ def _make_policy_execution_fixture_async(episode: Path) -> Path:
             "active_actor_model_revision": manifest["contract"]["identity"][
                 "policy_revision"
             ],
-            "learner_critic_steps": 2,
-            "learner_actor_steps": 1,
-            "critic_updates": 2,
-            "actor_updates": 1,
+            "learner_critic_steps": 0,
+            "learner_actor_steps": 0,
+            "critic_updates": 0,
+            "actor_updates": 0,
             "current_episode_sampled_by_learner": False,
-            "pending_checkpoint_path": "/tmp/online_actor_critic_cycle_000021_pending",
-            "pending_candidate_id": pending,
-            "pending_candidate_published": False,
-            "pending_candidate_activated": False,
+            "online_checkpoint_path": None,
+            "actor_parameter_broadcast_count": 0,
         }
     )
     _write_json(seal_path, seal)
@@ -1227,8 +1225,25 @@ def _wal_payloads(state: Path) -> list[dict]:
 def test_config_is_json_compatible_yaml_and_development_only() -> None:
     config, raw = load_bridge_config(CONFIG)
     assert config.clock_domain_id == "upper_host_monotonic"
+    assert config.max_camera_age_ns == 100_000_000
     assert raw["status"] == "filesystem_shadow_only_not_production_integrated"
     assert raw["persistence"]["formal_training_replay_written"] is False
+
+
+def test_online_materialization_uses_100ms_camera_age_boundary(tmp_path: Path) -> None:
+    payload = json.loads(
+        (ROOT / "configs/converter_runtime_spec.task2.development.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    payload["cameras"]["max_age_ms"] = 34.0
+    frozen_checkpoint_contract = tmp_path / "frozen-runtime.json"
+    _write_json(frozen_checkpoint_contract, payload)
+
+    contract = bridge_module._online_runtime_contract(frozen_checkpoint_contract)
+    assert contract.camera_max_age_ms == 100.0
+    assert 46.144793 <= contract.camera_max_age_ms
+    assert 100.000001 > contract.camera_max_age_ms
 
 
 def test_core_source_has_no_ros_network_robot_or_cuda_imports() -> None:
@@ -1565,8 +1580,7 @@ def test_policy_execution_request_cancellation_rejects_invalid_identity(
         ("learner_resume_checkpoint", None),
         ("current_episode_sampled_by_learner", True),
         ("active_actor_revision", "changed-active-revision"),
-        ("pending_candidate_published", True),
-        ("pending_candidate_activated", True),
+        ("learner_critic_steps", 1),
     ],
 )
 def test_integrated_async_policy_execution_rejects_invalid_runtime_seal(
@@ -1941,6 +1955,26 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert episode_seal["checkpoint_updates"] == 0
     assert transition_path.read_bytes() == original_transition_bytes
     assert seal_path.read_bytes() == original_seal_bytes
+
+
+def test_formal_online_r_admission_accepts_exact_resume_waiting_for_replay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _make_policy_execution_fixture_async(episode)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+
+    report = _bridge(tmp_path / "formal-r").admit_policy_execution_smoke(
+        episode,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "FORMAL_ONLINE_R_ADMITTED"
+    assert report.accepted_unique_r_transition_count == 3
+    assert report.training_starts_reached is False
+    assert report.actor_update_count == 0
+    assert report.critic_update_count == 0
 
 
 def test_formal_online_r_admission_is_uid_digest_idempotent(

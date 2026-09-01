@@ -9,7 +9,7 @@ across streams; controller-internal timestamps are retained as provenance only.
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 import math
@@ -91,6 +91,16 @@ CANONICAL_SFT_MANIFEST_ROOT = (
     REPO_ROOT
     / "outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000/manifests"
 )
+ONLINE_CAMERA_MAX_AGE_MS = 100.0
+
+
+def _online_runtime_contract(path: Path) -> RuntimeContract:
+    """Use the task2 online camera budget without rewriting checkpoint provenance."""
+
+    return replace(
+        RuntimeContract.from_development_json(path),
+        camera_max_age_ms=ONLINE_CAMERA_MAX_AGE_MS,
+    )
 
 
 def _runtime_input_paths(parent_binding_path: Path | None) -> tuple[Path, Path, str]:
@@ -179,9 +189,7 @@ def _prepare_native_episode(
         parent_binding_path
     )
     calibration_payload = _read_json(calibration_path)
-    runtime_contract = RuntimeContract.from_development_json(
-        runtime_path
-    )
+    runtime_contract = _online_runtime_contract(runtime_path)
     episode_dir = Path(episode_dir)
     return prepare_episode(
         episode_dir,
@@ -216,7 +224,7 @@ def frozen_episode_materializer(
     ):
         raise ProductionBridgeError("BRIDGE_FROZEN_DETECTOR_CONFIG_MISMATCH")
     calibration_payload = _read_json(calibration_path)
-    runtime_contract = RuntimeContract.from_development_json(runtime_path)
+    runtime_contract = _online_runtime_contract(runtime_path)
     if not parent_id:
         raise ProductionBridgeError("BRIDGE_PARENT_BINDING_ID_MISSING")
 
@@ -352,7 +360,10 @@ class BridgeConfig:
             clock_domain_id=str(value.get("clock_domain_id", UPPER_CLOCK)),
             max_pose_age_ns=int(float(limits.get("max_pose_age_ms", 30.0)) * 1e6),
             max_wrench_age_ns=int(float(limits.get("max_wrench_age_ms", 30.0)) * 1e6),
-            max_camera_age_ns=int(float(limits.get("max_camera_age_ms", 100.0)) * 1e6),
+            max_camera_age_ns=int(
+                float(limits.get("max_camera_age_ms", ONLINE_CAMERA_MAX_AGE_MS))
+                * 1e6
+            ),
             max_gripper_feedback_age_ns=int(
                 float(limits.get("max_gripper_feedback_age_ms", 100.0)) * 1e6
             ),
@@ -835,7 +846,6 @@ class ProductionBridge:
         async_metadata = (
             manifest.get("learner_resume_checkpoint"),
             manifest.get("active_actor_revision"),
-            manifest.get("pending_candidate_id"),
         )
         async_learner = any(value is not None for value in async_metadata)
         if operator_task_outcome != "success":
@@ -865,7 +875,11 @@ class ProductionBridge:
             or manifest.get("deploy_controller_started") is not False
             or manifest.get("policy_action_publisher_created") is not True
             or manifest.get("formal_replay_writer_started") is not False
-            or manifest.get("learner_started") is not False
+            or not isinstance(manifest.get("learner_started"), bool)
+            or (
+                not async_learner
+                and manifest.get("learner_started") is not False
+            )
             or manifest.get("policy_revision_publisher_started") is not False
             or (
                 async_learner
@@ -2115,16 +2129,10 @@ class ProductionBridge:
             == identity.get("policy_revision")
             and seal.get("active_actor_model_revision")
             == manifest.get("policy_metadata", {}).get("model_sha256")
-            and learner_critic_steps == 2
-            and learner_actor_steps == 1
+            and (learner_critic_steps, learner_actor_steps) in {(0, 0), (2, 1)}
             and int(seal.get("critic_updates", -1)) == learner_critic_steps
             and int(seal.get("actor_updates", -1)) == learner_actor_steps
             and seal.get("current_episode_sampled_by_learner") is False
-            and isinstance(seal.get("pending_checkpoint_path"), str)
-            and bool(seal.get("pending_checkpoint_path"))
-            and seal.get("pending_candidate_id") == async_metadata[2]
-            and seal.get("pending_candidate_published") is False
-            and seal.get("pending_candidate_activated") is False
         )
         latest_lineage_ns = max(
             int(observations[-1].get("t_ref_ns", 0)),

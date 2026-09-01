@@ -561,7 +561,12 @@ def prepare_episode(
     if np.any(camera1_age_ms > contract.camera_max_age_ms) or np.any(
         camera2_age_ms > contract.camera_max_age_ms
     ):
-        raise ValueError("CAMERA_AGE_EXCEEDED")
+        raise ValueError(
+            "CAMERA_AGE_EXCEEDED:"
+            f"camera1_max_age_ms={float(np.max(camera1_age_ms)):.3f}:"
+            f"camera2_max_age_ms={float(np.max(camera2_age_ms)):.3f}:"
+            f"limit_ms={contract.camera_max_age_ms:.3f}"
+        )
     if np.any(intercamera_skew_ms > contract.max_intercamera_skew_ms):
         raise ValueError("INTERCAMERA_SKEW_EXCEEDED")
 

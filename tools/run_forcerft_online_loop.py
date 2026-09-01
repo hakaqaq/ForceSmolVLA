@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -37,7 +38,9 @@ def require(condition: bool, message: str) -> None:
         raise ContinuousLoopError(message)
 
 
-def _run(command: list[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
+def _run(
+    command: list[str], *, capture: bool = False, echo_captured: bool = True,
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         command,
         cwd=ROOT,
@@ -46,7 +49,7 @@ def _run(command: list[str], *, capture: bool = False) -> subprocess.CompletedPr
         capture_output=capture,
         check=False,
     )
-    if capture:
+    if capture and (echo_captured or result.returncode != 0):
         if result.stdout:
             print(result.stdout, end="")
         if result.stderr:
@@ -56,7 +59,7 @@ def _run(command: list[str], *, capture: bool = False) -> subprocess.CompletedPr
 
 
 def _report(command: list[str]) -> dict[str, Any]:
-    output = _run(command, capture=True).stdout
+    output = _run(command, capture=True, echo_captured=False).stdout
     start = output.find("{")
     require(start >= 0, "FORCERFT_ONLINE_COMMAND_REPORT_MISSING")
     try:
@@ -78,6 +81,13 @@ def _admit(args: argparse.Namespace, episode: Path) -> None:
     require(
         report.get("status") == "FORMAL_ONLINE_R_ADMITTED",
         "FORCERFT_ONLINE_ADMISSION_FAILED",
+    )
+    print(
+        f"[admission] status={report['status']} "
+        f"accepted={report.get('accepted_unique_r_transition_count')} "
+        f"human_expert={report.get('human_override_replay_count')} "
+        f"total={report.get('total_unique_r_transition_count')} "
+        f"training_started={str(bool(report.get('training_starts_reached'))).lower()}"
     )
 
 
@@ -139,6 +149,25 @@ def _stop_server(process: subprocess.Popen[Any]) -> None:
         process.wait(timeout=10)
 
 
+def _next_capture_index(root_prefix: Path) -> int:
+    prefix = f"{root_prefix.name}_"
+    indices = [
+        int(path.name.removeprefix(prefix))
+        for path in root_prefix.parent.glob(f"{prefix}*")
+        if path.name.removeprefix(prefix).isdigit()
+    ]
+    return max(indices, default=0) + 1
+
+
+def _discard_unsealed_capture(root: Path) -> None:
+    seal = (
+        root / "integrated_capture" / EPISODE_ID
+        / "streams" / "policy_execute_episode_seal.json"
+    )
+    if root.is_dir() and not seal.is_file():
+        shutil.rmtree(root)
+
+
 def _run_episode(
     args: argparse.Namespace,
     index: int,
@@ -164,31 +193,35 @@ def _run_episode(
         and metadata.get("server_persistent") is True,
         "FORCERFT_ONLINE_SERVER_IDENTITY_MISMATCH",
     )
-    _run([
-        str(args.robot_python), str(ROOT / "tools/run_forcerft_integrated_capture.py"),
-        "--mode", "policy-execute", "--allow-development-policy-execution-smoke",
-        "--async-learner", "--root", str(root), "--task", args.task,
-        "--episodes", "1", "--episode-time", str(args.episode_time),
-        "--tool-profile", args.tool_profile, "--session-id", session_id,
-        "--episode-id", EPISODE_ID, "--policy-revision", model_revision,
-        "--policy-epoch", str(policy_epoch), "--takeover-generation", "0",
-        "--policy-host", "127.0.0.1", "--policy-port", str(args.policy_port),
-        "--policy-replan-steps", str(args.policy_replan_steps),
-        "--policy-queue-low-watermark", str(args.policy_queue_low_watermark),
-        "--max-force-n", str(args.max_force_n),
-        "--max-torque-nm", str(args.max_torque_nm), "--launch",
-    ])
-    status = _wait_json(
-        f"http://127.0.0.1:{args.policy_port}/runtime/status",
-        process=server,
-        timeout=10.0,
-    )
-    require(
-        status.get("learner_state") != "failed"
-        and status.get("current_episode_sampled") is False
-        and status.get("server_persistent") is True,
-        "FORCERFT_ONLINE_LEARNER_INVALID",
-    )
+    try:
+        _run([
+            str(args.robot_python), str(ROOT / "tools/run_forcerft_integrated_capture.py"),
+            "--mode", "policy-execute", "--allow-development-policy-execution-smoke",
+            "--async-learner", "--root", str(root), "--task", args.task,
+            "--episodes", "1", "--episode-time", str(args.episode_time),
+            "--tool-profile", args.tool_profile, "--session-id", session_id,
+            "--episode-id", EPISODE_ID, "--policy-revision", model_revision,
+            "--policy-epoch", str(policy_epoch), "--takeover-generation", "0",
+            "--policy-host", "127.0.0.1", "--policy-port", str(args.policy_port),
+            "--policy-replan-steps", str(args.policy_replan_steps),
+            "--policy-queue-low-watermark", str(args.policy_queue_low_watermark),
+            "--max-force-n", str(args.max_force_n),
+            "--max-torque-nm", str(args.max_torque_nm), "--launch", "--compact-output",
+        ])
+        status = _wait_json(
+            f"http://127.0.0.1:{args.policy_port}/runtime/status",
+            process=server,
+            timeout=10.0,
+        )
+        require(
+            status.get("learner_state") != "failed"
+            and status.get("current_episode_sampled") is False
+            and status.get("server_persistent") is True,
+            "FORCERFT_ONLINE_LEARNER_INVALID",
+        )
+    except (ContinuousLoopError, OSError, KeyboardInterrupt):
+        _discard_unsealed_capture(root)
+        raise
     outcome = input("operator_task_outcome [success/failure/q]: ").strip().lower()
     require(outcome in {"success", "failure", "q"}, "FORCERFT_ONLINE_OPERATOR_OUTCOME_INVALID")
     if outcome == "q":
@@ -227,7 +260,8 @@ def run_loop(args: argparse.Namespace) -> int:
         model_revision = str(metadata.get("active_actor_model_revision", ""))
         policy_epoch = int(metadata.get("policy_epoch", -1))
         require(model_revision and policy_epoch >= 0, "FORCERFT_ONLINE_SERVER_METADATA_INVALID")
-        for index in range(1, args.max_episodes + 1):
+        first_index = _next_capture_index(args.root_prefix)
+        for index in range(first_index, first_index + args.max_episodes):
             if not _run_episode(
                 args,
                 index,
@@ -247,7 +281,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task-id", default="task2")
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--max-episodes", type=int, required=True)
-    parser.add_argument("--root-prefix", type=Path, required=True)
+    parser.add_argument("--root-prefix", type=Path)
     parser.add_argument("--task", required=True)
     parser.add_argument("--episode-time", type=float, default=60.0)
     parser.add_argument("--tool-profile", default="onrobot_robotiq")
@@ -277,7 +311,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("invalid continuous-loop limits")
     from forcesmolvla.training_runtime import resolve_task_output_root
 
-    args.root_prefix = args.root_prefix.resolve()
+    args.root_prefix = (
+        ROOT / "datasets" / f"{args.task_id}_forcerft_online"
+        if args.root_prefix is None
+        else args.root_prefix
+    ).resolve()
     args.output_root = resolve_task_output_root(
         ROOT, task_id=args.task_id, output_root=args.output_root
     )

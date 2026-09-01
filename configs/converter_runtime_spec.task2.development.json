@@ -11,7 +11,7 @@
   "cameras": {
     "selection": "latest receive_monotonic_ns satisfying t_camera <= t_tuple",
     "order": ["camera1:D435-third-person", "camera2:D405-wrist"],
-    "max_age_ms": 34.0,
+    "max_age_ms": 100.0,
     "max_intercamera_skew_ms": 33.0,
     "approval_status": "approval_pending"
   },

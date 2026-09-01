@@ -13,6 +13,7 @@ import torch
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+import serve_forcerft_actor_learner as server  # noqa: E402
 from serve_forcerft_actor_learner import (  # noqa: E402
     AsyncPolicyLearnerRuntime,
     ContinuousLearner,
@@ -114,6 +115,11 @@ class FakeLearner:
         }
 
 
+class FailingLearner(FakeLearner):
+    def __call__(self, coordinator):
+        raise RuntimeError("learner failed after a partial cycle")
+
+
 def _runtime(
     *, learner: FakeLearner | None = None, checkpoint_root: Path | None = None
 ) -> AsyncPolicyLearnerRuntime:
@@ -188,6 +194,67 @@ def test_less_than_100_online_rows_runs_no_optimizer_step(tmp_path: Path) -> Non
     assert learner.learner is None
 
 
+def test_training_start_prepares_learner_on_configured_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device = torch.device("cpu")
+    learner = ContinuousLearner(
+        device=device,
+        resume_checkpoint=tmp_path / "resume",
+        checkpoint_root=tmp_path / "checkpoints",
+        replay_root=tmp_path / "online",
+        current_session_id=None,
+    )
+    observed: list[torch.device] = []
+    monkeypatch.setattr(
+        server.warmup,
+        "count_sealed_autonomous_policy_transitions",
+        lambda _root: 100,
+    )
+    monkeypatch.setattr(
+        server.warmup,
+        "load_formal_online_r",
+        lambda _root: ([], [], {}, []),
+    )
+    monkeypatch.setattr(
+        server,
+        "prepare_learner",
+        lambda configured_device, *_args, **_kwargs: observed.append(
+            configured_device
+        ) or {},
+    )
+
+    assert learner._ensure_learner() is True
+    assert observed == [device]
+
+
+def test_refreshed_schedule_is_prefetched_before_next_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    schedules = ([[1], [2]], [[3], [4]], [[5]], [[6]])
+    calls = []
+
+    class DemoReplay:
+        population = (0, 1, 2)
+
+        def prefetch_joint(self, critic, actor) -> None:
+            calls.append((critic, actor))
+
+    learner = {
+        "r_rng": object(),
+        "d_rng": object(),
+        "r_replay": SimpleNamespace(macros=(0, 1, 2)),
+        "d_replay": DemoReplay(),
+    }
+    monkeypatch.setattr(server.joint, "make_schedules", lambda *_args, **_kwargs: schedules)
+
+    server._refresh_training_schedules(learner)
+
+    assert learner["critic_r"] == schedules[0]
+    assert learner["actor_d"] == schedules[3]
+    assert calls == [(schedules[1], schedules[3])]
+
+
 def test_cycle_five_broadcast_is_memory_only_and_stop_saves_once(
     tmp_path: Path,
 ) -> None:
@@ -208,6 +275,23 @@ def test_cycle_five_broadcast_is_memory_only_and_stop_saves_once(
     runtime.abort_episode(_identity())
     runtime.stop()
     assert learner.save_calls == 1
+
+
+def test_failed_learner_is_not_checkpointed_on_stop() -> None:
+    learner = FailingLearner()
+    runtime = _runtime(learner=learner)
+    runtime.start_episode(_identity())
+    runtime.infer({
+        "request_id": "request-1",
+        "provenance": {"session_id": "session-1"},
+    })
+    deadline = time.monotonic() + 2.0
+    while runtime.status()["learner_state"] != "failed":
+        assert time.monotonic() < deadline
+        time.sleep(0.005)
+    runtime.abort_episode(_identity())
+    runtime.stop()
+    assert learner.save_calls == 0
 
 
 def test_runtime_pins_actor_and_runs_persistent_learner() -> None:

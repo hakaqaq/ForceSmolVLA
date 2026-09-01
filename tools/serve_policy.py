@@ -343,7 +343,8 @@ class InferenceEngine:
                 "model_candidate_tolerance_m": [-0.01, 0.095],
                 "switch_width_m": 0.0425,
                 "decoded_widths_m": [0.0, 0.085],
-                "clipping": False,
+                "finite_candidate_saturation_m": [-0.01, 0.095],
+                "clipping": True,
             },
             "camera_order": ["camera1:D435-third-person", "camera2:D405-wrist"],
             "camera_runtime_profile": (

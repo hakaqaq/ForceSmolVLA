@@ -75,6 +75,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Invoke one bound integrated backend; omitted means contract validation only.",
     )
     parser.add_argument(
+        "--compact-output",
+        action="store_true",
+        help="Print only the operator-relevant capture and learner summary.",
+    )
+    parser.add_argument(
         "--backend",
         help="Python module:attribute implementing the integrated backend protocol.",
     )
@@ -92,6 +97,27 @@ def _backend(specification: str | None) -> Any:
         return candidate() if isinstance(candidate, type) else candidate
     except (AttributeError, ImportError, TypeError) as error:
         raise IntegratedCaptureError("INTEGRATED_CAPTURE_BACKEND_LOAD_FAILED") from error
+
+
+def _print_payload(payload: dict[str, Any], *, compact: bool) -> None:
+    if not compact or payload.get("status") != "CAPTURE_SEALED":
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    seal = payload["episode_seal"]
+    print(
+        "[capture] status=CAPTURE_SEALED "
+        f"episode={seal.get('episode_id')} observations={seal.get('observation_count')} "
+        f"policy_acks={seal.get('policy_action_ack_count')} "
+        f"human_acks={seal.get('human_action_ack_count')} "
+        f"interventions={seal.get('intervention_count')}"
+    )
+    print(
+        f"[learner] critic_updates={seal.get('critic_updates')} "
+        f"actor_updates={seal.get('actor_updates')} "
+        f"actor_broadcasts={seal.get('actor_parameter_broadcast_count')} "
+        f"checkpoint={seal.get('online_checkpoint_path') or 'none'} "
+        f"current_episode_sampled={str(bool(seal.get('current_episode_sampled_by_learner'))).lower()}"
+    )
 
 
 def _policy_execution_deployment(
@@ -242,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
             "robot_or_ros_started": False,
         }, indent=2, sort_keys=True))
         return 2
-    print(json.dumps(payload, indent=2, sort_keys=True))
+    _print_payload(payload, compact=args.compact_output)
     return 0
 
 
