@@ -161,6 +161,7 @@ outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210
 ## 9. HIL 与 online replay
 
 `tools/serve_forcerft_actor_learner.py` 是唯一 GPU owner；`tools/run_forcerft_integrated_capture.py` 是唯一机器人控制链。控制仍保持 H50、10 Hz、low-watermark inference、takeover generation、stale result rejection、Pose ACK 和 gripper authority。
+若 inference 期间 wrench causal filter 因源间隙重置并切换 generation，旧 request/result 和未执行 chunk 会被作废；等待现有 250-sample warmup 完成后，同一 episode 使用 fresh observation 重新 inference，恢复等待期间不生成 transition。
 
 episode seal 后，操作者输入 success/failure。success episode 通过 production bridge 的同一次 admission 调用物化 reward/terminal 并 append 到：
 

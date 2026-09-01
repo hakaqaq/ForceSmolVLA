@@ -401,6 +401,133 @@ def test_policy_execution_waits_for_native_camera_first_frames(
         )
 
 
+def test_filter_generation_change_discards_stale_result_then_resumes_fresh_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Observation:
+        def __init__(self) -> None:
+            self.generation = 0
+            self.samples = 250
+            self.bindings: dict[str, int] = {}
+            self.cameras = SimpleNamespace(ready=lambda: True)
+            self.shadow_error = None
+
+        def request(self, request_id: str) -> dict:
+            self.bindings[request_id] = self.generation
+            t_ref_ns = (self.generation + 1) * 1_000_000_000
+            return {
+                "request_id": request_id,
+                "chunk_id": f"chunk-{request_id}",
+                "clock_domain_id": "upper_host_monotonic_ns",
+                "provenance": {"t_ref_ns": t_ref_ns},
+            }
+
+        def assert_request_generation_current(self, request: dict) -> None:
+            if self.bindings.pop(request["request_id"]) != self.generation:
+                raise RuntimeError(
+                    "WRENCH_FILTER_GENERATION_CHANGED_DURING_INFERENCE"
+                )
+
+        def ready(self) -> bool:
+            return self.samples >= 250
+
+    ledger = IntegratedCaptureLedger(_policy_contract())
+    streams = (
+        "measured_tcp_pose",
+        "wrench_notch_sensor",
+        "gripper_state",
+        "external_camera",
+        "wrist_camera",
+    )
+
+    def record_observation(observation_id: str, t_ref_ns: int) -> dict:
+        return ledger.record_observation(
+            observation_id=observation_id,
+            t_ref_ns=t_ref_ns,
+            stream_timestamps_ns={name: t_ref_ns - 1 for name in streams},
+            stream_ids={name: f"{name}:{observation_id}" for name in streams},
+        )
+
+    observation = Observation()
+    stale_observation = record_observation("observation-stale", 1_000_000_000)
+    stale_request = observation.request("stale")
+    ledger.record_policy_request(
+        stale_request,
+        observation_id=stale_observation["observation_id"],
+        recorded_monotonic_ns=1_000_000_010,
+    )
+    observation.generation = 1
+    observation.samples = 0
+    stale_chunk = {"request_id": "stale"}
+    transitions: list[dict] = []
+
+    assert not capture_backend._inference_filter_generation_is_current(
+        observation, stale_request
+    )
+    canceled = ledger.cancel_policy_request(
+        "stale",
+        reason="wrench_filter_generation_changed_during_inference",
+        recorded_monotonic_ns=1_100_000_000,
+    )
+    stale_chunk = None
+
+    def add_causal_sample(_seconds: float) -> None:
+        observation.samples += 1
+
+    monkeypatch.setattr(capture_backend.time, "sleep", add_causal_sample)
+    capture_backend._wait_for_policy_observation_ready(
+        observation,
+        SimpleNamespace(poll=lambda: None),
+        deadline=capture_backend.time.monotonic() + 1.0,
+    )
+    fresh_observation = record_observation("observation-fresh", 2_000_000_000)
+    fresh_request = observation.request("fresh")
+    ledger.record_policy_request(
+        fresh_request,
+        observation_id=fresh_observation["observation_id"],
+        recorded_monotonic_ns=2_000_000_010,
+    )
+
+    assert observation.samples == 250
+    assert transitions == []
+    assert canceled["executed"] is False
+    assert stale_chunk is None
+    assert capture_backend._inference_filter_generation_is_current(
+        observation, fresh_request
+    )
+    fresh_result = ledger.record_policy_result(
+        fresh_request,
+        {
+            "request_id": "fresh",
+            "chunk_id": "chunk-fresh",
+            "t_ref_ns": 2_000_000_000,
+        },
+        recorded_monotonic_ns=2_100_000_000,
+    )
+    fresh_result_adopt_count = int(
+        capture_backend._policy_context_is_current(
+            ledger,
+            fresh_observation,
+            policy_epoch=fresh_result["policy_epoch"],
+            takeover_generation=fresh_result["takeover_generation"],
+            human_takeover_active=False,
+            observation_id=fresh_observation["observation_id"],
+        )
+    )
+    stale_chunk_dispatch_count = int(stale_chunk is not None)
+    assert fresh_result_adopt_count == 1
+    assert stale_chunk_dispatch_count == 0
+
+    def wrench_unavailable(_request: dict) -> None:
+        raise RuntimeError("WRENCH_AGE_EXCEEDED")
+
+    with pytest.raises(RuntimeError, match="WRENCH_AGE_EXCEEDED"):
+        capture_backend._inference_filter_generation_is_current(
+            SimpleNamespace(assert_request_generation_current=wrench_unavailable),
+            fresh_request,
+        )
+
+
 def test_takeover_and_episode_end_supersede_pending_policy_decision() -> None:
     class FakeObservation:
         def _safe_action_callback(self, _message: object) -> None:

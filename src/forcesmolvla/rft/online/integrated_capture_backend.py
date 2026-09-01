@@ -932,6 +932,18 @@ def _retryable_camera_error(error: RuntimeError) -> bool:
     return str(error).startswith(RETRYABLE_CAMERA_ERRORS)
 
 
+def _inference_filter_generation_is_current(
+    observation: Any, request: Mapping[str, Any]
+) -> bool:
+    try:
+        observation.assert_request_generation_current(request)
+    except RuntimeError as error:
+        if str(error) != "WRENCH_FILTER_GENERATION_CHANGED_DURING_INFERENCE":
+            raise
+        return False
+    return True
+
+
 def _wait_for_policy_observation_ready(
     observation: Any, process: subprocess.Popen[Any], deadline: float
 ) -> None:
@@ -1847,7 +1859,35 @@ class IntegratedCaptureBackend:
                             "POLICY_EXECUTE_RESULT_WITHOUT_REQUEST"
                         )
                     outstanding.pop(request_id)
-                    observation.assert_request_generation_current(request)
+                    if not _inference_filter_generation_is_current(
+                        observation, request
+                    ):
+                        invalidated_requests.add(request_id)
+                        canceled = ledger.cancel_policy_request(
+                            request_id,
+                            reason="wrench_filter_generation_changed_during_inference",
+                            recorded_monotonic_ns=time.monotonic_ns(),
+                        )
+                        store.append(
+                            "policy_execute_request_canceled.jsonl", canceled
+                        )
+                        current_chunk = None
+                        current_request = None
+                        current_observation = None
+                        recovery_deadline = time.monotonic() + start_timeout
+                        while True:
+                            _wait_for_policy_observation_ready(
+                                observation, process, recovery_deadline
+                            )
+                            try:
+                                capture_observation()
+                            except RuntimeError as recovery_error:
+                                if str(recovery_error) != "observation is incomplete":
+                                    raise
+                                continue
+                            break
+                        submit_current_request()
+                        continue
                     actions = deploy.validate_response(
                         result, request, session["workspace"]
                     )
