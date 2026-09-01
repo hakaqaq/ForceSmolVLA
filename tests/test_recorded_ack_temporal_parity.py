@@ -443,6 +443,7 @@ def test_online_td_calls_real_force_aware_macro_critic_interface() -> None:
         reward=torch.ones(1),
         discount=torch.zeros(1),
         terminated=torch.ones(1, dtype=torch.bool),
+        truncated=torch.zeros(1, dtype=torch.bool),
         bootstrap_mask=torch.zeros(1, dtype=torch.bool),
         next_policy_action_fn=lambda _observation: (_ for _ in ()).throw(AssertionError()),
     )

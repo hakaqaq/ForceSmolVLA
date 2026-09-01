@@ -265,7 +265,10 @@ def critic_step(
     microbatch_size: int | None = None,
     microbatch_slot=None,
 ) -> dict[str, Any]:
-    from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
+    from forcesmolvla.rft.critic_action_adapter_v2 import (
+        aligned_fresh_chunk_execution_index_map_v2,
+        critic_action_for_q_guidance_v2,
+    )
     from forcesmolvla.rft.online.training_losses import compute_online_twin_q_td_loss
     from forcesmolvla.rft.throughput_v2 import fast_polyak_update, index_actor_batch
 
@@ -287,18 +290,20 @@ def critic_step(
             positions = list(range(start, start + microbatch_size))
             index = torch.tensor(positions, dtype=torch.long, device=device)
             local_terminated = batch["terminated"][index]
+            local_truncated = batch["truncated"][index]
+            local_bootstrap = batch["bootstrap"][index]
             local_next_actor = index_actor_batch(
                 batch["next_actor_batch"], positions
             )
-            nonterminal_positions = torch.nonzero(
-                ~local_terminated, as_tuple=False
+            bootstrap_positions = torch.nonzero(
+                local_bootstrap, as_tuple=False
             ).flatten().tolist()
             next_actor_batch = index_actor_batch(
-                local_next_actor, nonterminal_positions
+                local_next_actor, bootstrap_positions
             )
 
             def next_action(_observation) -> torch.Tensor:
-                count = len(nonterminal_positions)
+                count = len(bootstrap_positions)
                 noise = torch.randn(
                     count, 50, 7,
                     dtype=torch.float32, device=device, generator=noise_generator,
@@ -316,6 +321,9 @@ def critic_step(
                     )
                 return critic_action_for_q_guidance_v2(
                     chunk,
+                    execution_index_map=(
+                        aligned_fresh_chunk_execution_index_map_v2()
+                    ),
                     delta_action_mean7=delta_mean,
                     delta_action_std7=delta_std,
                 ).detach().float()
@@ -332,7 +340,8 @@ def critic_step(
                 reward=batch["reward"][index],
                 discount=batch["discount"][index],
                 terminated=local_terminated,
-                bootstrap_mask=batch["bootstrap"][index],
+                truncated=local_truncated,
+                bootstrap_mask=local_bootstrap,
                 next_policy_action_fn=next_action,
             )
             require(
@@ -395,6 +404,9 @@ def actor_step(
     from forcesmolvla.rft.online.training_losses import (
         compute_online_actor_objective,
         compute_online_min_twin_q_actor_loss,
+    )
+    from forcesmolvla.rft.critic_action_adapter_v2 import (
+        aligned_fresh_chunk_execution_index_map_v2,
     )
     from forcesmolvla.rft.throughput_v2 import index_actor_batch
     from forcesmolvla.router_training import collect_pass_a_statistics, microbatch_two_pass_terms
@@ -479,6 +491,9 @@ def actor_step(
                     q2=q2,
                     observation=observation,
                     normalized_flow_action_chunk7=chunk,
+                    execution_index_map=(
+                        aligned_fresh_chunk_execution_index_map_v2()
+                    ),
                     delta_action_mean7=delta_mean,
                     delta_action_std7=delta_std,
                 )
@@ -504,10 +519,13 @@ def actor_step(
             )
             require(torch.equal(q_contract_loss, terms.actor_q), "ONLINE_REPLAY_JOINT_ACTOR_Q_NOT_MIN_TWIN")
             q_gradient = torch.autograd.grad(q_contract_loss, chunk, retain_graph=True)[0]
-            tcp_q_gradient_square += float(q_gradient[:, :3, :6].float().square().sum().cpu())
+            execution_index_map = aligned_fresh_chunk_execution_index_map_v2()
+            tcp_q_gradient_square += float(
+                q_gradient[:, execution_index_map, :6].float().square().sum().cpu()
+            )
             gripper_q_gradient_max = max(
                 gripper_q_gradient_max,
-                float(q_gradient[:, :3, 6].float().abs().max().cpu()),
+                float(q_gradient[:, execution_index_map, 6].float().abs().max().cpu()),
             )
             fm_gradient = torch.autograd.grad(terms.expert_flow_matching, flow7, retain_graph=True)[0]
             if bool((~local_expert).any()):
@@ -596,6 +614,7 @@ def save_joint_checkpoint(
     actor_directory: str = "candidate_policy",
 ) -> None:
     from forcesmolvla.checkpoint import export_development_actor_checkpoint
+    from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_SEMANTICS_V2
 
     require(not path.exists(), "ONLINE_REPLAY_JOINT_CHECKPOINT_EXISTS")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -652,6 +671,7 @@ def save_joint_checkpoint(
             "joint_cycles": total_joint_cycles,
             "critic_ready": True,
             "actor_q_guidance_enabled": True,
+            "critic_action_semantics": CRITIC_ACTION_SEMANTICS_V2,
             "parent_binding_id": binding_id,
             "actor_directory": actor_directory,
             "critic_optimizer_restored": True,
@@ -685,6 +705,16 @@ def load_joint_checkpoint_once(
     from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
 
     metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
+    if metadata.get("kind") == "online_actor_critic_exact_resume":
+        from forcesmolvla.rft.critic_action_adapter_v2 import (
+            CRITIC_ACTION_SEMANTICS_V2,
+        )
+
+        require(
+            metadata.get("critic_action_semantics")
+            == CRITIC_ACTION_SEMANTICS_V2,
+            "FORCERFT_LEGACY_ONLINE_ACTION_SEMANTICS_INCOMPATIBLE",
+        )
     require(
         metadata.get("complete") is True
         and metadata.get("critic_ready") is True
@@ -732,6 +762,16 @@ def load_resume_modules(
     metadata_path = checkpoint / "metadata.json"
     require(metadata_path.is_file(), "FORCERFT_EXACT_RESUME_METADATA_MISSING")
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("kind") == "online_actor_critic_exact_resume":
+        from forcesmolvla.rft.critic_action_adapter_v2 import (
+            CRITIC_ACTION_SEMANTICS_V2,
+        )
+
+        require(
+            metadata.get("critic_action_semantics")
+            == CRITIC_ACTION_SEMANTICS_V2,
+            "FORCERFT_LEGACY_ONLINE_ACTION_SEMANTICS_INCOMPATIBLE",
+        )
     actor_directory = str(metadata.get("actor_directory", ""))
     require(
         metadata.get("kind")

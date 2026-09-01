@@ -15,6 +15,12 @@ import threading
 import time
 from typing import Any, Mapping
 
+from forcesmolvla.rft.online.action_runtime import (
+    H50_ACTIONS_CACHED,
+    H50_MODEL_TIMEBASE_HZ,
+    RuntimeSafetyViolation,
+    rational_h50_index,
+)
 from forcesmolvla.rft.online.gripper_authority import GripperGeneration
 from forcesmolvla.rft.online.integrated_capture import (
     CaptureBackendCapabilities,
@@ -918,12 +924,13 @@ def _validate_policy_execution_contract(contract: IntegratedCaptureContract) -> 
 def _selected_chunk_action(
     actions: Any, *, t_ref_ns: int, fps: int, selection_ns: int
 ) -> tuple[int, Any]:
-    if t_ref_ns <= 0 or fps != 30 or selection_ns < t_ref_ns:
+    if fps != H50_MODEL_TIMEBASE_HZ:
         raise IntegratedCaptureError("POLICY_EXECUTE_CHUNK_TIME_INVALID")
-    action_index = (
-        (selection_ns - t_ref_ns) * fps + 1_000_000_000 - 1
-    ) // 1_000_000_000
-    if action_index >= 50:
+    try:
+        action_index = rational_h50_index(t_ref_ns, selection_ns)
+    except RuntimeSafetyViolation as error:
+        raise IntegratedCaptureError("POLICY_EXECUTE_CHUNK_TIME_INVALID") from error
+    if action_index >= H50_ACTIONS_CACHED:
         raise IntegratedCaptureError("POLICY_EXECUTE_CHUNK_EXPIRED")
     return int(action_index), actions[int(action_index)]
 

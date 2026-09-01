@@ -132,6 +132,10 @@ def test_reward_terminal_matrix_and_quarantine() -> None:
         "bootstrap": None, "discount": None, "next_observation_valid": False,
         "quarantined": True,
     })
+    validate_reward_terminal({
+        "reward": 0.0, "terminated": False, "truncated": True,
+        "bootstrap": False, "discount": 0.0, "next_observation_valid": True,
+    })
     with pytest.raises(TransitionContractError, match="TERMINATED_AND_TRUNCATED"):
         validate_reward_terminal({
             "reward": 0.0, "terminated": True, "truncated": True,
@@ -140,5 +144,5 @@ def test_reward_terminal_matrix_and_quarantine() -> None:
     with pytest.raises(TransitionContractError, match="NEXT_OBSERVATION"):
         validate_reward_terminal({
             "reward": 0.0, "terminated": False, "truncated": True,
-            "bootstrap": True, "discount": 0.99, "next_observation_valid": False,
+            "bootstrap": False, "discount": 0.0, "next_observation_valid": False,
         })

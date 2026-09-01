@@ -86,6 +86,7 @@ def compute_online_twin_q_td_loss(
     reward: Tensor,
     discount: Tensor,
     terminated: Tensor,
+    truncated: Tensor,
     bootstrap_mask: Tensor,
     next_policy_action_fn: Callable[[Any], Tensor],
     gamma_decision: float = 0.99,
@@ -98,24 +99,28 @@ def compute_online_twin_q_td_loss(
     action = _finite_fp32(ack_behavior_action_k7, "ACK_ACTION", (batch, 3, 7))
     if terminated.dtype != torch.bool or tuple(terminated.shape) != (batch,):
         raise ValueError("ONLINE_REPLAY_TERMINATED_MUST_BE_BOOL_VECTOR")
+    if truncated.dtype != torch.bool or tuple(truncated.shape) != (batch,):
+        raise ValueError("ONLINE_REPLAY_TRUNCATED_MUST_BE_BOOL_VECTOR")
     if bootstrap_mask.dtype != torch.bool or tuple(bootstrap_mask.shape) != (batch,):
         raise ValueError("ONLINE_REPLAY_BOOTSTRAP_MASK_MUST_BE_BOOL_VECTOR")
     if behavior_mask.dtype != torch.bool or tuple(behavior_mask.shape) != (batch, 3):
         raise ValueError("ONLINE_REPLAY_BEHAVIOR_MASK_MUST_BE_BOOL_BK")
     if not bool(behavior_mask.any(dim=1).all()):
         raise ValueError("ONLINE_REPLAY_ONLINE_TD_REQUIRES_EXECUTED_ACTION")
-    if torch.any(terminated & bootstrap_mask) or not torch.equal(terminated, ~bootstrap_mask):
-        raise ValueError("ONLINE_REPLAY_TERMINAL_BOOTSTRAP_CONTRACT")
+    if torch.any(terminated & truncated):
+        raise ValueError("ONLINE_REPLAY_TERMINATED_AND_TRUNCATED")
+    if not torch.equal(bootstrap_mask, ~(terminated | truncated)):
+        raise ValueError("ONLINE_REPLAY_OUTCOME_BOOTSTRAP_CONTRACT")
     expected_discount = bootstrap_mask.float() * float(gamma_decision)
     if not torch.equal(discount, expected_discount):
         raise ValueError("ONLINE_REPLAY_DISCOUNT_ALREADY_ENCODES_BOOTSTRAP")
 
-    nonterminal = ~terminated
-    count = int(nonterminal.sum())
+    bootstrap_rows = bootstrap_mask
+    count = int(bootstrap_rows.sum())
     target = reward.clone()
     next_actor_calls = target_q1_calls = target_q2_calls = 0
     if count:
-        next_subset = _slice_observation(next_observation, nonterminal)
+        next_subset = _slice_observation(next_observation, bootstrap_rows)
         with torch.no_grad():
             next_action = next_policy_action_fn(next_subset)
             next_actor_calls = 1
@@ -131,9 +136,9 @@ def compute_online_twin_q_td_loss(
                 "NEXT_TARGET_Q2", (count,),
             )
             target_q2_calls = 1
-            target[nonterminal] = (
-                reward[nonterminal]
-                + discount[nonterminal] * torch.minimum(next_q1, next_q2)
+            target[bootstrap_rows] = (
+                reward[bootstrap_rows]
+                + discount[bootstrap_rows] * torch.minimum(next_q1, next_q2)
             )
     target = _finite_fp32(target, "TD_TARGET", (batch,)).detach()
     q1_value = _finite_fp32(

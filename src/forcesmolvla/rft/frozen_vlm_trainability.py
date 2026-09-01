@@ -251,6 +251,7 @@ def compute_min_twin_q_actor_loss(
     q2: nn.Module,
     observation: CriticObservation,
     normalized_flow_action_chunk7: Tensor,
+    execution_index_map: Tensor | tuple[int, int, int],
     delta_action_mean7: Tensor,
     delta_action_std7: Tensor,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
@@ -258,6 +259,7 @@ def compute_min_twin_q_actor_loss(
 
     action = critic_action_for_q_guidance_v2(
         normalized_flow_action_chunk7,
+        execution_index_map=execution_index_map,
         delta_action_mean7=delta_action_mean7,
         delta_action_std7=delta_action_std7,
     )

@@ -172,6 +172,9 @@ def _batch_tensors(batch: MixedReplayBatch) -> dict[str, Tensor | list[list[str]
         "terminated": torch.tensor(
             [value["outcome"]["terminated"] for value in payloads], dtype=torch.bool,
         ),
+        "truncated": torch.tensor(
+            [value["outcome"]["truncated"] for value in payloads], dtype=torch.bool,
+        ),
         "bootstrap": torch.tensor(
             [value["outcome"]["bootstrap"] for value in payloads], dtype=torch.bool,
         ),
@@ -231,9 +234,14 @@ class OnlineLearner:
             )
 
     def _next_action(self, observation: CriticObservation) -> Tensor:
+        from forcesmolvla.rft.critic_action_adapter_v2 import (
+            aligned_fresh_chunk_execution_index_map_v2,
+        )
+
         chunk = self.actor(observation)
         return critic_action_for_q_guidance_v2(
             chunk,
+            execution_index_map=aligned_fresh_chunk_execution_index_map_v2(),
             delta_action_mean7=self.delta_action_mean7,
             delta_action_std7=self.delta_action_std7,
         )
@@ -258,16 +266,22 @@ class OnlineLearner:
             reward=tensors["reward"],
             discount=tensors["discount"],
             terminated=tensors["terminated"],
+            truncated=tensors["truncated"],
             bootstrap_mask=tensors["bootstrap"],
             next_policy_action_fn=self._next_action,
         )
         with torch.no_grad():
-            next_action = self._next_action(next_observation)
-            mask = torch.ones(next_action.shape[0], 3, dtype=torch.bool)
-            expected = tensors["reward"] + tensors["discount"] * torch.minimum(
-                self.q1_target(*next_observation.as_tuple(), next_action, mask),
-                self.q2_target(*next_observation.as_tuple(), next_action, mask),
-            )
+            expected = tensors["reward"].clone()
+            bootstrap = tensors["bootstrap"]
+            if bool(bootstrap.any()):
+                positions = torch.nonzero(bootstrap, as_tuple=False).flatten()
+                next_subset = next_observation.index(positions)
+                next_action = self._next_action(next_subset)
+                mask = torch.ones(next_action.shape[0], 3, dtype=torch.bool)
+                expected[bootstrap] += tensors["discount"][bootstrap] * torch.minimum(
+                    self.q1_target(*next_subset.as_tuple(), next_action, mask),
+                    self.q2_target(*next_subset.as_tuple(), next_action, mask),
+                )
         if not torch.equal(result.target, expected.float()):
             raise AssertionError("G3P_TD_TARGET_NOT_TARGET_TWIN_Q_MIN")
         result.total.backward()

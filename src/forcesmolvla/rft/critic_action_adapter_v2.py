@@ -11,11 +11,32 @@ from forcesmolvla.action_delta import (
     BINARY_GRIPPER_SWITCH_WIDTH_M,
     MODEL_GRIPPER_CANDIDATE_RANGE_M,
 )
+from forcesmolvla.rft.online.action_runtime import (
+    H50_MODEL_TIMEBASE_HZ,
+    POSE_REFERENCE_DISPATCH_HZ,
+    rational_h50_index,
+)
 
 
 ACTION_SLOTS = 3
 ACTION_DIM = 7
 FLOW_HORIZON = 50
+MODEL_GRID_HZ = H50_MODEL_TIMEBASE_HZ
+DISPATCH_HZ = POSE_REFERENCE_DISPATCH_HZ
+NANOSECONDS_PER_SECOND = 1_000_000_000
+CRITIC_ACTION_SEMANTICS_V2 = (
+    "k3-rational-30hz-100ms-causal-ack-zoh-effective-10hz-v2"
+)
+
+
+def aligned_fresh_chunk_execution_index_map_v2() -> tuple[int, int, int]:
+    """Explicit 10 Hz ZOH map for a fresh decision on the 30 Hz Critic grid."""
+
+    if MODEL_GRID_HZ % DISPATCH_HZ or MODEL_GRID_HZ // DISPATCH_HZ != ACTION_SLOTS:
+        raise AssertionError("ACTION_CONTRACT_V2_CONTROL_GRID_RATIO_INVALID")
+    anchor_ns = NANOSECONDS_PER_SECOND
+    selected = rational_h50_index(anchor_ns, anchor_ns)
+    return tuple(selected for _ in range(ACTION_SLOTS))
 
 
 def _normalizer(mean7: Tensor, std7: Tensor, reference: Tensor) -> tuple[Tensor, Tensor]:
@@ -57,17 +78,29 @@ def normalized_gripper_endpoints_v2(mean7: Tensor, std7: Tensor) -> Tensor:
 def critic_action_for_q_guidance_v2(
     normalized_flow_action_chunk7: Tensor,
     *,
+    execution_index_map: Tensor | tuple[int, int, int],
     delta_action_mean7: Tensor,
     delta_action_std7: Tensor,
 ) -> Tensor:
-    """Return [B,3,7]: differentiable TCP6 plus detached binary gripper."""
+    """Project H50 through the effective dispatcher/ZOH control contract."""
     action = normalized_flow_action_chunk7
     if action.ndim != 3 or tuple(action.shape[1:]) != (FLOW_HORIZON, ACTION_DIM):
         raise ValueError("ACTION_CONTRACT_V2_FLOW_ACTION_SHAPE")
     if not torch.all(torch.isfinite(action)):
         raise ValueError("ACTION_CONTRACT_V2_FLOW_ACTION_NONFINITE")
     mean, std = _normalizer(delta_action_mean7, delta_action_std7, action)
-    action_k = action[:, :ACTION_SLOTS]
+    indices = torch.as_tensor(
+        execution_index_map, dtype=torch.long, device=action.device
+    )
+    if indices.ndim == 1:
+        indices = indices.unsqueeze(0).expand(action.shape[0], -1)
+    if tuple(indices.shape) != (action.shape[0], ACTION_SLOTS):
+        raise ValueError("ACTION_CONTRACT_V2_EXECUTION_INDEX_MAP_SHAPE")
+    if torch.any(indices < 0) or torch.any(indices >= FLOW_HORIZON):
+        raise ValueError("ACTION_CONTRACT_V2_EXECUTION_INDEX_MAP_RANGE")
+    action_k = torch.gather(
+        action, 1, indices.unsqueeze(-1).expand(-1, -1, ACTION_DIM)
+    )
     with torch.no_grad():
         continuous_width_m = action_k[..., 6].float() * std[6] + mean[6]
         endpoint_m = project_binary_gripper_width_v2(continuous_width_m)

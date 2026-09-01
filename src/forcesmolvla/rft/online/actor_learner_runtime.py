@@ -101,6 +101,16 @@ def exact_resume_checkpoint_is_recoverable(
         and metadata.get("actor_directory") == "actor"
         and all((checkpoint / relative).is_file() for relative in _EXACT_RESUME_FILES)
     )
+    if expected_kind == "online_actor_critic_exact_resume":
+        from forcesmolvla.rft.critic_action_adapter_v2 import (
+            CRITIC_ACTION_SEMANTICS_V2,
+        )
+
+        files_complete = (
+            files_complete
+            and metadata.get("critic_action_semantics")
+            == CRITIC_ACTION_SEMANTICS_V2
+        )
     if not files_complete:
         return False
     try:

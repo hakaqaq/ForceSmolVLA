@@ -13,6 +13,9 @@ from forcesmolvla.rft.online.training_losses import (
     compute_online_actor_objective,
     compute_online_min_twin_q_actor_loss,
 )
+from forcesmolvla.rft.critic_action_adapter_v2 import (
+    aligned_fresh_chunk_execution_index_map_v2,
+)
 
 
 class ToyCritic(nn.Module):
@@ -61,6 +64,7 @@ def test_pure_online_td_has_no_calql_random_or_mc_and_uses_target_min() -> None:
             reward=torch.tensor([1.0, 0.0]),
             discount=torch.tensor([0.0, 0.99]),
             terminated=torch.tensor([True, False]),
+            truncated=torch.tensor([False, False]),
             bootstrap_mask=torch.tensor([False, True]),
             next_policy_action_fn=next_action,
         )
@@ -87,6 +91,7 @@ def test_all_terminal_rows_never_call_next_actor_or_target_critics() -> None:
         behavior_mask=torch.ones(2, 3, dtype=torch.bool),
         reward=torch.tensor([1.0, -1.0]), discount=torch.zeros(2),
         terminated=torch.ones(2, dtype=torch.bool),
+        truncated=torch.zeros(2, dtype=torch.bool),
         bootstrap_mask=torch.zeros(2, dtype=torch.bool),
         next_policy_action_fn=forbidden,
     )
@@ -145,6 +150,7 @@ def test_human_partial_ack_action_still_enters_critic_td() -> None:
         reward=torch.tensor([1.0]),
         discount=torch.tensor([0.0]),
         terminated=torch.tensor([True]),
+        truncated=torch.tensor([False]),
         bootstrap_mask=torch.tensor([False]),
         next_policy_action_fn=lambda _: (_ for _ in ()).throw(AssertionError),
     )
@@ -175,10 +181,82 @@ def test_actor_objective_uses_min_q_and_actioncontract_v2_stops_gripper_q_gradie
     loss, _q1, _q2, action = compute_online_min_twin_q_actor_loss(
         q1=ActionOnlyCritic(0.0), q2=ActionOnlyCritic(1.0), observation=observation,
         normalized_flow_action_chunk7=chunk,
+        execution_index_map=aligned_fresh_chunk_execution_index_map_v2(),
         delta_action_mean7=mean, delta_action_std7=std,
     )
     loss.backward()
-    assert torch.count_nonzero(chunk.grad[:, :3, :6]) > 0
-    assert torch.count_nonzero(chunk.grad[:, :3, 6]) == 0
-    assert torch.count_nonzero(chunk.grad[:, 3:]) == 0
+    assert torch.count_nonzero(chunk.grad[:, 0, :6]) > 0
+    assert torch.count_nonzero(chunk.grad[..., 6]) == 0
+    assert torch.count_nonzero(chunk.grad[:, 1:]) == 0
     assert action.shape == (2, 3, 7)
+
+
+def test_intervention_truncation_uses_immediate_reward_without_next_calls() -> None:
+    q1, q2 = ToyCritic(0.0), ToyCritic(0.0)
+    target1, target2 = ToyCritic(2.0), ToyCritic(3.0)
+
+    result = compute_online_twin_q_td_loss(
+        q1=q1,
+        q2=q2,
+        q1_target=target1,
+        q2_target=target2,
+        observation=torch.zeros(1, 1),
+        next_observation=torch.zeros(1, 1),
+        ack_behavior_action_k7=torch.zeros(1, 3, 7),
+        behavior_mask=torch.ones(1, 3, dtype=torch.bool),
+        reward=torch.tensor([0.25]),
+        discount=torch.zeros(1),
+        terminated=torch.tensor([False]),
+        truncated=torch.tensor([True]),
+        bootstrap_mask=torch.tensor([False]),
+        next_policy_action_fn=lambda _: (_ for _ in ()).throw(AssertionError),
+    )
+
+    torch.testing.assert_close(result.target, torch.tensor([0.25]))
+    assert result.next_actor_calls == result.target_q1_calls == result.target_q2_calls == 0
+    assert target1.calls == target2.calls == 0
+
+
+def test_post_takeover_fresh_generation_row_still_bootstraps() -> None:
+    q1, q2 = ToyCritic(0.0), ToyCritic(0.0)
+    target1, target2 = ToyCritic(2.0), ToyCritic(3.0)
+    result = compute_online_twin_q_td_loss(
+        q1=q1,
+        q2=q2,
+        q1_target=target1,
+        q2_target=target2,
+        observation=torch.zeros(2, 1),
+        next_observation=torch.zeros(2, 1),
+        ack_behavior_action_k7=torch.zeros(2, 3, 7),
+        behavior_mask=torch.ones(2, 3, dtype=torch.bool),
+        reward=torch.tensor([0.0, 0.5]),
+        discount=torch.tensor([0.0, 0.99]),
+        terminated=torch.tensor([False, False]),
+        truncated=torch.tensor([True, False]),
+        bootstrap_mask=torch.tensor([False, True]),
+        next_policy_action_fn=lambda observation: torch.zeros(
+            observation.shape[0], 3, 7
+        ),
+    )
+    torch.testing.assert_close(result.target, torch.tensor([0.0, 2.48]))
+    assert result.next_actor_calls == result.target_q1_calls == result.target_q2_calls == 1
+
+
+def test_terminal_and_truncation_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match="TERMINATED_AND_TRUNCATED"):
+        compute_online_twin_q_td_loss(
+            q1=ToyCritic(0.0),
+            q2=ToyCritic(0.0),
+            q1_target=ToyCritic(0.0),
+            q2_target=ToyCritic(0.0),
+            observation=torch.zeros(1, 1),
+            next_observation=torch.zeros(1, 1),
+            ack_behavior_action_k7=torch.zeros(1, 3, 7),
+            behavior_mask=torch.ones(1, 3, dtype=torch.bool),
+            reward=torch.zeros(1),
+            discount=torch.zeros(1),
+            terminated=torch.tensor([True]),
+            truncated=torch.tensor([True]),
+            bootstrap_mask=torch.tensor([False]),
+            next_policy_action_fn=lambda _: torch.zeros(1, 3, 7),
+        )

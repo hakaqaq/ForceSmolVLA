@@ -130,6 +130,7 @@ def test_loader_partitions_human_expert_from_policy_training_start(
     }
     policy_rows = []
     for sequence in range(100):
+        current_ns = 1_000_000_000 + sequence * 100_000_000
         policy_rows.append(
             {
                 "classification": "recorded_live_policy_execution_smoke",
@@ -139,6 +140,7 @@ def test_loader_partitions_human_expert_from_policy_training_start(
                 "identity": {
                     "episode_id": episode.name,
                     "decision_id": sequence,
+                    "source_ack_id": f"ack-{sequence}",
                     "transition_uid": f"policy-{sequence}",
                 },
                 "generation": {
@@ -146,9 +148,39 @@ def test_loader_partitions_human_expert_from_policy_training_start(
                     "takeover_generation": 0,
                     "reset_generation": 0,
                 },
-                "policy_lineage": {"selection": {"sequence": sequence}},
-                "action_authority": {"executed_action_source": "policy"},
-                "outcome": {"terminated": sequence == 99},
+                "policy_lineage": {
+                    "proposal": {"invalidated_by_takeover": False},
+                    "selection": {
+                        "sequence": sequence,
+                        "chunk_id": f"chunk-{sequence}",
+                        "action_index": sequence % 50,
+                    },
+                },
+                "action_authority": {
+                    "executed_action_source": "policy",
+                    "accepted_absolute_action7": [0.0] * 7,
+                    "pose_ack": {
+                        "accepted": True,
+                        "upper_receive_monotonic_ns": current_ns + 99_000_000,
+                    },
+                    "gripper_terminal_provenance": {
+                        "origin_action_goal_id": f"gripper-{sequence}"
+                    },
+                    "safety_arbitration": {"workspace_clipped": False},
+                },
+                "observation": {
+                    "materialized_timestamp_monotonic_ns": current_ns
+                },
+                "next_observation": {
+                    "materialized_timestamp_monotonic_ns": current_ns + 100_000_000
+                },
+                "outcome": {
+                    "reward": 1.0 if sequence == 99 else 0.0,
+                    "terminated": sequence == 99,
+                    "truncated": False,
+                    "bootstrap_mask": 0.0 if sequence == 99 else 1.0,
+                    "discount": 0.0 if sequence == 99 else 0.99,
+                },
                 "eligibility": eligibility,
             }
         )
@@ -172,7 +204,7 @@ def test_loader_partitions_human_expert_from_policy_training_start(
             "reset_generation": 0,
         },
         "action_authority": {"executed_action_source": "human"},
-        "outcome": {"terminated": False},
+        "outcome": {"terminated": False, "truncated": False},
         "eligibility": eligibility,
     }
     for row in [*policy_rows, human]:
@@ -183,7 +215,7 @@ def test_loader_partitions_human_expert_from_policy_training_start(
 
     policies, macros, sources, humans = replay_training.load_formal_online_r(root)
 
-    assert len(policies) == 100 and len(macros) == 98
+    assert len(policies) == 100 and len(macros) == 99
     assert policies[0]["expert"] is False
     assert np.asarray(policies[0]["action_target"]).shape == (50, 7)
     assert not np.asarray(policies[0]["action_valid_mask"]).any()
@@ -236,6 +268,7 @@ def test_human_replay_builds_masked_h50_target_with_offline_adapter(
         "outcome": {
             "reward": 0.0,
             "terminated": False,
+            "truncated": False,
             "bootstrap_mask": 1.0,
             "discount": 0.99,
         },
@@ -311,6 +344,25 @@ def test_resume_modules_reads_exact_resume_actor_and_canonical_training_config(
         checkpoint / "artifacts/normalizer_manifest.json"
     )
     assert config["data"]["critic_backbone_npz"] == "backbone.npz"
+
+
+def test_resume_modules_rejects_legacy_online_action_semantics(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "online"
+    actor_package = checkpoint / "actor"
+    actor_package.mkdir(parents=True)
+    (checkpoint / "metadata.json").write_text(
+        json.dumps(
+            {
+                "kind": "online_actor_critic_exact_resume",
+                "actor_directory": "actor",
+            }
+        )
+    )
+
+    with pytest.raises(
+        RuntimeError, match="LEGACY_ONLINE_ACTION_SEMANTICS_INCOMPATIBLE"
+    ):
+        load_resume_modules(checkpoint, actor_package, torch.device("cpu"))
 
 
 def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
@@ -410,6 +462,9 @@ def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
     assert metadata["source_checkpoint"].endswith("offline_parent")
     assert metadata["joint_cycles"] == 10
     assert metadata["actor_optimizer_restored"] is True
+    assert metadata["critic_action_semantics"].startswith(
+        "k3-rational-30hz-100ms-causal-ack-zoh"
+    )
     assert (checkpoint / "artifacts/normalizer_manifest.json").is_file()
     assert (checkpoint / "artifacts/action_delta_spec.json").is_file()
     assert critic_optimizer.state and actor_optimizer.state

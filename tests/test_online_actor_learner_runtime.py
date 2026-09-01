@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 import torch
 
+from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_SEMANTICS_V2
+
 from forcesmolvla.rft.online.actor_learner_runtime import (
     AsyncRuntimeError,
     EpisodePin,
@@ -37,11 +39,14 @@ EXACT_RESUME_FILES = (
 )
 
 
-def _exact_checkpoint(path: Path, kind: str) -> None:
+def _exact_checkpoint(path: Path, kind: str, *, compatible: bool = True) -> None:
     path.mkdir(parents=True)
-    (path / "metadata.json").write_text(json.dumps({
+    metadata = {
         "complete": True, "kind": kind, "actor_directory": "actor",
-    }), encoding="utf-8")
+    }
+    if kind == "online_actor_critic_exact_resume" and compatible:
+        metadata["critic_action_semantics"] = CRITIC_ACTION_SEMANTICS_V2
+    (path / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
     for relative in EXACT_RESUME_FILES:
         target = path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -119,9 +124,13 @@ def test_resume_selection_prefers_latest_recoverable_online_then_offline(tmp_pat
 
     checkpoint_root = tmp_path / "online/checkpoints"
     cycle_50 = online_checkpoint_path(checkpoint_root, 50)
+    cycle_75_legacy = online_checkpoint_path(checkpoint_root, 75)
     cycle_100 = online_checkpoint_path(checkpoint_root, 100)
     cycle_107_incomplete = online_checkpoint_path(checkpoint_root, 107)
     _exact_checkpoint(cycle_50, "online_actor_critic_exact_resume")
+    _exact_checkpoint(
+        cycle_75_legacy, "online_actor_critic_exact_resume", compatible=False
+    )
     _exact_checkpoint(cycle_100, "online_actor_critic_exact_resume")
     torch.save(
         {"last_epoch": 999},

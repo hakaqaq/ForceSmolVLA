@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
 import json
@@ -13,6 +14,15 @@ from typing import Any, Iterable, Mapping
 import numpy as np
 import torch
 import yaml
+
+from forcesmolvla.rft.online.transition_authority import (
+    AcceptedAck,
+    AckMacro,
+    TransitionContractError,
+    causal_zoh_ack_macro,
+    normalized_ack_behavior_action,
+    validate_macro_grid,
+)
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -44,27 +54,111 @@ def _generation(row: Mapping[str, Any]) -> tuple[int, int, int]:
     )
 
 
-def build_ack_macros(rows: Iterable[Mapping[str, Any]]) -> tuple[tuple[Mapping[str, Any], ...], ...]:
-    """Build full K=3 macros without crossing an override/takeover boundary."""
+@dataclass(frozen=True)
+class ProductionAckMacro:
+    transition: Mapping[str, Any]
+    behavior: AckMacro
+    next_grid_monotonic_ns: int
+    ack_provenance: tuple[Mapping[str, Any], ...]
 
-    macros: list[tuple[Mapping[str, Any], ...]] = []
-    episodes: dict[str, list[Mapping[str, Any]]] = {}
+
+def _rational_grid_from_transition(
+    row: Mapping[str, Any],
+) -> tuple[tuple[int, int, int], int]:
+    anchor = int(row["observation"]["materialized_timestamp_monotonic_ns"])
+    index = (anchor * 30 + 500_000_000) // 1_000_000_000
+    ticks = tuple(
+        int(((index + offset) * 1_000_000_000 + 15) // 30)
+        for offset in range(4)
+    )
+    grid = validate_macro_grid(ticks[:3])
+    if anchor != grid[0] or int(
+        row["next_observation"]["materialized_timestamp_monotonic_ns"]
+    ) != ticks[3]:
+        raise RuntimeError("FORCERFT_ONLINE_REPLAY_TRANSITION_HORIZON_NOT_100MS")
+    return grid, ticks[3]
+
+
+def _accepted_ack(row: Mapping[str, Any]) -> AcceptedAck:
+    authority = row["action_authority"]
+    pose_ack = authority["pose_ack"]
+    gripper_origin = authority["gripper_terminal_provenance"]
+    command_id = str(gripper_origin["origin_action_goal_id"])
+    return AcceptedAck(
+        ack_id=str(row["identity"]["source_ack_id"]),
+        receive_monotonic_ns=int(pose_ack["upper_receive_monotonic_ns"]),
+        accepted_absolute_action7=tuple(
+            float(value) for value in authority["accepted_absolute_action7"]
+        ),
+        gripper_command_id=command_id,
+        gripper_ack_command_id=command_id,
+        slot_owner="policy",
+        accepted_action_source="policy",
+        intervention=False,
+        accepted=bool(pose_ack["accepted"]),
+        workspace_clipped=bool(
+            authority.get("safety_arbitration", {}).get("workspace_clipped", False)
+        ),
+    )
+
+
+def build_ack_macros(
+    rows: Iterable[Mapping[str, Any]], *, max_ack_age_ms: float = 100.0
+) -> tuple[ProductionAckMacro, ...]:
+    """Build 100 ms K=3 behavior macros from real ACKs on the 30 Hz grid."""
+
+    groups: dict[tuple[str, tuple[int, int, int]], list[Mapping[str, Any]]] = {}
     for row in rows:
-        episodes.setdefault(str(row["identity"].get("episode_id", "single")), []).append(row)
-    for episode_rows in episodes.values():
+        if row.get("policy_lineage", {}).get("proposal", {}).get(
+            "invalidated_by_takeover"
+        ) is True:
+            continue
+        key = (str(row["identity"].get("episode_id", "single")), _generation(row))
+        groups.setdefault(key, []).append(row)
+
+    macros: list[ProductionAckMacro] = []
+    for group_rows in groups.values():
         ordered = sorted(
-            episode_rows, key=lambda row: int(row["identity"]["decision_id"])
+            group_rows, key=lambda row: _accepted_ack(row).receive_monotonic_ns
         )
-        for stop in range(2, len(ordered)):
-            window = tuple(ordered[stop - 2 : stop + 1])
-            decisions = [int(row["identity"]["decision_id"]) for row in window]
-            sequences = [int(row["policy_lineage"]["selection"]["sequence"]) for row in window]
-            if (
-                len({_generation(row) for row in window}) == 1
-                and decisions == list(range(decisions[0], decisions[0] + 3))
-                and sequences == list(range(sequences[0], sequences[0] + 3))
-            ):
-                macros.append(window)
+        acknowledgements = tuple(_accepted_ack(row) for row in ordered)
+        by_ack_id = {
+            ack.ack_id: row for ack, row in zip(acknowledgements, ordered, strict=True)
+        }
+        for row in sorted(
+            group_rows,
+            key=lambda item: int(
+                item["observation"]["materialized_timestamp_monotonic_ns"]
+            ),
+        ):
+            grid, next_grid = _rational_grid_from_transition(row)
+            try:
+                behavior = causal_zoh_ack_macro(
+                    acknowledgements, grid, max_ack_age_ms=max_ack_age_ms
+                )
+            except TransitionContractError as error:
+                if str(error) == "ONLINE_REPLAY_ACK_MISSING_OR_STALE":
+                    continue
+                raise
+            provenance = tuple(
+                {
+                    "ack_id": ack_id,
+                    "receive_monotonic_ns": int(
+                        by_ack_id[ack_id]["action_authority"]["pose_ack"][
+                            "upper_receive_monotonic_ns"
+                        ]
+                    ),
+                    "chunk_id": str(
+                        by_ack_id[ack_id]["policy_lineage"]["selection"]["chunk_id"]
+                    ),
+                    "action_index": int(
+                        by_ack_id[ack_id]["policy_lineage"]["selection"]["action_index"]
+                    ),
+                    "generation": dict(by_ack_id[ack_id]["generation"]),
+                }
+                for ack_id in behavior.ack_ids
+            )
+            macros.append(ProductionAckMacro(row, behavior, next_grid, provenance))
     return tuple(macros)
 
 
@@ -79,7 +173,7 @@ def _sealed_episode_ids(root: Path) -> set[str]:
 
 def load_formal_online_r(root: Path) -> tuple[
     list[dict[str, Any]],
-    tuple[tuple[Mapping[str, Any], ...], ...],
+    tuple[ProductionAckMacro, ...],
     dict[str, Path],
     list[dict[str, Any]],
 ]:
@@ -165,7 +259,7 @@ def load_formal_online_r(root: Path) -> tuple[
     require(
         macros
         and (
-            any(macro[-1]["outcome"]["terminated"] for macro in macros)
+            any(macro.transition["outcome"]["terminated"] for macro in macros)
             or any(row["outcome"]["terminated"] for row in human_rows)
         ),
         "FORCERFT_ONLINE_REPLAY_MACRO_TERMINAL_MISSING",
@@ -230,32 +324,40 @@ class FormalReplay:
         }
 
     def materialize(self, index: int) -> dict[str, Any]:
-        from forcesmolvla.action_delta import ActionDeltaProcessor
-
         macro = self.macros[index]
-        first, final = macro[0], macro[-1]
-        state = np.asarray(first["observation"]["state7_absolute"], dtype=np.float64)
-        absolute = np.asarray(
-            [row["action_authority"]["accepted_absolute_action7"] for row in macro],
-            dtype=np.float64,
-        )
+        row = macro.transition
+        state = np.asarray(row["observation"]["state7_absolute"], dtype=np.float64)
+        absolute = macro.behavior.accepted_absolute_action_k7.copy()
         for slot in range(3):
-            width = absolute[slot, 6]
+            width = float(absolute[slot, 6])
             require(np.isclose(width, 0.0, atol=1e-6) or np.isclose(width, 0.085, atol=1e-6), "FORCERFT_ONLINE_REPLAY_GRIPPER_ENDPOINT")
             absolute[slot, 6] = 0.0 if width < 0.0425 else 0.085
-        action = self.normalizer.delta_action7.apply(
-            ActionDeltaProcessor.to_delta(absolute, state)
+        behavior = AckMacro(
+            grid_monotonic_ns=macro.behavior.grid_monotonic_ns,
+            ack_ids=macro.behavior.ack_ids,
+            gripper_command_ids=macro.behavior.gripper_command_ids,
+            gripper_ack_command_ids=macro.behavior.gripper_ack_command_ids,
+            accepted_absolute_action_k7=absolute,
+            slot_owner=macro.behavior.slot_owner,
+            workspace_clip_flags=macro.behavior.workspace_clip_flags,
+        )
+        action = normalized_ack_behavior_action(
+            behavior,
+            anchor_state7=state,
+            normalize_delta7=self.normalizer.delta_action7.apply,
         ).astype(np.float32)
-        uid = str(final["identity"]["transition_uid"])
-        episode_id = str(final["identity"]["episode_id"])
+        uid = str(row["identity"]["transition_uid"])
+        episode_id = str(row["identity"]["episode_id"])
         return {
-            "current": self._sample(first["observation"], f"R:{uid}:current", episode_id),
-            "next": self._sample(final["next_observation"], f"R:{uid}:next", episode_id),
+            "current": self._sample(row["observation"], f"R:{uid}:current", episode_id),
+            "next": self._sample(row["next_observation"], f"R:{uid}:next", episode_id),
             "behavior_action": action,
-            "reward": float(final["outcome"]["reward"]),
-            "terminated": bool(final["outcome"]["terminated"]),
-            "bootstrap": bool(final["outcome"]["bootstrap_mask"]),
-            "discount": float(final["outcome"]["discount"]),
+            "behavior_provenance": macro.ack_provenance,
+            "reward": float(row["outcome"]["reward"]),
+            "terminated": bool(row["outcome"]["terminated"]),
+            "truncated": bool(row["outcome"]["truncated"]),
+            "bootstrap": bool(row["outcome"]["bootstrap_mask"]),
+            "discount": float(row["outcome"]["discount"]),
             "identity": f"R:{uid}",
         }
 
@@ -316,6 +418,7 @@ class HumanCorrectionReplay:
             "behavior_mask": behavior_mask,
             "reward": float(row["outcome"]["reward"]),
             "terminated": bool(row["outcome"]["terminated"]),
+            "truncated": bool(row["outcome"]["truncated"]),
             "bootstrap": bool(row["outcome"]["bootstrap_mask"]),
             "discount": float(row["outcome"]["discount"]),
             "identity": f"H:{uid}",
@@ -392,6 +495,7 @@ class DemoReplay:
             "behavior_action": action,
             "reward": float(row["reward"]),
             "terminated": bool(row["terminated"]),
+            "truncated": bool(row.get("truncated", False)),
             "bootstrap": bool(row["bootstrap_mask"]),
             "discount": float(row["discount"]),
             "identity": identity,
@@ -436,6 +540,7 @@ def build_batch(rows: list[dict[str, Any]], actor, feature: torch.Tensor, device
         ).to(device),
         "reward": torch.tensor([row["reward"] for row in rows], dtype=torch.float32, device=device),
         "terminated": torch.tensor([row["terminated"] for row in rows], dtype=torch.bool, device=device),
+        "truncated": torch.tensor([row["truncated"] for row in rows], dtype=torch.bool, device=device),
         "bootstrap": torch.tensor([row["bootstrap"] for row in rows], dtype=torch.bool, device=device),
         "discount": torch.tensor([row["discount"] for row in rows], dtype=torch.float32, device=device),
         "identities": tuple(row["identity"] for row in rows),

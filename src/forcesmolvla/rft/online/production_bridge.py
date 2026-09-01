@@ -85,6 +85,67 @@ REQUIRED_STREAMS = (
     "external_camera",
     "wrist_camera",
 )
+
+
+def _pre_intervention_policy_boundary_decisions(
+    policy_sources: Sequence[Mapping[str, Any]],
+    takeover_starts: Sequence[Mapping[str, Any]],
+) -> set[tuple[int, int, int, int]]:
+    """Find each last executed old-generation policy row before takeover."""
+
+    boundaries: set[tuple[int, int, int, int]] = set()
+    for start in takeover_starts:
+        start_ns = int(start["receive_monotonic_ns"])
+        old_generation = (
+            int(start["policy_epoch"]) - 1,
+            int(start["reset_generation"]),
+            int(start["takeover_generation"]) - 1,
+        )
+        candidates = [
+            row
+            for row in policy_sources
+            if int(row.get("receive_monotonic_ns", 0)) < start_ns
+            and (
+                int(row["policy_epoch"]),
+                int(row["reset_generation"]),
+                int(row["takeover_generation"]),
+            )
+            == old_generation
+        ]
+        if candidates:
+            boundary = max(
+                candidates, key=lambda row: int(row["receive_monotonic_ns"])
+            )
+            boundaries.add(
+                (
+                    int(boundary["policy_epoch"]),
+                    int(boundary["reset_generation"]),
+                    int(boundary["takeover_generation"]),
+                    int(boundary["selection"]["sequence"]),
+                )
+            )
+    return boundaries
+
+
+def _formal_online_r_outcome(
+    *, terminal: bool, truncated: bool, terminal_observation_id: str
+) -> dict[str, Any]:
+    if terminal and truncated:
+        raise ProductionBridgeError("BRIDGE_FORMAL_R_TERMINAL_AND_TRUNCATED")
+    boundary = terminal or truncated
+    return {
+        "reward": 1.0 if terminal else 0.0,
+        "terminated": terminal,
+        "truncated": truncated,
+        "done": boundary,
+        "bootstrap_mask": 0.0 if boundary else 1.0,
+        "discount": 0.0 if boundary else 0.99,
+        "operator_task_outcome": "success",
+        "detector_outcome": "success",
+        "terminal_observation_id": terminal_observation_id,
+    }
+
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_PARENT_BINDING: Path | None = None
 CANONICAL_SFT_MANIFEST_ROOT = (
@@ -2250,6 +2311,7 @@ class ProductionBridge:
             "chunks": chunk_by_request,
             "transitions": accepted_transitions,
             "human_actions": tuple(human_actions),
+            "takeover_starts": tuple(start for start, _ in completed_takeovers),
             "gripper_origins": gripper_origin_by_sequence,
             "seal": seal,
             "summary": {
@@ -3965,6 +4027,7 @@ class ProductionBridge:
         integrated: Mapping[str, Any],
         source: Mapping[str, Any],
         terminal: bool,
+        truncated: bool,
     ) -> dict[str, Any]:
         request_id = str(source.get("request_id", ""))
         request = integrated["requests"].get(request_id)
@@ -4000,11 +4063,15 @@ class ProductionBridge:
             source=current,
             prepared=integrated["prepared"],
         )
-        materialized_next = self._formal_online_r_observation(
+        next_frame = observation["materialized_frame"] + 3
+        materialized_next = self._formal_online_r_prepared_observation(
             episode_dir=episode_dir,
             episode_id=episode_id,
-            source=next_observation,
             prepared=integrated["prepared"],
+            frame=next_frame,
+            observation_id=(
+                f"{episode_id}:policy-macro-next:{sequence}:frame:{next_frame}"
+            ),
         )
         if (
             materialized_next["source_t_ref_monotonic_ns"]
@@ -4076,19 +4143,13 @@ class ProductionBridge:
             },
             "observation": observation,
             "next_observation": materialized_next,
-            "outcome": {
-                "reward": 1.0 if terminal else 0.0,
-                "terminated": terminal,
-                "truncated": False,
-                "done": terminal,
-                "bootstrap_mask": 0.0 if terminal else 1.0,
-                "discount": 0.0 if terminal else 0.99,
-                "operator_task_outcome": "success",
-                "detector_outcome": "success",
-                "terminal_observation_id": integrated["summary"][
-                    "terminal_observation_id"
-                ],
-            },
+            "outcome": _formal_online_r_outcome(
+                terminal=terminal,
+                truncated=truncated,
+                terminal_observation_id=str(
+                    integrated["summary"]["terminal_observation_id"]
+                ),
+            ),
             "eligibility": {
                 "formal_training_replay_eligible": True,
                 "formal_replay": True,
@@ -4256,19 +4317,13 @@ class ProductionBridge:
             },
             "observation": observation,
             "next_observation": materialized_next,
-            "outcome": {
-                "reward": 1.0 if terminal else 0.0,
-                "terminated": terminal,
-                "truncated": False,
-                "done": terminal,
-                "bootstrap_mask": 0.0 if terminal else 1.0,
-                "discount": 0.0 if terminal else 0.99,
-                "operator_task_outcome": "success",
-                "detector_outcome": "success",
-                "terminal_observation_id": integrated["summary"][
-                    "terminal_observation_id"
-                ],
-            },
+            "outcome": _formal_online_r_outcome(
+                terminal=terminal,
+                truncated=False,
+                terminal_observation_id=str(
+                    integrated["summary"]["terminal_observation_id"]
+                ),
+            ),
             "eligibility": {
                 "formal_training_replay_eligible": True,
                 "formal_replay": True,
@@ -4418,9 +4473,26 @@ class ProductionBridge:
                 "BRIDGE_FORMAL_R_TERMINAL_BOUNDARY_INVALID"
             )
         task = str(result.get("task", start.get("task", "")))
+        truncated_policy_decisions = _pre_intervention_policy_boundary_decisions(
+            replay_sources, integrated.get("takeover_starts", ())
+        )
         transitions = []
         for index, (action_source, source) in enumerate(combined_sources):
             terminal = index == len(combined_sources) - 1
+            truncated = (
+                action_source == "policy"
+                and (
+                    int(source["policy_epoch"]),
+                    int(source["reset_generation"]),
+                    int(source["takeover_generation"]),
+                    int(source["selection"]["sequence"]),
+                )
+                in truncated_policy_decisions
+            )
+            if terminal and truncated:
+                raise ProductionBridgeError(
+                    "BRIDGE_FORMAL_R_TERMINAL_AND_TRUNCATED"
+                )
             transitions.append(
                 self._formal_online_r_transition(
                     episode_dir=episode_dir,
@@ -4429,6 +4501,7 @@ class ProductionBridge:
                     integrated=integrated,
                     source=source,
                     terminal=terminal,
+                    truncated=truncated,
                 )
                 if action_source == "policy"
                 else self._formal_online_human_transition(

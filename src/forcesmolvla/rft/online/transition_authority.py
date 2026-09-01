@@ -240,8 +240,8 @@ def validate_reward_terminal(payload: Mapping, *, gamma_decision: float = 0.99) 
         raise TransitionContractError("ONLINE_REPLAY_OUTCOME_BOOLEAN_INVALID")
     if terminated and truncated:
         raise TransitionContractError("ONLINE_REPLAY_TERMINATED_AND_TRUNCATED")
-    if terminated and bootstrap:
-        raise TransitionContractError("ONLINE_REPLAY_TERMINATED_BOOTSTRAP_NONZERO")
+    if bootstrap != (not (terminated or truncated)):
+        raise TransitionContractError("ONLINE_REPLAY_OUTCOME_BOOTSTRAP_CONTRACT")
     expected = gamma_decision if bootstrap else 0.0
     if not isinstance(discount, (int, float)) or float(discount) != expected:
         raise TransitionContractError("ONLINE_REPLAY_DISCOUNT_BOOTSTRAP_MISMATCH")

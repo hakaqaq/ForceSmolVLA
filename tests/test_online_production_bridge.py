@@ -1931,6 +1931,9 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert human["action_authority"]["pose_ack"]["accepted"] is True
     assert [item["outcome"]["reward"] for item in payloads] == [0.0, 0.0, 1.0]
     assert [item["outcome"]["terminated"] for item in payloads] == [False, False, True]
+    assert [item["outcome"]["truncated"] for item in payloads] == [True, False, False]
+    assert [item["outcome"]["bootstrap_mask"] for item in payloads] == [0.0, 1.0, 0.0]
+    assert [item["outcome"]["discount"] for item in payloads] == [0.0, 0.99, 0.0]
     assert all(
         item["policy_lineage"]["proposal"]["invalidated_by_takeover"] is False
         for item in policy_payloads

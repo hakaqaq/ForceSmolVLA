@@ -27,6 +27,7 @@ from forcesmolvla import action_delta, rules
 from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
 from forcesmolvla.rft import flow_sampling, losses
 from forcesmolvla.rft.critic_action_adapter_v2 import (
+    aligned_fresh_chunk_execution_index_map_v2,
     critic_action_for_q_guidance_v2,
     raw_gripper_out_of_public_tolerance_mask,
 )
@@ -47,7 +48,8 @@ ACTION_CONTRACT_DIAGNOSTIC = {
 def audited_action_contract_v2_adapter(
     chunk, *, delta_action_mean7, delta_action_std7
 ):
-    raw = chunk[:, :3, 6]
+    execution_index_map = aligned_fresh_chunk_execution_index_map_v2()
+    raw = chunk[:, execution_index_map, 6]
     outside = raw_gripper_out_of_public_tolerance_mask(
         raw,
         gripper_mean=delta_action_mean7[6],
@@ -55,6 +57,7 @@ def audited_action_contract_v2_adapter(
     )
     action = critic_action_for_q_guidance_v2(
         chunk,
+        execution_index_map=execution_index_map,
         delta_action_mean7=delta_action_mean7,
         delta_action_std7=delta_action_std7,
     )

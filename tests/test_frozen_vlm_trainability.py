@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import torch
+
+from forcesmolvla.rft.critic_action_adapter_v2 import (
+    aligned_fresh_chunk_execution_index_map_v2,
+)
 from torch import nn
 
 from forcesmolvla.rft.frozen_vlm_trainability import (
@@ -85,6 +89,7 @@ def test_min_twin_q_actor_loss_stops_gripper_gradient() -> None:
     loss, _q1, _q2, critic_action = compute_min_twin_q_actor_loss(
         q1=_ActionSensitiveQ(1.0), q2=_ActionSensitiveQ(2.0),
         observation=observation, normalized_flow_action_chunk7=action,
+        execution_index_map=aligned_fresh_chunk_execution_index_map_v2(),
         delta_action_mean7=torch.zeros(7), delta_action_std7=torch.ones(7),
     )
     endpoints = torch.tensor([0.0, 0.085], dtype=critic_action.dtype)
