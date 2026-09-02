@@ -70,7 +70,7 @@ def _report(command: list[str]) -> dict[str, Any]:
     return value
 
 
-def _admit(args: argparse.Namespace, episode: Path) -> None:
+def _admit(args: argparse.Namespace, episode: Path) -> bool:
     """Materialize the sealed episode and append it exactly once to Online-R."""
 
     report = _report([
@@ -78,6 +78,12 @@ def _admit(args: argparse.Namespace, episode: Path) -> None:
         "--episode", str(episode), "--state-root", str(args.formal_r_root),
         "--operator-task-outcome", "success", "--admit-formal-online-r",
     ])
+    if report.get("status") == "FORMAL_ONLINE_R_REJECTED":
+        print(
+            f"[admission] status={report['status']} "
+            f"reason={report.get('reason')} replay_written=0"
+        )
+        return False
     require(
         report.get("status") == "FORMAL_ONLINE_R_ADMITTED",
         "FORCERFT_ONLINE_ADMISSION_FAILED",
@@ -89,6 +95,7 @@ def _admit(args: argparse.Namespace, episode: Path) -> None:
         f"total={report.get('total_unique_r_transition_count')} "
         f"training_started={str(bool(report.get('training_starts_reached'))).lower()}"
     )
+    return True
 
 
 def _finish_episode(
@@ -96,9 +103,9 @@ def _finish_episode(
     *,
     episode: Path,
     outcome: str,
-) -> None:
+) -> bool:
     require(outcome == "success", "FORCERFT_ONLINE_OPERATOR_OUTCOME_NOT_SUCCESS")
-    _admit(args, episode)
+    return _admit(args, episode)
 
 
 def _post_json(url: str, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -137,7 +144,7 @@ def _wait_json(
 
 
 def _stop_server(process: subprocess.Popen[Any]) -> None:
-    """Let the server finish its current optimizer step and exact-resume save."""
+    """Let the server finish its current optimizer step without saving."""
 
     if process.poll() is not None:
         return
@@ -175,7 +182,7 @@ def _run_episode(
     server: subprocess.Popen[Any],
     model_revision: str,
     policy_epoch: int,
-) -> bool:
+) -> bool | None:
     root = Path(f"{args.root_prefix}_{index:03d}").resolve()
     session_id = root.name
     require(not root.exists(), "FORCERFT_ONLINE_CAPTURE_ROOT_EXISTS")
@@ -225,8 +232,17 @@ def _run_episode(
     outcome = input("operator_task_outcome [success/failure/q]: ").strip().lower()
     require(outcome in {"success", "failure", "q"}, "FORCERFT_ONLINE_OPERATOR_OUTCOME_INVALID")
     if outcome == "q":
+        checkpoint = _post_json(
+            f"http://127.0.0.1:{args.policy_port}/runtime/operator-q-checkpoint",
+            identity,
+        ).get("operator_q_checkpoint_path")
+        print(f"[learner] operator-q checkpoint={checkpoint or 'none'}")
         return False
-    _finish_episode(args, episode=root / "episodes" / EPISODE_ID, outcome=outcome)
+    if not _finish_episode(
+        args, episode=root / "episodes" / EPISODE_ID, outcome=outcome,
+    ):
+        print(f"[episode] rejected session={session_id}; continuing with next capture")
+        return None
     return True
 
 
@@ -260,17 +276,20 @@ def run_loop(args: argparse.Namespace) -> int:
         model_revision = str(metadata.get("active_actor_model_revision", ""))
         policy_epoch = int(metadata.get("policy_epoch", -1))
         require(model_revision and policy_epoch >= 0, "FORCERFT_ONLINE_SERVER_METADATA_INVALID")
-        first_index = _next_capture_index(args.root_prefix)
-        for index in range(first_index, first_index + args.max_episodes):
-            if not _run_episode(
+        index = _next_capture_index(args.root_prefix)
+        while completed < args.max_episodes:
+            result = _run_episode(
                 args,
                 index,
                 server=server,
                 model_revision=model_revision,
                 policy_epoch=policy_epoch,
-            ):
+            )
+            index += 1
+            if result is False:
                 break
-            completed += 1
+            if result is True:
+                completed += 1
     finally:
         _stop_server(server)
     return completed

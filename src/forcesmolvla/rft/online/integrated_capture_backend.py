@@ -13,7 +13,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from forcesmolvla.rft.online.action_runtime import (
     H50_ACTIONS_CACHED,
@@ -967,6 +967,21 @@ def _wait_for_policy_observation_ready(
         time.sleep(0.005)
 
 
+def _capture_policy_observation_when_ready(
+    capture: Callable[[], Any],
+    observation: Any,
+    process: subprocess.Popen[Any],
+    deadline: float,
+) -> Any:
+    while True:
+        _wait_for_policy_observation_ready(observation, process, deadline)
+        try:
+            return capture()
+        except RuntimeError as error:
+            if str(error) != "observation is incomplete":
+                raise
+
+
 def _json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -983,6 +998,31 @@ def _wait_for_path(path: Path, process: subprocess.Popen[Any], deadline: float) 
             )
         if time.monotonic() >= deadline:
             raise IntegratedCaptureError(f"SHADOW_BACKEND_START_TIMEOUT:{path.name}")
+        time.sleep(0.02)
+
+
+def _wait_for_session_manifest(
+    path: Path, process: subprocess.Popen[Any], deadline: float,
+) -> dict[str, Any]:
+    """Wait through the recorder's base-manifest then HIL-SERL enrichment writes."""
+
+    _wait_for_path(path, process, deadline)
+    while True:
+        try:
+            session = _json(path)
+        except (OSError, json.JSONDecodeError):
+            session = {}
+        if "controller" in session and "workspace" in session:
+            return session
+        return_code = process.poll()
+        if return_code is not None:
+            raise IntegratedCaptureError(
+                f"SHADOW_RECORDER_EXITED_BEFORE_READY:{return_code}:{path.name}"
+            )
+        if time.monotonic() >= deadline:
+            raise IntegratedCaptureError(
+                f"SHADOW_BACKEND_START_TIMEOUT:{path.name}"
+            )
         time.sleep(0.02)
 
 
@@ -1331,8 +1371,7 @@ class IntegratedCaptureBackend:
             process = subprocess.Popen(command, cwd=EXTERNAL_SCRIPTS)
             deadline = time.monotonic() + start_timeout
             session_path = root / "session.json"
-            _wait_for_path(session_path, process, deadline)
-            session = _json(session_path)
+            session = _wait_for_session_manifest(session_path, process, deadline)
             _validate_session_binding(
                 deploy, session, metadata, contract, recorder_args
             )
@@ -1759,14 +1798,21 @@ class IntegratedCaptureBackend:
 
         def capture_observation() -> None:
             nonlocal current_request, current_observation
-            current_request, current_observation = _record_live_observation(
-                observation,
-                metadata,
-                contract,
-                ledger,
-                store,
-                observations,
-                stream_name="policy_execute_observation.jsonl",
+            current_request, current_observation = (
+                _capture_policy_observation_when_ready(
+                    lambda: _record_live_observation(
+                        observation,
+                        metadata,
+                        contract,
+                        ledger,
+                        store,
+                        observations,
+                        stream_name="policy_execute_observation.jsonl",
+                    ),
+                    observation,
+                    process,
+                    time.monotonic() + start_timeout,
+                )
             )
 
         def submit_current_request() -> None:
@@ -1830,9 +1876,6 @@ class IntegratedCaptureBackend:
             current_request = None
             current_observation = None
 
-        _wait_for_policy_observation_ready(
-            observation, process, time.monotonic() + start_timeout
-        )
         capture_observation()
         submit_current_request()
         try:
@@ -1881,18 +1924,7 @@ class IntegratedCaptureBackend:
                         current_chunk = None
                         current_request = None
                         current_observation = None
-                        recovery_deadline = time.monotonic() + start_timeout
-                        while True:
-                            _wait_for_policy_observation_ready(
-                                observation, process, recovery_deadline
-                            )
-                            try:
-                                capture_observation()
-                            except RuntimeError as recovery_error:
-                                if str(recovery_error) != "observation is incomplete":
-                                    raise
-                                continue
-                            break
+                        capture_observation()
                         submit_current_request()
                         continue
                     actions = deploy.validate_response(

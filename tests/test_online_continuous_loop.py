@@ -112,17 +112,44 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
         "total_unique_r_transition_count": 748,
         "training_starts_reached": True,
     })
-    loop._admit(type("Args", (), {"model_python": Path("python"), "formal_r_root": Path("r")})(), Path("episode"))
+    assert loop._admit(
+        type("Args", (), {
+            "model_python": Path("python"), "formal_r_root": Path("r"),
+        })(),
+        Path("episode"),
+    ) is True
     output = capsys.readouterr().out
     assert output.count("\n") == 1
     assert "human_expert=2" in output
+
+
+def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatch) -> None:
+    monkeypatch.setattr(loop, "_report", lambda _command: {
+        "status": "FORMAL_ONLINE_R_REJECTED",
+        "reason": (
+            "BRIDGE_POLICY_EXECUTION_OBSERVATION_MATERIALIZATION_FAILED:"
+            "ValueError:WRENCH_SOURCE_GAP_EXCEEDED"
+        ),
+    })
+
+    admitted = loop._admit(
+        type("Args", (), {
+            "model_python": Path("python"), "formal_r_root": Path("r"),
+        })(),
+        Path("episode"),
+    )
+
+    assert admitted is False
+    assert "FORMAL_ONLINE_R_REJECTED" in capsys.readouterr().out
 
 
 def test_episode_admission_is_called_once_only_for_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[Path] = []
-    monkeypatch.setattr(loop, "_admit", lambda _args, episode: calls.append(episode))
+    monkeypatch.setattr(
+        loop, "_admit", lambda _args, episode: calls.append(episode) or True,
+    )
 
     episode = tmp_path / "episode"
     loop._finish_episode(object(), episode=episode, outcome="success")
@@ -130,6 +157,45 @@ def test_episode_admission_is_called_once_only_for_success(
     with pytest.raises(loop.ContinuousLoopError, match="OPERATOR_OUTCOME_NOT_SUCCESS"):
         loop._finish_episode(object(), episode=episode, outcome="failure")
     assert calls == [episode]
+
+
+def test_loop_continues_after_rejected_episode_until_one_is_admitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resume = tmp_path / "resume"
+    results = iter((None, True, False))
+    indices: list[int] = []
+
+    class Process:
+        pass
+
+    monkeypatch.setattr(loop, "select_exact_resume_checkpoint", lambda _root: resume)
+    monkeypatch.setattr(loop.subprocess, "Popen", lambda *_args, **_kwargs: Process())
+    monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
+        "server_persistent": True,
+        "learner_resume_checkpoint": str(resume.resolve()),
+        "active_actor_model_revision": "model",
+        "policy_epoch": 0,
+    })
+    monkeypatch.setattr(
+        loop,
+        "_run_episode",
+        lambda _args, index, **_kwargs: indices.append(index) or next(results),
+    )
+    monkeypatch.setattr(loop, "_stop_server", lambda _process: None)
+    args = type("Args", (), {
+        "allow_development_policy_execution_smoke": True,
+        "output_root": tmp_path,
+        "model_python": Path("python"),
+        "task_id": "task2",
+        "policy_port": 8000,
+        "server_start_timeout": 1.0,
+        "max_episodes": 2,
+        "root_prefix": tmp_path / "capture",
+    })()
+
+    assert loop.run_loop(args) == 1
+    assert indices == [1, 2, 3]
 
 
 def test_loop_passes_selected_exact_resume_directly_to_unified_server(
@@ -179,11 +245,18 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
 ) -> None:
     calls: list[str] = []
     commands: list[list[str]] = []
-    monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
-        "runtime_session_id": "capture_001",
-        "runtime_episode_id": loop.EPISODE_ID,
-        "server_persistent": True,
-    })
+    posts: list[tuple[str, dict]] = []
+
+    def post(url, payload):
+        posts.append((url, payload))
+        return {
+            "runtime_session_id": "capture_001",
+            "runtime_episode_id": loop.EPISODE_ID,
+            "server_persistent": True,
+            "operator_q_checkpoint_path": "/tmp/checkpoint",
+        }
+
+    monkeypatch.setattr(loop, "_post_json", post)
     monkeypatch.setattr(
         loop, "_run", lambda command, **_kwargs: commands.append(command)
     )
@@ -208,6 +281,8 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
         model_revision="model", policy_epoch=0,
     ) is False
     assert calls == []
+    assert posts[-1][0].endswith("/runtime/operator-q-checkpoint")
+    assert posts[-1][1]["session_id"] == "capture_001"
     assert "--allow-development-policy-execution-smoke" in commands[0]
     assert "--compact-output" in commands[0]
     assert "--deployment-profile" not in commands[0]

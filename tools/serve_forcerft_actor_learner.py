@@ -52,11 +52,23 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
-def _replay_snapshot(replay_root: Path) -> tuple[tuple[str, int, int], ...]:
-    return tuple(sorted(
-        (path.name, path.stat().st_size, path.stat().st_mtime_ns)
-        for path in (replay_root / "replay").glob("*.json")
-    ))
+def _session_was_sampled(
+    session_id: str | None, selected_identities: list[str]
+) -> bool:
+    return session_id is not None and any(
+        session_id in identity for identity in selected_identities
+    )
+
+
+def _validate_cycle_completion(
+    *, current_episode_sampled: bool, nonfinite_count: int, oom_count: int
+) -> None:
+    require(
+        not current_episode_sampled
+        and nonfinite_count == 0
+        and oom_count == 0,
+        "ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT",
+    )
 
 
 def _refresh_training_schedules(learner: dict[str, Any]) -> None:
@@ -144,6 +156,7 @@ class ContinuousLearner:
     def __call__(
         self, coordinator: InferencePriorityCoordinator
     ) -> dict[str, Any]:
+        current_session_id = self.current_session_id
         if not self._ensure_learner():
             return {
                 "waiting_for_replay": True,
@@ -159,10 +172,10 @@ class ContinuousLearner:
         all_r, r_macros, source_episodes, human_rows = warmup.load_formal_online_r(
             self.replay_root
         )
-        if self.current_session_id is not None:
+        if current_session_id is not None:
             require(
                 not any(
-                    row["identity"].get("session_id") == self.current_session_id
+                    row["identity"].get("session_id") == current_session_id
                     for row in [*all_r, *human_rows]
                 ),
                 "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
@@ -188,7 +201,6 @@ class ContinuousLearner:
             )
         self.unique_r_count = len(all_r)
         self.r_macro_count = len(r_macros)
-        replay_before = _replay_snapshot(self.replay_root)
         previous = learner["runtime"]["counters"]
         critic_offset = int(previous["critic_optimizer_steps"])
         base_cycle = int(previous["joint_cycles"])
@@ -287,17 +299,15 @@ class ContinuousLearner:
             nonfinite_count += 1
             raise
 
-        current_episode_sampled = any(
-            self.current_session_id in identity
-            for identity in selected_identities
+        current_episode_sampled = _session_was_sampled(
+            current_session_id, selected_identities
         )
-        replay_after = _replay_snapshot(self.replay_root)
-        require(
-            not current_episode_sampled
-            and replay_after == replay_before
-            and nonfinite_count == 0
-            and oom_count == 0,
-            "ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT",
+        # This cycle owns its in-memory replay snapshot. Append-only Online-R
+        # growth becomes visible on the next cycle, as in ConRFT.
+        _validate_cycle_completion(
+            current_episode_sampled=current_episode_sampled,
+            nonfinite_count=nonfinite_count,
+            oom_count=oom_count,
         )
         counters = {
             "joint_cycles": base_cycle + 1,
@@ -429,6 +439,13 @@ class AsyncPolicyLearnerRuntime:
         self._learner_error: str | None = None
         self._stop_learner = threading.Event()
         self._broadcast_count = 0
+        self._active_actor_online_cycle = (
+            int(self.learner_resume_checkpoint.name.rsplit("_", 1)[1])
+            if self.learner_resume_checkpoint.name.startswith(
+                "online_actor_critic_cycle_"
+            )
+            else 0
+        )
         self._policy = OnlineTrainingPolicy()
         self._learner_thread: threading.Thread | None = None
         self._inference_request_count = 0
@@ -444,9 +461,11 @@ class AsyncPolicyLearnerRuntime:
             "current_episode_sampling": False,
             "training_starts": 100,
             "actor_parameter_broadcast_period": 5,
+            "active_actor_online_cycle": self._active_actor_online_cycle,
             "checkpoint_period": 50,
             "keep_latest_checkpoints": 2,
-            "save_checkpoint_on_graceful_exit": True,
+            "save_checkpoint_on_graceful_exit": False,
+            "save_checkpoint_on_operator_q": True,
             "runtime_session_id": self.session_id,
             "runtime_episode_id": self.episode_id,
             "learner_started": self._learner_started,
@@ -492,6 +511,7 @@ class AsyncPolicyLearnerRuntime:
                     result.get("latest_checkpoint_path")
                 ),
                 "actor_parameter_broadcast_count": self._broadcast_count,
+                "active_actor_online_cycle": self._active_actor_online_cycle,
             }
 
     def start_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -559,7 +579,15 @@ class AsyncPolicyLearnerRuntime:
                                 broadcast_actor_parameters(
                                     result["learner_actor"], self.engine.policy
                                 )
-                            self._broadcast_count += 1
+                            with self._lock:
+                                self._broadcast_count += 1
+                                self._active_actor_online_cycle = cycle
+                                broadcast_count = self._broadcast_count
+                            print(
+                                "[model] deployed online Actor "
+                                f"cycle={cycle:06d} broadcast={broadcast_count}",
+                                flush=True,
+                            )
                         result.pop("learner_actor", None)
                         with self._lock:
                             self._learner_result = result
@@ -604,6 +632,20 @@ class AsyncPolicyLearnerRuntime:
         self._end_episode()
         return self.status()
 
+    def checkpoint_on_operator_q(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        self._validate_identity(payload)
+        require(not self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_ACTIVE")
+        self.stop()
+        with self._lock:
+            require(self._learner_state != "failed", "ONLINE_REPLAY_ASYNC_LEARNER_FAILED")
+        checkpoint = self.learner_job.save_checkpoint()
+        return {
+            **self.status(),
+            "operator_q_checkpoint_path": (
+                None if checkpoint is None else str(checkpoint)
+            ),
+        }
+
     def _end_episode(self) -> None:
         with self._lock:
             require(self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_INACTIVE")
@@ -620,10 +662,6 @@ class AsyncPolicyLearnerRuntime:
         self._stop_learner.set()
         if self._learner_thread is not None:
             self._learner_thread.join()
-        with self._lock:
-            learner_failed = self._learner_state == "failed"
-        if not learner_failed:
-            self.learner_job.save_checkpoint()
 
 
 class RequestHandler(serve_policy.RequestHandler):
@@ -643,6 +681,7 @@ class RequestHandler(serve_policy.RequestHandler):
             "/runtime/episode-start",
             "/runtime/episode-end",
             "/runtime/episode-abort",
+            "/runtime/operator-q-checkpoint",
         }:
             super().do_POST()
             return
@@ -658,6 +697,9 @@ class RequestHandler(serve_policy.RequestHandler):
                 "/runtime/episode-start": self.runtime.start_episode,
                 "/runtime/episode-end": self.runtime.end_episode,
                 "/runtime/episode-abort": self.runtime.abort_episode,
+                "/runtime/operator-q-checkpoint": (
+                    self.runtime.checkpoint_on_operator_q
+                ),
             }[self.path]
             self._write_json(200, method(payload))
         except Exception as error:
@@ -774,7 +816,8 @@ def main() -> int:
     server.engine = runtime  # type: ignore[attr-defined]
     print(
         f"[model] active Actor revision={runtime.active_revision_id} "
-        f"model={runtime.active_model_revision}",
+        f"model={runtime.active_model_revision} "
+        f"deployed_online_cycle={runtime.metadata['active_actor_online_cycle']}",
         flush=True,
     )
     print(

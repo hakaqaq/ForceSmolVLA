@@ -255,8 +255,32 @@ def test_refreshed_schedule_is_prefetched_before_next_cycle(
     assert calls == [(schedules[1], schedules[3])]
 
 
-def test_cycle_five_broadcast_is_memory_only_and_stop_saves_once(
+def test_no_active_episode_is_never_reported_as_sampled() -> None:
+    assert server._session_was_sampled(
+        None, ["{'session_id': 'completed-episode'}"]
+    ) is False
+
+
+def test_append_only_replay_does_not_invalidate_cycle_completion(
     tmp_path: Path,
+) -> None:
+    replay = tmp_path / "replay"
+    replay.mkdir()
+    before = tuple(replay.iterdir())
+    (replay / "admitted-during-cycle.json").write_text("{}", encoding="utf-8")
+    assert tuple(replay.iterdir()) != before
+
+    server._validate_cycle_completion(
+        current_episode_sampled=False, nonfinite_count=0, oom_count=0
+    )
+    with pytest.raises(RuntimeError, match="LEARNER_COMPLETION_CONTRACT"):
+        server._validate_cycle_completion(
+            current_episode_sampled=True, nonfinite_count=0, oom_count=0
+        )
+
+
+def test_cycle_five_broadcast_is_memory_only_and_only_operator_q_saves(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:
     learner = FakeLearner()
     checkpoint_root = tmp_path / "online-checkpoints"
@@ -271,10 +295,23 @@ def test_cycle_five_broadcast_is_memory_only_and_stop_saves_once(
         assert time.monotonic() < deadline
         time.sleep(0.005)
     assert runtime.engine.policy.value >= 5
+    assert runtime.status()["active_actor_online_cycle"] >= 5
+    assert "[model] deployed online Actor cycle=" in capsys.readouterr().out
     assert not checkpoint_root.exists()
     runtime.abort_episode(_identity())
+    report = runtime.checkpoint_on_operator_q(_identity())
+    assert report["operator_q_checkpoint_path"] is None
     runtime.stop()
     assert learner.save_calls == 1
+
+
+def test_stop_without_operator_q_does_not_save() -> None:
+    learner = FakeLearner()
+    runtime = _runtime(learner=learner)
+
+    runtime.stop()
+
+    assert learner.save_calls == 0
 
 
 def test_failed_learner_is_not_checkpointed_on_stop() -> None:

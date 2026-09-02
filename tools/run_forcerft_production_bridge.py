@@ -220,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     from forcesmolvla.rft.online.production_bridge import (
         ProductionBridge,
+        ProductionBridgeError,
         frozen_episode_materializer,
         load_bridge_config,
     )
@@ -254,10 +255,23 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(
                 "--operator-task-outcome success is required for formal online-R admission"
             )
-        report = bridge.admit_policy_execution_smoke(
-            episode,
-            operator_task_outcome=args.operator_task_outcome,
-        )
+        try:
+            report = bridge.admit_policy_execution_smoke(
+                episode,
+                operator_task_outcome=args.operator_task_outcome,
+            )
+        except ProductionBridgeError as error:
+            reason = str(error)
+            if reason == (
+                "BRIDGE_POLICY_EXECUTION_OBSERVATION_MATERIALIZATION_FAILED:"
+                "ValueError:WRENCH_SOURCE_GAP_EXCEEDED"
+            ):
+                print(json.dumps({
+                    "status": "FORMAL_ONLINE_R_REJECTED",
+                    "reason": reason,
+                }, sort_keys=True, indent=2))
+                return 0
+            raise
     else:
         report = bridge.process_episode(
             episode,

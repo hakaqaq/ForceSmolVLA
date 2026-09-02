@@ -103,6 +103,30 @@ def test_policy_publisher_is_a_fail_closed_non_dds_sentinel() -> None:
         publisher.publish({"source": "policy"})
 
 
+def test_session_manifest_waits_for_hilserl_enrichment(tmp_path: Path) -> None:
+    path = tmp_path / "session.json"
+    path.write_text(json.dumps({"task": "task"}), encoding="utf-8")
+
+    def finish_manifest() -> None:
+        threading.Event().wait(0.03)
+        path.write_text(json.dumps({
+            "task": "task",
+            "controller": {"name": RECORDER_CONTROL_CHAIN},
+            "workspace": {"min_xyz_m": [0.0] * 3, "max_xyz_m": [1.0] * 3},
+        }), encoding="utf-8")
+
+    writer = threading.Thread(target=finish_manifest)
+    writer.start()
+    session = capture_backend._wait_for_session_manifest(
+        path,
+        SimpleNamespace(poll=lambda: None),
+        capture_backend.time.monotonic() + 1.0,
+    )
+    writer.join()
+
+    assert session["controller"]["name"] == RECORDER_CONTROL_CHAIN
+
+
 def test_proposal_and_human_ack_are_separate_and_cannot_claim_execution(
     tmp_path: Path,
 ) -> None:
@@ -399,6 +423,38 @@ def test_policy_execution_waits_for_native_camera_first_frames(
             SimpleNamespace(poll=lambda: 1),
             deadline=capture_backend.time.monotonic() + 1.0,
         )
+
+
+def test_policy_observation_capture_retries_filter_rewarm_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = {"samples": 250, "attempts": 0}
+    observation = SimpleNamespace(
+        cameras=SimpleNamespace(ready=lambda: True),
+        ready=lambda: state["samples"] >= 250,
+        shadow_error=None,
+    )
+
+    def capture():
+        state["attempts"] += 1
+        if state["attempts"] == 1:
+            state["samples"] = 0
+            raise RuntimeError("observation is incomplete")
+        return "fresh"
+
+    monkeypatch.setattr(
+        capture_backend.time,
+        "sleep",
+        lambda _seconds: state.__setitem__("samples", state["samples"] + 1),
+    )
+
+    assert capture_backend._capture_policy_observation_when_ready(
+        capture,
+        observation,
+        SimpleNamespace(poll=lambda: None),
+        capture_backend.time.monotonic() + 1.0,
+    ) == "fresh"
+    assert state == {"samples": 250, "attempts": 2}
 
 
 def test_filter_generation_change_discards_stale_result_then_resumes_fresh_request(
