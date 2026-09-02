@@ -57,8 +57,11 @@ def make_schedules(
     *,
     r_population_size: int,
     d_population: tuple[int, ...],
+    fm_population: tuple[int, ...],
     cycles: int,
 ) -> tuple[list[list[int]], list[list[int]], list[list[int]], list[list[int]]]:
+    require(bool(fm_population), "ONLINE_REPLAY_JOINT_NO_FM_POPULATION")
+    fm_indices = frozenset(fm_population)
     critic_r: list[list[int]] = []
     critic_d: list[list[int]] = []
     actor_r: list[list[int]] = []
@@ -68,7 +71,10 @@ def make_schedules(
             critic_r.append(r_rng.sample(range(r_population_size), 32))
             critic_d.append(d_rng.sample(d_population, 32))
         actor_r.append(r_rng.sample(range(r_population_size), 12))
-        actor_d.append(d_rng.sample(d_population, 12))
+        actor_batch = d_rng.sample(d_population, 12)
+        if fm_indices.isdisjoint(actor_batch):
+            actor_batch[-1] = d_rng.choice(fm_population)
+        actor_d.append(actor_batch)
     return critic_r, critic_d, actor_r, actor_d
 
 
@@ -115,6 +121,17 @@ class JointDemoReplay(warmup.DemoReplay):
             *range(
                 self.offline_count,
                 self.offline_count + len(self.human_replay.rows),
+            ),
+        )
+
+    @property
+    def fm_population(self) -> tuple[int, ...]:
+        return (
+            *self.offline_population,
+            *(
+                self.offline_count + index
+                for index, row in enumerate(self.human_replay.rows)
+                if row["eligibility"]["fm_eligible"] is True
             ),
         )
 

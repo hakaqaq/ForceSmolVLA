@@ -77,6 +77,7 @@ def _refresh_training_schedules(learner: dict[str, Any]) -> None:
         learner["d_rng"],
         r_population_size=len(learner["r_replay"].macros),
         d_population=learner["d_replay"].population,
+        fm_population=learner["d_replay"].fm_population,
         cycles=1,
     )
     (

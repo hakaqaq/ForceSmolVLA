@@ -346,6 +346,7 @@ def prepare_learner(
         d_rng,
         r_population_size=len(r_macros),
         d_population=d_replay.population,
+        fm_population=d_replay.fm_population,
         cycles=1,
     )
     d_replay.prefetch_joint(critic_d, actor_d)

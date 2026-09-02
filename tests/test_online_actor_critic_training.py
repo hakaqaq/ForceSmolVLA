@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from train_forcerft_actor_critic import (  # noqa: E402
+    JointDemoReplay,
     assert_optimizer_ownership,
     load_joint_checkpoint_once,
     load_resume_modules,
@@ -65,7 +66,7 @@ def _step(module: torch.nn.Module, optimizer: torch.optim.Optimizer) -> None:
     optimizer.step()
 
 
-def test_joint_sampler_continues_rng_state() -> None:
+def test_actor_schedule_is_deterministic_after_rng_restore() -> None:
     r_rng = random.Random(7)
     d_rng = random.Random(8)
     r_rng.sample(range(100), 32)
@@ -77,6 +78,7 @@ def test_joint_sampler_continues_rng_state() -> None:
         d_rng,
         r_population_size=100,
         d_population=tuple(range(200)),
+        fm_population=(0, 1, 2),
         cycles=2,
     )
     restored_r, restored_d = random.Random(), random.Random()
@@ -87,6 +89,7 @@ def test_joint_sampler_continues_rng_state() -> None:
         restored_d,
         r_population_size=100,
         d_population=tuple(range(200)),
+        fm_population=(0, 1, 2),
         cycles=2,
     )
 
@@ -95,6 +98,87 @@ def test_joint_sampler_continues_rng_state() -> None:
     assert [len(batch) for batch in schedules[1]] == [32] * 4
     assert [len(batch) for batch in schedules[2]] == [12] * 2
     assert [len(batch) for batch in schedules[3]] == [12] * 2
+
+
+def test_actor_d_schedule_always_contains_fm_eligible_row() -> None:
+    fm_population = (197, 198, 199)
+    actor_d = make_schedules(
+        random.Random(7),
+        random.Random(8),
+        r_population_size=100,
+        d_population=tuple(range(200)),
+        fm_population=fm_population,
+        cycles=20,
+    )[3]
+
+    assert all(set(batch) & set(fm_population) for batch in actor_d)
+
+
+def test_failure_human_rows_remain_available_for_td_and_q() -> None:
+    replay = JointDemoReplay.__new__(JointDemoReplay)
+    replay.offline_population = (0,)
+    replay.offline_count = 1
+    replay.human_replay = SimpleNamespace(
+        rows=tuple(
+            {"eligibility": {"fm_eligible": False}} for _ in range(39)
+        )
+    )
+    replay.population = tuple(range(40))
+
+    assert replay.fm_population == (0,)
+    schedules = make_schedules(
+        random.Random(9),
+        random.Random(10),
+        r_population_size=100,
+        d_population=replay.population,
+        fm_population=replay.fm_population,
+        cycles=2,
+    )
+    critic_d, actor_d = schedules[1], schedules[3]
+    assert any(index != 0 for batch in critic_d for index in batch)
+    assert any(index != 0 for batch in actor_d for index in batch)
+
+
+def test_all_failure_human_draw_is_repaired_with_one_fm_row() -> None:
+    d_population = tuple(range(100))
+    seed = 23
+    probe = random.Random(seed)
+    probe.sample(d_population, 32)
+    probe.sample(d_population, 32)
+    raw_actor_batch = probe.sample(d_population, 12)
+    fm_population = (
+        next(index for index in reversed(d_population) if index not in raw_actor_batch),
+    )
+
+    repaired = make_schedules(
+        random.Random(11),
+        random.Random(seed),
+        r_population_size=100,
+        d_population=d_population,
+        fm_population=fm_population,
+        cycles=1,
+    )[3][0]
+
+    assert repaired[:-1] == raw_actor_batch[:-1]
+    assert repaired[-1] == fm_population[0]
+
+
+def test_no_fm_eligible_population_fails_before_training() -> None:
+    r_rng = random.Random(12)
+    d_rng = random.Random(13)
+    states = (r_rng.getstate(), d_rng.getstate())
+
+    with pytest.raises(RuntimeError, match="ONLINE_REPLAY_JOINT_NO_FM_POPULATION"):
+        make_schedules(
+            r_rng,
+            d_rng,
+            r_population_size=100,
+            d_population=tuple(range(200)),
+            fm_population=(),
+            cycles=1,
+        )
+
+    assert (r_rng.getstate(), d_rng.getstate()) == states
 
 
 def test_loader_partitions_human_expert_from_policy_training_start(

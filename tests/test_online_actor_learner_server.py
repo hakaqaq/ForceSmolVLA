@@ -236,6 +236,7 @@ def test_refreshed_schedule_is_prefetched_before_next_cycle(
 
     class DemoReplay:
         population = (0, 1, 2)
+        fm_population = (0, 1, 2)
 
         def prefetch_joint(self, critic, actor) -> None:
             calls.append((critic, actor))
