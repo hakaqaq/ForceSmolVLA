@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "name": "task3_full_sft",
+  "output_dir": "outputs/task3/sft",
+  "data_scope": "configs/task3_development_data_scope.json",
+  "dataset_validation": "artifacts/development/task3_lerobotv3_validation.json",
+  "converter_runtime_spec": "configs/converter_runtime_spec.task3.development.json",
+  "action_target_population_parity": "artifacts/development/action_target_population_parity_task3.json",
+  "training_readiness": {
+    "gate_report": "artifacts/development/p8_v4_2_r7_gpu_preflight.json",
+    "source_binding": "artifacts/development/p8_v4_2_r7_source_binding.json",
+    "reuse_validated_architecture_gate": true
+  },
+  "dataloader": {
+    "workers": 8
+  },
+  "logging": {
+    "interval_samples": 40
+  }
+}

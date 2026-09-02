@@ -342,6 +342,7 @@ def test_policy_execute_ack_binds_lineage_current_next_and_takeover() -> None:
         policy_epoch=2,
         receive_monotonic_ns=1_040_000_000,
         safe_action={"arbitration": {"event": "intervention_start"}},
+        old_policy_chunk_invalidated=True,
     )
     assert intervention["old_policy_chunk_invalidated"] is True
     assert ledger.current_policy_generation == (2, 1)
@@ -353,12 +354,13 @@ def test_policy_execute_ack_binds_lineage_current_next_and_takeover() -> None:
         receive_monotonic_ns=1_050_000_000,
         safe_action={"arbitration": {"event": "intervention_end"}},
     )
-    ledger.record_intervention(
+    second_intervention = ledger.record_intervention(
         event="intervention_start",
         policy_epoch=3,
         receive_monotonic_ns=1_055_000_000,
         safe_action={"arbitration": {"event": "intervention_start"}},
     )
+    assert second_intervention["old_policy_chunk_invalidated"] is False
     assert ledger.current_policy_generation == (3, 2)
     ledger.record_intervention(
         event="intervention_end",

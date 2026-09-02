@@ -29,7 +29,13 @@ from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
 MODEL_PYTHON = Path("/home/rlc123/anaconda3/envs/forcesmolvla/bin/python")
 ROBOT_PYTHON = Path("/home/rlc123/fr3_client_ws/.venv/bin/python")
 EPISODE_ID = "episode_000000"
+
+
 class ContinuousLoopError(RuntimeError):
+    pass
+
+
+class EpisodeLocalTransientError(ContinuousLoopError):
     pass
 
 
@@ -54,6 +60,10 @@ def _run(
             print(result.stdout, end="")
         if result.stderr:
             print(result.stderr, end="", file=sys.stderr)
+    if result.returncode == os.EX_TEMPFAIL:
+        raise EpisodeLocalTransientError(
+            f"FORCERFT_ONLINE_EPISODE_LOCAL_TRANSIENT:{command[1]}"
+        )
     require(result.returncode == 0, f"FORCERFT_ONLINE_COMMAND_FAILED:{command[1]}")
     return result
 
@@ -160,13 +170,12 @@ def _stop_server(process: subprocess.Popen[Any]) -> None:
 
 
 def _next_capture_index(root_prefix: Path) -> int:
-    prefix = f"{root_prefix.name}_"
     indices = [
-        int(path.name.removeprefix(prefix))
-        for path in root_prefix.parent.glob(f"{prefix}*")
-        if path.name.removeprefix(prefix).isdigit()
+        int(path.name)
+        for path in root_prefix.iterdir()
+        if path.is_dir() and path.name.isdigit()
     ]
-    return max(indices, default=0) + 1
+    return max(indices, default=-1) + 1
 
 
 def _discard_unsealed_capture(root: Path) -> None:
@@ -174,8 +183,26 @@ def _discard_unsealed_capture(root: Path) -> None:
         root / "integrated_capture" / EPISODE_ID
         / "streams" / "policy_execute_episode_seal.json"
     )
-    if root.is_dir() and not seal.is_file():
+    rejected = root / "rejected_episodes"
+    if root.is_dir() and not seal.is_file() and not rejected.is_dir():
         shutil.rmtree(root)
+
+
+def _recorder_rejection_reason(root: Path) -> str | None:
+    for path in sorted((root / "rejected_episodes").glob("*/episode_result.json")):
+        try:
+            result = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        reason = result.get("fatal_reason") if isinstance(result, dict) else None
+        if (
+            isinstance(result, dict)
+            and result.get("saved") is False
+            and isinstance(reason, str)
+            and reason
+        ):
+            return reason
+    return None
 
 
 def _run_episode(
@@ -186,8 +213,8 @@ def _run_episode(
     model_revision: str,
     policy_epoch: int,
 ) -> bool | None:
-    root = Path(f"{args.root_prefix}_{index:03d}").resolve()
-    session_id = root.name
+    root = (args.root_prefix / f"{index:03d}").resolve()
+    session_id = f"{args.root_prefix.name}_{index:03d}"
     require(not root.exists(), "FORCERFT_ONLINE_CAPTURE_ROOT_EXISTS")
     identity = {
         "session_id": session_id,
@@ -229,7 +256,33 @@ def _run_episode(
             and status.get("server_persistent") is True,
             "FORCERFT_ONLINE_LEARNER_INVALID",
         )
-    except (ContinuousLoopError, OSError, KeyboardInterrupt):
+    except ContinuousLoopError as error:
+        _discard_unsealed_capture(root)
+        rejection_reason = _recorder_rejection_reason(root)
+        episode_local_transient = isinstance(error, EpisodeLocalTransientError)
+        if rejection_reason is None and not episode_local_transient:
+            raise
+        status = _wait_json(
+            f"http://127.0.0.1:{args.policy_port}/runtime/status",
+            process=server,
+            timeout=10.0,
+        )
+        require(
+            status.get("runtime_session_id") == session_id
+            and status.get("runtime_episode_id") == EPISODE_ID
+            and status.get("episode_active") is False
+            and status.get("learner_state") != "failed"
+            and status.get("current_episode_sampled") is False
+            and status.get("server_persistent") is True,
+            "FORCERFT_ONLINE_REJECTED_CAPTURE_RUNTIME_INVALID",
+        )
+        print(
+            f"[episode] capture rejected session={session_id}; "
+            f"reason={rejection_reason or 'episode-local transient capture failure'}; "
+            "replay_written=0; learner continues"
+        )
+        return None
+    except (OSError, KeyboardInterrupt):
         _discard_unsealed_capture(root)
         raise
     outcome = input("operator_task_outcome [success/failure/q]: ").strip().lower()
@@ -279,6 +332,7 @@ def run_loop(args: argparse.Namespace) -> int:
         model_revision = str(metadata.get("active_actor_model_revision", ""))
         policy_epoch = int(metadata.get("policy_epoch", -1))
         require(model_revision and policy_epoch >= 0, "FORCERFT_ONLINE_SERVER_METADATA_INVALID")
+        args.root_prefix.mkdir(parents=True, exist_ok=True)
         index = _next_capture_index(args.root_prefix)
         while completed < args.max_episodes:
             result = _run_episode(

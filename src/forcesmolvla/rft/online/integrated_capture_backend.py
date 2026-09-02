@@ -27,6 +27,7 @@ from forcesmolvla.rft.online.integrated_capture import (
     IntegratedCaptureContract,
     IntegratedCaptureError,
     IntegratedCaptureLedger,
+    NONEXECUTING_POLICY_REJECTIONS,
     RECORDER_CONTROL_CHAIN,
     RECORDER_ENTRY,
 )
@@ -37,7 +38,8 @@ SHADOW_BACKEND_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
 POLICY_EXECUTION_BACKEND_SCHEMA = (
     "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
 )
-RETRYABLE_CAMERA_ERRORS = (
+RETRYABLE_OBSERVATION_ERRORS = (
+    "STATE_POSE_AGE_EXCEEDED",
     "CAMERA_AGE_EXCEEDED:",
     "INTERCAMERA_SKEW_EXCEEDED:",
 )
@@ -935,8 +937,17 @@ def _selected_chunk_action(
     return int(action_index), actions[int(action_index)]
 
 
-def _retryable_camera_error(error: RuntimeError) -> bool:
-    return str(error).startswith(RETRYABLE_CAMERA_ERRORS)
+def _retryable_observation_error(error: RuntimeError) -> bool:
+    return str(error).startswith(RETRYABLE_OBSERVATION_ERRORS)
+
+
+def _policy_rejection_requires_fresh_replan(
+    arbitration: Mapping[str, Any],
+) -> bool:
+    reason = str(arbitration.get("reason"))
+    if reason in NONEXECUTING_POLICY_REJECTIONS:
+        return True
+    raise IntegratedCaptureError(f"POLICY_EXECUTE_ACTION_REJECTED:{reason}")
 
 
 def _inference_filter_generation_is_current(
@@ -954,7 +965,7 @@ def _inference_filter_generation_is_current(
 def _wait_for_policy_observation_ready(
     observation: Any, process: subprocess.Popen[Any], deadline: float
 ) -> None:
-    while not (observation.ready() and observation.cameras.ready()):
+    while True:
         if observation.shadow_error:
             raise IntegratedCaptureError(observation.shadow_error)
         return_code = process.poll()
@@ -964,6 +975,8 @@ def _wait_for_policy_observation_ready(
             )
         if time.monotonic() >= deadline:
             raise IntegratedCaptureError("POLICY_EXECUTE_OBSERVATION_READY_TIMEOUT")
+        if observation.ready() and observation.cameras.ready():
+            return
         time.sleep(0.005)
 
 
@@ -978,8 +991,12 @@ def _capture_policy_observation_when_ready(
         try:
             return capture()
         except RuntimeError as error:
-            if str(error) != "observation is incomplete":
+            if (
+                str(error) != "observation is incomplete"
+                and not _retryable_observation_error(error)
+            ):
                 raise
+            time.sleep(0.005)
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -1210,14 +1227,7 @@ def _record_live_observation(
     *,
     stream_name: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    while True:
-        try:
-            request = observation.request(metadata)
-            break
-        except RuntimeError as error:
-            if not _retryable_camera_error(error):
-                raise
-            time.sleep(0.005)
+    request = observation.request(metadata)
     request["provenance"]["session_id"] = contract.identity.session_id
     observation_id = (
         f"{contract.identity.episode_id}:observation:{len(observations):06d}"
@@ -1594,7 +1604,7 @@ class IntegratedCaptureBackend:
                 try:
                     request = observation.request(metadata)
                 except RuntimeError as error:
-                    if not _retryable_camera_error(error):
+                    if not _retryable_observation_error(error):
                         raise
                     next_inference = time.monotonic() + 0.005
                     continue
@@ -1855,6 +1865,9 @@ class IntegratedCaptureBackend:
                     policy_epoch=int(arbitration["policy_epoch"]),
                     receive_monotonic_ns=receive_ns,
                     safe_action=payload,
+                    old_policy_chunk_invalidated=(
+                        event == "intervention_start" and old_chunk_id is not None
+                    ),
                 )
                 intervention["invalidated_chunk_id"] = (
                     old_chunk_id if event == "intervention_start" else None
@@ -2106,13 +2119,9 @@ class IntegratedCaptureBackend:
                         "POLICY_EXECUTE_ARBITRATION_LINEAGE_MISMATCH"
                     )
                 if arbitration.get("accepted") is not True:
-                    reason = str(arbitration.get("reason"))
-                    if reason in {"human_override", "stale_policy_epoch"}:
+                    if _policy_rejection_requires_fresh_replan(arbitration):
                         current_chunk = None
                         continue
-                    raise IntegratedCaptureError(
-                        f"POLICY_EXECUTE_ACTION_REJECTED:{reason}"
-                    )
                 if decision.get("equilibrium_published") is not True:
                     raise IntegratedCaptureError("POLICY_EXECUTE_POSE_NOT_PUBLISHED")
                 if (

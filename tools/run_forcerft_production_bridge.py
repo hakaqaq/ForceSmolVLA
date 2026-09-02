@@ -27,6 +27,30 @@ CONRFT_RUNTIME_ROOT = Path("/home/rlc123/conrft/serl_launcher")
 CAMERA_KEYS = ("d435_third_person", "d405_wrist")
 IMAGE_SHAPE = (480, 640, 3)
 INFERENCE_BATCH_SIZE = 128
+_OBSERVATION_QUALITY_REJECTION_PREFIXES = tuple(
+    "BRIDGE_POLICY_EXECUTION_OBSERVATION_MATERIALIZATION_FAILED:ValueError:" + reason
+    for reason in (
+        "CAMERA_AGE_EXCEEDED:",
+        "CLOCK_MAP_CALLBACK_DELAY_P99_EXCEEDED",
+        "EPISODE_COMMON_INTERVAL_TOO_SHORT",
+        "INTERCAMERA_SKEW_EXCEEDED",
+        "STATE_POSE_AGE_EXCEEDED",
+        "WRENCH_SOURCE_GAP_EXCEEDED",
+        "WRENCH_VALID_SAMPLES_INSUFFICIENT_FOR_FILTER_WARMUP",
+    )
+)
+_EPISODE_LOCAL_REJECTION_REASONS = frozenset(
+    {
+        "BRIDGE_POLICY_EXECUTION_ACTION_ACK_COVERAGE_MISMATCH",
+    }
+)
+
+
+def _is_episode_quality_rejection(reason: str) -> bool:
+    return (
+        reason in _EPISODE_LOCAL_REJECTION_REASONS
+        or reason.startswith(_OBSERVATION_QUALITY_REJECTION_PREFIXES)
+    )
 
 
 def _import_path(name: str, path: Path):
@@ -260,10 +284,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         except ProductionBridgeError as error:
             reason = str(error)
-            if reason == (
-                "BRIDGE_POLICY_EXECUTION_OBSERVATION_MATERIALIZATION_FAILED:"
-                "ValueError:WRENCH_SOURCE_GAP_EXCEEDED"
-            ):
+            if _is_episode_quality_rejection(reason):
                 print(json.dumps({
                     "status": "FORMAL_ONLINE_R_REJECTED",
                     "reason": reason,

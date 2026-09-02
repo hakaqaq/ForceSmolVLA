@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import sys
 
 import pytest
@@ -10,6 +11,7 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import run_forcerft_online_loop as loop  # noqa: E402
 import run_forcerft_integrated_capture as capture  # noqa: E402
+import run_forcerft_production_bridge as bridge_tool  # noqa: E402
 
 
 def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> None:
@@ -34,10 +36,56 @@ def test_online_capture_defaults_to_repository_dataset_root() -> None:
     assert args.root_prefix == (ROOT / "datasets/task2_forcerft_online").resolve()
 
 
+@pytest.mark.parametrize("reason", [
+    "POLICY_EXECUTE_DECISION_TIMEOUT:7",
+    "POLICY_EXECUTE_GRIPPER_ACK_TIMEOUT:policy-gripper:1",
+    "POLICY_EXECUTE_OBSERVATION_READY_TIMEOUT",
+    "POLICY_EXECUTE_POSE_ACK_TIMEOUT:123",
+    (
+        "SHADOW_BACKEND_FAILED:RuntimeError:"
+        "CONTROLLER_ACK_POSITION_MISMATCH: error=0.018566m limit=0.017321m"
+    ),
+    (
+        "POLICY_EXECUTE_GRIPPER_TERMINAL_INVALID:"
+        "{'command_id': 'policy-gripper:1000001', 'outcome': 'not_reached'}"
+    ),
+])
+def test_episode_local_timeout_uses_transient_exit(reason: str) -> None:
+    assert capture._blocked_exit_code(
+        capture.IntegratedCaptureError(reason)
+    ) == os.EX_TEMPFAIL
+
+
+def test_safety_failure_does_not_use_transient_exit() -> None:
+    assert capture._blocked_exit_code(
+        capture.IntegratedCaptureError("POLICY_EXECUTE_WRENCH_GUARD")
+    ) == 2
+    assert capture._blocked_exit_code(capture.IntegratedCaptureError(
+        "POLICY_EXECUTE_GRIPPER_TERMINAL_INVALID:"
+        "{'command_id': 'policy-gripper:1000001', 'outcome': 'result_error'}"
+    )) == 2
+
+
+def test_transient_capture_exit_is_typed_for_the_outer_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        loop.subprocess,
+        "run",
+        lambda *_args, **_kwargs: loop.subprocess.CompletedProcess(
+            ["python", "capture.py"], os.EX_TEMPFAIL, "", ""
+        ),
+    )
+
+    with pytest.raises(loop.EpisodeLocalTransientError):
+        loop._run(["python", "capture.py"])
+
+
 def test_online_capture_restart_uses_next_session_index(tmp_path: Path) -> None:
     prefix = tmp_path / "task2_forcerft_online"
-    (tmp_path / "task2_forcerft_online_001").mkdir()
-    (tmp_path / "task2_forcerft_online_002").mkdir()
+    prefix.mkdir()
+    (prefix / "000").mkdir()
+    (prefix / "002").mkdir()
 
     assert loop._next_capture_index(prefix) == 3
 
@@ -47,14 +95,16 @@ def test_failed_capture_discards_only_unsealed_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sealed: bool,
 ) -> None:
     root_prefix = tmp_path / "capture"
-    root = tmp_path / "capture_001"
+    root_prefix.mkdir()
+    root = root_prefix / "001"
     monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
-        "runtime_session_id": root.name,
+        "runtime_session_id": "capture_001",
         "runtime_episode_id": loop.EPISODE_ID,
         "server_persistent": True,
     })
 
     def fail_capture(_command, **_kwargs):
+        assert _command[_command.index("--root") + 1] == str(root)
         root.mkdir()
         if sealed:
             seal = (
@@ -81,6 +131,131 @@ def test_failed_capture_discards_only_unsealed_session(
             args, 1, server=object(), model_revision="model", policy_epoch=0,
         )
     assert root.exists() is sealed
+
+
+def test_failed_capture_preserves_recorder_rejected_raw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root_prefix = tmp_path / "capture"
+    root_prefix.mkdir()
+    root = root_prefix / "001"
+    rejected = root / "rejected_episodes" / "episode_rejected" / "raw.jsonl"
+    monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
+        "runtime_session_id": "capture_001",
+        "runtime_episode_id": loop.EPISODE_ID,
+        "server_persistent": True,
+    })
+
+    def fail_capture(_command, **_kwargs):
+        rejected.parent.mkdir(parents=True)
+        rejected.write_text("{}\n", encoding="utf-8")
+        raise loop.ContinuousLoopError("capture failed")
+
+    monkeypatch.setattr(loop, "_run", fail_capture)
+    args = type("Args", (), {
+        "root_prefix": root_prefix, "policy_port": 8000,
+        "robot_python": Path("python"), "task": "ring",
+        "episode_time": 10.0, "tool_profile": "tool",
+        "policy_replan_steps": 8, "policy_queue_low_watermark": 7,
+        "max_force_n": 25.0, "max_torque_nm": 2.0,
+    })()
+
+    with pytest.raises(loop.ContinuousLoopError, match="capture failed"):
+        loop._run_episode(
+            args, 1, server=object(), model_revision="model", policy_epoch=0,
+        )
+    assert rejected.read_text(encoding="utf-8") == "{}\n"
+
+
+def test_recorder_integrity_rejection_skips_episode_and_keeps_learner_alive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    root_prefix = tmp_path / "capture"
+    root_prefix.mkdir()
+    root = root_prefix / "001"
+    rejected = root / "rejected_episodes" / "episode_rejected"
+    monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
+        "runtime_session_id": "capture_001",
+        "runtime_episode_id": loop.EPISODE_ID,
+        "server_persistent": True,
+    })
+
+    def reject_capture(_command, **_kwargs):
+        rejected.mkdir(parents=True)
+        (rejected / "episode_result.json").write_text(
+            '{"saved": false, "fatal_reason": '
+            '"measured_tcp_pose native gap 109.3 ms exceeds 50.0 ms"}\n',
+            encoding="utf-8",
+        )
+        raise loop.ContinuousLoopError("capture failed")
+
+    monkeypatch.setattr(loop, "_run", reject_capture)
+    monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
+        "runtime_session_id": "capture_001",
+        "runtime_episode_id": loop.EPISODE_ID,
+        "episode_active": False,
+        "learner_state": "running",
+        "current_episode_sampled": False,
+        "server_persistent": True,
+    })
+    args = type("Args", (), {
+        "root_prefix": root_prefix, "policy_port": 8000,
+        "robot_python": Path("python"), "task": "ring",
+        "episode_time": 10.0, "tool_profile": "tool",
+        "policy_replan_steps": 8, "policy_queue_low_watermark": 7,
+        "max_force_n": 25.0, "max_torque_nm": 2.0,
+    })()
+
+    assert loop._run_episode(
+        args, 1, server=object(), model_revision="model", policy_epoch=0,
+    ) is None
+    assert (rejected / "episode_result.json").is_file()
+    output = capsys.readouterr().out
+    assert "capture rejected" in output
+    assert "learner continues" in output
+
+
+def test_pose_ack_timeout_skips_episode_and_keeps_learner_alive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    root_prefix = tmp_path / "capture"
+    root_prefix.mkdir()
+    root = root_prefix / "001"
+    monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
+        "runtime_session_id": "capture_001",
+        "runtime_episode_id": loop.EPISODE_ID,
+        "server_persistent": True,
+    })
+
+    def timeout_capture(_command, **_kwargs):
+        root.mkdir()
+        (root / ".episode_000000.inprogress").mkdir()
+        raise loop.EpisodeLocalTransientError("integrated capture tempfail")
+
+    monkeypatch.setattr(loop, "_run", timeout_capture)
+    monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
+        "runtime_session_id": "capture_001",
+        "runtime_episode_id": loop.EPISODE_ID,
+        "episode_active": False,
+        "learner_state": "running",
+        "current_episode_sampled": False,
+        "server_persistent": True,
+    })
+    args = type("Args", (), {
+        "root_prefix": root_prefix, "policy_port": 8000,
+        "robot_python": Path("python"), "task": "ring",
+        "episode_time": 10.0, "tool_profile": "tool",
+        "policy_replan_steps": 8, "policy_queue_low_watermark": 7,
+        "max_force_n": 25.0, "max_torque_nm": 2.0,
+    })()
+
+    assert loop._run_episode(
+        args, 1, server=object(), model_revision="model", policy_epoch=0,
+    ) is None
+    assert not root.exists()
+    output = capsys.readouterr().out
+    assert "episode-local transient capture failure" in output
+    assert "learner continues" in output
 
 
 def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
@@ -145,6 +320,25 @@ def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatc
     assert "FORMAL_ONLINE_R_REJECTED" in capsys.readouterr().out
 
 
+def test_intercamera_skew_is_an_episode_quality_rejection() -> None:
+    assert bridge_tool._is_episode_quality_rejection(
+        "BRIDGE_POLICY_EXECUTION_OBSERVATION_MATERIALIZATION_FAILED:"
+        "ValueError:INTERCAMERA_SKEW_EXCEEDED"
+    )
+    assert not bridge_tool._is_episode_quality_rejection(
+        "BRIDGE_POLICY_EXECUTION_GENERATION_INVALID"
+    )
+
+
+def test_incomplete_action7_ack_coverage_is_episode_quality_rejection() -> None:
+    assert bridge_tool._is_episode_quality_rejection(
+        "BRIDGE_POLICY_EXECUTION_ACTION_ACK_COVERAGE_MISMATCH"
+    )
+    assert not bridge_tool._is_episode_quality_rejection(
+        "BRIDGE_POLICY_EXECUTION_ACTION_ACK_INVALID"
+    )
+
+
 def test_episode_admission_passes_success_and_failure_outcomes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -197,7 +391,7 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
     })()
 
     assert loop.run_loop(args) == 1
-    assert indices == [1, 2, 3]
+    assert indices == [0, 1, 2]
 
 
 def test_loop_passes_selected_exact_resume_directly_to_unified_server(

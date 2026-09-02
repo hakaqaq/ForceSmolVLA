@@ -41,6 +41,23 @@ def test_experiment_name_is_not_special_cased(tmp_path: Path) -> None:
     assert _load_config(path)["name"] == "another_dataset_full_sft"
 
 
+def test_config_can_reuse_architecture_gate_with_dataset_specific_parity(
+    tmp_path: Path,
+) -> None:
+    config = json.loads((ROOT / "configs/train/task2.json").read_text())
+    config["action_target_population_parity"] = (
+        "artifacts/development/action_target_population_parity_task3.json"
+    )
+    config["training_readiness"]["reuse_validated_architecture_gate"] = True
+    path = tmp_path / "experiment.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+
+    loaded = _load_config(path)
+
+    assert loaded["action_target_population_parity"].endswith("task3.json")
+    assert loaded["training_readiness"]["reuse_validated_architecture_gate"] is True
+
+
 def test_generic_fixture_without_legacy_session_binding_is_unchanged() -> None:
     fixture = {"chunk_context": {"session_id": ["session-a"]}}
     original = copy.deepcopy(fixture)

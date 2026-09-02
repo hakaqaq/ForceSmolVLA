@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -24,6 +25,29 @@ from forcesmolvla.rft.online.integrated_capture import (  # noqa: E402
     run_integrated_capture,
     validate_development_policy_package,
 )
+
+
+_EPISODE_LOCAL_TRANSIENT_PREFIXES = (
+    "POLICY_EXECUTE_DECISION_TIMEOUT:",
+    "POLICY_EXECUTE_GRIPPER_ACK_TIMEOUT:",
+    "POLICY_EXECUTE_OBSERVATION_READY_TIMEOUT",
+    "POLICY_EXECUTE_POSE_ACK_TIMEOUT:",
+    (
+        "SHADOW_BACKEND_FAILED:RuntimeError:"
+        "CONTROLLER_ACK_POSITION_MISMATCH:"
+    ),
+)
+
+
+def _blocked_exit_code(error: Exception) -> int:
+    reason = str(error)
+    if (
+        reason.startswith(_EPISODE_LOCAL_TRANSIENT_PREFIXES)
+        or reason.startswith("POLICY_EXECUTE_GRIPPER_TERMINAL_INVALID:")
+        and "'outcome': 'not_reached'" in reason
+    ):
+        return os.EX_TEMPFAIL
+    return 2
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -267,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
             "requested_mode_semantics": requested_mode,
             "robot_or_ros_started": False,
         }, indent=2, sort_keys=True))
-        return 2
+        return _blocked_exit_code(error)
     _print_payload(payload, compact=args.compact_output)
     return 0
 

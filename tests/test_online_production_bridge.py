@@ -45,6 +45,32 @@ def _write_jsonl(path: Path, values: list[dict]) -> None:
     path.write_text("".join(json.dumps(value) + "\n" for value in values), encoding="utf-8")
 
 
+def test_zero_intervention_policy_execution_stream_is_optional(tmp_path: Path) -> None:
+    stream_root = tmp_path / "streams"
+    required = (
+        "policy_execute_observation.jsonl",
+        "policy_execute_request.jsonl",
+        "policy_execute_result.jsonl",
+        "policy_execute_proposal.jsonl",
+        "policy_execute_chunk.jsonl",
+        "policy_execute_transition.jsonl",
+        "policy_execute_gripper_authority.jsonl",
+    )
+    for name in required:
+        _write_jsonl(stream_root / name, [{"stream": name}])
+
+    rows = bridge_module._read_policy_execution_streams(stream_root)
+
+    assert rows["interventions"] == []
+    assert rows["canceled_requests"] == []
+    (stream_root / required[0]).unlink()
+    with pytest.raises(
+        ProductionBridgeError,
+        match="BRIDGE_INTEGRATED_POLICY_EXECUTION_STREAM_MISSING",
+    ):
+        bridge_module._read_policy_execution_streams(stream_root)
+
+
 def _offset_policy_epoch(value, offset: int):
     if isinstance(value, dict):
         return {
@@ -1028,6 +1054,63 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
     )
 
 
+def _add_nonexecuting_policy_rejection(episode: Path, reason: str) -> None:
+    native_root = episode / "streams"
+    raw_path = native_root / "raw_action.jsonl"
+    safe_path = native_root / "safe_action.jsonl"
+    raw_rows = [json.loads(line) for line in raw_path.read_text().splitlines()]
+    safe_rows = [json.loads(line) for line in safe_path.read_text().splitlines()]
+    raw = deepcopy(raw_rows[1]["payload"])
+    raw.update(
+        {
+            "source": "policy",
+            "sequence": 101,
+            "source_monotonic_ns": 1_401_000_000,
+            "policy_epoch": 1,
+            "observation_id": f"{episode.name}:observation:000003",
+            "intervention": False,
+        }
+    )
+    safe = deepcopy(safe_rows[1]["payload"])
+    safe.pop("forcesmolvla_chunk_selection", None)
+    safe.update(
+        {
+            "decision_id": 101,
+            "arbitration": {
+                "accepted": False,
+                "event": "rejected",
+                "owner": "policy",
+                "policy_epoch": 1,
+                "reason": reason,
+                "raw_action": raw,
+            },
+            "equilibrium_published": False,
+            "equilibrium_source_stamp_ns": None,
+            "requested_equilibrium": None,
+            "reject_reason": reason,
+        }
+    )
+    raw_rows.append({"receive_monotonic_ns": 1_502_000_000, "payload": raw})
+    safe_rows.append({"receive_monotonic_ns": 1_503_000_000, "payload": safe})
+    _write_jsonl(raw_path, raw_rows)
+    _write_jsonl(safe_path, safe_rows)
+
+    result_path = episode / "episode_result.json"
+    result = json.loads(result_path.read_text())
+    result["stream_counts"]["raw_action"] = len(raw_rows)
+    result["stream_counts"]["safe_action"] = len(safe_rows)
+    _write_json(result_path, result)
+    seal_path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_episode_seal.json"
+    )
+    seal = json.loads(seal_path.read_text())
+    seal["native_episode_result"] = result
+    _write_json(seal_path, seal)
+
+
 def _add_canceled_policy_request(
     episode: Path, *, completed_request_count: int = 0
 ) -> str:
@@ -1467,6 +1550,30 @@ def test_integrated_async_policy_execution_seal_is_read_only(
     assert not state.exists()
 
 
+def test_stale_policy_rejection_is_not_executed_or_admitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _add_nonexecuting_policy_rejection(episode, "stale_action")
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "DRY_RUN_READY"
+    assert report.policy_action_ack_count == 2
+    assert report.human_override_count == 1
+    assert report.quarantined_count == 0
+
+
 def test_policy_execution_request_cancellation_partitions_63_requests(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1630,6 +1737,7 @@ def test_policy_execution_request_cancellation_rejects_invalid_identity(
         ("current_episode_sampled_by_learner", True),
         ("active_actor_revision", "changed-active-revision"),
         ("learner_critic_steps", 1),
+        ("intervention_count", 3),
     ],
 )
 def test_integrated_async_policy_execution_rejects_invalid_runtime_seal(
@@ -2370,7 +2478,8 @@ def test_policy_execution_generation_uses_independent_initial_offsets() -> None:
     ]
     for previous, current in zip(generations[:-1], generations[1:], strict=True):
         ProductionBridge._validate_policy_execution_generation_step(
-            previous, current
+            previous,
+            current,
         )
 
     for epoch, takeover in ((2, 0), (1, 1)):
@@ -2386,17 +2495,97 @@ def test_policy_execution_generation_uses_independent_initial_offsets() -> None:
                 },
                 identity,
             )
-    for previous, current in (
-        (generations[0], generations[2]),
-        (generations[1], generations[0]),
-    ):
+    ProductionBridge._validate_policy_execution_generation_step(
+        generations[0], generations[2]
+    )
+    for previous, current in ((generations[1], generations[0]),):
         with pytest.raises(
             ProductionBridgeError,
             match="BRIDGE_POLICY_EXECUTION_GENERATION_INVALID",
         ):
             ProductionBridge._validate_policy_execution_generation_step(
-                previous, current
+                previous,
+                current,
             )
+
+
+def test_policy_execution_generation_allows_recorded_takeovers_between_observations() -> None:
+    ProductionBridge._validate_policy_execution_generation_step(
+        (0, 0, 0),
+        (2, 0, 2),
+    )
+
+
+def test_takeover_without_active_policy_chunk_is_valid(
+    tmp_path: Path,
+) -> None:
+    identity = {
+        "session_id": "session",
+        "episode_id": "episode",
+        "clock_domain_id": "upper_host_monotonic",
+        "policy_revision": "revision",
+        "policy_epoch": 0,
+        "reset_generation": 0,
+        "takeover_generation": 0,
+    }
+    intervention = {
+        **identity,
+        "policy_epoch": 2,
+        "takeover_generation": 2,
+        "receive_monotonic_ns": 300,
+        # Recorder output before the fix: the policy generation was invalidated
+        # even though no concrete policy chunk had become active.
+        "old_policy_chunk_invalidated": True,
+        "invalidated_chunk_id": None,
+    }
+    stale_transition = {
+        **identity,
+        "receive_monotonic_ns": 100,
+    }
+
+    assert _bridge(tmp_path / "state")._takeover_invalidation_is_valid(
+        intervention=intervention,
+        identity=identity,
+        chunks=(),
+        transitions=(stale_transition,),
+        transition_by_chunk={},
+        previous_takeover_generation=1,
+        previous_intervention_ns=200,
+    )
+    recent_transition = {
+        **identity,
+        "policy_epoch": 1,
+        "takeover_generation": 1,
+        "receive_monotonic_ns": 250,
+    }
+    assert not _bridge(tmp_path / "legacy-state")._takeover_invalidation_is_valid(
+        intervention=intervention,
+        identity=identity,
+        chunks=(),
+        transitions=(recent_transition,),
+        transition_by_chunk={},
+        previous_takeover_generation=1,
+        previous_intervention_ns=200,
+    )
+    assert _bridge(tmp_path / "current-state")._takeover_invalidation_is_valid(
+        intervention={**intervention, "old_policy_chunk_invalidated": False},
+        identity=identity,
+        chunks=(),
+        transitions=(recent_transition,),
+        transition_by_chunk={},
+        previous_takeover_generation=1,
+        previous_intervention_ns=200,
+    )
+    assert ProductionBridge._post_takeover_generations_are_valid(
+        generation=(1, 0, 1),
+        following=((400, (2, 0, 2)),),
+        next_takeover_start_ns=300,
+    )
+    assert not ProductionBridge._post_takeover_generations_are_valid(
+        generation=(1, 0, 1),
+        following=((250, (2, 0, 2)),),
+        next_takeover_start_ns=300,
+    )
 
 
 def test_policy_execution_accepts_nonzero_initial_policy_epoch(

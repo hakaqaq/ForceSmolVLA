@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "acceptance_status": "development_only",
+  "formal_eligible": false,
+  "status": "pass",
+  "dataset_root": "/home/rlc123/ForceSmolVLA/datasets/task3_lerobotv3",
+  "repo_id": "local/task3_lerobotv3",
+  "raw_source_tree_sha256": "aef8bf177f1fba29ed8ce51b9eaede01a883d0fbc137ac05061fae6e06b60535",
+  "lerobot_commit": "30da8e687a6dfc617fcd94afc367ac7071c376ce",
+  "codebase_version": "v3.0",
+  "raw_episode_count": 50,
+  "converted_episode_count": 48,
+  "converted_frame_count": 37075,
+  "excluded_episodes": [
+    {
+      "raw_episode_id": "episode_000007",
+      "reason": "INTERCAMERA_SKEW_EXCEEDED"
+    },
+    {
+      "raw_episode_id": "episode_000029",
+      "reason": "INTERCAMERA_SKEW_EXCEEDED"
+    }
+  ],
+  "split": {
+    "method": "sha256-ranked-episode-disjoint-v1",
+    "seed": "forcesmolvla-v4.1-task3-split-1",
+    "split_sha256": "f6e914b95293f34de735225aa08a0ce1cb3f5682b35bf9417ee6a938338a255d",
+    "episode_counts": {
+      "train": 38,
+      "val": 5,
+      "test": 5
+    },
+    "sample_counts": {
+      "train": 29504,
+      "val": 3866,
+      "test": 3705
+    },
+    "episode_disjoint": true,
+    "complete_coverage": true
+  },
+  "normalizer": {
+    "schema_version": "2.0",
+    "owner": "forcesmolvla.CartesianNormalizerBundle",
+    "fit_scope": "train state/wrench per tuple; every valid H=50 future action target relative to its t_ref state; padded tail excluded",
+    "normalizer_manifest_sha256": "aecf01a103460a9e82f46f8ff87fe6737f04233f5e50c87d86901b413539cba9",
+    "normalizer_stats_sha256": "6acf4ae7a401ee4aa73eb76f7b65dd0290e5ca98014c02bd27cdbd6a38c789cc",
+    "valid_chunk_target_count": 1428650,
+    "action_target_population_parity": {
+      "gate": "ActionTargetPopulationParityGate",
+      "status": "pass",
+      "artifact_path": "artifacts/development/action_target_population_parity_task3.json",
+      "artifact_sha256": "1fbc021b19a9ca41a9cd72f2180f1bae921554f909836fbb28aea3cb8c004fb8",
+      "valid_pair_count": 1428650,
+      "ordered_pair_identity_sha256": "14db70ccbf831e7bdfd7b24207ac7f5a16a0132df473df45b155f750cdcc88ed",
+      "action_target7_float64_tensor_sha256": "93b4f42da1c391cc6c9331f732fbe03959b9e6314b4501b2abcfc199a4ed2c73",
+      "statistics_sha256": "49ae7508f989964625cfc15bf22177f30f4849184d33bf9f975de4eb1e1bba9d"
+    }
+  },
+  "conversion_quality_max_ms": {
+    "pose_age": 11.313674,
+    "camera1_age": 33.606693,
+    "camera2_age": 33.422297,
+    "intercamera_skew": 32.037892
+  },
+  "horizon_50_loader_contract": {
+    "state_shape": [7],
+    "wrench_shape": [6],
+    "action_shape": [50, 7],
+    "camera_shape": [3, 480, 640],
+    "prompt": "Pick up the green plug, insert it fully into the red socket, and release it."
+  },
+  "gpu_preflight_repeated": false,
+  "robot_actions_sent": 0,
+  "detached_signature": null,
+  "approval": null
+}

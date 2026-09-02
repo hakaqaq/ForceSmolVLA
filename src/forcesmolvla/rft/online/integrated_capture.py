@@ -19,6 +19,14 @@ from forcesmolvla.rft.online.policy_lineage import (
 
 INTEGRATED_CAPTURE_SCHEMA = "forcesmolvla-stage3-integrated-capture-v1"
 RECORDER_CONTROL_CHAIN = "franky_native_hilserl_cartesian_impedance"
+NONEXECUTING_POLICY_REJECTIONS = frozenset(
+    {
+        "human_override",
+        "out_of_order_sequence",
+        "stale_action",
+        "stale_policy_epoch",
+    }
+)
 RECORDER_ENTRY = Path(
     "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py"
 )
@@ -461,6 +469,7 @@ class IntegratedCaptureLedger:
         policy_epoch: int,
         receive_monotonic_ns: int,
         safe_action: Mapping[str, Any],
+        old_policy_chunk_invalidated: bool = False,
     ) -> dict[str, Any]:
         self._ensure_open()
         if self.contract.mode != "policy-execute":
@@ -470,7 +479,14 @@ class IntegratedCaptureLedger:
         epoch = _counter(policy_epoch, "INTEGRATED_CAPTURE_POLICY_EPOCH_INVALID")
         if receive_monotonic_ns <= 0:
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_INTERVENTION_TIME_INVALID")
-        invalidated = False
+        if not isinstance(old_policy_chunk_invalidated, bool):
+            raise IntegratedCaptureError(
+                "INTEGRATED_CAPTURE_CHUNK_INVALIDATION_FLAG_INVALID"
+            )
+        if event != "intervention_start" and old_policy_chunk_invalidated:
+            raise IntegratedCaptureError(
+                "INTEGRATED_CAPTURE_CHUNK_INVALIDATION_EVENT_INVALID"
+            )
         if event == "intervention_start":
             if epoch != self._current_policy_epoch + 1:
                 raise IntegratedCaptureError(
@@ -479,7 +495,6 @@ class IntegratedCaptureLedger:
             self._current_policy_epoch = epoch
             self._current_takeover_generation += 1
             self._human_takeover_active = True
-            invalidated = True
         elif epoch != self._current_policy_epoch:
             raise IntegratedCaptureError("INTEGRATED_CAPTURE_INTERVENTION_EPOCH_MISMATCH")
         elif event == "intervention_end":
@@ -493,7 +508,7 @@ class IntegratedCaptureLedger:
             "receive_monotonic_ns": int(receive_monotonic_ns),
             "policy_epoch": self._current_policy_epoch,
             "takeover_generation": self._current_takeover_generation,
-            "old_policy_chunk_invalidated": invalidated,
+            "old_policy_chunk_invalidated": old_policy_chunk_invalidated,
             "actual_action_source": "human",
             "policy_execution": True,
             "safe_action": dict(safe_action),

@@ -201,6 +201,22 @@ def test_policy_chunk_selection_uses_apply_time_rational_grid() -> None:
         )
 
 
+def test_stale_policy_action_rejection_forces_fresh_replan() -> None:
+    assert capture_backend._policy_rejection_requires_fresh_replan(
+        {"accepted": False, "reason": "stale_action"}
+    )
+    assert capture_backend._policy_rejection_requires_fresh_replan(
+        {"accepted": False, "reason": "out_of_order_sequence"}
+    )
+    with pytest.raises(
+        IntegratedCaptureError,
+        match="POLICY_EXECUTE_ACTION_REJECTED:future_source_time",
+    ):
+        capture_backend._policy_rejection_requires_fresh_replan(
+            {"accepted": False, "reason": "future_source_time"}
+        )
+
+
 def test_policy_execution_artifacts_require_policy_ack_and_next_observation(
     tmp_path: Path,
 ) -> None:
@@ -377,17 +393,17 @@ def test_native_camera_tail_waits_for_complete_jpeg(tmp_path: Path) -> None:
     assert cameras.external.frame is not None
 
 
-def test_only_transient_camera_tuple_misses_are_retryable() -> None:
-    assert capture_backend._retryable_camera_error(
+def test_only_transient_observation_tuple_misses_are_retryable() -> None:
+    assert capture_backend._retryable_observation_error(
         RuntimeError("CAMERA_AGE_EXCEEDED: camera1_age_ms=34.118")
     )
-    assert capture_backend._retryable_camera_error(
+    assert capture_backend._retryable_observation_error(
         RuntimeError("INTERCAMERA_SKEW_EXCEEDED: intercamera_skew_ms=34.0")
     )
-    assert not capture_backend._retryable_camera_error(
+    assert not capture_backend._retryable_observation_error(
         RuntimeError("CAMERA_TIMESTAMP_IN_FUTURE")
     )
-    assert not capture_backend._retryable_camera_error(
+    assert capture_backend._retryable_observation_error(
         RuntimeError("STATE_POSE_AGE_EXCEEDED")
     )
 
@@ -455,6 +471,62 @@ def test_policy_observation_capture_retries_filter_rewarm_race(
         capture_backend.time.monotonic() + 1.0,
     ) == "fresh"
     assert state == {"samples": 250, "attempts": 2}
+
+
+def test_policy_observation_capture_retries_transient_pose_age(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = {"attempts": 0, "sleeps": 0}
+    observation = SimpleNamespace(
+        cameras=SimpleNamespace(ready=lambda: True),
+        ready=lambda: True,
+        shadow_error=None,
+    )
+
+    def capture():
+        state["attempts"] += 1
+        if state["attempts"] == 1:
+            raise RuntimeError("STATE_POSE_AGE_EXCEEDED")
+        return "fresh"
+
+    monkeypatch.setattr(
+        capture_backend.time,
+        "sleep",
+        lambda _seconds: state.__setitem__("sleeps", state["sleeps"] + 1),
+    )
+
+    assert capture_backend._capture_policy_observation_when_ready(
+        capture,
+        observation,
+        SimpleNamespace(poll=lambda: None),
+        capture_backend.time.monotonic() + 1.0,
+    ) == "fresh"
+    assert state == {"attempts": 2, "sleeps": 1}
+
+
+def test_policy_observation_capture_persistent_pose_age_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monotonic = iter((0.0, 2.0))
+    observation = SimpleNamespace(
+        cameras=SimpleNamespace(ready=lambda: True),
+        ready=lambda: True,
+        shadow_error=None,
+    )
+    monkeypatch.setattr(capture_backend.time, "monotonic", lambda: next(monotonic))
+    monkeypatch.setattr(capture_backend.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(
+        IntegratedCaptureError, match="POLICY_EXECUTE_OBSERVATION_READY_TIMEOUT"
+    ):
+        capture_backend._capture_policy_observation_when_ready(
+            lambda: (_ for _ in ()).throw(
+                RuntimeError("STATE_POSE_AGE_EXCEEDED")
+            ),
+            observation,
+            SimpleNamespace(poll=lambda: None),
+            deadline=1.0,
+        )
 
 
 def test_filter_generation_change_discards_stale_result_then_resumes_fresh_request(

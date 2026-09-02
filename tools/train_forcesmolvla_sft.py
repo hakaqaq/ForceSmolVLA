@@ -83,6 +83,20 @@ def _load_config(path: Path) -> dict:
         or not isinstance(training_readiness, dict)
         or not isinstance(training_readiness.get("gate_report"), str)
         or not isinstance(training_readiness.get("source_binding"), str)
+        or not isinstance(
+            config.get(
+                "action_target_population_parity",
+                "artifacts/development/action_target_population_parity_r1.json",
+            ),
+            str,
+        )
+        or not config.get(
+            "action_target_population_parity",
+            "artifacts/development/action_target_population_parity_r1.json",
+        )
+        or not isinstance(
+            training_readiness.get("reuse_validated_architecture_gate", False), bool
+        )
         or not isinstance(logging, dict)
         or not isinstance(logging.get("interval_samples"), int)
         or logging["interval_samples"] <= 0
@@ -199,6 +213,13 @@ def _source_binding(
         _resolve_path(root, config["data_scope"]),
         _resolve_path(root, config["dataset_validation"]),
         _resolve_path(root, config["converter_runtime_spec"]),
+        _resolve_path(
+            root,
+            config.get(
+                "action_target_population_parity",
+                "artifacts/development/action_target_population_parity_r1.json",
+            ),
+        ),
     ]
     data_scope = json.loads(configured_files[1].read_text(encoding="utf-8"))
     configured_files.append(
@@ -217,7 +238,6 @@ def _source_binding(
         "src/forcesmolvla/training_runtime.py",
         "tools/action_target_population_parity_gate.py",
         "tools/train_forcesmolvla_sft.py",
-        "artifacts/development/action_target_population_parity_r1.json",
         "configs/forcesmolvla_sft_recipe.development.yaml",
         "configs/training_checkpoint_contract.development.json",
         "ForceSmolVLA_Implementation_Spec_v4_2.md",
@@ -602,7 +622,14 @@ def main() -> None:
     repo_id = conversion.get("repo_id")
     if not isinstance(repo_id, str) or not repo_id:
         raise RuntimeError("DATASET_REPO_ID_MISSING")
-    validate_action_target_population_prerequisite(root, dataset_root)
+    validate_action_target_population_prerequisite(
+        root,
+        dataset_root,
+        artifact_relative=config.get(
+            "action_target_population_parity",
+            "artifacts/development/action_target_population_parity_r1.json",
+        ),
+    )
     data_scope, data_scope_sha256 = _load_data_scope(
         root, dataset_root, repo_id, config
     )
@@ -635,7 +662,12 @@ def main() -> None:
         or readiness_report.get("long_development_sft_unlocked") is not True
         or set(readiness_report.get("force_full_parity", {}))
         != {"fp32", "bf16"}
-        or readiness_report.get("real_data", {}).get("repo_id") != repo_id
+        or (
+            readiness_report.get("real_data", {}).get("repo_id") != repo_id
+            and not config["training_readiness"].get(
+                "reuse_validated_architecture_gate", False
+            )
+        )
         or readiness_report.get("real_data", {}).get("batch_per_gpu")
         != BATCH_SIZE
         or readiness_report.get("real_data", {}).get("microbatches")

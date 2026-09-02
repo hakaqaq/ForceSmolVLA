@@ -234,9 +234,12 @@ def validate_action_target_prerequisite(
 
 
 def validate_action_target_population_prerequisite(
-    root: Path, dataset_root: Path, binding: dict | None = None
+    root: Path,
+    dataset_root: Path,
+    binding: dict | None = None,
+    *,
+    artifact_relative: str = "artifacts/development/action_target_population_parity_r1.json",
 ) -> dict:
-    artifact_relative = "artifacts/development/action_target_population_parity_r1.json"
     artifact_path = root / artifact_relative
     payload = json.loads(artifact_path.read_text(encoding="utf-8"))
     required_assertions = {
@@ -260,7 +263,8 @@ def validate_action_target_population_prerequisite(
         or payload.get("acceptance_status") != "development_only"
         or payload.get("formal_eligible") is not False
         or payload.get("robot_actions_sent") != 0
-        or payload.get("valid_pair_count") != 1_544_650
+        or not isinstance(payload.get("valid_pair_count"), int)
+        or payload.get("valid_pair_count", 0) <= 0
         or payload.get("forcevla_numeric_comparison_role")
         != "auxiliary_only_not_acceptance_oracle"
         or not isinstance(assertions, dict)

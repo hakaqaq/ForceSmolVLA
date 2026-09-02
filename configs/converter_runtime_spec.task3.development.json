@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0.0",
+  "artifact_status": "development_only",
+  "formal_ready": false,
+  "profile": "forcesmolvla-v4.1-available-sensor-lerobot-v3",
+  "pose": {
+    "selection": "latest source_stamp_ns satisfying t_pose <= t_wrench or t_tuple",
+    "max_age_ms": 12.0,
+    "approval_status": "approval_pending"
+  },
+  "cameras": {
+    "selection": "latest receive_monotonic_ns satisfying t_camera <= t_tuple",
+    "order": ["camera1:D435-third-person", "camera2:D405-wrist"],
+    "max_age_ms": 100.0,
+    "max_intercamera_skew_ms": 33.0,
+    "approval_status": "approval_pending"
+  },
+  "clock_map": {
+    "method": "shared-lower-tail-median-v1",
+    "source_streams": ["measured_tcp_pose", "wrench_notch_sensor", "gripper_state"],
+    "formula": "offset=median(lowest max(min_lower_samples,floor(N*lower_fraction)) values of receive_monotonic_ns-source_stamp_ns)",
+    "lower_fraction": 0.01,
+    "min_lower_samples": 20,
+    "max_callback_delay_p99_ms": null,
+    "approval_status": "approval_pending"
+  },
+  "controller_grid": {
+    "anchor": "first-reference-ack-global-zero-phase-rational-30hz-v1",
+    "fps": 30,
+    "formula": "t_k=round(k*1e9/30), first k with t_k >= common causal interval start",
+    "approval_status": "approval_pending"
+  },
+  "action": {
+    "association": "latest-causal-accepted-reference-with-pose-check-v1",
+    "pose_tolerance_m": 1e-12,
+    "quaternion_tolerance_rad": 1e-7,
+    "representation": "absolute TCP xyz+rpy plus absolute gripper width",
+    "approval_status": "approval_pending"
+  },
+  "wrench_filter": {
+    "implementation": "scipy-sosfilt-fixed-500hz-per-valid-source-sample-v1",
+    "scipy_version": "1.16.3",
+    "sos": [
+      [5.6165622863812905e-06, 1.1233124572762581e-05, 5.6165622863812905e-06, 1.0, -1.8210503582611859, 0.8302914688064609],
+      [1.0, 2.0, 1.0, 1.0, -1.9163030327246362, 0.9260275129309734]
+    ],
+    "warmup_samples": 250,
+    "max_source_gap_ms": 9.0,
+    "future_interpolation": "forbidden",
+    "approval_status": "approval_pending"
+  },
+  "split": {
+    "method": "sha256-ranked-episode-disjoint-v1",
+    "ratios": [0.8, 0.1, 0.1],
+    "seed": "forcesmolvla-v4.1-task3-split-1",
+    "normalizer_fit_scope": "train episodes only; state/wrench per tuple; action over every valid H=50 future target relative to its t_ref state; padded tail excluded",
+    "approval_status": "approval_pending"
+  },
+  "unresolved_fields": [
+    "clock_map.max_callback_delay_p99_ms",
+    "all force-quality fields listed in approval_checklist.yaml",
+    "experiment-lead approval metadata",
+    "detached signature algorithm/key/approver fields"
+  ]
+}

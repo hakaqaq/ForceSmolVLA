@@ -97,9 +97,10 @@
       }
     },
     "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py": {
-      "sha256": "d73e1353ac8804492f7906cc8e30444a6f74de08e4b8652f5b5ac41557c90a98",
+      "sha256": "931a86761c92025cd38f357cf895af22bec35def1a46bf11f6032bc090450973",
       "symbols": [
         "HilserlNativeActionRecorder",
+        "HilserlIsolatedSpaceMouseController._sync_gripper_toggle_for_takeover",
         "_finish_episode"
       ],
       "behavior": "inherits ForceVLA gripper target/status callbacks and reuses the same goal/state integrity gates"

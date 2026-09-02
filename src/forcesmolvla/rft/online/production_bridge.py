@@ -45,6 +45,7 @@ from forcesmolvla.rft.online.gripper_authority import (
     close_full_action7_authority,
 )
 from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority, POLICY_LINEAGE_SCHEMA
+from forcesmolvla.rft.online.integrated_capture import NONEXECUTING_POLICY_REJECTIONS
 from forcesmolvla.rft.critic_action_adapter_v2 import (
     CRITIC_ACTION_CONTRACT,
     build_critic_transition_grid,
@@ -749,6 +750,32 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _read_policy_execution_streams(
+    stream_root: Path,
+) -> dict[str, list[dict[str, Any]]]:
+    required = {
+        "observations": "policy_execute_observation.jsonl",
+        "requests": "policy_execute_request.jsonl",
+        "results": "policy_execute_result.jsonl",
+        "proposals": "policy_execute_proposal.jsonl",
+        "chunks": "policy_execute_chunk.jsonl",
+        "transitions": "policy_execute_transition.jsonl",
+        "gripper_authorities": "policy_execute_gripper_authority.jsonl",
+    }
+    if any(not (stream_root / name).is_file() for name in required.values()):
+        raise ProductionBridgeError(
+            "BRIDGE_INTEGRATED_POLICY_EXECUTION_STREAM_MISSING"
+        )
+    rows = {key: _read_jsonl(stream_root / name) for key, name in required.items()}
+    for key, name in (
+        ("canceled_requests", "policy_execute_request_canceled.jsonl"),
+        ("interventions", "policy_execute_intervention.jsonl"),
+    ):
+        path = stream_root / name
+        rows[key] = _read_jsonl(path) if path.is_file() else []
+    return rows
+
+
 def _finite_vector(value: Any, size: int, reason: str) -> tuple[float, ...]:
     try:
         result = tuple(float(item) for item in value)
@@ -912,15 +939,84 @@ class ProductionBridge:
 
     @staticmethod
     def _validate_policy_execution_generation_step(
-        previous: tuple[int, int, int], current: tuple[int, int, int]
+        previous: tuple[int, int, int],
+        current: tuple[int, int, int],
     ) -> None:
-        if current not in {
-            previous,
-            (previous[0] + 1, previous[1], previous[2] + 1),
-        }:
+        policy_step = current[0] - previous[0]
+        takeover_step = current[2] - previous[2]
+        if (
+            current[1] != previous[1]
+            or policy_step < 0
+            or takeover_step < 0
+            or policy_step != takeover_step
+        ):
             raise ProductionBridgeError(
                 "BRIDGE_POLICY_EXECUTION_GENERATION_INVALID"
             )
+
+    def _takeover_invalidation_is_valid(
+        self,
+        *,
+        intervention: Mapping[str, Any],
+        identity: Mapping[str, Any],
+        chunks: Sequence[Mapping[str, Any]],
+        transitions: Sequence[Mapping[str, Any]],
+        transition_by_chunk: Mapping[str, Sequence[Mapping[str, Any]]],
+        previous_takeover_generation: int,
+        previous_intervention_ns: int,
+    ) -> bool:
+        claimed = intervention.get("old_policy_chunk_invalidated")
+        chunk_id = intervention.get("invalidated_chunk_id")
+        receive_ns = int(intervention.get("receive_monotonic_ns", 0))
+        generation = self._policy_execution_generation(intervention, identity)
+        if not isinstance(claimed, bool):
+            return False
+        if chunk_id is None:
+            if claimed is False:
+                return True
+            # A rapid re-takeover can happen before any fresh policy chunk has
+            # executed. Older recorders still marked the generation invalidated;
+            # accept that only when no policy ACK exists since the last boundary.
+            return not any(
+                previous_intervention_ns
+                < int(row.get("receive_monotonic_ns", 0))
+                < receive_ns
+                and self._policy_execution_generation(row, identity)[2]
+                == previous_takeover_generation
+                for row in transitions
+            )
+        if claimed is not True or not isinstance(chunk_id, str) or not chunk_id:
+            return False
+        invalidated = next(
+            (chunk for chunk in chunks if chunk.get("chunk_id") == chunk_id),
+            None,
+        )
+        return bool(
+            invalidated is not None
+            and self._policy_execution_generation(invalidated, identity)[2]
+            < generation[2]
+            and not any(
+                int(row.get("receive_monotonic_ns", 0)) >= receive_ns
+                for row in transition_by_chunk.get(chunk_id, ())
+            )
+        )
+
+    @staticmethod
+    def _post_takeover_generations_are_valid(
+        *,
+        generation: tuple[int, int, int],
+        following: Sequence[tuple[int, tuple[int, int, int]]],
+        next_takeover_start_ns: int | None,
+    ) -> bool:
+        return all(
+            item >= generation
+            and (
+                next_takeover_start_ns is not None
+                and receive_ns >= next_takeover_start_ns
+                or item == generation
+            )
+            for receive_ns, item in following
+        )
 
     def _transfer_takeover_gripper_held_authority(
         self,
@@ -1129,27 +1225,7 @@ class ProductionBridge:
         stream_root = (
             dataset_root / "integrated_capture" / episode_dir.name / "streams"
         )
-        names = {
-            "observations": "policy_execute_observation.jsonl",
-            "requests": "policy_execute_request.jsonl",
-            "results": "policy_execute_result.jsonl",
-            "proposals": "policy_execute_proposal.jsonl",
-            "chunks": "policy_execute_chunk.jsonl",
-            "transitions": "policy_execute_transition.jsonl",
-            "gripper_authorities": "policy_execute_gripper_authority.jsonl",
-            "interventions": "policy_execute_intervention.jsonl",
-        }
-        if any(not (stream_root / name).is_file() for name in names.values()):
-            raise ProductionBridgeError(
-                "BRIDGE_INTEGRATED_POLICY_EXECUTION_STREAM_MISSING"
-            )
-        rows = {
-            key: _read_jsonl(stream_root / name) for key, name in names.items()
-        }
-        canceled_path = stream_root / "policy_execute_request_canceled.jsonl"
-        rows["canceled_requests"] = (
-            _read_jsonl(canceled_path) if canceled_path.is_file() else []
-        )
+        rows = _read_policy_execution_streams(stream_root)
         observations = rows["observations"]
         requests = rows["requests"]
         results = rows["results"]
@@ -1189,9 +1265,6 @@ class ProductionBridge:
         }
         for index, observation in enumerate(observations):
             generation = self._policy_execution_generation(observation, identity)
-            self._validate_policy_execution_generation_step(
-                previous_generation, generation
-            )
             observation_id = str(observation.get("observation_id", ""))
             timestamps = observation.get("stream_timestamps_ns")
             stream_ids = observation.get("stream_ids")
@@ -1209,6 +1282,10 @@ class ProductionBridge:
                 raise ProductionBridgeError(
                     "BRIDGE_POLICY_EXECUTION_OBSERVATION_INVALID"
                 )
+            self._validate_policy_execution_generation_step(
+                previous_generation,
+                generation,
+            )
             for name, native_index in native_by_source.items():
                 policy_receive_ns = int(timestamps.get(name, 0))
                 stream_id = str(stream_ids.get(name, ""))
@@ -1697,9 +1774,11 @@ class ProductionBridge:
             arbitration = safe.get("arbitration", {})
             if source != "policy" or arbitration.get("accepted") is not False:
                 continue
+            reason = str(arbitration.get("reason"))
             if (
-                arbitration.get("reason") != "human_override"
-                or safe.get("reject_reason") != "human_override"
+                reason not in NONEXECUTING_POLICY_REJECTIONS
+                or arbitration.get("event") != "rejected"
+                or safe.get("reject_reason") != reason
                 or safe.get("equilibrium_published") is not False
                 or safe.get("equilibrium_source_stamp_ns") is not None
                 or (source, sequence) in requested_by_identity
@@ -1709,7 +1788,8 @@ class ProductionBridge:
                 raise ProductionBridgeError(
                     "BRIDGE_POLICY_EXECUTION_REJECTED_ACTION_INVALID"
                 )
-            override_sequences.add(sequence)
+            if reason == "human_override":
+                override_sequences.add(sequence)
 
         active_intervention: dict[str, Any] | None = None
         completed_takeovers: list[tuple[dict[str, Any], dict[str, Any]]] = []
@@ -1742,25 +1822,17 @@ class ProductionBridge:
                     "BRIDGE_POLICY_EXECUTION_INTERVENTION_INVALID"
                 )
             if event == "intervention_start":
-                invalidated_chunk = str(intervention.get("invalidated_chunk_id", ""))
-                invalidated = next(
-                    (
-                        chunk
-                        for chunk in chunks
-                        if chunk.get("chunk_id") == invalidated_chunk
-                    ),
-                    None,
-                )
                 if (
                     active_intervention is not None
                     or generation[2] != previous_takeover_generation + 1
-                    or intervention.get("old_policy_chunk_invalidated") is not True
-                    or invalidated is None
-                    or self._policy_execution_generation(invalidated, identity)[2]
-                    >= generation[2]
-                    or any(
-                        int(row.get("receive_monotonic_ns", 0)) >= receive_ns
-                        for row in transition_by_chunk.get(invalidated_chunk, ())
+                    or not self._takeover_invalidation_is_valid(
+                        intervention=intervention,
+                        identity=identity,
+                        chunks=chunks,
+                        transitions=transitions,
+                        transition_by_chunk=transition_by_chunk,
+                        previous_takeover_generation=previous_takeover_generation,
+                        previous_intervention_ns=previous_intervention_ns,
                     )
                 ):
                     raise ProductionBridgeError(
@@ -1794,6 +1866,25 @@ class ProductionBridge:
         if active_intervention is not None:
             raise ProductionBridgeError(
                 "BRIDGE_POLICY_EXECUTION_TAKEOVER_UNSEALED"
+            )
+        initial_generation = self._policy_execution_generation(identity, identity)
+        generation_activation_ns = {initial_generation: 0}
+        for _, end in completed_takeovers:
+            generation_activation_ns[
+                self._policy_execution_generation(end, identity)
+            ] = int(end["receive_monotonic_ns"])
+        if any(
+            (
+                generation := self._policy_execution_generation(
+                    observation, identity
+                )
+            )
+            not in generation_activation_ns
+            or int(observation["t_ref_ns"]) < generation_activation_ns[generation]
+            for observation in observations
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_POLICY_EXECUTION_GENERATION_INVALID"
             )
         human_actions: list[dict[str, Any]] = []
         for intervention in interventions:
@@ -1928,14 +2019,25 @@ class ProductionBridge:
                 if int(row.get("receive_monotonic_ns", 0)) > end_ns
             ]
             following_generations = [
-                self._policy_execution_generation(row, identity)
+                (
+                    int(row.get("receive_monotonic_ns", 0)),
+                    self._policy_execution_generation(row, identity),
+                )
                 for row in following
             ]
+            next_takeover_start_ns = next(
+                (
+                    int(next_start["receive_monotonic_ns"])
+                    for next_start, _ in completed_takeovers
+                    if int(next_start["receive_monotonic_ns"]) > end_ns
+                ),
+                None,
+            )
             if (
-                following
-                and (
-                    following_generations[0] != generation
-                    or any(item < generation for item in following_generations)
+                not self._post_takeover_generations_are_valid(
+                    generation=generation,
+                    following=following_generations,
+                    next_takeover_start_ns=next_takeover_start_ns,
                 )
             ):
                 raise ProductionBridgeError(
