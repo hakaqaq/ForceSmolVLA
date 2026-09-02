@@ -14,7 +14,9 @@ from typing import Callable
 import torch
 from torch import Tensor, nn
 
-from forcesmolvla.rft.critic_action_adapter_v2 import critic_action_for_q_guidance_v2
+from forcesmolvla.rft.critic_action_adapter_v2 import (
+    bootstrap_command_effective_candidate_action,
+)
 from forcesmolvla.rft.losses import CriticObservation
 
 from forcesmolvla.rft.online.training_batch import (
@@ -234,14 +236,9 @@ class OnlineLearner:
             )
 
     def _next_action(self, observation: CriticObservation) -> Tensor:
-        from forcesmolvla.rft.critic_action_adapter_v2 import (
-            aligned_fresh_chunk_execution_index_map_v2,
-        )
-
         chunk = self.actor(observation)
-        return critic_action_for_q_guidance_v2(
+        return bootstrap_command_effective_candidate_action(
             chunk,
-            execution_index_map=aligned_fresh_chunk_execution_index_map_v2(),
             delta_action_mean7=self.delta_action_mean7,
             delta_action_std7=self.delta_action_std7,
         )

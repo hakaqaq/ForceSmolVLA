@@ -1,0 +1,103 @@
+{
+  "schema_version": "forcesmolvla_stage3_p0a_recorded_live_evidence.v1",
+  "fixture_id": "task2-online-000-p0a-five-path",
+  "fixture_kind": "recorded_live",
+  "synthetic": false,
+  "recorded_live_evidence": true,
+  "contract_version": "critic-action-contract-v3-command-effective-r30-k3",
+  "provenance": {
+    "raw_session_path": "datasets/online/000",
+    "raw_episode_path": "datasets/online/000/episodes/episode_000000",
+    "session_manifest_sha256": "8a6ce98b416655156f8ee4a44fa5a4fe1fcc659e6350903cd8739716b850cb15",
+    "episode_result_sha256": "c5213876a406e21557d6c3f593ed9bf4242376a747d3a97ecd8afb230629380b",
+    "integrated_seal_sha256": "741bdd468519efd8fb121cf35b1550c15f36f4f17d424ead30518cc239e7dcb6",
+    "integrated_transition_stream_sha256": "640695900d035159b90d64426500b087618685a3fdea47d4cf35257046520d37",
+    "integrated_intervention_stream_sha256": "9144d27e95c8d27c3e41788e538899d764f46e2d6842cca1dd8ee29981087f2a",
+    "policy_revision": "98a78c95cb06d67f70e6b2f33fcf6b6d1246f8701b3ccb171ccec995264a65bd",
+    "reconstructed_transition_count": 600,
+    "reconstructed_policy_count": 517,
+    "reconstructed_human_count": 83,
+    "invalidated_policy_suffix_training_count": 0
+  },
+  "bindings": {
+    "critic_action_adapter": {"path": "src/forcesmolvla/rft/critic_action_adapter_v2.py", "sha256": "096c66d5f220d3a8cb91feccba184c868ff514072a56cc7c7150c1a238efa559"},
+    "transition_authority": {"path": "src/forcesmolvla/rft/online/transition_authority.py", "sha256": "6608ddb257768b090347d6ee97aab8c0b0d638de845562cb6145b3b9862b7ff6"},
+    "production_bridge": {"path": "src/forcesmolvla/rft/online/production_bridge.py", "sha256": "5c1ec2324aa486ee9d7593701cdecc7f12f05bb0bf1d9f2a38fac35c14daceda"},
+    "replay_training": {"path": "src/forcesmolvla/rft/online/replay_training.py", "sha256": "eae3a82736972e835aa97854308cbe1fcb9c0094812d7fb34dea81ec6624115b"},
+    "action_runtime": {"path": "src/forcesmolvla/rft/online/action_runtime.py", "sha256": "dea282856b927272a27926e0e24c636902103fdb40a11d59f89a4b3c254c27d7"},
+    "integrated_capture_backend": {"path": "src/forcesmolvla/rft/online/integrated_capture_backend.py", "sha256": "d37115798a02cb81f92e06270a4a40c4f03c0475d3d273519d42b3f3a658279c"},
+    "training_losses": {"path": "src/forcesmolvla/rft/online/training_losses.py", "sha256": "e2fde039b46b20a71cf812188a7f183db1817d403fc78c0e15c923734591d011"},
+    "training_tool": {"path": "tools/train_forcerft_actor_critic.py", "sha256": "b485039621a9526c07e1cd1206f9cc0a3bc534a7eea02b1c3d38a3692356a10d"},
+    "online_learner": {"path": "src/forcesmolvla/rft/online/learner.py", "sha256": "617346489c78734e4272f124878485417ad4c805cb29b9780e6f826e56ac4208"},
+    "offline_transitions": {"path": "src/forcesmolvla/rft/offline_transitions.py", "sha256": "7dcdbfc8c8e1e62ed032024a0670e3f900fd9e58f56c5fd6cf7c00f7f4f1a91f"},
+    "actor_learner_runtime": {"path": "src/forcesmolvla/rft/online/actor_learner_runtime.py", "sha256": "6c29584928ff988ed49f38877ff0871b44dca43043ddb2a85b4483131345a852"},
+    "training_contracts": {"path": "src/forcesmolvla/rft/online/training_contracts.py", "sha256": "c1e4169c62a12ed1b3f99b34dda778aeea6149bed7053c0c32689b428514bcf7"},
+    "temporal_parity": {"path": "src/forcesmolvla/rft/online/temporal_parity.py", "sha256": "ce44d55d8f590ae96b21d303a2be05a5b4ba7fa9eb7e0b7d91e0be69ef13ce4b"},
+    "transition_contract_config": {"path": "configs/online_replay_transition_contract.v1.development.json", "sha256": "557f41a3c017b0d852fe50582c00719ad9b067b2edc64f5128f8097ba48cbc4e"},
+    "action_delta": {"path": "src/forcesmolvla/action_delta.py", "sha256": "8f5927fafa9c4fcd0e78c5198163dba71dc4ab4a627650f7c72e2526bd71a4a1"},
+    "normalizer_manifest": {"path": "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/normalizer_manifest.json", "sha256": "c053d6aadd9db1dd7e365afdb08ef020d10b990b2eec1a9103ffca5b1a1f6e7e"},
+    "offline_transition_manifest": {"path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/g1_manifest.json", "sha256": "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"},
+    "offline_transition_index": {"path": "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/transition_index.parquet", "sha256": "f61dbd6d7e396aca8dc60794be0a16d314553d081dd659b1928bc8c5118bd474"}
+  },
+  "selection": {
+    "policy": {
+      "transition_uid": "000af008cd29fbffafc534ec843fae9230590ed49296dfc91a5971ef94088e53",
+      "decision_id": 462,
+      "source_ack_id": "policy-ack:462:1788314926615126074",
+      "source_command_id": "1788314926615126074",
+      "source_dispatch_sequence": 462,
+      "source_model_index": 7,
+      "chunk_id": "live-6afa4950-d341-4532-a750-3b103575af20",
+      "anchor_timestamp_ns": 55558133333333,
+      "grid_timestamp_ns": [55558133333333, 55558166666666, 55558200000000],
+      "next_timestamp_ns": 55558233333333,
+      "behavior_mask": [true, true, true],
+      "gripper_command_id": "0f2e4b743f574474ba97a01be89d5dba"
+    },
+    "human": {
+      "transition_uid": "01701110a6c83e930ed72aff009292fcffa0e99ce6e8b7beaade7c9ebcce449b",
+      "decision_id": 28,
+      "source_ack_id": "reference-ack:253:1788314898632372331",
+      "source_command_id": "reference-command:253:1788314898632372331",
+      "source_dispatch_sequence": 28,
+      "source_model_index": -1,
+      "chunk_id": "human-generation-1",
+      "anchor_timestamp_ns": 55530133333333,
+      "grid_timestamp_ns": [55530133333333, 55530166666666, 55530200000000],
+      "next_timestamp_ns": 55530233333333,
+      "behavior_mask": [true, true, true],
+      "gripper_command_id": "c882824840eb42ba853b23b1a7b4b04c"
+    },
+    "terminal": {
+      "transition_uid": "f2779a05c756bad4e3321d7341de224b68b09597c031ec6e019456dc1fbf47a9",
+      "decision_id": 518,
+      "source_ack_id": "policy-ack:518:1788314936445627623",
+      "grid_timestamp_ns": [55567933333333, 55567966666666, 55568000000000],
+      "next_timestamp_ns": 55568000000000,
+      "behavior_mask": [true, true, false],
+      "macro_duration_ns": 66666667,
+      "discount": 0.0
+    },
+    "offline_demo": {
+      "episode_id": "episode_000000",
+      "transition_index": 265,
+      "anchor_frame": 795,
+      "next_frame": 797,
+      "behavior_mask": [true, true, false],
+      "terminated": true,
+      "bootstrap_mask": 0,
+      "discount": 0.0,
+      "normalized_action_sha256": "9bc998fee73f7d8aac938afa0a87d87ae403a5869733e95e2c025c23fa62b8db"
+    },
+    "candidate": {
+      "request_id": "6afa4950-d341-4532-a750-3b103575af20",
+      "proposal_id": "policy-proposal:6afa4950-d341-4532-a750-3b103575af20",
+      "chunk_id": "live-6afa4950-d341-4532-a750-3b103575af20",
+      "observation_id": "episode_000000:observation:000462",
+      "anchor_timestamp_ns": 55557766666667,
+      "execution_index_map": [0, 0, 0],
+      "actor_candidate_sha256": "867bede1aff7efd7fd9f677bcd2faeae486bf763d78547017023c8ce97edb57e",
+      "bootstrap_candidate_sha256": "867bede1aff7efd7fd9f677bcd2faeae486bf763d78547017023c8ce97edb57e"
+    }
+  }
+}

@@ -320,7 +320,7 @@ def test_rational_selection_fault_injection_accepts_index_steps_2_3_4() -> None:
     )
     macro = project_acknowledged_runtime_macro(
         committed,
-        (1_433_333_333, 1_466_666_667, 1_500_000_000),
+        (1_433_333_333, 1_466_666_666, 1_500_000_000),
         grid_clock_domain_id=CLOCK_DOMAIN_ID,
         max_ack_age_ms=100.0,
     )
@@ -730,7 +730,7 @@ def test_partial_ack_cannot_create_accepted_action_or_transition() -> None:
     with pytest.raises(RuntimeSafetyViolation, match="NOT_ACK_AUTHORITATIVE"):
         project_acknowledged_runtime_macro(
             [partial],
-            (1_133_333_333, 1_166_666_667, 1_200_000_000),
+            (1_133_333_333, 1_166_666_666, 1_200_000_000),
             grid_clock_domain_id=CLOCK_DOMAIN_ID,
             max_ack_age_ms=100.0,
         )
@@ -794,7 +794,7 @@ def test_only_dual_ack_post_adapter_absolute7_becomes_transition_authority() -> 
     assert accepted_ack.accepted_absolute_action7 == POST_ADAPTER_ABSOLUTE7
     macro = project_acknowledged_runtime_macro(
         [committed],
-        (1_133_333_333, 1_166_666_667, 1_200_000_000),
+        (1_133_333_333, 1_166_666_666, 1_200_000_000),
         grid_clock_domain_id=CLOCK_DOMAIN_ID,
         max_ack_age_ms=100.0,
     )

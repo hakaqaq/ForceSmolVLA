@@ -12,7 +12,7 @@ from forcesmolvla.rft.online.transition_authority import (
 )
 
 
-GRID = (133_333_333, 166_666_667, 200_000_000)
+GRID = (133_333_333, 166_666_666, 200_000_000)
 
 
 def ack(identifier: str, timestamp: int, value: float = 0.0) -> AcceptedAck:
@@ -25,6 +25,15 @@ def ack(identifier: str, timestamp: int, value: float = 0.0) -> AcceptedAck:
         slot_owner="policy",
         accepted_action_source="policy",
         intervention=False,
+        source_command_id=f"pose-{identifier}",
+        source_dispatch_sequence=0,
+        source_model_index=0,
+        episode_id="episode",
+        policy_revision="revision",
+        chunk_id="chunk",
+        chunk_compatibility_key="generation-0",
+        clock_domain="upper-host-monotonic",
+        controller_authority="fr3-reference-controller",
     )
 
 

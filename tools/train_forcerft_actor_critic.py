@@ -266,8 +266,7 @@ def critic_step(
     microbatch_slot=None,
 ) -> dict[str, Any]:
     from forcesmolvla.rft.critic_action_adapter_v2 import (
-        aligned_fresh_chunk_execution_index_map_v2,
-        critic_action_for_q_guidance_v2,
+        bootstrap_command_effective_candidate_action,
     )
     from forcesmolvla.rft.online.training_losses import compute_online_twin_q_td_loss
     from forcesmolvla.rft.throughput_v2 import fast_polyak_update, index_actor_batch
@@ -319,11 +318,8 @@ def critic_step(
                         ),
                         purpose="td_next",
                     )
-                return critic_action_for_q_guidance_v2(
+                return bootstrap_command_effective_candidate_action(
                     chunk,
-                    execution_index_map=(
-                        aligned_fresh_chunk_execution_index_map_v2()
-                    ),
                     delta_action_mean7=delta_mean,
                     delta_action_std7=delta_std,
                 ).detach().float()
@@ -406,7 +402,7 @@ def actor_step(
         compute_online_min_twin_q_actor_loss,
     )
     from forcesmolvla.rft.critic_action_adapter_v2 import (
-        aligned_fresh_chunk_execution_index_map_v2,
+        command_effective_execution_index_map,
     )
     from forcesmolvla.rft.throughput_v2 import index_actor_batch
     from forcesmolvla.router_training import collect_pass_a_statistics, microbatch_two_pass_terms
@@ -492,7 +488,7 @@ def actor_step(
                     observation=observation,
                     normalized_flow_action_chunk7=chunk,
                     execution_index_map=(
-                        aligned_fresh_chunk_execution_index_map_v2()
+                        command_effective_execution_index_map()
                     ),
                     delta_action_mean7=delta_mean,
                     delta_action_std7=delta_std,
@@ -519,7 +515,7 @@ def actor_step(
             )
             require(torch.equal(q_contract_loss, terms.actor_q), "ONLINE_REPLAY_JOINT_ACTOR_Q_NOT_MIN_TWIN")
             q_gradient = torch.autograd.grad(q_contract_loss, chunk, retain_graph=True)[0]
-            execution_index_map = aligned_fresh_chunk_execution_index_map_v2()
+            execution_index_map = command_effective_execution_index_map()
             tcp_q_gradient_square += float(
                 q_gradient[:, execution_index_map, :6].float().square().sum().cpu()
             )
@@ -614,7 +610,7 @@ def save_joint_checkpoint(
     actor_directory: str = "candidate_policy",
 ) -> None:
     from forcesmolvla.checkpoint import export_development_actor_checkpoint
-    from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_SEMANTICS_V2
+    from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_CONTRACT
 
     require(not path.exists(), "ONLINE_REPLAY_JOINT_CHECKPOINT_EXISTS")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -671,7 +667,7 @@ def save_joint_checkpoint(
             "joint_cycles": total_joint_cycles,
             "critic_ready": True,
             "actor_q_guidance_enabled": True,
-            "critic_action_semantics": CRITIC_ACTION_SEMANTICS_V2,
+            "critic_action_contract_version": CRITIC_ACTION_CONTRACT.version,
             "parent_binding_id": binding_id,
             "actor_directory": actor_directory,
             "critic_optimizer_restored": True,
@@ -707,12 +703,12 @@ def load_joint_checkpoint_once(
     metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
     if metadata.get("kind") == "online_actor_critic_exact_resume":
         from forcesmolvla.rft.critic_action_adapter_v2 import (
-            CRITIC_ACTION_SEMANTICS_V2,
+            CRITIC_ACTION_CONTRACT,
         )
 
         require(
-            metadata.get("critic_action_semantics")
-            == CRITIC_ACTION_SEMANTICS_V2,
+            metadata.get("critic_action_contract_version")
+            == CRITIC_ACTION_CONTRACT.version,
             "FORCERFT_LEGACY_ONLINE_ACTION_SEMANTICS_INCOMPATIBLE",
         )
     require(
@@ -764,12 +760,12 @@ def load_resume_modules(
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     if metadata.get("kind") == "online_actor_critic_exact_resume":
         from forcesmolvla.rft.critic_action_adapter_v2 import (
-            CRITIC_ACTION_SEMANTICS_V2,
+            CRITIC_ACTION_CONTRACT,
         )
 
         require(
-            metadata.get("critic_action_semantics")
-            == CRITIC_ACTION_SEMANTICS_V2,
+            metadata.get("critic_action_contract_version")
+            == CRITIC_ACTION_CONTRACT.version,
             "FORCERFT_LEGACY_ONLINE_ACTION_SEMANTICS_INCOMPATIBLE",
         )
     actor_directory = str(metadata.get("actor_directory", ""))

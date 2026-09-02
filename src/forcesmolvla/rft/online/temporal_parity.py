@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from functools import lru_cache
 from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
@@ -27,12 +29,16 @@ from forcesmolvla.rft.online.transition_authority import (
     causal_zoh_ack_macro,
     normalized_ack_behavior_action,
 )
+from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_CONTRACT
 
 
 ROOT = Path(__file__).parents[4]
 FIXTURE_SCHEMA = ROOT / "schemas/stage3_recorded_ack_fixture.v1.schema.json"
 REPORT_SCHEMA = ROOT / "schemas/stage3_temporal_parity_report.v1.schema.json"
 DEFAULT_RECORDED_FIXTURE = ROOT / "golden_fixtures/stage3_recorded_ack_fixture.v1.json"
+DEFAULT_P0A_RECORDED_LIVE_EVIDENCE = (
+    ROOT / "golden_fixtures/stage3_p0a_recorded_live_evidence.v1.json"
+)
 MISSING_RECORDED_FIELDS = (
     "fixture file",
     "fixture_kind=recorded_live",
@@ -51,6 +57,399 @@ MISSING_RECORDED_FIELDS = (
 
 class TemporalParityError(ValueError):
     pass
+
+
+P0A_REQUIRED_PATHS = (
+    "policy_ack_behavior",
+    "human_ack_behavior",
+    "offline_demo_behavior",
+    "actor_candidate",
+    "bootstrap_candidate",
+)
+
+
+def p0a_formal_gate(value: Mapping[str, Any]) -> str:
+    """Synthetic or incomplete evidence can never unlock formal P0-A."""
+
+    eligible = bool(
+        value.get("fixture_kind") == "recorded_live"
+        and value.get("synthetic") is False
+        and value.get("recorded_live_evidence") is True
+    )
+    paths = value.get("paths", {})
+    bindings = value.get("bindings", {})
+    comparisons = value.get("comparisons", {})
+    passed = bool(
+        eligible
+        and all(paths.get(name) is True for name in P0A_REQUIRED_PATHS)
+        and (not bindings or all(bindings.values()))
+        and (not comparisons or all(comparisons.values()))
+    )
+    return "PASS" if passed else "BLOCKED"
+
+
+def _p0a_path(value: str) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
+def _p0a_file_matches(path: Path, expected: str) -> bool:
+    return path.is_file() and sha256_file(path) == expected
+
+
+def _p0a_action_sha256(values: Sequence[float]) -> str:
+    encoded = json.dumps(
+        list(values), separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+@lru_cache(maxsize=2)
+def run_p0a_recorded_live_parity(
+    evidence_path: Path = DEFAULT_P0A_RECORDED_LIVE_EVIDENCE,
+) -> dict[str, Any]:
+    """Rebuild real replay on CPU and compare all five Critic action paths."""
+
+    evidence_path = Path(evidence_path)
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    if (
+        evidence.get("schema_version")
+        != "forcesmolvla_stage3_p0a_recorded_live_evidence.v1"
+        or evidence.get("contract_version") != CRITIC_ACTION_CONTRACT.version
+    ):
+        raise TemporalParityError("P0A_RECORDED_LIVE_EVIDENCE_CONTRACT_INVALID")
+
+    bindings = {
+        name: _p0a_file_matches(
+            _p0a_path(binding["path"]), str(binding["sha256"])
+        )
+        for name, binding in evidence["bindings"].items()
+    }
+    provenance = evidence["provenance"]
+    session = _p0a_path(provenance["raw_session_path"])
+    episode = _p0a_path(provenance["raw_episode_path"])
+    integrated = session / "integrated_capture" / episode.name / "streams"
+    source_bindings = {
+        "session_manifest": _p0a_file_matches(
+            session / "session.json", provenance["session_manifest_sha256"]
+        ),
+        "episode_result": _p0a_file_matches(
+            episode / "episode_result.json", provenance["episode_result_sha256"]
+        ),
+        "integrated_seal": _p0a_file_matches(
+            integrated / "policy_execute_episode_seal.json",
+            provenance["integrated_seal_sha256"],
+        ),
+        "integrated_transition_stream": _p0a_file_matches(
+            integrated / "policy_execute_transition.jsonl",
+            provenance["integrated_transition_stream_sha256"],
+        ),
+        "integrated_intervention_stream": _p0a_file_matches(
+            integrated / "policy_execute_intervention.jsonl",
+            provenance["integrated_intervention_stream_sha256"],
+        ),
+    }
+    bindings.update(source_bindings)
+    if not all(bindings.values()):
+        return {
+            "fixture_kind": evidence.get("fixture_kind"),
+            "synthetic": evidence.get("synthetic"),
+            "recorded_live_evidence": evidence.get("recorded_live_evidence"),
+            "bindings": bindings,
+            "comparisons": {},
+            "paths": {name: False for name in P0A_REQUIRED_PATHS},
+            "formal_gate": "BLOCKED",
+            "robot_command_count": 0,
+        }
+
+    from forcesmolvla.rft.online.production_bridge import (
+        ProductionBridge,
+        load_bridge_config,
+    )
+    from forcesmolvla.rft.online.replay_training import (
+        build_ack_macros,
+        load_formal_online_r,
+    )
+
+    config, _ = load_bridge_config(
+        ROOT / "configs/online_replay_production_bridge.v1.development.yaml"
+    )
+    with tempfile.TemporaryDirectory(prefix="forcesmolvla-p0a-parity-") as root:
+        state_root = Path(root)
+        bridge = ProductionBridge(config=config, state_root=state_root)
+        report = bridge.admit_policy_execution_smoke(
+            episode, operator_task_outcome="success"
+        )
+        policy_rows, policy_macros, _, human_rows = load_formal_online_r(
+            state_root
+        )
+        human_macros = build_ack_macros(human_rows)
+
+        def macro_by_uid(macros, uid: str):
+            return next(
+                macro
+                for macro in macros
+                if macro.transition["identity"]["transition_uid"] == uid
+            )
+
+        selected = evidence["selection"]
+        policy = macro_by_uid(
+            policy_macros, selected["policy"]["transition_uid"]
+        )
+        human = macro_by_uid(
+            human_macros, selected["human"]["transition_uid"]
+        )
+        terminal = macro_by_uid(
+            policy_macros, selected["terminal"]["transition_uid"]
+        )
+
+        def behavior_matches(macro, expected: Mapping[str, Any]) -> bool:
+            valid = tuple(bool(value) for value in expected["behavior_mask"])
+            ack_ids = tuple(
+                ack_id
+                for ack_id, keep in zip(
+                    macro.behavior.ack_ids, valid, strict=True
+                )
+                if keep
+            )
+            command_ids = tuple(
+                command_id
+                for command_id, keep in zip(
+                    macro.behavior.source_command_ids, valid, strict=True
+                )
+                if keep
+            )
+            return bool(
+                macro.transition["identity"]["decision_id"]
+                == expected["decision_id"]
+                and macro.behavior.contract_version
+                == CRITIC_ACTION_CONTRACT.version
+                and list(macro.behavior.grid_monotonic_ns)
+                == expected["grid_timestamp_ns"]
+                and macro.behavior.next_timestamp_ns
+                == expected["next_timestamp_ns"]
+                and tuple(macro.behavior.behavior_mask) == valid
+                and set(ack_ids) == {expected["source_ack_id"]}
+                and set(command_ids) == {expected["source_command_id"]}
+                and all(
+                    value == expected["gripper_command_id"]
+                    for value, keep in zip(
+                        macro.behavior.gripper_command_ids, valid, strict=True
+                    )
+                    if keep
+                )
+                and macro.behavior.gripper_command_ids
+                == macro.behavior.gripper_ack_command_ids
+            )
+
+        policy_ok = behavior_matches(policy, selected["policy"])
+        human_ok = behavior_matches(human, selected["human"])
+        terminal_ok = bool(
+            list(terminal.behavior.grid_monotonic_ns)
+            == selected["terminal"]["grid_timestamp_ns"]
+            and terminal.behavior.next_timestamp_ns
+            == selected["terminal"]["next_timestamp_ns"]
+            and list(terminal.behavior.behavior_mask)
+            == selected["terminal"]["behavior_mask"]
+            and terminal.behavior.macro_duration_ns
+            == selected["terminal"]["macro_duration_ns"]
+            and terminal.transition["outcome"]["terminated"] is True
+            and terminal.transition["outcome"]["truncated"] is False
+            and terminal.transition["outcome"]["bootstrap_mask"] == 0.0
+            and terminal.transition["outcome"]["discount"]
+            == selected["terminal"]["discount"]
+        )
+
+        native_result = json.loads(
+            (episode / "episode_result.json").read_text(encoding="utf-8")
+        )
+        streams = bridge._load_streams(episode)
+        bridge._validate_seal(native_result, streams)
+        integrated_capture = bridge._load_integrated_capture(
+            episode_dir=episode,
+            native_result=native_result,
+            streams=streams,
+            operator_task_outcome="success",
+        )
+        candidate_expected = selected["candidate"]
+        transition = next(
+            row
+            for row in integrated_capture["transitions"]
+            if row["request_id"] == candidate_expected["request_id"]
+            and row["selection"]["sequence"]
+            == selected["policy"]["source_dispatch_sequence"]
+        )
+        proposal = integrated_capture["proposals"][transition["request_id"]]
+        observation_source = integrated_capture["observations"][
+            candidate_expected["observation_id"]
+        ]
+        candidate_observation = bridge._formal_online_r_observation(
+            episode_dir=episode,
+            episode_id=str(policy.transition["identity"]["episode_id"]),
+            source=observation_source,
+            prepared=integrated_capture["prepared"],
+        )
+
+    from forcesmolvla.rft.losses import load_authorized_reward_train_transitions
+    import torch
+
+    demo_expected = evidence["selection"]["offline_demo"]
+    demo = next(
+        row
+        for row in load_authorized_reward_train_transitions().to_pylist()
+        if row["episode_id"] == demo_expected["episode_id"]
+        and int(row["transition_index"]) == demo_expected["transition_index"]
+    )
+    demo_ok = bool(
+        int(demo["anchor_frame"]) == demo_expected["anchor_frame"]
+        and int(demo["next_frame"]) == demo_expected["next_frame"]
+        and list(demo["executed_action_mask"]) == demo_expected["behavior_mask"]
+        and bool(demo["terminated"]) is demo_expected["terminated"]
+        and int(demo["bootstrap_mask"]) == demo_expected["bootstrap_mask"]
+        and float(demo["discount"]) == demo_expected["discount"]
+        and _p0a_action_sha256(demo["normalized_delta_action_exec_flat"])
+        == demo_expected["normalized_action_sha256"]
+    )
+
+    normalizer = json.loads(
+        _p0a_path(evidence["bindings"]["normalizer_manifest"]["path"])
+        .read_text(encoding="utf-8")
+    )["features"]["delta_action7"]
+    mean = np.asarray(normalizer["mean"], dtype=np.float64)
+    std = np.asarray(normalizer["std"], dtype=np.float64)
+    state = np.asarray(
+        candidate_observation["state7_absolute"], dtype=np.float64
+    )
+    absolute = np.asarray(proposal["actions_absolute7"], dtype=np.float64)
+    normalized = (ActionDeltaProcessor.to_delta(absolute, state) - mean) / std
+    chunk = torch.tensor(normalized, dtype=torch.float32).unsqueeze(0)
+    mean_tensor = torch.tensor(mean, dtype=torch.float32)
+    std_tensor = torch.tensor(std, dtype=torch.float32)
+    from forcesmolvla.rft.critic_action_adapter_v2 import (
+        bootstrap_command_effective_candidate_action,
+        command_effective_candidate_action,
+        command_effective_execution_index_map,
+    )
+
+    actor_candidate = command_effective_candidate_action(
+        chunk,
+        anchor_timestamp_ns=int(candidate_observation["materialized_timestamp_monotonic_ns"]),
+        delta_action_mean7=mean_tensor,
+        delta_action_std7=std_tensor,
+    )
+    bootstrap_candidate = bootstrap_command_effective_candidate_action(
+        chunk,
+        anchor_timestamp_ns=int(candidate_observation["materialized_timestamp_monotonic_ns"]),
+        delta_action_mean7=mean_tensor,
+        delta_action_std7=std_tensor,
+    )
+
+    def tensor_sha256(value) -> str:
+        array = np.ascontiguousarray(value.detach().cpu().numpy(), dtype=np.float32)
+        return hashlib.sha256(array.tobytes()).hexdigest()
+
+    actor_ok = bool(
+        proposal["proposal_id"] == candidate_expected["proposal_id"]
+        and proposal["chunk_id"] == candidate_expected["chunk_id"]
+        and int(candidate_observation["materialized_timestamp_monotonic_ns"])
+        == candidate_expected["anchor_timestamp_ns"]
+        and list(
+            command_effective_execution_index_map(
+                anchor_timestamp_ns=candidate_expected["anchor_timestamp_ns"]
+            )
+        )
+        == candidate_expected["execution_index_map"]
+        and tensor_sha256(actor_candidate)
+        == candidate_expected["actor_candidate_sha256"]
+    )
+    bootstrap_ok = bool(
+        bootstrap_command_effective_candidate_action
+        is command_effective_candidate_action
+        and torch.equal(actor_candidate, bootstrap_candidate)
+        and tensor_sha256(bootstrap_candidate)
+        == candidate_expected["bootstrap_candidate_sha256"]
+    )
+    all_macros = (*policy_macros, *human_macros)
+    causal = all(
+        provenance["receive_monotonic_ns"] <= tick
+        for macro in all_macros
+        for provenance, tick, valid in zip(
+            macro.ack_provenance,
+            macro.behavior.grid_monotonic_ns,
+            macro.behavior.behavior_mask,
+            strict=True,
+        )
+        if valid
+    )
+    ack_age = all(
+        (tick - provenance["receive_monotonic_ns"])
+        <= int(CRITIC_ACTION_CONTRACT.max_ack_age_ms * 1e6)
+        for macro in all_macros
+        for provenance, tick, valid in zip(
+            macro.ack_provenance,
+            macro.behavior.grid_monotonic_ns,
+            macro.behavior.behavior_mask,
+            strict=True,
+        )
+        if valid
+    )
+    paths = {
+        "policy_ack_behavior": policy_ok,
+        "human_ack_behavior": human_ok,
+        "offline_demo_behavior": demo_ok,
+        "actor_candidate": actor_ok,
+        "bootstrap_candidate": bootstrap_ok,
+    }
+    comparisons = {
+        "reconstructed_transition_counts": bool(
+            report.accepted_unique_r_transition_count
+            == provenance["reconstructed_transition_count"]
+            and len(policy_rows) == provenance["reconstructed_policy_count"]
+            and len(human_rows) == provenance["reconstructed_human_count"]
+        ),
+        "critic_grid_and_horizon": all(
+            macro.behavior.next_timestamp_ns
+            - macro.behavior.grid_monotonic_ns[0]
+            == (
+                macro.behavior.macro_duration_ns
+            )
+            for macro in all_macros
+        ),
+        "ack_causal_validity": causal,
+        "ack_age": ack_age,
+        "pose_and_gripper_ack_identity": policy_ok and human_ok,
+        "terminal_partial_mask_and_discount": terminal_ok,
+        "normalizer_manifest": bool(
+            policy.transition["critic_action_contract"]["normalizer_manifest_hash"]
+            == evidence["bindings"]["normalizer_manifest"]["sha256"]
+            == human.transition["critic_action_contract"]["normalizer_manifest_hash"]
+        ),
+        "invalidated_policy_suffix_count_zero": bool(
+            provenance["invalidated_policy_suffix_training_count"] == 0
+            and all(
+                macro.transition.get("policy_lineage", {})
+                .get("proposal", {})
+                .get("invalidated_by_takeover")
+                is not True
+                for macro in policy_macros
+            )
+        ),
+    }
+    result = {
+        "fixture_kind": evidence["fixture_kind"],
+        "synthetic": evidence["synthetic"],
+        "recorded_live_evidence": evidence["recorded_live_evidence"],
+        "fixture_id": evidence["fixture_id"],
+        "contract_version": evidence["contract_version"],
+        "bindings": bindings,
+        "comparisons": comparisons,
+        "paths": paths,
+        "provenance": provenance,
+        "robot_command_count": 0,
+        "robot_execution_authorized": False,
+    }
+    result["formal_gate"] = p0a_formal_gate(result)
+    return result
 
 
 def sha256_file(path: Path) -> str:
@@ -681,6 +1080,29 @@ def _online_project(fixture: Mapping[str, Any]) -> dict[str, Any]:
             intervention=bool(row["intervention"]),
             accepted=bool(row["payload"]["accepted"]),
             workspace_clipped=bool(row["workspace_clipped"]),
+            source_command_id=(
+                f"reference-command:{int(row['request_sequence'])}:"
+                f"{int(row['request_stamp_ns'])}"
+            ),
+            source_dispatch_sequence=int(row["request_sequence"]),
+            source_model_index=(
+                int(row["action_decision_id"])
+                if row["accepted_action_source"] == "policy"
+                else -1
+            ),
+            episode_id=Path(
+                fixture["provenance"]["raw_episode_path"]
+            ).name,
+            policy_revision=str(fixture["fixture_id"]),
+            takeover_generation=0,
+            reset_generation=0,
+            chunk_id=f"parity-{fixture['fixture_id']}",
+            chunk_compatibility_key=(
+                f"parity:{fixture['fixture_id']}:"
+                f"{row['accepted_action_source']}"
+            ),
+            clock_domain="upper-host-monotonic",
+            controller_authority="recorded-reference-controller",
         )
         for row, action in zip(acknowledgements, action7, strict=True)
     ]

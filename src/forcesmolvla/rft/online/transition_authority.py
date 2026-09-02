@@ -14,6 +14,11 @@ from jsonschema import Draft202012Validator
 import numpy as np
 
 from forcesmolvla.action_delta import ActionDeltaProcessor
+from forcesmolvla.rft.critic_action_adapter_v2 import (
+    CRITIC_ACTION_CONTRACT,
+    CriticActionContract,
+    build_critic_transition_grid,
+)
 from forcesmolvla.temporal import select_latest_causal
 
 
@@ -41,6 +46,17 @@ class AcceptedAck:
     intervention: bool
     accepted: bool = True
     workspace_clipped: bool = False
+    source_command_id: str = ""
+    source_dispatch_sequence: int = -1
+    source_model_index: int = -1
+    episode_id: str = ""
+    policy_revision: str = ""
+    takeover_generation: int = 0
+    reset_generation: int = 0
+    chunk_id: str = ""
+    chunk_compatibility_key: str = ""
+    clock_domain: str = ""
+    controller_authority: str = ""
 
     def validate(self) -> "AcceptedAck":
         if not self.ack_id or not self.gripper_command_id or not self.gripper_ack_command_id:
@@ -62,6 +78,29 @@ class AcceptedAck:
             raise TransitionContractError("ONLINE_REPLAY_EXPERT_OWNER_NOT_ACK_CONFIRMED")
         if self.slot_owner != "human_intervention" and self.intervention:
             raise TransitionContractError("ONLINE_REPLAY_INTERVENTION_OWNER_MISMATCH")
+        if self.source_dispatch_sequence < -1 or self.source_model_index < -1:
+            raise TransitionContractError("ONLINE_REPLAY_ACK_SOURCE_INDEX_INVALID")
+        if not all(
+            (
+                self.source_command_id,
+                self.episode_id,
+                self.policy_revision,
+                self.chunk_id,
+                self.chunk_compatibility_key,
+                self.clock_domain,
+                self.controller_authority,
+            )
+        ):
+            raise TransitionContractError("ONLINE_REPLAY_ACK_LINEAGE_MISSING")
+        if self.accepted_action_source in {"policy", "human"}:
+            if self.source_dispatch_sequence < 0:
+                raise TransitionContractError(
+                    "ONLINE_REPLAY_ACK_DISPATCH_SEQUENCE_MISSING"
+                )
+            if self.accepted_action_source == "policy" and self.source_model_index < 0:
+                raise TransitionContractError(
+                    "ONLINE_REPLAY_ACK_MODEL_INDEX_MISSING"
+                )
         return self
 
 
@@ -74,6 +113,123 @@ class AckMacro:
     accepted_absolute_action_k7: np.ndarray
     slot_owner: tuple[str, str, str]
     workspace_clip_flags: tuple[bool, bool, bool]
+    behavior_mask: tuple[bool, bool, bool] = (True, True, True)
+    source_command_ids: tuple[str, str, str] = ("", "", "")
+    source_dispatch_sequences: tuple[int, int, int] = (-1, -1, -1)
+    source_model_indices: tuple[int, int, int] = (-1, -1, -1)
+    chunk_ids: tuple[str, str, str] = ("", "", "")
+    contract_version: str = CRITIC_ACTION_CONTRACT.version
+    next_timestamp_ns: int = 0
+    macro_duration_ns: int = CRITIC_ACTION_CONTRACT.macro_duration_ns
+
+
+def _lineage(ack: AcceptedAck) -> tuple[object, ...]:
+    return (
+        ack.episode_id,
+        ack.accepted_action_source,
+        ack.takeover_generation,
+        ack.reset_generation,
+        ack.policy_revision,
+        ack.clock_domain,
+        ack.controller_authority,
+        ack.chunk_compatibility_key,
+    )
+
+
+def build_ack_behavior_macro(
+    *,
+    accepted_ack_stream: Sequence[AcceptedAck],
+    anchor_timestamp_ns: int,
+    action_source: str,
+    contract: CriticActionContract = CRITIC_ACTION_CONTRACT,
+    max_ack_age_ms: float,
+    boundary_timestamp_ns: int | None = None,
+    required_anchor_ack_id: str | None = None,
+) -> AckMacro:
+    """Build one fail-closed ACK-authoritative behavior macro."""
+
+    contract.validate()
+    if action_source not in {"policy", "human", "offline_demonstration"}:
+        raise TransitionContractError("ONLINE_REPLAY_ACTION_SOURCE_INVALID")
+    grid, nominal_next = build_critic_transition_grid(
+        anchor_timestamp_ns, contract=contract
+    )
+    next_timestamp = nominal_next if boundary_timestamp_ns is None else int(
+        boundary_timestamp_ns
+    )
+    if not grid[0] < next_timestamp <= nominal_next:
+        raise TransitionContractError("ONLINE_REPLAY_PARTIAL_BOUNDARY_INVALID")
+    mask = tuple(tick < next_timestamp for tick in grid)
+    if not any(mask) or mask != tuple(index < sum(mask) for index in range(3)):
+        raise TransitionContractError("ONLINE_REPLAY_BEHAVIOR_MASK_NOT_PREFIX")
+
+    records = tuple(ack.validate() for ack in accepted_ack_stream)
+    if not records:
+        raise TransitionContractError("ONLINE_REPLAY_ACK_MISSING_OR_STALE")
+    stamps = np.asarray(
+        [ack.receive_monotonic_ns for ack in records], dtype=np.int64
+    )
+    if len(stamps) > 1 and np.any(np.diff(stamps) <= 0):
+        raise TransitionContractError(
+            "ONLINE_REPLAY_ACK_TIMESTAMPS_NOT_STRICTLY_INCREASING"
+        )
+    valid_grid = np.asarray(
+        [tick for tick, valid in zip(grid, mask, strict=True) if valid],
+        dtype=np.int64,
+    )
+    selected = select_latest_causal(
+        stamps, valid_grid, max_age_ms=max_ack_age_ms
+    )
+    if not selected.valid.all():
+        raise TransitionContractError("ONLINE_REPLAY_ACK_MISSING_OR_STALE")
+    chosen_valid = tuple(records[int(index)] for index in selected.source_indices)
+    if any(
+        ack.receive_monotonic_ns > tick
+        for ack, tick in zip(chosen_valid, valid_grid, strict=True)
+    ):
+        raise AssertionError("ONLINE_REPLAY_FUTURE_ACK_SELECTED")
+    if any(ack.accepted_action_source != action_source for ack in chosen_valid):
+        raise TransitionContractError("ONLINE_REPLAY_ACTION_SOURCE_BOUNDARY")
+    expected_lineage = _lineage(chosen_valid[0])
+    if any(_lineage(ack) != expected_lineage for ack in chosen_valid[1:]):
+        raise TransitionContractError("ONLINE_REPLAY_ACK_LINEAGE_BOUNDARY")
+    if required_anchor_ack_id is not None:
+        if chosen_valid[0].ack_id != required_anchor_ack_id:
+            raise TransitionContractError(
+                "ONLINE_REPLAY_COMMAND_EFFECTIVE_ANCHOR_MISMATCH"
+            )
+        if any(ack.ack_id != required_anchor_ack_id for ack in chosen_valid):
+            raise TransitionContractError(
+                "ONLINE_REPLAY_COMMAND_EFFECTIVE_PHASE_CHANGED"
+            )
+
+    chosen: list[AcceptedAck | None] = list(chosen_valid)
+    chosen.extend([None] * (contract.critic_slots - len(chosen)))
+    absolute = np.zeros((contract.critic_slots, contract.action_dim), dtype=np.float64)
+    for slot, ack in enumerate(chosen):
+        if ack is not None:
+            absolute[slot] = ack.accepted_absolute_action7
+
+    def values(name: str, default):
+        return tuple(default if ack is None else getattr(ack, name) for ack in chosen)
+
+    return AckMacro(
+        grid_monotonic_ns=grid,
+        ack_ids=values("ack_id", ""),
+        gripper_command_ids=values("gripper_command_id", ""),
+        gripper_ack_command_ids=values("gripper_ack_command_id", ""),
+        accepted_absolute_action_k7=absolute,
+        slot_owner=values("slot_owner", ""),
+        workspace_clip_flags=values("workspace_clipped", False),
+        behavior_mask=mask,
+        source_command_ids=values("source_command_id", ""),
+        source_dispatch_sequences=values("source_dispatch_sequence", -1),
+        source_model_indices=values("source_model_index", -1),
+        chunk_ids=values("chunk_id", ""),
+        contract_version=contract.version,
+        next_timestamp_ns=next_timestamp,
+        macro_duration_ns=next_timestamp - grid[0],
+    )
 
 
 REVISION_BOUND_EVENTS = {
@@ -166,9 +322,10 @@ def validate_macro_grid(grid_monotonic_ns: Sequence[int]) -> tuple[int, int, int
     grid = np.asarray(grid_monotonic_ns, dtype=np.int64)
     if grid.shape != (3,) or np.any(grid <= 0) or np.any(np.diff(grid) <= 0):
         raise TransitionContractError("ONLINE_REPLAY_MACRO_GRID_SHAPE_OR_ORDER")
-    indices = (grid * 30 + 500_000_000) // 1_000_000_000
-    expected = ((indices * 1_000_000_000 + 15) // 30).astype(np.int64)
-    if not np.array_equal(grid, expected) or not np.array_equal(np.diff(indices), [1, 1]):
+    expected, _ = build_critic_transition_grid(
+        int(grid[0]), contract=CRITIC_ACTION_CONTRACT
+    )
+    if tuple(int(value) for value in grid) != expected:
         raise TransitionContractError("ONLINE_REPLAY_MACRO_GRID_PHASE_MISMATCH")
     return tuple(int(value) for value in grid)
 
@@ -180,28 +337,15 @@ def causal_zoh_ack_macro(
     max_ack_age_ms: float,
 ) -> AckMacro:
     grid = validate_macro_grid(grid_monotonic_ns)
-    records = tuple(ack.validate() for ack in acknowledgements)
-    stamps = np.asarray([ack.receive_monotonic_ns for ack in records], dtype=np.int64)
-    if len(stamps) == 0 or (len(stamps) > 1 and np.any(np.diff(stamps) <= 0)):
-        raise TransitionContractError("ONLINE_REPLAY_ACK_TIMESTAMPS_NOT_STRICTLY_INCREASING")
-    selected = select_latest_causal(
-        stamps, np.asarray(grid, dtype=np.int64), max_age_ms=max_ack_age_ms,
-    )
-    if not selected.valid.all():
-        raise TransitionContractError("ONLINE_REPLAY_ACK_MISSING_OR_STALE")
-    chosen = tuple(records[int(index)] for index in selected.source_indices)
-    if any(ack.receive_monotonic_ns > tick for ack, tick in zip(chosen, grid, strict=True)):
-        raise AssertionError("ONLINE_REPLAY_FUTURE_ACK_SELECTED")
-    return AckMacro(
-        grid_monotonic_ns=grid,
-        ack_ids=tuple(ack.ack_id for ack in chosen),
-        gripper_command_ids=tuple(ack.gripper_command_id for ack in chosen),
-        gripper_ack_command_ids=tuple(ack.gripper_ack_command_id for ack in chosen),
-        accepted_absolute_action_k7=np.asarray(
-            [ack.accepted_absolute_action7 for ack in chosen], dtype=np.float64,
+    source = acknowledgements[0].accepted_action_source if acknowledgements else ""
+    return build_ack_behavior_macro(
+        accepted_ack_stream=acknowledgements,
+        anchor_timestamp_ns=grid[0],
+        action_source=(
+            "offline_demonstration" if source == "offline" else source
         ),
-        slot_owner=tuple(ack.slot_owner for ack in chosen),
-        workspace_clip_flags=tuple(ack.workspace_clipped for ack in chosen),
+        contract=CRITIC_ACTION_CONTRACT,
+        max_ack_age_ms=max_ack_age_ms,
     )
 
 
@@ -219,6 +363,8 @@ def normalized_ack_behavior_action(
     normalized = np.asarray(normalize_delta7(delta), dtype=np.float64)
     if normalized.shape != (3, 7) or not np.isfinite(normalized).all():
         raise TransitionContractError("ONLINE_REPLAY_NORMALIZED_ACK_ACTION_INVALID")
+    mask = np.asarray(macro.behavior_mask, dtype=np.bool_)
+    normalized[~mask] = 0.0
     return normalized
 
 

@@ -10,6 +10,8 @@ from typing import Any, Mapping
 from jsonschema import Draft202012Validator
 import yaml
 
+from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_CONTRACT
+
 
 ROOT = Path(__file__).parents[4]
 CONFIG_PATHS = {
@@ -75,10 +77,37 @@ def validate_online_contracts(
         temporal["data_grid_hz"], temporal["policy_hz"], temporal["flow_horizon"],
         temporal["critic_slots"], temporal["critic_action_features"],
         temporal["macro_duration_ms"],
-    ) != (30, 10, 50, 3, 7, 100):
+    ) != (
+        CRITIC_ACTION_CONTRACT.model_grid_hz,
+        CRITIC_ACTION_CONTRACT.execution_hz,
+        CRITIC_ACTION_CONTRACT.flow_horizon,
+        CRITIC_ACTION_CONTRACT.critic_slots,
+        CRITIC_ACTION_CONTRACT.action_dim,
+        CRITIC_ACTION_CONTRACT.macro_duration_ns // 1_000_000,
+    ):
         raise ValueError("ONLINE_REPLAY_TEMPORAL_CONTRACT_DRIFT")
-    if transition["temporal_parity"]["status"] != "BLOCKED":
-        raise ValueError("ONLINE_REPLAY_RECORDED_TEMPORAL_PARITY_MUST_REMAIN_BLOCKED")
+    if (
+        temporal["full_macro_required"] is not False
+        or temporal["partial_macro_policy"] != "masked_prefix"
+        or transition["critic_action_contract_version"]
+        != CRITIC_ACTION_CONTRACT.version
+    ):
+        raise ValueError("ONLINE_REPLAY_PARTIAL_MACRO_CONTRACT_DRIFT")
+    temporal_parity = transition["temporal_parity"]
+    if (
+        temporal_parity["status"] != "REQUIRES_RECORDED_LIVE_VERIFICATION"
+        or temporal_parity["synthetic_fixture_claims_real_parity"] is not False
+    ):
+        raise ValueError("ONLINE_REPLAY_RECORDED_TEMPORAL_PARITY_CONFIG_INVALID")
+    from forcesmolvla.rft.online.temporal_parity import (
+        run_p0a_recorded_live_parity,
+    )
+
+    parity = run_p0a_recorded_live_parity(
+        ROOT / temporal_parity["recorded_live_fixture"]
+    )
+    if parity["formal_gate"] != "PASS":
+        raise ValueError("ONLINE_REPLAY_RECORDED_TEMPORAL_PARITY_BLOCKED")
     if replay["intervention"]["canonical_payload_copies"] != 1:
         raise ValueError("ONLINE_REPLAY_REPLAY_CANONICAL_PAYLOAD_NOT_DEDUPLICATED")
     if reward["reward_gate"]["reward_bearing_online_update_authorized"]:
@@ -90,7 +119,7 @@ def validate_online_contracts(
     return {
         "bootstrap_parent_binding": "PENDING",
         "bootstrap_optimizer_rebuilt": "NOT_RUN",
-        "temporal_parity": "BLOCKED",
+        "temporal_parity": "PASS",
         "critic_ready": False,
         "actor_q_guidance_enabled": False,
         "robot_execution_authorized": False,

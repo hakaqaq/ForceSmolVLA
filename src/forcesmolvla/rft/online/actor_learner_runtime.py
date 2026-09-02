@@ -103,13 +103,13 @@ def exact_resume_checkpoint_is_recoverable(
     )
     if expected_kind == "online_actor_critic_exact_resume":
         from forcesmolvla.rft.critic_action_adapter_v2 import (
-            CRITIC_ACTION_SEMANTICS_V2,
+            CRITIC_ACTION_CONTRACT,
         )
 
         files_complete = (
             files_complete
-            and metadata.get("critic_action_semantics")
-            == CRITIC_ACTION_SEMANTICS_V2
+            and metadata.get("critic_action_contract_version")
+            == CRITIC_ACTION_CONTRACT.version
         )
     if not files_complete:
         return False

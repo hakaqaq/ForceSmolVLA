@@ -29,6 +29,7 @@ def _policy_row(
     def observation(timestamp_ns: int) -> dict:
         return {
             "materialized_timestamp_monotonic_ns": timestamp_ns,
+            "clock_domain_id": "upper-host-monotonic",
             "state7_absolute": [0.0] * 7,
             "wrench6_calibrated_tcp": [0.0] * 6,
             "camera_external": {"blob_reference": "external.jpg"},

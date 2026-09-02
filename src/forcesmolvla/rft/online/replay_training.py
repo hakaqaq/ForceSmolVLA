@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from io import BytesIO
 import json
@@ -19,9 +19,12 @@ from forcesmolvla.rft.online.transition_authority import (
     AcceptedAck,
     AckMacro,
     TransitionContractError,
-    causal_zoh_ack_macro,
+    build_ack_behavior_macro,
     normalized_ack_behavior_action,
-    validate_macro_grid,
+)
+from forcesmolvla.rft.critic_action_adapter_v2 import (
+    CRITIC_ACTION_CONTRACT,
+    build_critic_transition_grid,
 )
 
 
@@ -66,54 +69,136 @@ def _rational_grid_from_transition(
     row: Mapping[str, Any],
 ) -> tuple[tuple[int, int, int], int]:
     anchor = int(row["observation"]["materialized_timestamp_monotonic_ns"])
-    index = (anchor * 30 + 500_000_000) // 1_000_000_000
-    ticks = tuple(
-        int(((index + offset) * 1_000_000_000 + 15) // 30)
-        for offset in range(4)
+    grid, nominal_next = build_critic_transition_grid(
+        anchor, contract=CRITIC_ACTION_CONTRACT
     )
-    grid = validate_macro_grid(ticks[:3])
-    if anchor != grid[0] or int(
+    actual_next = int(
         row["next_observation"]["materialized_timestamp_monotonic_ns"]
-    ) != ticks[3]:
-        raise RuntimeError("FORCERFT_ONLINE_REPLAY_TRANSITION_HORIZON_NOT_100MS")
-    return grid, ticks[3]
+    )
+    outcome = row["outcome"]
+    boundary = bool(outcome["terminated"] or outcome.get("truncated", False))
+    if (
+        actual_next <= anchor
+        or actual_next > nominal_next
+        or (not boundary and actual_next != nominal_next)
+    ):
+        raise RuntimeError("FORCERFT_ONLINE_REPLAY_TRANSITION_HORIZON_INVALID")
+    persisted = row.get("critic_action_contract")
+    if persisted is not None and (
+        persisted.get("contract_version") != CRITIC_ACTION_CONTRACT.version
+        or tuple(persisted.get("grid_timestamp_ns", ())) != grid
+        or int(persisted.get("next_timestamp_ns", -1)) != actual_next
+    ):
+        raise RuntimeError("FORCERFT_ONLINE_REPLAY_PERSISTED_CONTRACT_MISMATCH")
+    return grid, actual_next
 
 
 def _accepted_ack(row: Mapping[str, Any]) -> AcceptedAck:
     authority = row["action_authority"]
     pose_ack = authority["pose_ack"]
     gripper_origin = authority["gripper_terminal_provenance"]
-    command_id = str(gripper_origin["origin_action_goal_id"])
+    source = str(
+        row.get("action_source")
+        or authority.get("executed_action_source", "policy")
+    )
+    command_id = str(
+        gripper_origin.get(
+            "origin_action_goal_id",
+            authority.get("gripper", {}).get("command_id", ""),
+        )
+    )
+    if not command_id:
+        command_id = str(
+            authority.get("gripper", {}).get(
+                "source_command_id", row["identity"]["source_ack_id"]
+            )
+        )
+    selection = row.get("policy_lineage", {}).get("selection", {})
+    persisted = row.get("critic_action_contract", {})
+    revision = str(
+        row.get("policy_lineage", {}).get(
+            "revision", persisted.get("policy_revision", "human-controller")
+        )
+    )
+    generation = row["generation"]
+    receive_ns = int(
+        pose_ack.get(
+            "upper_receive_monotonic_ns", pose_ack.get("receive_monotonic_ns", 0)
+        )
+    )
     return AcceptedAck(
         ack_id=str(row["identity"]["source_ack_id"]),
-        receive_monotonic_ns=int(pose_ack["upper_receive_monotonic_ns"]),
+        receive_monotonic_ns=receive_ns,
         accepted_absolute_action7=tuple(
             float(value) for value in authority["accepted_absolute_action7"]
         ),
         gripper_command_id=command_id,
         gripper_ack_command_id=command_id,
-        slot_owner="policy",
-        accepted_action_source="policy",
-        intervention=False,
+        slot_owner="human_intervention" if source == "human" else "policy",
+        accepted_action_source=source,
+        intervention=source == "human",
         accepted=bool(pose_ack["accepted"]),
         workspace_clipped=bool(
             authority.get("safety_arbitration", {}).get("workspace_clipped", False)
+        ),
+        source_command_id=str(
+            pose_ack.get(
+                "command_id",
+                pose_ack.get("request_stamp_ns", row["identity"]["source_ack_id"]),
+            )
+        ),
+        source_dispatch_sequence=int(
+            selection.get("sequence", row["identity"]["decision_id"])
+        ),
+        source_model_index=int(selection.get("action_index", -1)),
+        episode_id=str(row["identity"]["episode_id"]),
+        policy_revision=revision,
+        takeover_generation=int(generation["takeover_generation"]),
+        reset_generation=int(generation["reset_generation"]),
+        chunk_id=str(selection.get("chunk_id", persisted.get("chunk_id", "human"))),
+        chunk_compatibility_key=str(
+            persisted.get(
+                "chunk_compatibility_key",
+                f"{row['identity']['episode_id']}:{source}:"
+                f"{generation['takeover_generation']}:{generation['reset_generation']}:"
+                f"{revision}",
+            )
+        ),
+        clock_domain=str(
+            persisted.get(
+                "clock_domain", row["observation"].get("clock_domain_id", "")
+            )
+        ),
+        controller_authority=str(
+            persisted.get("controller_authority", "fr3-reference-controller")
         ),
     )
 
 
 def build_ack_macros(
-    rows: Iterable[Mapping[str, Any]], *, max_ack_age_ms: float = 100.0
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    max_ack_age_ms: float = CRITIC_ACTION_CONTRACT.max_ack_age_ms,
 ) -> tuple[ProductionAckMacro, ...]:
     """Build 100 ms K=3 behavior macros from real ACKs on the 30 Hz grid."""
 
-    groups: dict[tuple[str, tuple[int, int, int]], list[Mapping[str, Any]]] = {}
+    groups: dict[tuple[object, ...], list[Mapping[str, Any]]] = {}
     for row in rows:
         if row.get("policy_lineage", {}).get("proposal", {}).get(
             "invalidated_by_takeover"
         ) is True:
             continue
-        key = (str(row["identity"].get("episode_id", "single")), _generation(row))
+        ack = _accepted_ack(row)
+        key = (
+            ack.episode_id,
+            ack.accepted_action_source,
+            ack.takeover_generation,
+            ack.reset_generation,
+            ack.policy_revision,
+            ack.clock_domain,
+            ack.controller_authority,
+            ack.chunk_compatibility_key,
+        )
         groups.setdefault(key, []).append(row)
 
     macros: list[ProductionAckMacro] = []
@@ -132,31 +217,74 @@ def build_ack_macros(
             ),
         ):
             grid, next_grid = _rational_grid_from_transition(row)
+            outcome = row["outcome"]
+            boundary = (
+                next_grid
+                if outcome["terminated"] or outcome.get("truncated", False)
+                else None
+            )
+            action_source = _accepted_ack(row).accepted_action_source
             try:
-                behavior = causal_zoh_ack_macro(
-                    acknowledgements, grid, max_ack_age_ms=max_ack_age_ms
+                behavior = build_ack_behavior_macro(
+                    accepted_ack_stream=acknowledgements,
+                    anchor_timestamp_ns=grid[0],
+                    action_source=action_source,
+                    contract=CRITIC_ACTION_CONTRACT,
+                    max_ack_age_ms=max_ack_age_ms,
+                    boundary_timestamp_ns=boundary,
+                    required_anchor_ack_id=(
+                        str(row["identity"]["source_ack_id"])
+                        if action_source == "policy"
+                        and row.get("critic_action_contract", {}).get(
+                            "anchor_semantics"
+                        ) == "controller-accepted-command-effective"
+                        else None
+                    ),
                 )
             except TransitionContractError as error:
-                if str(error) == "ONLINE_REPLAY_ACK_MISSING_OR_STALE":
+                if str(error) in {
+                    "ONLINE_REPLAY_ACK_MISSING_OR_STALE",
+                    "ONLINE_REPLAY_COMMAND_EFFECTIVE_PHASE_CHANGED",
+                }:
                     continue
                 raise
+            persisted = row.get("critic_action_contract")
+            if persisted is not None:
+                expected = {
+                    "contract_version": behavior.contract_version,
+                    "action_source": action_source,
+                    "grid_timestamp_ns": list(behavior.grid_monotonic_ns),
+                    "next_timestamp_ns": behavior.next_timestamp_ns,
+                    "source_command_ids": list(behavior.source_command_ids),
+                    "source_ack_ids": list(behavior.ack_ids),
+                    "source_dispatch_sequences": list(
+                        behavior.source_dispatch_sequences
+                    ),
+                    "source_model_indices": list(behavior.source_model_indices),
+                    "source_chunk_ids": list(behavior.chunk_ids),
+                    "behavior_mask": list(behavior.behavior_mask),
+                    "macro_duration_ns": behavior.macro_duration_ns,
+                    "discount": float(row["outcome"]["discount"]),
+                }
+                if any(persisted.get(key) != value for key, value in expected.items()):
+                    raise RuntimeError(
+                        "FORCERFT_ONLINE_REPLAY_PERSISTED_ACK_PROVENANCE_MISMATCH"
+                    )
             provenance = tuple(
                 {
                     "ack_id": ack_id,
-                    "receive_monotonic_ns": int(
-                        by_ack_id[ack_id]["action_authority"]["pose_ack"][
-                            "upper_receive_monotonic_ns"
-                        ]
+                    "receive_monotonic_ns": (
+                        -1 if not ack_id else _accepted_ack(by_ack_id[ack_id]).receive_monotonic_ns
                     ),
-                    "chunk_id": str(
-                        by_ack_id[ack_id]["policy_lineage"]["selection"]["chunk_id"]
+                    "source_command_id": behavior.source_command_ids[slot],
+                    "chunk_id": behavior.chunk_ids[slot],
+                    "action_index": behavior.source_model_indices[slot],
+                    "dispatch_sequence": behavior.source_dispatch_sequences[slot],
+                    "generation": (
+                        {} if not ack_id else dict(by_ack_id[ack_id]["generation"])
                     ),
-                    "action_index": int(
-                        by_ack_id[ack_id]["policy_lineage"]["selection"]["action_index"]
-                    ),
-                    "generation": dict(by_ack_id[ack_id]["generation"]),
                 }
-                for ack_id in behavior.ack_ids
+                for slot, ack_id in enumerate(behavior.ack_ids)
             )
             macros.append(ProductionAckMacro(row, behavior, next_grid, provenance))
     return tuple(macros)
@@ -222,9 +350,11 @@ def load_formal_online_r(root: Path) -> tuple[
         row.setdefault("expert", source == "human")
         row.setdefault("intervention", source == "human")
         if source == "human":
-            target = np.asarray(row.get("human_action_target"), dtype=np.float64)
+            target = np.asarray(
+                row.get("human_action_target_h50"), dtype=np.float64
+            )
             mask = np.asarray(
-                row.get("human_action_valid_mask"), dtype=np.bool_
+                row.get("human_action_valid_mask_h50"), dtype=np.bool_
             )
             require(
                 row["expert"] is True
@@ -235,8 +365,6 @@ def load_formal_online_r(root: Path) -> tuple[
                 and np.all(np.isfinite(target)),
                 "FORCERFT_ONLINE_HUMAN_EXPERT_TARGET_INVALID",
             )
-            row["action_target"] = target.tolist()
-            row["action_valid_mask"] = mask.tolist()
             human_rows.append(row)
         else:
             require(
@@ -332,14 +460,8 @@ class FormalReplay:
             width = float(absolute[slot, 6])
             require(np.isclose(width, 0.0, atol=1e-6) or np.isclose(width, 0.085, atol=1e-6), "FORCERFT_ONLINE_REPLAY_GRIPPER_ENDPOINT")
             absolute[slot, 6] = 0.0 if width < 0.0425 else 0.085
-        behavior = AckMacro(
-            grid_monotonic_ns=macro.behavior.grid_monotonic_ns,
-            ack_ids=macro.behavior.ack_ids,
-            gripper_command_ids=macro.behavior.gripper_command_ids,
-            gripper_ack_command_ids=macro.behavior.gripper_ack_command_ids,
-            accepted_absolute_action_k7=absolute,
-            slot_owner=macro.behavior.slot_owner,
-            workspace_clip_flags=macro.behavior.workspace_clip_flags,
+        behavior = replace(
+            macro.behavior, accepted_absolute_action_k7=absolute
         )
         action = normalized_ack_behavior_action(
             behavior,
@@ -352,7 +474,11 @@ class FormalReplay:
             "current": self._sample(row["observation"], f"R:{uid}:current", episode_id),
             "next": self._sample(row["next_observation"], f"R:{uid}:next", episode_id),
             "behavior_action": action,
+            "behavior_mask": np.asarray(
+                macro.behavior.behavior_mask, dtype=np.bool_
+            ),
             "behavior_provenance": macro.ack_provenance,
+            "critic_action_contract_version": macro.behavior.contract_version,
             "reward": float(row["outcome"]["reward"]),
             "terminated": bool(row["outcome"]["terminated"]),
             "truncated": bool(row["outcome"]["truncated"]),
@@ -364,7 +490,8 @@ class FormalReplay:
 
 class HumanCorrectionReplay:
     def __init__(self, rows, source_episodes: Mapping[str, Path], normalizer) -> None:
-        self.rows = tuple(rows)
+        self.macros = build_ack_macros(rows)
+        self.rows = tuple(macro.transition for macro in self.macros)
         self.source_episodes = dict(source_episodes)
         self.normalizer = normalizer
 
@@ -394,17 +521,26 @@ class HumanCorrectionReplay:
     def materialize(self, index: int) -> dict[str, Any]:
         from forcesmolvla.action_delta import ActionDeltaProcessor
 
-        row = self.rows[index]
-        target = np.asarray(row["action_target"], dtype=np.float64)
-        feature_mask = np.asarray(row["action_valid_mask"], dtype=np.bool_)
+        macro = self.macros[index]
+        row = macro.transition
+        target = np.asarray(row["human_action_target_h50"], dtype=np.float64)
+        feature_mask = np.asarray(
+            row["human_action_valid_mask_h50"], dtype=np.bool_
+        )
         state = np.asarray(row["observation"]["state7_absolute"], dtype=np.float64)
         absolute = np.where(feature_mask, target, state[None, :])
         action_target = self.normalizer.delta_action7.apply(
             ActionDeltaProcessor.to_delta(absolute, state)
         ).astype(np.float32)
         action_target[~feature_mask] = 0.0
-        behavior_mask = feature_mask[:3].any(axis=1)
-        require(bool(behavior_mask.any()), "FORCERFT_ONLINE_HUMAN_TD_ACTION_EMPTY")
+        human_behavior_action_k3 = normalized_ack_behavior_action(
+            macro.behavior,
+            anchor_state7=state,
+            normalize_delta7=self.normalizer.delta_action7.apply,
+        ).astype(np.float32)
+        human_behavior_mask_k3 = np.asarray(
+            macro.behavior.behavior_mask, dtype=np.bool_
+        )
         uid = str(row["identity"]["transition_uid"])
         episode_id = str(row["identity"]["episode_id"])
         return {
@@ -414,8 +550,8 @@ class HumanCorrectionReplay:
             "next": self._sample(
                 row["next_observation"], f"H:{uid}:next", episode_id
             ),
-            "behavior_action": action_target[:3],
-            "behavior_mask": behavior_mask,
+            "behavior_action": human_behavior_action_k3,
+            "behavior_mask": human_behavior_mask_k3,
             "reward": float(row["outcome"]["reward"]),
             "terminated": bool(row["outcome"]["terminated"]),
             "truncated": bool(row["outcome"]["truncated"]),
@@ -426,6 +562,11 @@ class HumanCorrectionReplay:
             "action_source": "human",
             "action_target": action_target,
             "action_valid_mask": feature_mask,
+            "human_action_target_h50": action_target,
+            "human_action_valid_mask_h50": feature_mask,
+            "human_behavior_action_k3": human_behavior_action_k3,
+            "human_behavior_mask_k3": human_behavior_mask_k3,
+            "critic_action_contract_version": macro.behavior.contract_version,
         }
 
 
@@ -447,7 +588,7 @@ class DemoReplay:
         ).to_pylist()
         self.population = tuple(
             index for index, row in enumerate(self.rows)
-            if all(row["executed_action_mask"])
+            if any(row["executed_action_mask"])
         )
         require(self.population, "FORCERFT_ONLINE_REPLAY_DEMO_POPULATION_EMPTY")
         conversion = json.loads((DATASET / "conversion_manifest.json").read_text(encoding="utf-8"))
@@ -487,12 +628,25 @@ class DemoReplay:
     def materialize(self, index: int) -> dict[str, Any]:
         row = self.rows[index]
         identity = f"D:{row['episode_id']}:{row['transition_index']}"
-        action = np.asarray(row["normalized_delta_action_exec_flat"], dtype=np.float32).reshape(3, 7)
-        require(action.shape == (3, 7), "FORCERFT_ONLINE_REPLAY_DEMO_ACTION_SHAPE")
+        behavior_mask = np.asarray(row["executed_action_mask"], dtype=np.bool_)
+        executed = np.asarray(
+            row["normalized_delta_action_exec_flat"], dtype=np.float32
+        ).reshape(-1, 7)
+        require(
+            executed.shape == (int(behavior_mask.sum()), 7),
+            "FORCERFT_ONLINE_REPLAY_DEMO_ACTION_SHAPE",
+        )
+        action = np.zeros((3, 7), dtype=np.float32)
+        action[behavior_mask] = executed
         return {
             "current": self._sample(row["observation_row_reference"], identity + ":current", self.tasks[row["episode_id"]]),
             "next": self._sample(row["next_observation_row_reference"], identity + ":next", self.tasks[row["episode_id"]]),
             "behavior_action": action,
+            "behavior_mask": behavior_mask,
+            "critic_action_contract_version": row.get(
+                "critic_action_contract_version",
+                CRITIC_ACTION_CONTRACT.version,
+            ),
             "reward": float(row["reward"]),
             "terminated": bool(row["terminated"]),
             "truncated": bool(row.get("truncated", False)),

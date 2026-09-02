@@ -2,6 +2,7 @@
   "schema_version": "forcesmolvla_stage3_transition_contract.v1.development",
   "status": "frozen_for_g1_g2_cpu",
   "schema": "schemas/stage3_ack_transition.v1.schema.json",
+  "critic_action_contract_version": "critic-action-contract-v3-command-effective-r30-k3",
   "temporal": {
     "data_grid_hz": 30,
     "policy_hz": 10,
@@ -9,8 +10,8 @@
     "critic_slots": 3,
     "critic_action_features": 7,
     "macro_duration_ms": 100,
-    "full_macro_required": true,
-    "partial_macro_policy": "quarantine",
+    "full_macro_required": false,
+    "partial_macro_policy": "masked_prefix",
     "projection": "latest_causal_zoh_on_fixed_30hz_grid"
   },
   "behavior_action": {
@@ -37,9 +38,9 @@
     "same_uid_different_digest": "fatal"
   },
   "temporal_parity": {
-    "status": "BLOCKED",
-    "recorded_live_fixture": null,
-    "reason": "recorded_live_ack_fixture_not_present_in_repository",
+    "status": "REQUIRES_RECORDED_LIVE_VERIFICATION",
+    "recorded_live_fixture": "golden_fixtures/stage3_p0a_recorded_live_evidence.v1.json",
+    "reason": "formal status is computed by reconstructing hash-bound recorded-live evidence",
     "synthetic_fixture_claims_real_parity": false
   },
   "bindings": {

@@ -31,13 +31,20 @@ def test_g1_contracts_are_cross_consistent_and_locked() -> None:
     assert result == {
         "bootstrap_parent_binding": "PENDING",
         "bootstrap_optimizer_rebuilt": "NOT_RUN",
-        "temporal_parity": "BLOCKED",
+        "temporal_parity": "PASS",
         "critic_ready": False,
         "actor_q_guidance_enabled": False,
         "robot_execution_authorized": False,
     }
     values = load_online_contracts()
-    assert values["transition"]["temporal_parity"]["recorded_live_fixture"] is None
+    assert values["transition"]["temporal_parity"]["recorded_live_fixture"] == (
+        "golden_fixtures/stage3_p0a_recorded_live_evidence.v1.json"
+    )
+    assert (
+        values["transition"]["temporal_parity"]
+        ["synthetic_fixture_claims_real_parity"]
+        is False
+    )
     assert values["online_hil"]["readiness"]["recorded_loopback"] == "NOT_RUN"
 
 

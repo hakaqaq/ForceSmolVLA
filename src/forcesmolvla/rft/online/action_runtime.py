@@ -269,6 +269,24 @@ class SelectionLedgerEntry:
             slot_owner="policy",
             accepted_action_source="policy",
             intervention=False,
+            source_command_id=self.pose_command_id,
+            source_dispatch_sequence=self.dispatch_sequence,
+            source_model_index=self.selected_index,
+            episode_id=(
+                f"runtime-ledger:{self.policy_revision}:"
+                f"{self.policy_epoch}:{self.takeover_generation}:"
+                f"{self.reset_generation}"
+            ),
+            policy_revision=self.policy_revision,
+            takeover_generation=self.takeover_generation,
+            reset_generation=self.reset_generation,
+            chunk_id=self.chunk_id,
+            chunk_compatibility_key=(
+                f"{self.policy_revision}:{self.policy_epoch}:"
+                f"{self.takeover_generation}:{self.reset_generation}"
+            ),
+            clock_domain=clock_domain_id,
+            controller_authority="dual-ack-runtime-ledger",
         ).validate()
 
 

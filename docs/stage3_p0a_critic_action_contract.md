@@ -1,7 +1,8 @@
 # Stage-3 P0-A Critic Action Contract
 
-Status: implementation target.  Formal online training remains blocked until the
-recorded-live evidence described below passes.
+Status: P0-A closed on `stage3-online-hil`.  Formal parity is computed at runtime
+from hash-bound recorded-live evidence; a stale binding or synthetic fixture
+returns `BLOCKED`.
 
 ## Canonical contract
 
@@ -37,6 +38,10 @@ candidate]`, derived by the shared rational execution selector rather than by a
 literal index tuple.  A policy replay transition whose ACK phase or subsequent
 authority change violates that command-effective interval is quarantined; it is
 not treated as approximately aligned.
+
+The bridge persists both the number and ratio of policy transitions quarantined
+for a mid-macro effective-command change.  The recorded-live positive fixture
+has zero such quarantines; this is an exact contract, not an approximation.
 
 The current observation is the observation at that effective tick, the reward is
 for the same physical interval, and the nominal next observation is exactly the
@@ -106,3 +111,11 @@ demo behavior, Actor candidate, and bootstrap candidate.  The gate remains
 blocked if any path, identity check, numeric comparison, source-tree binding, or
 normalizer binding is missing or stale.  The parity tool never connects to or
 commands a robot.
+
+The accepted positive evidence is
+`golden_fixtures/stage3_p0a_recorded_live_evidence.v1.json`, derived from
+`datasets/online/000/episodes/episode_000000`.  It reconstructs 517 policy and
+83 human transitions, checks one real partial terminal transition and one real
+offline-demo partial transition, and verifies recorded Actor/bootstrap
+candidates against the shared projection.  Its formal gate result is `PASS` and
+its robot-command count is zero.

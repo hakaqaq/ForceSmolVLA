@@ -12,6 +12,7 @@ from typing import Callable, Iterator, Literal
 import numpy as np
 
 from forcesmolvla.action_delta import ActionDeltaProcessor
+from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_CONTRACT
 from forcesmolvla.training_data import prepare_training_sample
 
 
@@ -171,17 +172,20 @@ class MacroTransitionSpec:
     bootstrap_mask: float
     discount: float
     mc_return: float
+    behavior_mask: tuple[bool, bool, bool]
 
 
 def macro_transition_specs(terminal_frame_index: int) -> tuple[MacroTransitionSpec, ...]:
     """Synthetic-only endpoint-reward fixture; not a task2 label inference rule."""
-    if terminal_frame_index < EXECUTED_ACTION_SLOTS:
-        raise ValueError("v4 terminal boundary must admit one complete K=3 action")
-    if terminal_frame_index % ANCHOR_STRIDE:
-        raise ValueError("v4 terminal boundary must align to the 10 Hz decision grid")
+    if terminal_frame_index < 1:
+        raise ValueError("terminal boundary must admit one executed action")
     raw = []
     for anchor in range(0, terminal_frame_index, ANCHOR_STRIDE):
-        next_frame = anchor + EXECUTED_ACTION_SLOTS
+        next_frame = min(anchor + EXECUTED_ACTION_SLOTS, terminal_frame_index)
+        executed_steps = next_frame - anchor
+        behavior_mask = tuple(
+            slot < executed_steps for slot in range(EXECUTED_ACTION_SLOTS)
+        )
         terminated = next_frame == terminal_frame_index
         bootstrap = 0.0 if terminated else 1.0
         raw.append(
@@ -192,6 +196,7 @@ def macro_transition_specs(terminal_frame_index: int) -> tuple[MacroTransitionSp
                 "terminated": terminated,
                 "bootstrap": bootstrap,
                 "discount": GAMMA * bootstrap,
+                "behavior_mask": behavior_mask,
             }
         )
     returns = [0.0] * len(raw)
@@ -208,6 +213,7 @@ def macro_transition_specs(terminal_frame_index: int) -> tuple[MacroTransitionSp
             bootstrap_mask=item["bootstrap"],
             discount=item["discount"],
             mc_return=returns[index],
+            behavior_mask=item["behavior_mask"],
         )
         for index, item in enumerate(raw)
     )
@@ -276,9 +282,11 @@ def iter_episode_transitions(
         valid = prepared["action_valid_mask"]
         feature = valid[:, None] & np.ones((1, 7), dtype=np.bool_)
         critic_action = np.asarray(normalized[:EXECUTED_ACTION_SLOTS], dtype=np.float32)
+        behavior_mask = np.asarray(spec.behavior_mask, dtype=np.bool_)
+        critic_action[~behavior_mask] = 0.0
         actor_q_mask = np.broadcast_to(
             np.arange(7)[None, :] < 6, (EXECUTED_ACTION_SLOTS, 7)
-        )
+        ) & behavior_mask[:, None]
         row = {
             "raw_episode_id": outcome["raw_episode_id"],
             "output_episode_index": episode_index,
@@ -292,6 +300,15 @@ def iter_episode_transitions(
             "anchor_global_index": int(global_indices[anchor]),
             "next_global_index": int(global_indices[spec.next_frame_index]),
             "critic_action_k7": critic_action.reshape(-1).tolist(),
+            "executed_action_mask": behavior_mask.tolist(),
+            "critic_action_contract_version": CRITIC_ACTION_CONTRACT.version,
+            "critic_macro_duration_ns": int(
+                round(
+                    (spec.next_frame_index - anchor)
+                    * 1_000_000_000
+                    / CRITIC_ACTION_CONTRACT.model_grid_hz
+                )
+            ),
             "actor_q_gradient_mask_k7": actor_q_mask.reshape(-1).tolist(),
             "reward": spec.reward,
             "terminated": spec.terminated,

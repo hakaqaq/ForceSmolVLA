@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 
-from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_SEMANTICS_V2
+from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_CONTRACT
 
 from forcesmolvla.rft.online.actor_learner_runtime import (
     AsyncRuntimeError,
@@ -45,7 +45,9 @@ def _exact_checkpoint(path: Path, kind: str, *, compatible: bool = True) -> None
         "complete": True, "kind": kind, "actor_directory": "actor",
     }
     if kind == "online_actor_critic_exact_resume" and compatible:
-        metadata["critic_action_semantics"] = CRITIC_ACTION_SEMANTICS_V2
+        metadata["critic_action_contract_version"] = (
+            CRITIC_ACTION_CONTRACT.version
+        )
     (path / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
     for relative in EXACT_RESUME_FILES:
         target = path / relative

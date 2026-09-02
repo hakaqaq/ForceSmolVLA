@@ -1843,6 +1843,42 @@ def test_policy_execution_excludes_held_action_after_takeover_until_new_origin(
     assert report.quarantined_count == 0
 
 
+def test_policy_execution_recovers_held_gripper_when_pending_goal_finishes_during_takeover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _replace_post_takeover_gripper_command_with_held(episode)
+    target_path = episode / "streams/gripper_target.jsonl"
+    status_path = episode / "streams/gripper_goal_status.jsonl"
+    targets = [json.loads(line) for line in target_path.read_text().splitlines()]
+    statuses = [json.loads(line) for line in status_path.read_text().splitlines()]
+    targets[0].update(
+        started_monotonic_ns=1_190_000_000,
+        accepted_monotonic_ns=1_195_000_000,
+    )
+    statuses[0].update(
+        accepted_monotonic_ns=1_195_000_000,
+        finished_monotonic_ns=1_220_000_000,
+    )
+    _write_jsonl(target_path, targets)
+    _write_jsonl(status_path, statuses)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "DRY_RUN_READY"
+    assert report.candidate_count == 2
+
+
 def _admission_prepared(episode: Path) -> PreparedEpisode:
     prepared = _fake_materialization(episode).prepared
     prepared.tuple_host_ns[:] -= 20_000_000
@@ -1925,15 +1961,17 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     )
     assert human["expert"] is True and human["intervention"] is True
     assert "policy_lineage" not in human
-    assert np.asarray(human["human_action_target"]).shape == (50, 7)
-    human_mask = np.asarray(human["human_action_valid_mask"], dtype=np.bool_)
+    assert np.asarray(human["human_action_target_h50"]).shape == (50, 7)
+    human_mask = np.asarray(
+        human["human_action_valid_mask_h50"], dtype=np.bool_
+    )
     assert human_mask.shape == (50, 7) and human_mask.sum() == 7
     assert human["action_authority"]["pose_ack"]["accepted"] is True
     assert [item["outcome"]["reward"] for item in payloads] == [0.0, 0.0, 1.0]
     assert [item["outcome"]["terminated"] for item in payloads] == [False, False, True]
-    assert [item["outcome"]["truncated"] for item in payloads] == [True, False, False]
-    assert [item["outcome"]["bootstrap_mask"] for item in payloads] == [0.0, 1.0, 0.0]
-    assert [item["outcome"]["discount"] for item in payloads] == [0.0, 0.99, 0.0]
+    assert [item["outcome"]["truncated"] for item in payloads] == [True, True, False]
+    assert [item["outcome"]["bootstrap_mask"] for item in payloads] == [0.0, 0.0, 0.0]
+    assert [item["outcome"]["discount"] for item in payloads] == [0.0, 0.0, 0.0]
     assert all(
         item["policy_lineage"]["proposal"]["invalidated_by_takeover"] is False
         for item in policy_payloads
@@ -2050,6 +2088,53 @@ def test_human_action_without_accepted_ack_is_not_expert_replay(
 
     assert report.accepted_unique_r_transition_count == 2
     assert report.human_override_replay_count == 0
+
+
+def test_human_action_uses_first_causal_tracker_reference_when_stamp_is_sparse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    intervention_path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_intervention.jsonl"
+    )
+    intervention = json.loads(intervention_path.read_text().splitlines()[0])
+    stamp = intervention["safe_action"]["equilibrium_source_stamp_ns"]
+    ack_rows = [
+        json.loads(line)
+        for line in (episode / "streams/reference_ack.jsonl").read_text().splitlines()
+    ]
+    ack_receive_ns = next(
+        row["receive_monotonic_ns"]
+        for row in ack_rows
+        if row["payload"]["request_stamp_ns"] == stamp
+    )
+    ack = next(
+        row for row in ack_rows if row["payload"]["request_stamp_ns"] == stamp
+    )
+    ack["payload"]["accepted_pose"]["position_m"][0] += 0.002
+    _write_jsonl(episode / "streams/reference_ack.jsonl", ack_rows)
+    reference_path = episode / "streams/accepted_reference.jsonl"
+    references = [
+        json.loads(line) for line in reference_path.read_text().splitlines()
+    ]
+    reference = next(row for row in references if row["source_stamp_ns"] == stamp)
+    reference["source_stamp_ns"] += 1
+    reference["accepted_receive_monotonic_ns"] = ack_receive_ns + 10_000_000
+    reference["pose"]["position_m"][0] += 0.001
+    _write_jsonl(reference_path, references)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+
+    report = _bridge(tmp_path / "formal-r").admit_policy_execution_smoke(
+        episode,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "FORMAL_ONLINE_R_ADMITTED"
+    assert report.human_override_replay_count == 1
 
 
 def test_formal_online_r_admission_excludes_pre_warmup_current_observation(

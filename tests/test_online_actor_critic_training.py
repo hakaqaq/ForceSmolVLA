@@ -169,7 +169,8 @@ def test_loader_partitions_human_expert_from_policy_training_start(
                     "safety_arbitration": {"workspace_clipped": False},
                 },
                 "observation": {
-                    "materialized_timestamp_monotonic_ns": current_ns
+                    "materialized_timestamp_monotonic_ns": current_ns,
+                    "clock_domain_id": "upper-host-monotonic",
                 },
                 "next_observation": {
                     "materialized_timestamp_monotonic_ns": current_ns + 100_000_000
@@ -191,8 +192,8 @@ def test_loader_partitions_human_expert_from_policy_training_start(
         "action_source": "human",
         "expert": True,
         "intervention": True,
-        "human_action_target": [[0.0] * 7 for _ in range(50)],
-        "human_action_valid_mask": mask,
+        "human_action_target_h50": [[0.0] * 7 for _ in range(50)],
+        "human_action_valid_mask_h50": mask,
         "identity": {
             "episode_id": episode.name,
             "decision_id": 100,
@@ -223,8 +224,8 @@ def test_loader_partitions_human_expert_from_policy_training_start(
     assert len(humans) == 1
     assert humans[0]["action_source"] == "human"
     assert humans[0]["expert"] is True
-    assert np.asarray(humans[0]["action_target"]).shape == (50, 7)
-    assert np.asarray(humans[0]["action_valid_mask"]).sum() == 7
+    assert np.asarray(humans[0]["human_action_target_h50"]).shape == (50, 7)
+    assert np.asarray(humans[0]["human_action_valid_mask_h50"]).sum() == 7
     assert replay_training.count_sealed_autonomous_policy_transitions(root) == 100
     (root / "replay/unsealed-policy.json").write_text(
         json.dumps({"episode_sealed": False, "payload": policy_rows[0]})
@@ -255,16 +256,45 @@ def test_human_replay_builds_masked_h50_target_with_offline_adapter(
         "camera_wrist": {"blob_reference": "wrist.jpg"},
         "state7_absolute": state.tolist(),
         "wrench6_calibrated_tcp": [0.0] * 6,
+        "materialized_timestamp_monotonic_ns": 1_000_000_000,
+        "clock_domain_id": "upper_host_monotonic",
+    }
+    next_observation = {
+        **observation,
+        "materialized_timestamp_monotonic_ns": 1_100_000_000,
     }
     row = {
+        "action_source": "human",
         "identity": {
             "episode_id": "episode_000000",
+            "decision_id": 1,
+            "source_ack_id": "reference-ack:1:998000000",
             "transition_uid": "human-1",
         },
+        "generation": {
+            "policy_epoch": 1,
+            "takeover_generation": 1,
+            "reset_generation": 0,
+        },
         "observation": observation,
-        "next_observation": observation,
-        "action_target": target.tolist(),
-        "action_valid_mask": mask.tolist(),
+        "next_observation": next_observation,
+        "action_authority": {
+            "executed_action_source": "human",
+            "accepted_absolute_action7": target[1].tolist(),
+            "pose_ack": {
+                "accepted": True,
+                "upper_receive_monotonic_ns": 999_000_000,
+                "request_stamp_ns": 998_000_000,
+                "command_id": "reference-command:1:998000000",
+            },
+            "gripper": {"command_id": "gripper-1"},
+            "gripper_terminal_provenance": {
+                "origin_action_goal_id": "gripper-1"
+            },
+            "safety_arbitration": {"workspace_clipped": False},
+        },
+        "human_action_target_h50": target.tolist(),
+        "human_action_valid_mask_h50": mask.tolist(),
         "outcome": {
             "reward": 0.0,
             "terminated": False,
@@ -287,7 +317,8 @@ def test_human_replay_builds_masked_h50_target_with_offline_adapter(
     assert sample["expert"] is True and sample["action_source"] == "human"
     assert sample["action_target"].shape == (50, 7)
     assert sample["action_valid_mask"].sum() == 7
-    assert sample["behavior_mask"].tolist() == [False, True, False]
+    assert sample["behavior_mask"].tolist() == [True, True, True]
+    assert np.allclose(sample["behavior_action"][:, 0], 0.01)
     assert sample["action_target"][1, 0] == pytest.approx(0.01)
 
 
@@ -462,8 +493,8 @@ def test_joint_checkpoint_round_trip(tmp_path: Path, monkeypatch) -> None:
     assert metadata["source_checkpoint"].endswith("offline_parent")
     assert metadata["joint_cycles"] == 10
     assert metadata["actor_optimizer_restored"] is True
-    assert metadata["critic_action_semantics"].startswith(
-        "k3-rational-30hz-100ms-causal-ack-zoh"
+    assert metadata["critic_action_contract_version"] == (
+        "critic-action-contract-v3-command-effective-r30-k3"
     )
     assert (checkpoint / "artifacts/normalizer_manifest.json").is_file()
     assert (checkpoint / "artifacts/action_delta_spec.json").is_file()

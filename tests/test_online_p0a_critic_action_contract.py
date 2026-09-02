@@ -75,7 +75,7 @@ def _macro(acks, *, source="human", boundary=None):
         anchor_timestamp_ns=1_000_000_000,
         action_source=source,
         contract=_contract(),
-        max_ack_age_ms=50.0,
+        max_ack_age_ms=_contract().max_ack_age_ms,
         boundary_timestamp_ns=boundary,
     )
 
@@ -83,6 +83,8 @@ def _macro(acks, *, source="human", boundary=None):
 def test_human_fm_target_is_not_reused_as_td_action() -> None:
     source = inspect.getsource(HumanCorrectionReplay.materialize)
     assert "action_target[:3]" not in source
+    assert 'row["action_target"]' not in source
+    assert 'row["human_action_target_h50"]' in source
     assert "human_behavior_action_k3" in source
 
 
@@ -141,6 +143,25 @@ def test_actor_candidate_respects_command_effective_phase() -> None:
     )
     assert index_map == (0, 0, 0)
     assert index_map != (0, 1, 2)
+
+
+def test_policy_behavior_rejects_mid_macro_command_refresh() -> None:
+    build = _symbol(transition_authority, "build_ack_behavior_macro")
+    with pytest.raises(
+        transition_authority.TransitionContractError,
+        match="COMMAND_EFFECTIVE_PHASE_CHANGED",
+    ):
+        build(
+            accepted_ack_stream=(
+                _ack("ack-0", 999_000_000, 1.0, source="policy"),
+                _ack("ack-1", 1_050_000_000, 2.0, source="policy"),
+            ),
+            anchor_timestamp_ns=1_000_000_000,
+            action_source="policy",
+            contract=_contract(),
+            max_ack_age_ms=_contract().max_ack_age_ms,
+            required_anchor_ack_id="ack-0",
+        )
 
 
 def test_previous_zoh_slots_receive_no_actor_gradient() -> None:
