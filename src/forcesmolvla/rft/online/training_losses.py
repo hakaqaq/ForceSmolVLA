@@ -30,6 +30,7 @@ class OnlineActorLoss:
     total: Tensor
     expert_flow_matching: Tensor
     actor_q: Tensor
+    policy_behavior_anchor: Tensor
     balance: Tensor
     z: Tensor
     expert_feature_count: int
@@ -203,6 +204,50 @@ def compute_min_twin_q_guidance_from_values(
     return -minimum[actor_q_valid].mean(), count
 
 
+def compute_policy_behavior_anchor_loss(
+    actor_q_action_k7: Tensor,
+    behavior_action_k7: Tensor,
+    behavior_mask: Tensor,
+    policy_row_mask: Tensor,
+    terminated: Tensor,
+    truncated: Tensor,
+) -> Tensor:
+    """Weak TCP6 command-space anchor for ordinary autonomous rows."""
+
+    if actor_q_action_k7.ndim != 3 or tuple(actor_q_action_k7.shape[1:]) != (3, 7):
+        raise ValueError("ONLINE_REPLAY_POLICY_ANCHOR_ACTOR_ACTION_SHAPE")
+    batch = actor_q_action_k7.shape[0]
+    actor_action = _finite_fp32(
+        actor_q_action_k7, "POLICY_ANCHOR_ACTOR_ACTION", (batch, 3, 7)
+    )
+    behavior_action = _finite_fp32(
+        behavior_action_k7, "POLICY_ANCHOR_BEHAVIOR_ACTION", (batch, 3, 7)
+    ).detach()
+    for value, name, shape in (
+        (behavior_mask, "BEHAVIOR_MASK", (batch, 3)),
+        (policy_row_mask, "POLICY_ROW_MASK", (batch,)),
+        (terminated, "TERMINATED", (batch,)),
+        (truncated, "TRUNCATED", (batch,)),
+    ):
+        if value.dtype != torch.bool or tuple(value.shape) != shape:
+            raise ValueError(f"ONLINE_REPLAY_POLICY_ANCHOR_{name}_INVALID")
+    eligible = (
+        policy_row_mask
+        & ~terminated
+        & ~truncated
+        & behavior_mask.any(dim=1)
+    )
+    if not bool(eligible.any()):
+        return actor_action.sum() * 0.0
+    squared_tcp6 = (
+        actor_action[..., :6] - behavior_action[..., :6]
+    ).square() * behavior_mask.unsqueeze(-1)
+    per_row = squared_tcp6.sum(dim=(1, 2)) / (
+        6.0 * behavior_mask.sum(dim=1).clamp_min(1)
+    )
+    return per_row[eligible].mean()
+
+
 def compute_online_actor_objective(
     *,
     per_feature_flow_loss: Tensor,
@@ -211,10 +256,12 @@ def compute_online_actor_objective(
     q1_actor_value: Tensor,
     q2_actor_value: Tensor,
     actor_q_valid: Tensor,
+    policy_behavior_anchor_loss: Tensor | None = None,
     balance_loss: Tensor,
     z_loss: Tensor,
     beta: float,
     eta: float,
+    lambda_policy_behavior_anchor: float = 0.0,
     balance_weight: float = 0.01,
     z_weight: float = 0.001,
 ) -> OnlineActorLoss:
@@ -224,11 +271,35 @@ def compute_online_actor_objective(
     actor_q, actor_q_count = compute_min_twin_q_guidance_from_values(
         q1_actor_value, q2_actor_value, actor_q_valid,
     )
+    anchor = (
+        q1_actor_value.sum() * 0.0
+        if policy_behavior_anchor_loss is None
+        else _finite_fp32(
+            policy_behavior_anchor_loss.reshape(1),
+            "POLICY_BEHAVIOR_ANCHOR_LOSS",
+            (1,),
+        )[0]
+    )
     balance = _finite_fp32(balance_loss.reshape(1), "BALANCE_LOSS", (1,))[0]
     z = _finite_fp32(z_loss.reshape(1), "Z_LOSS", (1,))[0]
-    total = float(beta) * fm + float(eta) * actor_q + balance_weight * balance + z_weight * z
+    total = (
+        float(beta) * fm
+        + float(eta) * actor_q
+        + float(lambda_policy_behavior_anchor) * anchor
+        + balance_weight * balance
+        + z_weight * z
+    )
     _finite_fp32(total.reshape(1), "ACTOR_TOTAL", (1,))
-    return OnlineActorLoss(total, fm, actor_q, balance, z, expert_count, actor_q_count)
+    return OnlineActorLoss(
+        total=total,
+        expert_flow_matching=fm,
+        actor_q=actor_q,
+        policy_behavior_anchor=anchor,
+        balance=balance,
+        z=z,
+        expert_feature_count=expert_count,
+        actor_q_valid_count=actor_q_count,
+    )
 
 
 def compute_online_min_twin_q_actor_loss(**kwargs):

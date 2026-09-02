@@ -246,15 +246,13 @@ def main(argv: list[str] | None = None) -> int:
         state_root=state_root,
         episode_materializer=(
             None
-            if policy_execution_smoke
+            if policy_execution_smoke and args.dry_run
             else frozen_episode_materializer(OneShotFrozenRewardDetector())
         ),
     )
     if args.admit_formal_online_r:
-        if args.operator_task_outcome != "success":
-            raise SystemExit(
-                "--operator-task-outcome success is required for formal online-R admission"
-            )
+        if args.operator_task_outcome not in {"success", "failure"}:
+            raise SystemExit("--operator-task-outcome is required for formal online-R admission")
         try:
             report = bridge.admit_policy_execution_smoke(
                 episode,

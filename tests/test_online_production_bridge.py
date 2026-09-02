@@ -1207,6 +1207,55 @@ def _fake_materialization(episode: Path, *, trigger_frame: int = 9) -> EpisodeMa
     ).validate()
 
 
+def _fake_failure_materialization(episode: Path) -> EpisodeMaterialization:
+    successful = _fake_materialization(episode)
+    count = len(successful.prepared.tuple_host_ns)
+    scores = FrozenDetectorScores(
+        probabilities=(0.0,) * count,
+        validity=(True,) * count,
+    )
+    return EpisodeMaterialization(
+        prepared=successful.prepared,
+        detector_scores=scores,
+        detection_trace=causal_detection_trace(
+            range(count), scores.probabilities, scores.validity
+        ),
+        macros=(),
+        wrench_provenance=successful.wrench_provenance,
+        outcome_provenance=successful.outcome_provenance,
+    ).validate(allow_detector_miss=True)
+
+
+def test_frozen_episode_materializer_defers_detector_miss_for_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    prepared = _fake_materialization(episode).prepared
+    monkeypatch.setattr(
+        bridge_module,
+        "prepare_episode",
+        lambda *_args, **_kwargs: prepared,
+    )
+
+    def detector(value: PreparedEpisode) -> FrozenDetectorScores:
+        count = len(value.tuple_host_ns)
+        return FrozenDetectorScores(
+            probabilities=(0.0,) * count,
+            validity=(True,) * count,
+        )
+
+    materialization = frozen_episode_materializer(detector)(episode)
+
+    assert materialization.detection_trace.trigger_frame is None
+    with pytest.raises(
+        ProductionBridgeError,
+        match="BRIDGE_FROZEN_DETECTOR_DETECTOR_MISS",
+    ):
+        materialization.validate()
+    assert materialization.validate(allow_detector_miss=True) is materialization
+
+
 def _bridge(state: Path, **overrides) -> ProductionBridge:
     return ProductionBridge(
         config=BridgeConfig(**overrides),
@@ -2168,7 +2217,7 @@ def test_formal_online_r_admission_excludes_pre_warmup_current_observation(
     assert terminal["identity"]["decision_id"] == 3
 
 
-def test_formal_online_r_admission_requires_bridge_pass_without_writes(
+def test_failure_detector_success_is_outcome_conflict_without_writes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     episode = _fixture(tmp_path)
@@ -2178,7 +2227,7 @@ def test_formal_online_r_admission_requires_bridge_pass_without_writes(
 
     with pytest.raises(
         ProductionBridgeError,
-        match="BRIDGE_POLICY_EXECUTION_OPERATOR_SUCCESS_REQUIRED",
+        match="BRIDGE_FORMAL_R_OUTCOME_CONFLICT",
     ):
         _bridge(state).admit_policy_execution_smoke(
             episode,
@@ -2186,6 +2235,84 @@ def test_formal_online_r_admission_requires_bridge_pass_without_writes(
         )
 
     assert not state.exists()
+
+
+def _admit_complete_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[object, list[dict]]:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+    state = tmp_path / "formal-r"
+    bridge = ProductionBridge(
+        config=BridgeConfig(),
+        state_root=state,
+        episode_materializer=_fake_failure_materialization,
+    )
+    report = bridge.admit_policy_execution_smoke(
+        episode,
+        operator_task_outcome="failure",
+    )
+    payloads = sorted(
+        (
+            json.loads(path.read_text(encoding="utf-8"))["payload"]
+            for path in (state / "replay").glob("*.json")
+        ),
+        key=lambda item: item["identity"]["decision_id"],
+    )
+    return report, payloads
+
+
+def test_complete_failure_episode_is_td_admitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report, payloads = _admit_complete_failure(tmp_path, monkeypatch)
+
+    assert report.status == "FORMAL_ONLINE_R_ADMITTED"
+    assert report.accepted_unique_r_transition_count == len(payloads) == 3
+    assert all(item["eligibility"]["td_eligible"] is True for item in payloads)
+
+
+def test_failure_terminal_reward_is_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _report, payloads = _admit_complete_failure(tmp_path, monkeypatch)
+
+    assert [item["outcome"]["reward"] for item in payloads] == [0.0, 0.0, 0.0]
+
+
+def test_failure_terminal_is_terminated_without_bootstrap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _report, payloads = _admit_complete_failure(tmp_path, monkeypatch)
+    terminal = payloads[-1]["outcome"]
+
+    assert terminal["terminated"] is True
+    assert terminal["truncated"] is False
+    assert terminal["bootstrap_mask"] == 0.0
+    assert terminal["discount"] == 0.0
+
+
+def test_failure_policy_rows_have_zero_fm_mask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _report, payloads = _admit_complete_failure(tmp_path, monkeypatch)
+    policy = [item for item in payloads if item["action_source"] == "policy"]
+
+    assert policy
+    assert all(item["eligibility"]["fm_eligible"] is False for item in policy)
+    assert all(item["expert"] is False for item in policy)
+
+
+def test_failed_episode_human_rows_are_td_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _report, payloads = _admit_complete_failure(tmp_path, monkeypatch)
+    human = next(item for item in payloads if item["action_source"] == "human")
+
+    assert human["eligibility"]["td_eligible"] is True
+    assert human["eligibility"]["fm_eligible"] is False
+    assert human["expert"] is False
 
 
 def test_policy_execution_generation_mismatch_is_quarantined_without_writes(

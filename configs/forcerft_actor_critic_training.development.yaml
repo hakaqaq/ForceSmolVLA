@@ -80,6 +80,7 @@ optimizer:
 loss:
   beta_expert_flow_matching: 1.0
   eta_actor_q: 0.1
+  lambda_policy_behavior_anchor: 0.1
   balance_weight: 0.01
   z_weight: 0.001
   online_critic: pure_td

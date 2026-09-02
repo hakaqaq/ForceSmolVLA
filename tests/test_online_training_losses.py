@@ -12,6 +12,7 @@ from forcesmolvla.rft.online.training_losses import (
     compute_online_twin_q_td_loss,
     compute_online_actor_objective,
     compute_online_min_twin_q_actor_loss,
+    compute_policy_behavior_anchor_loss,
 )
 from forcesmolvla.rft.critic_action_adapter_v2 import (
     aligned_fresh_chunk_execution_index_map_v2,
@@ -260,3 +261,139 @@ def test_terminal_and_truncation_are_mutually_exclusive() -> None:
             bootstrap_mask=torch.tensor([False]),
             next_policy_action_fn=lambda _: torch.zeros(1, 3, 7),
         )
+
+
+def _policy_anchor(
+    actor: torch.Tensor,
+    behavior: torch.Tensor,
+    behavior_mask: torch.Tensor,
+    policy_rows: torch.Tensor,
+    *,
+    terminated: torch.Tensor | None = None,
+    truncated: torch.Tensor | None = None,
+) -> torch.Tensor:
+    batch = actor.shape[0]
+    return compute_policy_behavior_anchor_loss(
+        actor,
+        behavior,
+        behavior_mask,
+        policy_rows,
+        torch.zeros(batch, dtype=torch.bool) if terminated is None else terminated,
+        torch.zeros(batch, dtype=torch.bool) if truncated is None else truncated,
+    )
+
+
+def test_policy_anchor_applies_only_to_ordinary_policy_rows() -> None:
+    actor = torch.zeros(4, 3, 7)
+    behavior = torch.ones_like(actor)
+    loss = _policy_anchor(
+        actor,
+        behavior,
+        torch.ones(4, 3, dtype=torch.bool),
+        torch.tensor([True, False, True, True]),
+        terminated=torch.tensor([False, False, True, False]),
+        truncated=torch.tensor([False, False, False, True]),
+    )
+
+    assert loss.item() == pytest.approx(1.0)
+
+
+def test_policy_anchor_is_zero_for_demo_and_human_rows() -> None:
+    actor = torch.ones(2, 3, 7, requires_grad=True)
+    loss = _policy_anchor(
+        actor,
+        torch.zeros_like(actor),
+        torch.ones(2, 3, dtype=torch.bool),
+        torch.zeros(2, dtype=torch.bool),
+    )
+
+    assert loss.item() == 0.0 and loss.grad_fn is not None
+
+
+def test_policy_anchor_is_zero_for_terminal_and_truncated_rows() -> None:
+    actor = torch.ones(2, 3, 7, requires_grad=True)
+    loss = _policy_anchor(
+        actor,
+        torch.zeros_like(actor),
+        torch.ones(2, 3, dtype=torch.bool),
+        torch.ones(2, dtype=torch.bool),
+        terminated=torch.tensor([True, False]),
+        truncated=torch.tensor([False, True]),
+    )
+
+    assert loss.item() == 0.0
+
+
+def test_policy_anchor_uses_behavior_mask() -> None:
+    actor = torch.zeros(1, 3, 7)
+    behavior = torch.zeros_like(actor)
+    behavior[:, 0, :6] = 2.0
+    behavior[:, 1:, :6] = 100.0
+    loss = _policy_anchor(
+        actor,
+        behavior,
+        torch.tensor([[True, False, False]]),
+        torch.ones(1, dtype=torch.bool),
+    )
+
+    assert loss.item() == pytest.approx(4.0)
+
+
+def test_policy_anchor_has_actor_tcp6_gradient() -> None:
+    actor = torch.ones(1, 3, 7, requires_grad=True)
+    loss = _policy_anchor(
+        actor,
+        torch.zeros_like(actor),
+        torch.ones(1, 3, dtype=torch.bool),
+        torch.ones(1, dtype=torch.bool),
+    )
+    loss.backward()
+
+    assert torch.count_nonzero(actor.grad[..., :6]) == 18
+
+
+def test_policy_anchor_has_no_behavior_action_gradient() -> None:
+    actor = torch.ones(1, 3, 7, requires_grad=True)
+    behavior = torch.zeros_like(actor, requires_grad=True)
+    loss = _policy_anchor(
+        actor,
+        behavior,
+        torch.ones(1, 3, dtype=torch.bool),
+        torch.ones(1, dtype=torch.bool),
+    )
+    loss.backward()
+
+    assert behavior.grad is None
+
+
+def test_policy_anchor_has_no_gripper_gradient() -> None:
+    actor = torch.ones(1, 3, 7, requires_grad=True)
+    loss = _policy_anchor(
+        actor,
+        torch.zeros_like(actor),
+        torch.ones(1, 3, dtype=torch.bool),
+        torch.ones(1, dtype=torch.bool),
+    )
+    loss.backward()
+
+    assert torch.count_nonzero(actor.grad[..., 6]) == 0
+
+
+def test_online_actor_total_includes_anchor_weight() -> None:
+    terms = compute_online_actor_objective(
+        per_feature_flow_loss=torch.zeros(1, 50, 7),
+        action_valid_mask_h50=torch.ones(1, 50, dtype=torch.bool),
+        expert_feature_mask_h50x7=torch.zeros(1, 50, 7, dtype=torch.bool),
+        q1_actor_value=torch.zeros(1),
+        q2_actor_value=torch.zeros(1),
+        actor_q_valid=torch.ones(1, dtype=torch.bool),
+        policy_behavior_anchor_loss=torch.tensor(2.0),
+        balance_loss=torch.tensor(0.0),
+        z_loss=torch.tensor(0.0),
+        beta=1.0,
+        eta=0.0,
+        lambda_policy_behavior_anchor=0.1,
+    )
+
+    assert terms.policy_behavior_anchor.item() == 2.0
+    assert terms.total.item() == pytest.approx(0.2)

@@ -70,13 +70,13 @@ def _report(command: list[str]) -> dict[str, Any]:
     return value
 
 
-def _admit(args: argparse.Namespace, episode: Path) -> bool:
+def _admit(args: argparse.Namespace, episode: Path, *, outcome: str) -> bool:
     """Materialize the sealed episode and append it exactly once to Online-R."""
 
     report = _report([
         str(args.model_python), str(ROOT / "tools/run_forcerft_production_bridge.py"),
         "--episode", str(episode), "--state-root", str(args.formal_r_root),
-        "--operator-task-outcome", "success", "--admit-formal-online-r",
+        "--operator-task-outcome", outcome, "--admit-formal-online-r",
     ])
     if report.get("status") == "FORMAL_ONLINE_R_REJECTED":
         print(
@@ -104,8 +104,11 @@ def _finish_episode(
     episode: Path,
     outcome: str,
 ) -> bool:
-    require(outcome == "success", "FORCERFT_ONLINE_OPERATOR_OUTCOME_NOT_SUCCESS")
-    return _admit(args, episode)
+    require(
+        outcome in {"success", "failure"},
+        "FORCERFT_ONLINE_OPERATOR_OUTCOME_INVALID",
+    )
+    return _admit(args, episode, outcome=outcome)
 
 
 def _post_json(url: str, payload: Mapping[str, Any]) -> dict[str, Any]:

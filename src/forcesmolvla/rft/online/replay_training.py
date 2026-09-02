@@ -299,6 +299,25 @@ def _sealed_episode_ids(root: Path) -> set[str]:
     return sealed
 
 
+def _transition_eligibility(
+    row: dict[str, Any], source: str | None
+) -> dict[str, Any]:
+    eligibility = row["eligibility"]
+    if "td_eligible" in eligibility and "fm_eligible" in eligibility:
+        return eligibility
+    outcome = row.get("outcome", {})
+    outcome_pair = (
+        outcome.get("operator_task_outcome"),
+        outcome.get("detector_outcome"),
+    )
+    # Before failure admission existed, every admitted row was confirmed-success.
+    # Materialize the new independent fields for those exact-resume artifacts only.
+    if outcome_pair == ("success", "success"):
+        eligibility.setdefault("td_eligible", True)
+        eligibility.setdefault("fm_eligible", source == "human")
+    return eligibility
+
+
 def load_formal_online_r(root: Path) -> tuple[
     list[dict[str, Any]],
     tuple[ProductionAckMacro, ...],
@@ -316,6 +335,14 @@ def load_formal_online_r(root: Path) -> tuple[
             continue
         require(admission.get("policy_execution_smoke_bridge") == "PASS", "FORCERFT_ONLINE_REPLAY_BRIDGE_NOT_PASS")
         require(admission.get("source_episode_semantics") == {"formal_replay": False, "real_online_r": False}, "FORCERFT_ONLINE_REPLAY_SOURCE_SEMANTICS")
+        require(
+            (
+                admission.get("operator_task_outcome"),
+                admission.get("detector_outcome"),
+            )
+            in {("success", "success"), ("failure", "miss")},
+            "FORCERFT_ONLINE_REPLAY_OUTCOME_CONFLICT",
+        )
         episode_id = str(admission["episode_id"])
         require(episode_id not in source_episodes, "FORCERFT_ONLINE_REPLAY_ADMISSION_EPISODE_DUPLICATE")
         source_episodes[episode_id] = Path(admission["source_episode"])
@@ -334,20 +361,25 @@ def load_formal_online_r(root: Path) -> tuple[
             "action_source",
             row.get("action_authority", {}).get("executed_action_source"),
         )
+        eligibility = _transition_eligibility(row, source)
+        fm_eligible = source == "human" and (
+            row["outcome"].get("operator_task_outcome"),
+            row["outcome"].get("detector_outcome"),
+        ) == ("success", "success")
         require(
             row["classification"] == "recorded_live_policy_execution_smoke"
             and source in {"policy", "human"}
             and row["action_authority"]["executed_action_source"] == source
-            and row["eligibility"] == {
-                "formal_replay": True,
-                "formal_training_replay_eligible": True,
-                "real_online_r": True,
-                "replay_membership": "R_online",
-            },
+            and eligibility.get("formal_replay") is True
+            and eligibility.get("formal_training_replay_eligible") is True
+            and eligibility.get("real_online_r") is True
+            and eligibility.get("replay_membership") == "R_online"
+            and eligibility.get("td_eligible") is True
+            and eligibility.get("fm_eligible") is fm_eligible,
             "FORCERFT_ONLINE_REPLAY_MEMBERSHIP",
         )
         row["action_source"] = source
-        row.setdefault("expert", source == "human")
+        row.setdefault("expert", fm_eligible)
         row.setdefault("intervention", source == "human")
         if source == "human":
             target = np.asarray(
@@ -357,7 +389,7 @@ def load_formal_online_r(root: Path) -> tuple[
                 row.get("human_action_valid_mask_h50"), dtype=np.bool_
             )
             require(
-                row["expert"] is True
+                row["expert"] is fm_eligible
                 and row["intervention"] is True
                 and target.shape == (50, 7)
                 and mask.shape == (50, 7)
@@ -409,7 +441,8 @@ def count_sealed_autonomous_policy_transitions(root: Path) -> int:
             "action_source",
             row.get("action_authority", {}).get("executed_action_source"),
         )
-        count += source == "policy"
+        eligibility = _transition_eligibility(row, source)
+        count += source == "policy" and eligibility.get("td_eligible") is True
     return count
 
 
@@ -485,6 +518,10 @@ class FormalReplay:
             "bootstrap": bool(row["outcome"]["bootstrap_mask"]),
             "discount": float(row["outcome"]["discount"]),
             "identity": f"R:{uid}",
+            "expert": False,
+            "action_source": "policy",
+            "td_eligible": True,
+            "fm_eligible": False,
         }
 
 
@@ -543,6 +580,7 @@ class HumanCorrectionReplay:
         )
         uid = str(row["identity"]["transition_uid"])
         episode_id = str(row["identity"]["episode_id"])
+        fm_eligible = bool(row["eligibility"]["fm_eligible"])
         return {
             "current": self._sample(
                 row["observation"], f"H:{uid}:current", episode_id
@@ -558,8 +596,10 @@ class HumanCorrectionReplay:
             "bootstrap": bool(row["outcome"]["bootstrap_mask"]),
             "discount": float(row["outcome"]["discount"]),
             "identity": f"H:{uid}",
-            "expert": True,
+            "expert": fm_eligible,
             "action_source": "human",
+            "td_eligible": True,
+            "fm_eligible": fm_eligible,
             "action_target": action_target,
             "action_valid_mask": feature_mask,
             "human_action_target_h50": action_target,
@@ -653,6 +693,10 @@ class DemoReplay:
             "bootstrap": bool(row["bootstrap_mask"]),
             "discount": float(row["discount"]),
             "identity": identity,
+            "expert": True,
+            "action_source": "offline_demonstration",
+            "td_eligible": True,
+            "fm_eligible": True,
         }
 
 
@@ -676,6 +720,10 @@ def _critic_observation(samples: list[dict[str, Any]], feature: torch.Tensor, de
 def build_batch(rows: list[dict[str, Any]], actor, feature: torch.Tensor, device: torch.device) -> dict[str, Any]:
     from forcesmolvla.rft.batch import build_actor_batch
 
+    require(
+        all(row.get("td_eligible") is True for row in rows),
+        "FORCERFT_ONLINE_REPLAY_BATCH_NOT_TD_ELIGIBLE",
+    )
     rows = sorted(rows, key=lambda row: row["terminated"])
     current = [row["current"] for row in rows]
     following = [row["next"] for row in rows]
@@ -697,5 +745,7 @@ def build_batch(rows: list[dict[str, Any]], actor, feature: torch.Tensor, device
         "truncated": torch.tensor([row["truncated"] for row in rows], dtype=torch.bool, device=device),
         "bootstrap": torch.tensor([row["bootstrap"] for row in rows], dtype=torch.bool, device=device),
         "discount": torch.tensor([row["discount"] for row in rows], dtype=torch.float32, device=device),
+        "td_eligible": torch.tensor([row["td_eligible"] for row in rows], dtype=torch.bool, device=device),
+        "fm_eligible": torch.tensor([row["fm_eligible"] for row in rows], dtype=torch.bool, device=device),
         "identities": tuple(row["identity"] for row in rows),
     }

@@ -164,26 +164,27 @@ outputs/task2/offline/checkpoints/offline_actor_critic_cycle_000210
 `tools/serve_forcerft_actor_learner.py` 是唯一 GPU owner；`tools/run_forcerft_integrated_capture.py` 是唯一机器人控制链。控制仍保持 H50、10 Hz、low-watermark inference、takeover generation、stale result rejection、Pose ACK 和 gripper authority。
 若 inference 期间 wrench causal filter 因源间隙重置并切换 generation，旧 request/result 和未执行 chunk 会被作废；等待现有 250-sample warmup 完成后，同一 episode 使用 fresh observation 重新 inference，恢复等待期间不生成 transition。
 
-episode seal 后，操作者输入 success/failure。success episode 通过 production bridge 的同一次 admission 调用物化 reward/terminal 并 append 到：
+episode seal 后，操作者输入 success/failure。技术记录完整的 success 与 failure episode 都通过 production bridge 的同一次 admission 调用物化 TD transition，并 append 到：
 
 ```text
 outputs/task2/online/replay
 ```
 
-不再先 dry-run 后重复 admission。封口时按动作来源形成两个逻辑池：
+不再先 dry-run 后重复 admission。success 的 detector terminal 保持 `reward=1.0, terminated=true, bootstrap_mask=false, discount=0.0`；failure 使用 sealed episode 最后一个有效 Critic transition 作为零奖励 terminal，且同样不 bootstrap。operator failure 与 frozen detector success trigger 冲突时整条 episode 不进入训练。封口时仍只形成两个 TD 逻辑池：
 
 task2 封口物化在 30 Hz 因果网格上允许双相机样本年龄不超过 `100 ms`，以覆盖正常调度抖动和偶发丢帧；双相机 skew 仍不得超过 `33 ms`，样本年龄超过 `100 ms` 仍拒绝进入 replay。历史 checkpoint 内保存的 provenance 不重写。
 
 ```text
-Expert pool = offline LeRobot demonstrations + sealed online human corrections
-Policy replay = sealed autonomous policy transitions
+D_exp_TD = offline demonstrations + technically complete online human transitions from success/failure episodes
+R_pol_TD = technically complete autonomous policy transitions from success/failure episodes
+D_exp_FM = offline demonstrations + accepted human corrections from confirmed-success episodes
 ```
 
-两类在线 transition 物理上仍只写入 `outputs/task2/online/replay`，通过 `action_source=human|policy`、`expert=true|false` 和 `intervention=true|false` 分区。人工纠正不转换为 LeRobot v3，也不复制图像；observation 继续引用原始 native episode。
+两类在线 transition 物理上仍只写入 `outputs/task2/online/replay`，通过独立的 `td_eligible`、`fm_eligible` 以及 `action_source=human|policy` 分区。自主动作从不作为 expert target；失败 episode 的人工纠正只进入 TD，不进入 FM。人工纠正不转换为 LeRobot v3，也不复制图像；observation 继续引用原始 native episode。
 
-只有真实发布且由 Pose/gripper ACK 确认的人工命令才会物化为 expert transition。它保存实际执行的 post-adapter absolute7、takeover generation 和真实执行 provenance，不伪造 policy request/result/chunk/proposal/ACK。missing/rejected ACK、未执行输入、无法组成 observation/action/next-observation 的残缺记录，以及接管时作废的旧 policy chunk 后缀都不进入任何训练池；same UID 幂等。当前仍在采集、尚未封口的 episode 永远不能被 Learner 采样。
+只有真实发布且由 Pose/gripper ACK 确认的人工命令才会物化为 human transition，其中只有 confirmed-success episode 的纠正是 expert/FM target。它保存实际执行的 post-adapter absolute7、takeover generation 和真实执行 provenance，不伪造 policy request/result/chunk/proposal/ACK。missing/rejected ACK、未执行输入、无法组成 observation/action/next-observation 的残缺记录，以及接管时作废的旧 policy chunk 后缀都不进入任何训练池；same UID 幂等。当前仍在采集、尚未封口的 episode 永远不能被 Learner 采样。
 
-人工纠正按同一 30 Hz action grid 因果投影，并使用与 offline demonstration 相同的 TCP6 delta + absolute gripper adapter 和冻结 normalizer。H50 中以 `human_action_target[H,7]` 和 `human_action_valid_mask[H,7]` 只监督实际执行的人工槽，mask 为 false 的槽不参与 Flow Matching。人工纠正参与 Actor Flow Matching 和 Critic TD；自主 policy transition 只参与 Critic TD 与 Actor Q-guidance，不产生 FM 梯度。接管开始时清空旧 chunk/pending request/旧 observation、接管期间暂停 policy dispatch、释放后 fresh observation + fresh inference 的控制语义保持不变。
+人工纠正按同一 30 Hz action grid 因果投影，并使用与 offline demonstration 相同的 TCP6 delta + absolute gripper adapter 和冻结 normalizer。H50 中以 `human_action_target[H,7]` 和 `human_action_valid_mask[H,7]` 只监督 confirmed-success episode 实际执行的人工槽，mask 为 false 的槽不参与 Flow Matching。自主 policy transition 只参与 Critic TD、Actor Q-guidance 和弱 TCP6 command-space behavior anchor，不产生 FM 梯度；anchor 直接复用 replay 中 ACK-authoritative behavior action，不约束 gripper。接管开始时清空旧 chunk/pending request/旧 observation、接管期间暂停 policy dispatch、释放后 fresh observation + fresh inference 的控制语义保持不变。
 
 ## 10. 持续在线 Actor/Learner
 
@@ -207,7 +208,7 @@ Policy replay = sealed autonomous policy transitions
 `/home/rlc123/ForceSmolVLA/datasets/task2_forcerft_online_001`；不写入
 `/home/rlc123/fr3_client_ws/datasets`。省略 `--root-prefix` 时也使用这一仓库内默认前缀。
 
-Unified server 每次启动只选择并加载一次完整 exact-resume checkpoint，并跨 episode 常驻。`training_starts=100` 只统计 sealed autonomous policy transitions，人工纠正不会提前启动 Learner，也不铸造 policy update credit。达到 100 后 Learner 连续运行。每个 batch 固定为 50% Expert pool + 50% Policy replay，不增加第三个 intervention ratio；两半都进入 Critic TD 和 Actor Q-guidance，只有 Expert 半的 offline demonstration 与有效 masked human correction 进入 FM。每 learner cycle 为 2 Critic + 2 Polyak + 1 Actor。
+Unified server 每次启动只选择并加载一次完整 exact-resume checkpoint，并跨 episode 常驻。`training_starts=100` 统计 success 与 failure episode 中所有已接收的 autonomous policy TD transitions；人工纠正不会提前启动 Learner，也不铸造 policy update credit。达到 100 后 Learner 连续运行。每个 batch 固定为 50% D_exp_TD + 50% R_pol_TD，不增加第三个 replay pool；两半都进入 Critic TD 和 Actor Q-guidance，只有 `D_exp_FM` 进入 FM，ordinary autonomous rows 额外使用权重 `0.1` 的弱 TCP6 behavior anchor。每 learner cycle 为 2 Critic + 2 Polyak + 1 Actor。
 因此 async capture manifest 中 `learner_started=false`（未达 100 条）和 `learner_started=true`（已达 100 条）都是合法状态；两种情况下 `current_episode_sampled_by_learner` 都必须为 `false`。
 
 canonical online loop 在每个 episode 后只打印两行 capture/learner 摘要和一行 admission 摘要；完整 contract、stream quality 与 episode seal 继续保存在 session 文件中，不在终端重复展开。

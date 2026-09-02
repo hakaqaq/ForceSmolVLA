@@ -117,6 +117,7 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
             "model_python": Path("python"), "formal_r_root": Path("r"),
         })(),
         Path("episode"),
+        outcome="success",
     ) is True
     output = capsys.readouterr().out
     assert output.count("\n") == 1
@@ -137,26 +138,27 @@ def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatc
             "model_python": Path("python"), "formal_r_root": Path("r"),
         })(),
         Path("episode"),
+        outcome="failure",
     )
 
     assert admitted is False
     assert "FORMAL_ONLINE_R_REJECTED" in capsys.readouterr().out
 
 
-def test_episode_admission_is_called_once_only_for_success(
+def test_episode_admission_passes_success_and_failure_outcomes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[Path] = []
+    calls: list[tuple[Path, str]] = []
     monkeypatch.setattr(
-        loop, "_admit", lambda _args, episode: calls.append(episode) or True,
+        loop,
+        "_admit",
+        lambda _args, episode, *, outcome: calls.append((episode, outcome)) or True,
     )
 
     episode = tmp_path / "episode"
     loop._finish_episode(object(), episode=episode, outcome="success")
-    assert calls == [episode]
-    with pytest.raises(loop.ContinuousLoopError, match="OPERATOR_OUTCOME_NOT_SUCCESS"):
-        loop._finish_episode(object(), episode=episode, outcome="failure")
-    assert calls == [episode]
+    loop._finish_episode(object(), episode=episode, outcome="failure")
+    assert calls == [(episode, "success"), (episode, "failure")]
 
 
 def test_loop_continues_after_rejected_episode_until_one_is_admitted(

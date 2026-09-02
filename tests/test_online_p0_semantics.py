@@ -195,6 +195,31 @@ def test_each_takeover_marks_only_last_executed_old_generation_policy_row() -> N
         )
 
 
+def test_success_episode_behavior_is_unchanged() -> None:
+    terminal = _formal_online_r_outcome(
+        terminal=True,
+        truncated=False,
+        terminal_observation_id="terminal",
+        operator_task_outcome="success",
+        detector_outcome="success",
+    )
+    ordinary = _formal_online_r_outcome(
+        terminal=False,
+        truncated=False,
+        terminal_observation_id="terminal",
+        operator_task_outcome="success",
+        detector_outcome="success",
+    )
+
+    assert terminal["reward"] == 1.0
+    assert terminal["terminated"] is True
+    assert terminal["bootstrap_mask"] == terminal["discount"] == 0.0
+    assert ordinary["reward"] == 0.0
+    assert ordinary["terminated"] is False
+    assert ordinary["bootstrap_mask"] == 1.0
+    assert ordinary["discount"] == 0.99
+
+
 def test_replay_materializer_and_batch_preserve_truncated(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

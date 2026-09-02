@@ -178,7 +178,11 @@ class JointDemoReplay(warmup.DemoReplay):
             feature_mask = result["action_valid_mask"]
             result["current"]["delta_action7"] = result["action_target"]
             result["current"]["action_valid_mask"] = feature_mask.any(axis=1)
-            result["expert_feature_mask"] = feature_mask
+            result["expert_feature_mask"] = (
+                feature_mask
+                if result["fm_eligible"]
+                else np.zeros_like(feature_mask)
+            )
             return result
         result = self.materialize(index)
         row = self.rows[index]
@@ -221,6 +225,7 @@ def build_actor_training_batch(
     from forcesmolvla.rft.batch import build_actor_batch
 
     samples = [row["current"] for row in rows]
+    action_sources = tuple(row["action_source"] for row in rows)
     return {
         "current_observation": warmup._critic_observation(samples, feature, device),
         "current_actor_batch": build_actor_batch(actor, samples, device, include_action=True),
@@ -228,7 +233,30 @@ def build_actor_training_batch(
         "expert_feature_mask": torch.from_numpy(
             np.stack([row["expert_feature_mask"] for row in rows])
         ).to(device),
-        "action_sources": tuple(row["action_source"] for row in rows),
+        "action_sources": action_sources,
+        "policy_row_mask": torch.tensor(
+            [source == "policy" for source in action_sources],
+            dtype=torch.bool,
+            device=device,
+        ),
+        "behavior_action": torch.from_numpy(
+            np.stack([row["behavior_action"] for row in rows])
+        ).to(device),
+        "behavior_mask": torch.from_numpy(
+            np.stack([row["behavior_mask"] for row in rows])
+        ).to(device),
+        "terminated": torch.tensor(
+            [row["terminated"] for row in rows], dtype=torch.bool, device=device
+        ),
+        "truncated": torch.tensor(
+            [row["truncated"] for row in rows], dtype=torch.bool, device=device
+        ),
+        "td_eligible": torch.tensor(
+            [row["td_eligible"] for row in rows], dtype=torch.bool, device=device
+        ),
+        "fm_eligible": torch.tensor(
+            [row["fm_eligible"] for row in rows], dtype=torch.bool, device=device
+        ),
         "identities": tuple(row["identity"] for row in rows),
     }
 
@@ -400,6 +428,7 @@ def actor_step(
     from forcesmolvla.rft.online.training_losses import (
         compute_online_actor_objective,
         compute_online_min_twin_q_actor_loss,
+        compute_policy_behavior_anchor_loss,
     )
     from forcesmolvla.rft.critic_action_adapter_v2 import (
         command_effective_execution_index_map,
@@ -424,7 +453,18 @@ def actor_step(
             (expert_feature_mask & valid.unsqueeze(-1)).sum()
         )
         require(total_expert_features > 0, "ONLINE_REPLAY_JOINT_NO_EXPERT_FM")
-    fm_total = q_total = 0.0
+        anchor_eligible = (
+            batch["policy_row_mask"]
+            & ~batch["terminated"]
+            & ~batch["truncated"]
+            & batch["behavior_mask"].any(dim=1)
+        )
+        total_anchor_rows = int(anchor_eligible.sum())
+        human_fm_present = any(
+            source == "human" and bool(batch["fm_eligible"][index])
+            for index, source in enumerate(batch["action_sources"])
+        )
+    fm_total = q_total = anchor_total = 0.0
     q1_values: list[torch.Tensor] = []
     q2_values: list[torch.Tensor] = []
     tcp_q_gradient_square = 0.0
@@ -449,6 +489,10 @@ def actor_step(
                 dtype=torch.bool,
                 device=device,
             )
+            local_policy = batch["policy_row_mask"][index]
+            local_terminated = batch["terminated"][index]
+            local_truncated = batch["truncated"][index]
+            local_behavior_mask = batch["behavior_mask"][index]
             fm_noise = torch.randn(microbatch, 50, 7, dtype=torch.float32, device=device)
             fm_time = torch.rand(microbatch, dtype=torch.float32, device=device)
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
@@ -482,7 +526,7 @@ def actor_step(
                     purpose="actor_guidance",
                 )
                 chunk.retain_grad()
-                q_contract_loss, q1_value, q2_value, _q_action = compute_online_min_twin_q_actor_loss(
+                q_contract_loss, q1_value, q2_value, q_action = compute_online_min_twin_q_actor_loss(
                     q1=q1,
                     q2=q2,
                     observation=observation,
@@ -494,6 +538,27 @@ def actor_step(
                     delta_action_std7=delta_std,
                 )
             actor.train(True)
+            policy_anchor = compute_policy_behavior_anchor_loss(
+                q_action,
+                batch["behavior_action"][index],
+                local_behavior_mask,
+                local_policy,
+                local_terminated,
+                local_truncated,
+            )
+            local_anchor_rows = int(
+                (
+                    local_policy
+                    & ~local_terminated
+                    & ~local_truncated
+                    & local_behavior_mask.any(dim=1)
+                ).sum()
+            )
+            anchor_weight = (
+                local_anchor_rows / total_anchor_rows
+                if total_anchor_rows
+                else 0.0
+            )
             expert_count = int(
                 (expert_mask & local_valid.unsqueeze(-1)).sum()
             )
@@ -506,10 +571,15 @@ def actor_step(
                 q1_actor_value=q1_value,
                 q2_actor_value=q2_value,
                 actor_q_valid=torch.ones(microbatch, dtype=torch.bool, device=device),
+                policy_behavior_anchor_loss=policy_anchor,
                 balance_loss=auxiliary.balance,
                 z_loss=auxiliary.z,
                 beta=float(config["loss"]["beta_expert_flow_matching"]) * fm_weight,
                 eta=float(config["loss"]["eta_actor_q"]) * q_weight,
+                lambda_policy_behavior_anchor=(
+                    float(config["loss"]["lambda_policy_behavior_anchor"])
+                    * anchor_weight
+                ),
                 balance_weight=float(config["loss"]["balance_weight"]) / (batch_size / microbatch),
                 z_weight=float(config["loss"]["z_weight"]) / (batch_size / microbatch),
             )
@@ -540,14 +610,16 @@ def actor_step(
             terms.total.backward()
             fm_total += fm_weight * float(terms.expert_flow_matching.detach().cpu())
             q_total += q_weight * float(terms.actor_q.detach().cpu())
+            anchor_total += anchor_weight * float(
+                terms.policy_behavior_anchor.detach().cpu()
+            )
             q1_values.append(q1_value.detach())
             q2_values.append(q2_value.detach())
 
     with slot("actor_optimizer"):
         require(online_fm_gradient_max == 0.0, "ONLINE_REPLAY_JOINT_ONLINE_SELF_IMITATION")
         require(
-            "human" not in batch["action_sources"]
-            or human_fm_gradient_square > 0.0,
+            not human_fm_present or human_fm_gradient_square > 0.0,
             "ONLINE_REPLAY_JOINT_HUMAN_FM_MISSING",
         )
         require(expert_gripper_fm_square > 0.0, "ONLINE_REPLAY_JOINT_EXPERT_GRIPPER_FM_MISSING")
@@ -581,6 +653,7 @@ def actor_step(
     return {
         "fm_loss": fm_total,
         "actor_q_loss": q_total,
+        "policy_behavior_anchor_loss": anchor_total,
         "q1": q1_value,
         "q2": q2_value,
         "actor_gradient_norm": actor_gradient,

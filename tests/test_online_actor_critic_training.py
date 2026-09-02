@@ -115,6 +115,8 @@ def test_loader_partitions_human_expert_from_policy_training_start(
         "episode_id": episode.name,
         "source_episode": str(episode),
         "accepted_unique_r_transition_count": 101,
+        "operator_task_outcome": "success",
+        "detector_outcome": "success",
     }
     (root / "admissions/episode.json").write_text(json.dumps(admission))
     (root / "episodes/episode.json").write_text(
@@ -181,8 +183,14 @@ def test_loader_partitions_human_expert_from_policy_training_start(
                     "truncated": False,
                     "bootstrap_mask": 0.0 if sequence == 99 else 1.0,
                     "discount": 0.0 if sequence == 99 else 0.99,
+                    "operator_task_outcome": "success",
+                    "detector_outcome": "success",
                 },
-                "eligibility": eligibility,
+                "eligibility": {
+                    **eligibility,
+                    "td_eligible": True,
+                    "fm_eligible": False,
+                },
             }
         )
     mask = [[False] * 7 for _ in range(50)]
@@ -205,8 +213,17 @@ def test_loader_partitions_human_expert_from_policy_training_start(
             "reset_generation": 0,
         },
         "action_authority": {"executed_action_source": "human"},
-        "outcome": {"terminated": False, "truncated": False},
-        "eligibility": eligibility,
+        "outcome": {
+            "terminated": False,
+            "truncated": False,
+            "operator_task_outcome": "success",
+            "detector_outcome": "success",
+        },
+        "eligibility": {
+            **eligibility,
+            "td_eligible": True,
+            "fm_eligible": True,
+        },
     }
     for row in [*policy_rows, human]:
         envelope = {"episode_sealed": True, "payload": row}
@@ -230,6 +247,38 @@ def test_loader_partitions_human_expert_from_policy_training_start(
     (root / "replay/unsealed-policy.json").write_text(
         json.dumps({"episode_sealed": False, "payload": policy_rows[0]})
     )
+    assert replay_training.count_sealed_autonomous_policy_transitions(root) == 100
+
+
+def test_training_starts_counts_success_and_failure_policy_rows(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "online"
+    (root / "episodes").mkdir(parents=True)
+    (root / "replay").mkdir()
+    for outcome in ("success", "failure"):
+        episode_id = f"episode-{outcome}"
+        (root / "episodes" / f"{episode_id}.json").write_text(
+            json.dumps({"episode_id": episode_id, "status": "SEALED_COMMITTED"})
+        )
+        for index in range(50):
+            uid = f"{outcome}-{index}"
+            (root / "replay" / f"{uid}.json").write_text(
+                json.dumps(
+                    {
+                        "episode_sealed": True,
+                        "payload": {
+                            "action_source": "policy",
+                            "identity": {
+                                "episode_id": episode_id,
+                                "transition_uid": uid,
+                            },
+                            "eligibility": {"td_eligible": True},
+                        },
+                    }
+                )
+            )
+
     assert replay_training.count_sealed_autonomous_policy_transitions(root) == 100
 
 
@@ -302,6 +351,7 @@ def test_human_replay_builds_masked_h50_target_with_offline_adapter(
             "bootstrap_mask": 1.0,
             "discount": 0.99,
         },
+        "eligibility": {"td_eligible": True, "fm_eligible": True},
     }
     normalizer = SimpleNamespace(
         state7=IdentityNormalizer(),

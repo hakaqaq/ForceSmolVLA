@@ -189,20 +189,29 @@ def _policy_command_effective_phase_is_constant(
 
 
 def _formal_online_r_outcome(
-    *, terminal: bool, truncated: bool, terminal_observation_id: str
+    *,
+    terminal: bool,
+    truncated: bool,
+    terminal_observation_id: str,
+    operator_task_outcome: str = "success",
+    detector_outcome: str = "success",
 ) -> dict[str, Any]:
     if terminal and truncated:
         raise ProductionBridgeError("BRIDGE_FORMAL_R_TERMINAL_AND_TRUNCATED")
+    if operator_task_outcome not in {"success", "failure"}:
+        raise ProductionBridgeError("BRIDGE_FORMAL_R_OPERATOR_OUTCOME_INVALID")
+    if operator_task_outcome == "failure" and detector_outcome == "success":
+        raise ProductionBridgeError("BRIDGE_FORMAL_R_OUTCOME_CONFLICT")
     boundary = terminal or truncated
     return {
-        "reward": 1.0 if terminal else 0.0,
+        "reward": 1.0 if terminal and operator_task_outcome == "success" else 0.0,
         "terminated": terminal,
         "truncated": truncated,
         "done": boundary,
         "bootstrap_mask": 0.0 if boundary else 1.0,
         "discount": 0.0 if boundary else 0.99,
-        "operator_task_outcome": "success",
-        "detector_outcome": "success",
+        "operator_task_outcome": operator_task_outcome,
+        "detector_outcome": detector_outcome,
         "terminal_observation_id": terminal_observation_id,
     }
 
@@ -331,7 +340,7 @@ class EpisodeMaterialization:
     wrench_provenance: Mapping[str, Any]
     outcome_provenance: Mapping[str, Any]
 
-    def validate(self) -> "EpisodeMaterialization":
+    def validate(self, *, allow_detector_miss: bool = False) -> "EpisodeMaterialization":
         count = len(self.prepared.tuple_host_ns)
         if count < 2 or len(self.detector_scores.probabilities) != count:
             raise ProductionBridgeError("BRIDGE_DETECTOR_FRAME_COUNT_MISMATCH")
@@ -339,9 +348,14 @@ class EpisodeMaterialization:
             raise ProductionBridgeError("BRIDGE_DETECTOR_VALIDITY_COUNT_MISMATCH")
         if self.detector_scores.detector_id != CHECKPOINT_SHA256:
             raise ProductionBridgeError("BRIDGE_DETECTOR_IDENTITY_MISMATCH")
-        if self.detection_trace.trigger_frame is None or not self.macros:
-            raise ProductionBridgeError("BRIDGE_FROZEN_DETECTOR_DETECTOR_MISS")
-        if self.macros[-1].next_frame != self.detection_trace.trigger_frame:
+        if self.detection_trace.trigger_frame is None:
+            if self.macros:
+                raise ProductionBridgeError("BRIDGE_DETECTOR_MACRO_CLOSURE_INVALID")
+            if not allow_detector_miss:
+                raise ProductionBridgeError("BRIDGE_FROZEN_DETECTOR_DETECTOR_MISS")
+        elif not self.macros:
+            raise ProductionBridgeError("BRIDGE_DETECTOR_MACRO_CLOSURE_INVALID")
+        elif self.macros[-1].next_frame != self.detection_trace.trigger_frame:
             raise ProductionBridgeError("BRIDGE_DETECTOR_MACRO_CLOSURE_INVALID")
         if not np.all(np.isfinite(self.prepared.wrench6)):
             raise ProductionBridgeError("BRIDGE_MATERIALIZED_WRENCH_NONFINITE")
@@ -467,7 +481,7 @@ def frozen_episode_materializer(
                 "episode_result_fallback_used": False,
                 "time_limit_fallback_used": False,
             },
-        ).validate()
+        )
 
     return materialize
 
@@ -1025,9 +1039,9 @@ class ProductionBridge:
             manifest.get("active_actor_revision"),
         )
         async_learner = any(value is not None for value in async_metadata)
-        if operator_task_outcome != "success":
+        if operator_task_outcome not in {"success", "failure"}:
             raise ProductionBridgeError(
-                "BRIDGE_POLICY_EXECUTION_OPERATOR_SUCCESS_REQUIRED"
+                "BRIDGE_POLICY_EXECUTION_OPERATOR_OUTCOME_REQUIRED"
             )
         if (
             manifest.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
@@ -2513,7 +2527,9 @@ class ProductionBridge:
                 "camera_models": ["D435", "D405"],
                 "technical_seal": "complete",
                 "operator_task_outcome": operator_task_outcome,
-                "detector_outcome": "success",
+                "detector_outcome": (
+                    "success" if operator_task_outcome == "success" else "miss"
+                ),
                 "detector_outcome_source": (
                     "approved_development_policy_execution_smoke_scope"
                 ),
@@ -4269,7 +4285,12 @@ class ProductionBridge:
                 source=terminal_source,
                 prepared=prepared,
             )
-            next_frame = int(terminal_observation["materialized_frame"])
+            terminal_frame = int(terminal_observation["materialized_frame"])
+            next_frame = (
+                min(nominal_next_frame, terminal_frame)
+                if integrated["summary"]["operator_task_outcome"] == "failure"
+                else terminal_frame
+            )
         elif truncated and boundary_timestamp_ns is not None:
             next_frame = min(
                 nominal_next_frame,
@@ -4356,12 +4377,18 @@ class ProductionBridge:
                 terminal_observation_id=str(
                     integrated["summary"]["terminal_observation_id"]
                 ),
+                operator_task_outcome=str(
+                    integrated["summary"]["operator_task_outcome"]
+                ),
+                detector_outcome=str(integrated["summary"]["detector_outcome"]),
             ),
             "eligibility": {
                 "formal_training_replay_eligible": True,
                 "formal_replay": True,
                 "real_online_r": True,
                 "replay_membership": "R_online",
+                "td_eligible": True,
+                "fm_eligible": False,
             },
             "commit": {
                 "source_episode_technical_seal": "complete",
@@ -4530,12 +4557,23 @@ class ProductionBridge:
                 raise ProductionBridgeError(
                     "BRIDGE_FORMAL_R_HUMAN_NEXT_OBSERVATION_INCOMPLETE"
                 )
-            materialized_next = self._formal_online_r_observation(
+            terminal_observation = self._formal_online_r_observation(
                 episode_dir=episode_dir,
                 episode_id=episode_id,
                 source=terminal_source,
                 prepared=prepared,
             )
+            terminal_frame = int(terminal_observation["materialized_frame"])
+            if integrated["summary"]["operator_task_outcome"] == "failure":
+                materialized_next = self._formal_online_r_prepared_observation(
+                    episode_dir=episode_dir,
+                    episode_id=episode_id,
+                    prepared=prepared,
+                    frame=min(nominal_next, terminal_frame),
+                    observation_id=f"{episode_id}:human-next:{sequence}",
+                )
+            else:
+                materialized_next = terminal_observation
         else:
             next_frame = (
                 min(
@@ -4611,7 +4649,7 @@ class ProductionBridge:
             "schema_version": SCHEMA_VERSION,
             "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
             "action_source": "human",
-            "expert": True,
+            "expert": integrated["summary"]["operator_task_outcome"] == "success",
             "intervention": True,
             "human_action_target_h50": target.tolist(),
             "human_action_valid_mask_h50": valid.tolist(),
@@ -4652,12 +4690,20 @@ class ProductionBridge:
                 terminal_observation_id=str(
                     integrated["summary"]["terminal_observation_id"]
                 ),
+                operator_task_outcome=str(
+                    integrated["summary"]["operator_task_outcome"]
+                ),
+                detector_outcome=str(integrated["summary"]["detector_outcome"]),
             ),
             "eligibility": {
                 "formal_training_replay_eligible": True,
                 "formal_replay": True,
                 "real_online_r": True,
                 "replay_membership": "R_online",
+                "td_eligible": True,
+                "fm_eligible": (
+                    integrated["summary"]["operator_task_outcome"] == "success"
+                ),
             },
             "commit": {
                 "source_episode_technical_seal": "complete",
@@ -4821,10 +4867,33 @@ class ProductionBridge:
                 "BRIDGE_FORMAL_R_POLICY_EXECUTION_SMOKE_PASS_REQUIRED"
             )
         summary = integrated["summary"]
+        if self.episode_materializer is None:
+            if summary.get("operator_task_outcome") != "success":
+                raise ProductionBridgeError("BRIDGE_EPISODE_MATERIALIZER_UNBOUND")
+            detector_outcome = str(summary.get("detector_outcome"))
+            detector_trigger_frame = None
+        else:
+            detector_materialization = self.episode_materializer(
+                episode_dir
+            ).validate(allow_detector_miss=True)
+            detector_trigger_frame = (
+                detector_materialization.detection_trace.trigger_frame
+            )
+            detector_outcome = (
+                "success" if detector_trigger_frame is not None else "miss"
+            )
+        summary["detector_outcome"] = detector_outcome
+        summary["detector_trigger_frame"] = detector_trigger_frame
+        outcome_pair = (
+            summary.get("operator_task_outcome"),
+            detector_outcome,
+        )
+        if outcome_pair == ("failure", "success"):
+            raise ProductionBridgeError("BRIDGE_FORMAL_R_OUTCOME_CONFLICT")
         if (
             summary.get("technical_seal") != "complete"
-            or summary.get("operator_task_outcome") != "success"
-            or summary.get("detector_outcome") != "success"
+            or outcome_pair
+            not in {("success", "success"), ("failure", "miss")}
             or summary.get("executed_action_source") != "policy"
             or summary.get("policy_execution") is not True
             or summary.get("formal_replay") is not False
@@ -5092,8 +5161,8 @@ class ProductionBridge:
             "policy_execution_smoke_bridge": "PASS",
             "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
             "episode_sealed": True,
-            "operator_task_outcome": "success",
-            "detector_outcome": "success",
+            "operator_task_outcome": summary["operator_task_outcome"],
+            "detector_outcome": summary["detector_outcome"],
             "executed_action_source": "policy",
             "initial_gripper_lease": integrated[
                 "initial_gripper_lease"
@@ -5185,6 +5254,8 @@ class ProductionBridge:
             "status": "SEALED_COMMITTED",
             "admission_record": admission_relative,
             "replay_membership": "R_online",
+            "operator_task_outcome": summary["operator_task_outcome"],
+            "detector_outcome": summary["detector_outcome"],
             "accepted_unique_r_transition_count": len(transitions),
             "transition_uids": uids,
             "human_override_replay_count": human_replay_count,
