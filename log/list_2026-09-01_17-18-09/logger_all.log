@@ -1,0 +1,401 @@
+[0.048s] DEBUG:colcon:Command line arguments: ['/usr/bin/colcon', 'list', '--base-paths', '/home/rlc123/franka_official_ws/src']
+[0.049s] DEBUG:colcon:Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='list', build_base='build', ignore_user_meta=False, metas=['./colcon.meta'], base_paths=['/home/rlc123/franka_official_ws/src'], packages_ignore=None, packages_ignore_regex=None, paths=None, packages_up_to=None, packages_up_to_regex=None, packages_above=None, packages_above_and_dependencies=None, packages_above_depth=None, packages_select_by_dep=None, packages_skip_by_dep=None, packages_skip_up_to=None, packages_select_build_failed=False, packages_skip_build_finished=False, packages_select_test_failures=False, packages_skip_test_passed=False, packages_select=None, packages_skip=None, packages_select_regex=None, packages_skip_regex=None, packages_start=None, packages_end=None, allow_overriding=[], topological_order=False, names_only=False, paths_only=False, topological_graph=False, topological_graph_dot=False, topological_graph_density=False, topological_graph_legend=False, topological_graph_dot_cluster=False, topological_graph_dot_include_skipped=False, mixin_files=None, mixin=None, verb_parser=<colcon_mixin.mixin.mixin_argument.MixinArgumentDecorator object at 0x7c27b5706bc0>, verb_extension=<colcon_package_information.verb.list.ListVerb object at 0x7c27b5705ba0>, main=<bound method ListVerb.main of <colcon_package_information.verb.list.ListVerb object at 0x7c27b5705ba0>>, mixin_verb=('list',))
+[0.120s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) check parameters
+[0.120s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) check parameters
+[0.120s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) check parameters
+[0.120s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) check parameters
+[0.120s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) discover
+[0.120s] INFO:colcon.colcon_core.package_discovery:Crawling recursively for packages in '/home/rlc123/franka_official_ws/src'
+[0.120s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extensions ['ignore', 'ignore_ament_install']
+[0.120s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extension 'ignore'
+[0.120s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extension 'ignore_ament_install'
+[0.120s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extensions ['colcon_pkg']
+[0.120s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extension 'colcon_pkg'
+[0.120s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extensions ['colcon_meta']
+[0.120s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extension 'colcon_meta'
+[0.120s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extensions ['ros']
+[0.121s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extension 'ros'
+[0.125s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extensions ['cmake', 'python']
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extension 'cmake'
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extension 'python'
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extensions ['python_setup_py']
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src) by extension 'python_setup_py'
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup) by extensions ['ignore', 'ignore_ament_install']
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup) by extension 'ignore'
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup) by extension 'ignore_ament_install'
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup) by extensions ['colcon_pkg']
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup) by extension 'colcon_pkg'
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup) by extensions ['colcon_meta']
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup) by extension 'colcon_meta'
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup) by extensions ['ros']
+[0.126s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup) by extension 'ros'
+[0.127s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/fr3_onrobot_robotiq_bringup' with type 'ros.ament_cmake' and name 'fr3_onrobot_robotiq_bringup'
+[0.127s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_description) by extensions ['ignore', 'ignore_ament_install']
+[0.127s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_description) by extension 'ignore'
+[0.127s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_description) by extension 'ignore_ament_install'
+[0.127s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_description) by extensions ['colcon_pkg']
+[0.127s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_description) by extension 'colcon_pkg'
+[0.127s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_description) by extensions ['colcon_meta']
+[0.127s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_description) by extension 'colcon_meta'
+[0.127s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_description) by extensions ['ros']
+[0.127s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_description) by extension 'ros'
+[0.128s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_description' with type 'ros.ament_cmake' and name 'franka_description'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extensions ['ignore', 'ignore_ament_install']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extension 'ignore'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extension 'ignore_ament_install'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extensions ['colcon_pkg']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extension 'colcon_pkg'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extensions ['colcon_meta']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extension 'colcon_meta'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extensions ['ros']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extension 'ros'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extensions ['cmake', 'python']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extension 'cmake'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extension 'python'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extensions ['python_setup_py']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2) by extension 'python_setup_py'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extensions ['ignore', 'ignore_ament_install']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extension 'ignore'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extension 'ignore_ament_install'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extensions ['colcon_pkg']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extension 'colcon_pkg'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extensions ['colcon_meta']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extension 'colcon_meta'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extensions ['ros']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extension 'ros'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extensions ['cmake', 'python']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extension 'cmake'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extension 'python'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extensions ['python_setup_py']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs) by extension 'python_setup_py'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extensions ['ignore', 'ignore_ament_install']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extension 'ignore'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extension 'ignore_ament_install'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extensions ['colcon_pkg']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extension 'colcon_pkg'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extensions ['colcon_meta']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extension 'colcon_meta'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extensions ['ros']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extension 'ros'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extensions ['cmake', 'python']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extension 'cmake'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extension 'python'
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extensions ['python_setup_py']
+[0.128s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/docs/assets) by extension 'python_setup_py'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup) by extensions ['ignore', 'ignore_ament_install']
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup) by extension 'ignore'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup) by extension 'ignore_ament_install'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup) by extensions ['colcon_pkg']
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup) by extension 'colcon_pkg'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup) by extensions ['colcon_meta']
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup) by extension 'colcon_meta'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup) by extensions ['ros']
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup) by extension 'ros'
+[0.129s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_bringup' with type 'ros.ament_cmake' and name 'franka_bringup'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers) by extensions ['ignore', 'ignore_ament_install']
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers) by extension 'ignore'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers) by extension 'ignore_ament_install'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers) by extensions ['colcon_pkg']
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers) by extension 'colcon_pkg'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers) by extensions ['colcon_meta']
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers) by extension 'colcon_meta'
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers) by extensions ['ros']
+[0.129s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers) by extension 'ros'
+[0.130s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_example_controllers' with type 'ros.ament_cmake' and name 'franka_example_controllers'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config) by extensions ['ignore', 'ignore_ament_install']
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config) by extension 'ignore'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config) by extension 'ignore_ament_install'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config) by extensions ['colcon_pkg']
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config) by extension 'colcon_pkg'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config) by extensions ['colcon_meta']
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config) by extension 'colcon_meta'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config) by extensions ['ros']
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config) by extension 'ros'
+[0.130s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_fr3_moveit_config' with type 'ros.ament_cmake' and name 'franka_fr3_moveit_config'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup) by extensions ['ignore', 'ignore_ament_install']
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup) by extension 'ignore'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup) by extension 'ignore_ament_install'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup) by extensions ['colcon_pkg']
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup) by extension 'colcon_pkg'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup) by extensions ['colcon_meta']
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup) by extension 'colcon_meta'
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup) by extensions ['ros']
+[0.130s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup) by extension 'ros'
+[0.131s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_gazebo_bringup' with type 'ros.ament_cmake' and name 'franka_gazebo_bringup'
+[0.131s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper) by extensions ['ignore', 'ignore_ament_install']
+[0.131s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper) by extension 'ignore'
+[0.131s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper) by extension 'ignore_ament_install'
+[0.131s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper) by extensions ['colcon_pkg']
+[0.131s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper) by extension 'colcon_pkg'
+[0.131s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper) by extensions ['colcon_meta']
+[0.131s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper) by extension 'colcon_meta'
+[0.131s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper) by extensions ['ros']
+[0.131s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper) by extension 'ros'
+[0.131s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_gripper' with type 'ros.ament_cmake' and name 'franka_gripper'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware) by extensions ['ignore', 'ignore_ament_install']
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware) by extension 'ignore'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware) by extension 'ignore_ament_install'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware) by extensions ['colcon_pkg']
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware) by extension 'colcon_pkg'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware) by extensions ['colcon_meta']
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware) by extension 'colcon_meta'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware) by extensions ['ros']
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware) by extension 'ros'
+[0.132s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_hardware' with type 'ros.ament_cmake' and name 'franka_hardware'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile) by extensions ['ignore', 'ignore_ament_install']
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile) by extension 'ignore'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile) by extension 'ignore_ament_install'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile) by extensions ['colcon_pkg']
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile) by extension 'colcon_pkg'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile) by extensions ['colcon_meta']
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile) by extension 'colcon_meta'
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile) by extensions ['ros']
+[0.132s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile) by extension 'ros'
+[0.133s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile' with type 'ros.ament_cmake' and name 'franka_mobile'
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors) by extensions ['ignore', 'ignore_ament_install']
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors) by extension 'ignore'
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors) by extension 'ignore_ament_install'
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors) by extensions ['colcon_pkg']
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors) by extension 'colcon_pkg'
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors) by extensions ['colcon_meta']
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors) by extension 'colcon_meta'
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors) by extensions ['ros']
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors) by extension 'ros'
+[0.133s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_mobile_sensors' with type 'ros.ament_cmake' and name 'franka_mobile_sensors'
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs) by extensions ['ignore', 'ignore_ament_install']
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs) by extension 'ignore'
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs) by extension 'ignore_ament_install'
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs) by extensions ['colcon_pkg']
+[0.133s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs) by extension 'colcon_pkg'
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs) by extensions ['colcon_meta']
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs) by extension 'colcon_meta'
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs) by extensions ['ros']
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs) by extension 'ros'
+[0.134s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_msgs' with type 'ros.ament_cmake' and name 'franka_msgs'
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster) by extensions ['ignore', 'ignore_ament_install']
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster) by extension 'ignore'
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster) by extension 'ignore_ament_install'
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster) by extensions ['colcon_pkg']
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster) by extension 'colcon_pkg'
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster) by extensions ['colcon_meta']
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster) by extension 'colcon_meta'
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster) by extensions ['ros']
+[0.134s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster) by extension 'ros'
+[0.135s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_robot_state_broadcaster' with type 'ros.ament_cmake' and name 'franka_robot_state_broadcaster'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2) by extensions ['ignore', 'ignore_ament_install']
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2) by extension 'ignore'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2) by extension 'ignore_ament_install'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2) by extensions ['colcon_pkg']
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2) by extension 'colcon_pkg'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2) by extensions ['colcon_meta']
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2) by extension 'colcon_meta'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2) by extensions ['ros']
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2) by extension 'ros'
+[0.135s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_ros2' with type 'ros.ament_cmake' and name 'franka_ros2'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components) by extensions ['ignore', 'ignore_ament_install']
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components) by extension 'ignore'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components) by extension 'ignore_ament_install'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components) by extensions ['colcon_pkg']
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components) by extension 'colcon_pkg'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components) by extensions ['colcon_meta']
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components) by extension 'colcon_meta'
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components) by extensions ['ros']
+[0.135s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components) by extension 'ros'
+[0.136s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_ros2/franka_semantic_components' with type 'ros.ament_cmake' and name 'franka_semantic_components'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extensions ['ignore', 'ignore_ament_install']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extension 'ignore'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extension 'ignore_ament_install'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extensions ['colcon_pkg']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extension 'colcon_pkg'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extensions ['colcon_meta']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extension 'colcon_meta'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extensions ['ros']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extension 'ros'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extensions ['cmake', 'python']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extension 'cmake'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extension 'python'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extensions ['python_setup_py']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse) by extension 'python_setup_py'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extensions ['ignore', 'ignore_ament_install']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extension 'ignore'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extension 'ignore_ament_install'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extensions ['colcon_pkg']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extension 'colcon_pkg'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extensions ['colcon_meta']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extension 'colcon_meta'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extensions ['ros']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extension 'ros'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extensions ['cmake', 'python']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extension 'cmake'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extension 'python'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extensions ['python_setup_py']
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src) by extension 'python_setup_py'
+[0.136s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers) by extensions ['ignore', 'ignore_ament_install']
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers) by extension 'ignore'
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers) by extension 'ignore_ament_install'
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers) by extensions ['colcon_pkg']
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers) by extension 'colcon_pkg'
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers) by extensions ['colcon_meta']
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers) by extension 'colcon_meta'
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers) by extensions ['ros']
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers) by extension 'ros'
+[0.137s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_spacemouse/src/franka_arm_controllers' with type 'ros.ament_cmake' and name 'franka_arm_controllers'
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager) by extensions ['ignore', 'ignore_ament_install']
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager) by extension 'ignore'
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager) by extension 'ignore_ament_install'
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager) by extensions ['colcon_pkg']
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager) by extension 'colcon_pkg'
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager) by extensions ['colcon_meta']
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager) by extension 'colcon_meta'
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager) by extensions ['ros']
+[0.137s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager) by extension 'ros'
+[0.138s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_spacemouse/src/gripper_manager' with type 'ros.ament_python' and name 'gripper_manager'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher) by extensions ['ignore', 'ignore_ament_install']
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher) by extension 'ignore'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher) by extension 'ignore_ament_install'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher) by extensions ['colcon_pkg']
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher) by extension 'colcon_pkg'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher) by extensions ['colcon_meta']
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher) by extension 'colcon_meta'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher) by extensions ['ros']
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher) by extension 'ros'
+[0.138s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/franka_spacemouse/src/spacemouse_publisher' with type 'ros.ament_python' and name 'spacemouse_publisher'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/libfranka) by extensions ['ignore', 'ignore_ament_install']
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/libfranka) by extension 'ignore'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/libfranka) by extension 'ignore_ament_install'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/libfranka) by extensions ['colcon_pkg']
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/libfranka) by extension 'colcon_pkg'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/libfranka) by extensions ['colcon_meta']
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/libfranka) by extension 'colcon_meta'
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/libfranka) by extensions ['ros']
+[0.138s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/libfranka) by extension 'ros'
+[0.139s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/libfranka' with type 'ros.cmake' and name 'libfranka'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/olvx_descriptions_module) by extensions ['ignore', 'ignore_ament_install']
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/olvx_descriptions_module) by extension 'ignore'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/olvx_descriptions_module) by extension 'ignore_ament_install'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/olvx_descriptions_module) by extensions ['colcon_pkg']
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/olvx_descriptions_module) by extension 'colcon_pkg'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/olvx_descriptions_module) by extensions ['colcon_meta']
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/olvx_descriptions_module) by extension 'colcon_meta'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/olvx_descriptions_module) by extensions ['ros']
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/olvx_descriptions_module) by extension 'ros'
+[0.139s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/olvx_descriptions_module' with type 'ros.ament_cmake' and name 'olv_module_descriptions'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/onrobot_ft_ros2) by extensions ['ignore', 'ignore_ament_install']
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/onrobot_ft_ros2) by extension 'ignore'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/onrobot_ft_ros2) by extension 'ignore_ament_install'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/onrobot_ft_ros2) by extensions ['colcon_pkg']
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/onrobot_ft_ros2) by extension 'colcon_pkg'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/onrobot_ft_ros2) by extensions ['colcon_meta']
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/onrobot_ft_ros2) by extension 'colcon_meta'
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/onrobot_ft_ros2) by extensions ['ros']
+[0.139s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/onrobot_ft_ros2) by extension 'ros'
+[0.139s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/onrobot_ft_ros2' with type 'ros.ament_cmake' and name 'onrobot_ft_ros2'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extensions ['ignore', 'ignore_ament_install']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extension 'ignore'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extension 'ignore_ament_install'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extensions ['colcon_pkg']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extension 'colcon_pkg'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extensions ['colcon_meta']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extension 'colcon_meta'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extensions ['ros']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extension 'ros'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extensions ['cmake', 'python']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extension 'cmake'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extension 'python'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extensions ['python_setup_py']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver) by extension 'python_setup_py'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description) by extensions ['ignore', 'ignore_ament_install']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description) by extension 'ignore'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description) by extension 'ignore_ament_install'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description) by extensions ['colcon_pkg']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description) by extension 'colcon_pkg'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description) by extensions ['colcon_meta']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description) by extension 'colcon_meta'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description) by extensions ['ros']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description) by extension 'ros'
+[0.140s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_description' with type 'ros.ament_cmake' and name 'net_ft_description'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster) by extensions ['ignore', 'ignore_ament_install']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster) by extension 'ignore'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster) by extension 'ignore_ament_install'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster) by extensions ['colcon_pkg']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster) by extension 'colcon_pkg'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster) by extensions ['colcon_meta']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster) by extension 'colcon_meta'
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster) by extensions ['ros']
+[0.140s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster) by extension 'ros'
+[0.141s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_diagnostic_broadcaster' with type 'ros.ament_cmake' and name 'net_ft_diagnostic_broadcaster'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver) by extensions ['ignore', 'ignore_ament_install']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver) by extension 'ignore'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver) by extension 'ignore_ament_install'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver) by extensions ['colcon_pkg']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver) by extension 'colcon_pkg'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver) by extensions ['colcon_meta']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver) by extension 'colcon_meta'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver) by extensions ['ros']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver) by extension 'ros'
+[0.141s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/ros2_net_ft_driver/net_ft_driver' with type 'ros.ament_cmake' and name 'net_ft_driver'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extensions ['ignore', 'ignore_ament_install']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extension 'ignore'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extension 'ignore_ament_install'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extensions ['colcon_pkg']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extension 'colcon_pkg'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extensions ['colcon_meta']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extension 'colcon_meta'
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extensions ['ros']
+[0.141s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extension 'ros'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extensions ['cmake', 'python']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extension 'cmake'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extension 'python'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extensions ['python_setup_py']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper) by extension 'python_setup_py'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers) by extensions ['ignore', 'ignore_ament_install']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers) by extension 'ignore'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers) by extension 'ignore_ament_install'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers) by extensions ['colcon_pkg']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers) by extension 'colcon_pkg'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers) by extensions ['colcon_meta']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers) by extension 'colcon_meta'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers) by extensions ['ros']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers) by extension 'ros'
+[0.142s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_controllers' with type 'ros.ament_cmake' and name 'robotiq_controllers'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description) by extensions ['ignore', 'ignore_ament_install']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description) by extension 'ignore'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description) by extension 'ignore_ament_install'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description) by extensions ['colcon_pkg']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description) by extension 'colcon_pkg'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description) by extensions ['colcon_meta']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description) by extension 'colcon_meta'
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description) by extensions ['ros']
+[0.142s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description) by extension 'ros'
+[0.142s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_description' with type 'ros.ament_cmake' and name 'robotiq_description'
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver) by extensions ['ignore', 'ignore_ament_install']
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver) by extension 'ignore'
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver) by extension 'ignore_ament_install'
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver) by extensions ['colcon_pkg']
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver) by extension 'colcon_pkg'
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver) by extensions ['colcon_meta']
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver) by extension 'colcon_meta'
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver) by extensions ['ros']
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver) by extension 'ros'
+[0.143s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_driver' with type 'ros.ament_cmake' and name 'robotiq_driver'
+[0.143s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests) by extensions ['ignore', 'ignore_ament_install']
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests) by extension 'ignore'
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests) by extension 'ignore_ament_install'
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests) by extensions ['colcon_pkg']
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests) by extension 'colcon_pkg'
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests) by extensions ['colcon_meta']
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests) by extension 'colcon_meta'
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests) by extensions ['ros']
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests) by extension 'ros'
+[0.144s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/ros2_robotiq_gripper/robotiq_hardware_tests' with type 'ros.ament_cmake' and name 'robotiq_hardware_tests'
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/serial) by extensions ['ignore', 'ignore_ament_install']
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/serial) by extension 'ignore'
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/serial) by extension 'ignore_ament_install'
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/serial) by extensions ['colcon_pkg']
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/serial) by extension 'colcon_pkg'
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/serial) by extensions ['colcon_meta']
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/serial) by extension 'colcon_meta'
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/serial) by extensions ['ros']
+[0.144s] Level 1:colcon.colcon_core.package_identification:_identify(/home/rlc123/franka_official_ws/src/serial) by extension 'ros'
+[0.144s] DEBUG:colcon.colcon_core.package_identification:Package '/home/rlc123/franka_official_ws/src/serial' with type 'ros.ament_cmake' and name 'serial'
+[0.144s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) using defaults

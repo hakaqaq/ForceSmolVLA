@@ -1,0 +1,159 @@
+{
+  "generated_at": "2026-09-01T13:23:02.415289+00:00",
+  "nodes": {
+    "run_forcerft_online_loop_run_episode": {
+      "code_fingerprint": "e8dd5c84b8f3ca8267f037f0d6bc15ae62d7e47ec8c37ab4e5ac195dcbcc10c5",
+      "label": "_run_episode()",
+      "last": "2026-09-01T12:57:34.824504+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-01T12:57:34.824504+00:00",
+          "outcome": "useful",
+          "q": "ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT 怎么又报错了"
+        }
+      ],
+      "score": 0.999591578,
+      "source_file": "run_forcerft_online_loop.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "run_forcerft_production_bridge": {
+      "code_fingerprint": "f21e86537e96fec6384d24065b85507cb19ff7352abff79ecb2895d90e183b88",
+      "label": "run_forcerft_production_bridge.py",
+      "last": "2026-09-01T13:16:02.591963+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-01T13:16:02.591963+00:00",
+          "outcome": "useful",
+          "q": "WRENCH_SOURCE_GAP_EXCEEDED 是由日志中的 9.781ms gap 造成的吗，在线循环应如何修复并与 ConRFT 行为一致"
+        }
+      ],
+      "score": 0.999887738,
+      "source_file": "run_forcerft_production_bridge.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "serve_forcerft_actor_learner_asyncpolicylearnerruntime": {
+      "code_fingerprint": "9381bb7622928c39f697a11c3119de4f2414918fc10124d51f848822bcfa69ae",
+      "label": "AsyncPolicyLearnerRuntime",
+      "last": "2026-09-01T13:16:02.591963+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-01T13:16:02.591963+00:00",
+          "outcome": "useful",
+          "q": "WRENCH_SOURCE_GAP_EXCEEDED 是由日志中的 9.781ms gap 造成的吗，在线循环应如何修复并与 ConRFT 行为一致"
+        },
+        {
+          "date": "2026-09-01T13:03:58.289671+00:00",
+          "outcome": "useful",
+          "q": "修复 ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT，并与 ConRFT 在线 append 行为一致"
+        },
+        {
+          "date": "2026-09-01T12:52:53.295763+00:00",
+          "outcome": "useful",
+          "q": "你检查一下我本地learn开始训练了吗"
+        }
+      ],
+      "score": 2.999098151,
+      "source_file": "serve_forcerft_actor_learner.py",
+      "status": "preferred",
+      "uses": 3
+    },
+    "serve_forcerft_actor_learner_asyncpolicylearnerruntime_end_episode": {
+      "code_fingerprint": "9381bb7622928c39f697a11c3119de4f2414918fc10124d51f848822bcfa69ae",
+      "label": ".end_episode()",
+      "last": "2026-09-01T12:57:34.824504+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-01T12:57:34.824504+00:00",
+          "outcome": "useful",
+          "q": "ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT 怎么又报错了"
+        }
+      ],
+      "score": 0.999591578,
+      "source_file": "serve_forcerft_actor_learner.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "serve_forcerft_actor_learner_asyncpolicylearnerruntime_prepare_episode": {
+      "code_fingerprint": "9381bb7622928c39f697a11c3119de4f2414918fc10124d51f848822bcfa69ae",
+      "label": ".prepare_episode()",
+      "last": "2026-09-01T13:16:02.591963+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-01T13:16:02.591963+00:00",
+          "outcome": "useful",
+          "q": "WRENCH_SOURCE_GAP_EXCEEDED 是由日志中的 9.781ms gap 造成的吗，在线循环应如何修复并与 ConRFT 行为一致"
+        }
+      ],
+      "score": 0.999887738,
+      "source_file": "serve_forcerft_actor_learner.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "serve_forcerft_actor_learner_asyncpolicylearnerruntime_start_learner": {
+      "code_fingerprint": "9381bb7622928c39f697a11c3119de4f2414918fc10124d51f848822bcfa69ae",
+      "label": "._start_learner()",
+      "last": "2026-09-01T13:03:58.289671+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-01T13:03:58.289671+00:00",
+          "outcome": "useful",
+          "q": "修复 ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT，并与 ConRFT 在线 append 行为一致"
+        },
+        {
+          "date": "2026-09-01T12:57:34.824504+00:00",
+          "outcome": "useful",
+          "q": "ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT 怎么又报错了"
+        },
+        {
+          "date": "2026-09-01T12:52:53.295763+00:00",
+          "outcome": "useful",
+          "q": "你检查一下我本地learn开始训练了吗"
+        }
+      ],
+      "score": 2.998801992,
+      "source_file": "serve_forcerft_actor_learner.py",
+      "status": "preferred",
+      "uses": 3
+    },
+    "serve_forcerft_actor_learner_asyncpolicylearnerruntime_status": {
+      "code_fingerprint": "9381bb7622928c39f697a11c3119de4f2414918fc10124d51f848822bcfa69ae",
+      "label": ".status()",
+      "last": "2026-09-01T12:52:53.295763+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-01T12:52:53.295763+00:00",
+          "outcome": "useful",
+          "q": "你检查一下我本地learn开始训练了吗"
+        }
+      ],
+      "score": 0.999516326,
+      "source_file": "serve_forcerft_actor_learner.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "serve_forcerft_actor_learner_continuouslearner": {
+      "code_fingerprint": "9381bb7622928c39f697a11c3119de4f2414918fc10124d51f848822bcfa69ae",
+      "label": "ContinuousLearner",
+      "last": "2026-09-01T13:03:58.289671+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-01T13:03:58.289671+00:00",
+          "outcome": "useful",
+          "q": "修复 ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT，并与 ConRFT 在线 append 行为一致"
+        },
+        {
+          "date": "2026-09-01T12:57:34.824504+00:00",
+          "outcome": "useful",
+          "q": "ONLINE_REPLAY_ASYNC_LEARNER_COMPLETION_CONTRACT 怎么又报错了"
+        }
+      ],
+      "score": 1.999285665,
+      "source_file": "serve_forcerft_actor_learner.py",
+      "status": "preferred",
+      "uses": 2
+    }
+  },
+  "version": 1
+}
