@@ -1219,6 +1219,30 @@ def offline_checkpoint_cycles(cycles: int, every: int = 0) -> tuple[int, ...]:
     return tuple(sorted(selected))
 
 
+def validate_exact_eta0_ablation(
+    config: Mapping[str, Any],
+    *,
+    cycles: int,
+    eta_actor_q_override: float | None,
+    actor_lr_override: float | None,
+) -> None:
+    """Keep eta=0 as a one-variable legacy causal ablation."""
+
+    if eta_actor_q_override != 0.0:
+        return
+    require(cycles == 210, "FORCERFT_ETA0_ABLATION_CYCLES_MUST_BE_210")
+    require(actor_lr_override is None, "FORCERFT_ETA0_ABLATION_LR_OVERRIDE_FORBIDDEN")
+    require(
+        float(config["optimizer"]["actor"]["lr"]) == 1.0e-5
+        and float(config["loss"]["beta_expert_flow_matching"]) == 1.0
+        and float(config["loss"]["lambda_policy_behavior_anchor"]) == 0.1
+        and int(config["offline_training"]["critic_updates_per_cycle"]) == 2
+        and int(config["offline_training"]["actor_updates_per_cycle"]) == 1
+        and int(config["offline_training"]["target_polyak_updates_per_cycle"]) == 2,
+        "FORCERFT_ETA0_ABLATION_BASELINE_DRIFT",
+    )
+
+
 def run_offline_joint_training(
     *,
     cycles: int,
@@ -1270,6 +1294,12 @@ def run_offline_joint_training(
         device=device,
         actor_lr_override=actor_lr_override,
         eta_actor_q_override=eta_actor_q_override,
+    )
+    validate_exact_eta0_ablation(
+        config,
+        cycles=cycles,
+        eta_actor_q_override=eta_actor_q_override,
+        actor_lr_override=actor_lr_override,
     )
     frozen = [
         parameter

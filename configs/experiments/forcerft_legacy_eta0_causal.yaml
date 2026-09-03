@@ -1,0 +1,24 @@
+configuration_kind: forcerft_legacy_eta0_causal_v1
+production_authorized: false
+requires_legacy_ablation_flag: true
+
+offline_training:
+  joint_cycles: 210
+  critic_updates_per_cycle: 2
+  actor_updates_per_cycle: 1
+  target_polyak_updates_per_cycle: 2
+
+optimizer:
+  actor:
+    lr: 1.0e-5
+
+loss:
+  beta_expert_flow_matching: 1.0
+  eta_actor_q: 0.0
+  lambda_policy_behavior_anchor: 0.1
+
+fixed_contract:
+  change_from_legacy_actor210: eta_actor_q_only
+  offline_anchor_intentionally_unchanged: true
+  action_semantics_intentionally_unchanged: true
+  trainability_intentionally_unchanged: true
