@@ -31,6 +31,7 @@ class OnlineActorLoss:
     expert_flow_matching: Tensor
     actor_q: Tensor
     policy_behavior_anchor: Tensor
+    sft_reference_anchor: Tensor
     balance: Tensor
     z: Tensor
     expert_feature_count: int
@@ -248,6 +249,34 @@ def compute_policy_behavior_anchor_loss(
     return per_row[eligible].mean()
 
 
+def compute_sft_reference_anchor_loss(
+    actor_action_k7: Tensor,
+    sft_reference_action_k7: Tensor,
+    valid_row_mask: Tensor,
+) -> Tensor:
+    """TCP6 trust region to a frozen SFT Actor in command-effective space."""
+
+    if actor_action_k7.ndim != 3 or tuple(actor_action_k7.shape[1:]) != (3, 7):
+        raise ValueError("ONLINE_REPLAY_SFT_ANCHOR_ACTOR_ACTION_SHAPE")
+    batch = actor_action_k7.shape[0]
+    actor_action = _finite_fp32(
+        actor_action_k7, "SFT_ANCHOR_ACTOR_ACTION", (batch, 3, 7)
+    )
+    reference_action = _finite_fp32(
+        sft_reference_action_k7,
+        "SFT_ANCHOR_REFERENCE_ACTION",
+        (batch, 3, 7),
+    ).detach()
+    if valid_row_mask.dtype != torch.bool or tuple(valid_row_mask.shape) != (batch,):
+        raise ValueError("ONLINE_REPLAY_SFT_ANCHOR_VALID_MASK")
+    if not bool(valid_row_mask.any()):
+        return actor_action.sum() * 0.0
+    per_row = (actor_action[..., :6] - reference_action[..., :6]).square().mean(
+        dim=(1, 2)
+    )
+    return per_row[valid_row_mask].mean()
+
+
 def compute_online_actor_objective(
     *,
     per_feature_flow_loss: Tensor,
@@ -257,11 +286,13 @@ def compute_online_actor_objective(
     q2_actor_value: Tensor,
     actor_q_valid: Tensor,
     policy_behavior_anchor_loss: Tensor | None = None,
+    sft_reference_anchor_loss: Tensor | None = None,
     balance_loss: Tensor,
     z_loss: Tensor,
     beta: float,
     eta: float,
     lambda_policy_behavior_anchor: float = 0.0,
+    lambda_sft_reference_anchor: float = 0.0,
     balance_weight: float = 0.01,
     z_weight: float = 0.001,
 ) -> OnlineActorLoss:
@@ -280,12 +311,22 @@ def compute_online_actor_objective(
             (1,),
         )[0]
     )
+    reference_anchor = (
+        q1_actor_value.sum() * 0.0
+        if sft_reference_anchor_loss is None
+        else _finite_fp32(
+            sft_reference_anchor_loss.reshape(1),
+            "SFT_REFERENCE_ANCHOR_LOSS",
+            (1,),
+        )[0]
+    )
     balance = _finite_fp32(balance_loss.reshape(1), "BALANCE_LOSS", (1,))[0]
     z = _finite_fp32(z_loss.reshape(1), "Z_LOSS", (1,))[0]
     total = (
         float(beta) * fm
         + float(eta) * actor_q
         + float(lambda_policy_behavior_anchor) * anchor
+        + float(lambda_sft_reference_anchor) * reference_anchor
         + balance_weight * balance
         + z_weight * z
     )
@@ -295,6 +336,7 @@ def compute_online_actor_objective(
         expert_flow_matching=fm,
         actor_q=actor_q,
         policy_behavior_anchor=anchor,
+        sft_reference_anchor=reference_anchor,
         balance=balance,
         z=z,
         expert_feature_count=expert_count,

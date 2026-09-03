@@ -328,6 +328,10 @@ def run_loop(args: argparse.Namespace) -> int:
     ]
     if args.safety_config is not None:
         server_command.extend(["--safety-config", str(args.safety_config)])
+    if args.sft_reference_checkpoint is not None:
+        server_command.extend(
+            ["--sft-reference-checkpoint", str(args.sft_reference_checkpoint)]
+        )
     if getattr(args, "allow_legacy_offline_fallback", False):
         server_command.append("--allow-legacy-offline-fallback")
     server = subprocess.Popen(server_command, cwd=ROOT, env=os.environ.copy())
@@ -374,6 +378,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--reward-transition-root", type=Path)
     parser.add_argument("--safety-config", type=Path)
     parser.add_argument("--stage3-seed-bundle", type=Path)
+    parser.add_argument("--sft-reference-checkpoint", type=Path)
     parser.add_argument("--allow-legacy-offline-fallback", action="store_true")
     parser.add_argument("--max-episodes", type=int, required=True)
     parser.add_argument("--root-prefix", type=Path)
@@ -428,6 +433,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     if args.safety_config is not None:
         args.safety_config = args.safety_config.resolve()
+    if args.sft_reference_checkpoint is not None:
+        args.sft_reference_checkpoint = args.sft_reference_checkpoint.resolve()
     args.formal_r_root = (
         args.output_root / "online"
         if args.formal_r_root is None else args.formal_r_root.resolve()

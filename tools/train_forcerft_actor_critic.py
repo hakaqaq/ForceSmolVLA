@@ -562,6 +562,7 @@ def actor_step(
     microbatch_slot=None,
     collect_diagnostics: bool = False,
     sft_actor_state: Mapping[str, torch.Tensor] | None = None,
+    reference_actor=None,
 ) -> dict[str, Any]:
     from forcesmolvla.force_token import RouterState
     from forcesmolvla.rft.frozen_vlm_trainability import FROZEN_PREFIXES, frozen_prefix_flow_matching_terms
@@ -569,8 +570,10 @@ def actor_step(
         compute_online_actor_objective,
         compute_online_min_twin_q_actor_loss,
         compute_policy_behavior_anchor_loss,
+        compute_sft_reference_anchor_loss,
     )
     from forcesmolvla.rft.critic_action_adapter_v2 import (
+        command_effective_candidate_action,
         command_effective_execution_index_map,
     )
     from forcesmolvla.rft.throughput_v2 import index_actor_batch
@@ -605,7 +608,8 @@ def actor_step(
             source == "human" and bool(batch["fm_eligible"][index])
             for index, source in enumerate(batch["action_sources"])
         )
-    fm_total = q_total = anchor_total = route_total = total_loss = 0.0
+    fm_total = q_total = anchor_total = reference_anchor_total = 0.0
+    route_total = total_loss = 0.0
     q1_values: list[torch.Tensor] = []
     q2_values: list[torch.Tensor] = []
     tcp_q_gradient_square = 0.0
@@ -681,6 +685,26 @@ def actor_step(
                     delta_action_mean7=delta_mean,
                     delta_action_std7=delta_std,
                 )
+                if reference_actor is None:
+                    reference_action = q_action.detach()
+                else:
+                    reference_actor.eval()
+                    with torch.no_grad():
+                        reference_chunk = flow.sample(
+                            reference_actor,
+                            actor_micro,
+                            q_noise,
+                            call_id=(
+                                f"online-actor-critic-cycle={cycle}"
+                                f"-sft-reference={start}"
+                            ),
+                            purpose="actor_guidance",
+                        )
+                        reference_action = command_effective_candidate_action(
+                            reference_chunk,
+                            delta_action_mean7=delta_mean,
+                            delta_action_std7=delta_std,
+                        ).detach()
             actor.train(True)
             policy_anchor = compute_policy_behavior_anchor_loss(
                 q_action,
@@ -689,6 +713,11 @@ def actor_step(
                 local_policy,
                 local_terminated,
                 local_truncated,
+            )
+            reference_anchor = compute_sft_reference_anchor_loss(
+                q_action,
+                reference_action,
+                torch.ones(microbatch, dtype=torch.bool, device=device),
             )
             local_anchor_rows = int(
                 (
@@ -721,6 +750,7 @@ def actor_step(
                 q2_actor_value=q2_value,
                 actor_q_valid=batch["actor_q_valid"][index],
                 policy_behavior_anchor_loss=policy_anchor,
+                sft_reference_anchor_loss=reference_anchor,
                 balance_loss=auxiliary.balance,
                 z_loss=auxiliary.z,
                 beta=float(config["loss"]["beta_expert_flow_matching"]) * fm_weight,
@@ -728,6 +758,10 @@ def actor_step(
                 lambda_policy_behavior_anchor=(
                     float(config["loss"]["lambda_policy_behavior_anchor"])
                     * anchor_weight
+                ),
+                lambda_sft_reference_anchor=(
+                    float(config["loss"].get("lambda_sft_reference_anchor", 0.0))
+                    * (microbatch / batch_size)
                 ),
                 balance_weight=float(config["loss"]["balance_weight"]) / (batch_size / microbatch),
                 z_weight=float(config["loss"]["z_weight"]) / (batch_size / microbatch),
@@ -767,6 +801,9 @@ def actor_step(
             q_total += q_weight * float(terms.actor_q.detach().cpu())
             anchor_total += anchor_weight * float(
                 terms.policy_behavior_anchor.detach().cpu()
+            )
+            reference_anchor_total += (microbatch / batch_size) * float(
+                terms.sft_reference_anchor.detach().cpu()
             )
             route_total += float(
                 (
@@ -858,6 +895,7 @@ def actor_step(
             "actor_q_valid_count": total_actor_q_rows,
             "actor_q_valid_fraction": total_actor_q_rows / batch_size,
             "actor_policy_behavior_anchor_loss": anchor_total,
+            "actor_sft_reference_anchor_loss": reference_anchor_total,
             "actor_total_loss": total_loss,
             "q1_actor_mean": q1_stats["mean"],
             "q2_actor_mean": q2_stats["mean"],

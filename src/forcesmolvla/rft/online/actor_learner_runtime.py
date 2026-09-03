@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 import json
 import math
@@ -275,6 +276,7 @@ def prepare_learner(
     warmup_api: Any,
     joint_api: Any,
     task: str,
+    sft_reference_checkpoint: Path | None = None,
 ) -> dict[str, Any]:
     """Restore one exact-resume Learner without importing CLI modules from src."""
 
@@ -286,6 +288,7 @@ def prepare_learner(
     )
     from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
     from forcesmolvla.rft.throughput_v2 import FrozenPrefixFlowCounter
+    from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
     from forcesmolvla.training_data import load_normalizer_manifest
 
     import json
@@ -339,6 +342,29 @@ def prepare_learner(
         critic_scheduler=critic_scheduler,
         device=device,
     )
+    reference_source = (
+        runtime.get("reference_actor_checkpoint")
+        if sft_reference_checkpoint is None
+        else sft_reference_checkpoint
+    )
+    require(bool(reference_source), "FORCERFT_SFT_REFERENCE_CHECKPOINT_REQUIRED")
+    reference_checkpoint = Path(reference_source).resolve()
+    require(
+        reference_checkpoint.is_dir(),
+        "FORCERFT_SFT_REFERENCE_CHECKPOINT_REQUIRED",
+    )
+    reference_actor = ForceSmolVLAPolicy.from_pretrained(
+        reference_checkpoint,
+        local_files_only=True,
+        force_download=False,
+        strict=True,
+        artifact_use="development",
+    ).to(device)
+    reference_actor.eval()
+    reference_actor.requires_grad_(False)
+    config = deepcopy(config)
+    config["loss"]["lambda_policy_behavior_anchor"] = 0.0
+    config["loss"]["lambda_sft_reference_anchor"] = 1.0
     counters = runtime["counters"]
     joint_cycles = int(counters["joint_cycles"])
     online_cycles = int(runtime.get("online_joint_cycles", 0))
@@ -350,6 +376,18 @@ def prepare_learner(
         and actor_optimizer.state
         and actor_scheduler.last_epoch == joint_cycles,
         "ONLINE_REPLAY_ASYNC_LEARNER_EXACT_RESUME_INVALID",
+    )
+    actor_optimizer_ids = {
+        id(parameter)
+        for group in actor_optimizer.param_groups
+        for parameter in group["params"]
+    }
+    require(
+        not any(parameter.requires_grad for parameter in reference_actor.parameters())
+        and not actor_optimizer_ids.intersection(
+            id(parameter) for parameter in reference_actor.parameters()
+        ),
+        "FORCERFT_SFT_REFERENCE_ACTOR_NOT_FROZEN",
     )
     credits = UpdateCreditLedger.from_state_dict(runtime["sample_credit"])
     new_r_transition_count = reconcile_post_checkpoint_replay(credits, all_r)
@@ -409,6 +447,8 @@ def prepare_learner(
     )
     return {
         "actor": actor,
+        "reference_actor": reference_actor,
+        "reference_actor_checkpoint": reference_checkpoint,
         "q1": q1,
         "q2": q2,
         "q1_target": q1_target,

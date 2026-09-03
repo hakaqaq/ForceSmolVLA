@@ -103,6 +103,7 @@ class ContinuousLearner:
         replay_root: Path,
         current_session_id: str | None,
         task: str,
+        sft_reference_checkpoint: Path | None = None,
     ) -> None:
         self.device = device
         self.resume_checkpoint = resume_checkpoint.resolve()
@@ -111,6 +112,11 @@ class ContinuousLearner:
         self.replay_root = replay_root.resolve()
         self.current_session_id = current_session_id
         self.task = task
+        self.sft_reference_checkpoint = (
+            None
+            if sft_reference_checkpoint is None
+            else sft_reference_checkpoint.resolve()
+        )
         self.learner: dict[str, Any] | None = None
         self.unique_r_count = 0
         self.r_macro_count = 0
@@ -154,6 +160,7 @@ class ContinuousLearner:
             warmup_api=warmup,
             joint_api=joint,
             task=self.task,
+            sft_reference_checkpoint=self.sft_reference_checkpoint,
         )
         return True
 
@@ -294,6 +301,7 @@ class ContinuousLearner:
                 delta_std=learner["delta_std"],
                 config=learner["config"],
                 microbatch_slot=learner_slot,
+                reference_actor=learner["reference_actor"],
             )
             del batch
         except torch.cuda.OutOfMemoryError:
@@ -322,6 +330,9 @@ class ContinuousLearner:
         runtime_state = {
             "online_joint_cycles": online_cycle + 1,
             "source_checkpoint": str(self.resume_checkpoint),
+            "reference_actor_checkpoint": str(
+                learner["reference_actor_checkpoint"]
+            ),
             "flags": {"critic_ready": True, "actor_q_guidance_enabled": True},
             "counters": counters,
             "replay": {
@@ -724,6 +735,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--episode-id", required=True)
     parser.add_argument("--learner-resume-checkpoint", type=Path)
     parser.add_argument("--stage3-seed-bundle", type=Path)
+    parser.add_argument("--sft-reference-checkpoint", type=Path)
     parser.add_argument("--allow-legacy-offline-fallback", action="store_true")
     parser.add_argument(
         "--allow-development-policy-execution-smoke",
@@ -846,6 +858,11 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         )
     )
     checkpoint_root = output_root / "online/checkpoints"
+    sft_reference_checkpoint = (
+        output_root / "sft/checkpoints/forcesmolvla_sft_step_010000"
+        if args.sft_reference_checkpoint is None
+        else args.sft_reference_checkpoint.resolve()
+    )
     learner = ContinuousLearner(
         device=device,
         resume_checkpoint=resume_checkpoint,
@@ -853,6 +870,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         replay_root=output_root / "online",
         current_session_id=args.session_id,
         task=args.task.strip(),
+        sft_reference_checkpoint=sft_reference_checkpoint,
     )
     return AsyncPolicyLearnerRuntime(
         engine=engine,
