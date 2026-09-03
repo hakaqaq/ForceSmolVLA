@@ -50,10 +50,8 @@ def test_automatic_readiness_does_not_require_manual_approval(
         json.dumps(
             {
                 "readiness_mode": "automatic_readiness",
-                "actor_q_valid_ack_rows": 100,
-                "critic_only_updates": 256,
-                "same_state_ranking_audit": "same_state_critic_audit.json",
-                "same_state_comparison_count": 20,
+                "same_observation_required": True,
+                "comparison_count": 20,
                 "human_gt_policy_fraction": 0.60,
             }
         ),
@@ -74,10 +72,8 @@ def test_actor_readiness_modes_are_not_interchangeable(tmp_path: Path) -> None:
         json.dumps(
             {
                 "readiness_mode": "automatic_readiness",
-                "actor_q_valid_ack_rows": 100,
-                "critic_only_updates": 256,
-                "same_state_ranking_audit": "same_state_critic_audit.json",
-                "same_state_comparison_count": 20,
+                "same_observation_required": True,
+                "comparison_count": 20,
                 "human_gt_policy_fraction": 0.60,
             }
         ),

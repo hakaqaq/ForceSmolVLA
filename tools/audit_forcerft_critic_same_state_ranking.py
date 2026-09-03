@@ -95,6 +95,7 @@ def main() -> int:
     args = parser.parse_args()
     payload = json.loads(args.same_state_probe.read_text(encoding="utf-8"))
     result = {
+        "readiness_mode": "automatic_readiness",
         "critic_checkpoint": payload["critic_checkpoint"],
         "action_contract_version": payload["action_contract_version"],
         "same_observation_required": True,
@@ -110,4 +111,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

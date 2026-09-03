@@ -49,31 +49,20 @@ def actor_unlock_is_ready(
         return False
     if not isinstance(payload, dict):
         return False
-    try:
-        manifest_rows = int(payload.get("actor_q_valid_ack_rows", -1))
-        manifest_updates = int(payload.get("critic_only_updates", -1))
-    except (TypeError, ValueError):
-        return False
-    common_ready = bool(
-        payload.get("readiness_mode") == policy.mode
-        and policy.minimum_actor_q_valid_ack_rows
-        <= manifest_rows
-        <= actor_q_valid_ack_rows
-        and policy.minimum_critic_only_updates
-        <= manifest_updates
-        <= critic_only_updates
-        and bool(str(payload.get("same_state_ranking_audit", "")).strip())
-    )
-    if not common_ready:
+    if payload.get("readiness_mode") != policy.mode:
         return False
     if policy.mode == "manual_approval":
-        return payload.get("approved") is True
+        return bool(
+            payload.get("approved") is True
+            and str(payload.get("same_state_ranking_audit", "")).strip()
+        )
     try:
-        comparison_count = int(payload.get("same_state_comparison_count", -1))
+        comparison_count = int(payload.get("comparison_count", -1))
         human_gt_policy = float(payload.get("human_gt_policy_fraction", -1.0))
     except (TypeError, ValueError):
         return False
     return bool(
-        comparison_count >= policy.minimum_same_state_comparisons
+        payload.get("same_observation_required") is True
+        and comparison_count >= policy.minimum_same_state_comparisons
         and human_gt_policy >= policy.minimum_human_gt_policy_fraction
     )
