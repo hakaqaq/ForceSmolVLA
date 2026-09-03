@@ -16,10 +16,13 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from train_forcerft_actor_critic import (  # noqa: E402
     JointDemoReplay,
+    _relative_change,
+    _snapshot_trainable_actor,
     assert_optimizer_ownership,
     load_joint_checkpoint_once,
     load_resume_modules,
     make_schedules,
+    offline_checkpoint_cycles,
     save_joint_checkpoint,
 )
 from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger  # noqa: E402
@@ -111,6 +114,11 @@ def test_actor_schedule_is_deterministic_after_rng_restore() -> None:
     assert [len(batch) for batch in schedules[1]] == [32] * 4
     assert [len(batch) for batch in schedules[2]] == [12] * 2
     assert [len(batch) for batch in schedules[3]] == [12] * 2
+
+
+def test_offline_checkpoint_cycles_are_dynamic_and_include_boundaries() -> None:
+    assert offline_checkpoint_cycles(7) == (0, 1, 5, 7)
+    assert offline_checkpoint_cycles(12, 4) == (0, 1, 4, 5, 8, 10, 12)
 
 
 def test_actor_d_schedule_always_contains_fm_eligible_row() -> None:
@@ -479,6 +487,22 @@ def test_optimizer_ownership_is_disjoint() -> None:
         actor_optimizer,
         critic_optimizer,
         frozen_parameters=actor.frozen.parameters(),
+    )
+
+
+def test_parameter_diagnostics_are_read_only() -> None:
+    actor = TinyPolicy()
+    before = _snapshot_trainable_actor(actor)
+    state_before = {
+        name: value.detach().clone() for name, value in actor.state_dict().items()
+    }
+
+    total, _groups = _relative_change(actor, before)
+
+    assert total == 0.0
+    assert all(
+        torch.equal(value, state_before[name])
+        for name, value in actor.state_dict().items()
     )
 
 
