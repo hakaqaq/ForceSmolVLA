@@ -87,6 +87,7 @@ def _admit(args: argparse.Namespace, episode: Path, *, outcome: str) -> bool:
         str(args.model_python), str(ROOT / "tools/run_forcerft_production_bridge.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
         "--episode", str(episode), "--state-root", str(args.formal_r_root),
+        "--deployed-actor-checkpoint", str(args.deployed_actor_checkpoint),
         "--operator-task-outcome", outcome, "--admit-formal-online-r",
     ])
     if report.get("status") == "FORMAL_ONLINE_R_REJECTED":
@@ -315,6 +316,7 @@ def run_loop(args: argparse.Namespace) -> int:
             args, "allow_legacy_offline_fallback", False
         ),
     ).path
+    args.deployed_actor_checkpoint = (resume / "actor").resolve()
     server_command = [
         str(args.model_python), str(ROOT / "tools/serve_forcerft_actor_learner.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),

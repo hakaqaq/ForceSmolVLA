@@ -296,6 +296,7 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
         type("Args", (), {
             "model_python": Path("python"), "formal_r_root": Path("r"),
             "task_id": "task3", "output_root": Path("outputs/task3"),
+            "deployed_actor_checkpoint": Path("checkpoints/task3/actor"),
         })(),
         Path("episode"),
         outcome="success",
@@ -306,6 +307,9 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     assert admission_commands[0][2:6] == [
         "--task-id", "task3", "--output-root", "outputs/task3",
     ]
+    assert admission_commands[0][
+        admission_commands[0].index("--deployed-actor-checkpoint") + 1
+    ] == "checkpoints/task3/actor"
 
 
 def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatch) -> None:
@@ -321,6 +325,7 @@ def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatc
         type("Args", (), {
             "model_python": Path("python"), "formal_r_root": Path("r"),
             "task_id": "task3", "output_root": Path("outputs/task3"),
+            "deployed_actor_checkpoint": Path("checkpoints/task3/actor"),
         })(),
         Path("episode"),
         outcome="failure",
@@ -347,6 +352,17 @@ def test_incomplete_action7_ack_coverage_is_episode_quality_rejection() -> None:
     assert not bridge_tool._is_episode_quality_rejection(
         "BRIDGE_POLICY_EXECUTION_ACTION_ACK_INVALID"
     )
+
+
+def test_formal_admission_requires_explicit_deployed_actor_checkpoint(
+    tmp_path: Path,
+) -> None:
+    args = type("Args", (), {
+        "deployed_actor_checkpoint": None,
+        "admit_formal_online_r": True,
+    })()
+    with pytest.raises(SystemExit, match="deployed-actor-checkpoint is required"):
+        bridge_tool._resolve_actor_checkpoint(args, output_root=tmp_path)
 
 
 def test_episode_admission_passes_success_and_failure_outcomes(
@@ -455,6 +471,7 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     })()
 
     assert loop.run_loop(args) == 0
+    assert args.deployed_actor_checkpoint == (resume / "actor").resolve()
     command = commands[0]
     assert command[command.index("--learner-resume-checkpoint") + 1] == str(resume)
     assert "--allow-development-policy-execution-smoke" in command

@@ -232,6 +232,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--episode", type=Path)
     parser.add_argument("--state-root", type=Path)
+    parser.add_argument(
+        "--deployed-actor-checkpoint",
+        type=Path,
+        help="Actor package that produced the policy-execution episode.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--admit-formal-online-r",
@@ -246,6 +251,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--detector-worker-request", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--detector-worker-output", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
+
+
+def _resolve_actor_checkpoint(
+    args: argparse.Namespace, *, output_root: Path
+) -> Path:
+    if args.deployed_actor_checkpoint is not None:
+        return args.deployed_actor_checkpoint.resolve()
+    if args.admit_formal_online_r:
+        raise SystemExit(
+            "--deployed-actor-checkpoint is required for formal online-R admission"
+        )
+    return (
+        output_root / "sft/checkpoints/forcesmolvla_sft_step_010000"
+    ).resolve()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -284,10 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         output_root
         / "reward_classifier/checkpoints/best/best_checkpoint.msgpack"
     )
-    actor_checkpoint = (
-        output_root
-        / "offline/checkpoints/offline_actor_critic_cycle_000210/actor"
-    )
+    actor_checkpoint = _resolve_actor_checkpoint(args, output_root=output_root)
 
     config, raw = load_bridge_config(args.config)
     episode = args.episode or Path(raw["recorded_offline_fixture"]["episode_dir"])
