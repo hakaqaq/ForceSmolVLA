@@ -242,6 +242,11 @@ def build_actor_training_batch(
             dtype=torch.bool,
             device=device,
         ),
+        "actor_q_valid": torch.tensor(
+            [row.get("actor_q_valid", False) for row in rows],
+            dtype=torch.bool,
+            device=device,
+        ),
         "behavior_action": torch.from_numpy(
             np.stack([row["behavior_action"] for row in rows])
         ).to(device),
@@ -595,6 +600,7 @@ def actor_step(
             & batch["behavior_mask"].any(dim=1)
         )
         total_anchor_rows = int(anchor_eligible.sum())
+        total_actor_q_rows = int(batch["actor_q_valid"].sum())
         human_fm_present = any(
             source == "human" and bool(batch["fm_eligible"][index])
             for index, source in enumerate(batch["action_sources"])
@@ -701,14 +707,19 @@ def actor_step(
                 (expert_mask & local_valid.unsqueeze(-1)).sum()
             )
             fm_weight = expert_count / total_expert_features
-            q_weight = microbatch / batch_size
+            local_actor_q_rows = int(batch["actor_q_valid"][index].sum())
+            q_weight = (
+                local_actor_q_rows / total_actor_q_rows
+                if total_actor_q_rows
+                else 0.0
+            )
             terms = compute_online_actor_objective(
                 per_feature_flow_loss=flow7,
                 action_valid_mask_h50=local_valid,
                 expert_feature_mask_h50x7=expert_mask,
                 q1_actor_value=q1_value,
                 q2_actor_value=q2_value,
-                actor_q_valid=torch.ones(microbatch, dtype=torch.bool, device=device),
+                actor_q_valid=batch["actor_q_valid"][index],
                 policy_behavior_anchor_loss=policy_anchor,
                 balance_loss=auxiliary.balance,
                 z_loss=auxiliary.z,
@@ -721,8 +732,14 @@ def actor_step(
                 balance_weight=float(config["loss"]["balance_weight"]) / (batch_size / microbatch),
                 z_weight=float(config["loss"]["z_weight"]) / (batch_size / microbatch),
             )
-            require(torch.equal(q_contract_loss, terms.actor_q), "ONLINE_REPLAY_JOINT_ACTOR_Q_NOT_MIN_TWIN")
-            q_gradient = torch.autograd.grad(q_contract_loss, chunk, retain_graph=True)[0]
+            if bool(batch["actor_q_valid"][index].all()):
+                require(
+                    torch.equal(q_contract_loss, terms.actor_q),
+                    "ONLINE_REPLAY_JOINT_ACTOR_Q_NOT_MIN_TWIN",
+                )
+            q_gradient = torch.autograd.grad(
+                terms.actor_q, chunk, retain_graph=True
+            )[0]
             execution_index_map = command_effective_execution_index_map()
             tcp_q_gradient_square += float(
                 q_gradient[:, execution_index_map, :6].float().square().sum().cpu()
@@ -768,7 +785,11 @@ def actor_step(
             "ONLINE_REPLAY_JOINT_HUMAN_FM_MISSING",
         )
         require(expert_gripper_fm_square > 0.0, "ONLINE_REPLAY_JOINT_EXPERT_GRIPPER_FM_MISSING")
-        require(gripper_q_gradient_max == 0.0 and tcp_q_gradient_square > 0.0, "ONLINE_REPLAY_JOINT_Q_GRADIENT_SEMANTICS")
+        require(
+            gripper_q_gradient_max == 0.0
+            and (not bool(batch["actor_q_valid"].any()) or tcp_q_gradient_square > 0.0),
+            "ONLINE_REPLAY_JOINT_Q_GRADIENT_SEMANTICS",
+        )
         require(
             all(parameter.grad is None for critic in (q1, q2, q1_target, q2_target) for parameter in critic.parameters()),
             "ONLINE_REPLAY_JOINT_ACTOR_BACKWARD_TOUCHED_CRITIC",
@@ -834,6 +855,8 @@ def actor_step(
             "actor_route_loss": route_total,
             "actor_q_loss_raw": q_total,
             "actor_q_loss_weighted": eta * q_total,
+            "actor_q_valid_count": total_actor_q_rows,
+            "actor_q_valid_fraction": total_actor_q_rows / batch_size,
             "actor_policy_behavior_anchor_loss": anchor_total,
             "actor_total_loss": total_loss,
             "q1_actor_mean": q1_stats["mean"],

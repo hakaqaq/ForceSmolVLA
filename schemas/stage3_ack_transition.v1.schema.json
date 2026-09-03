@@ -139,11 +139,17 @@
     "eligibility": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["critic_td_valid", "actor_q_valid", "expert_fm_available", "quarantined", "quarantine_reason"],
+      "required": [
+        "critic_td_valid", "actor_q_valid", "expert_fm_available",
+        "actor_q_eligibility_reason", "eligibility_contract_version",
+        "quarantined", "quarantine_reason"
+      ],
       "properties": {
         "critic_td_valid": {"type": "boolean"},
         "actor_q_valid": {"type": "boolean"},
         "expert_fm_available": {"type": "boolean"},
+        "actor_q_eligibility_reason": {"$ref": "#/$defs/nonempty"},
+        "eligibility_contract_version": {"const": "ack_actor_q_v1"},
         "quarantined": {"type": "boolean"},
         "quarantine_reason": {"type": ["string", "null"]}
       }

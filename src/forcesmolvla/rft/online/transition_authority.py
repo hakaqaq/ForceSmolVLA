@@ -28,6 +28,7 @@ SLOT_OWNERS = {
     "policy", "human_intervention", "human_release_hold", "safety_hold",
     "offline_demonstration",
 }
+ACTOR_Q_ELIGIBILITY_CONTRACT = "ack_actor_q_v1"
 
 
 class TransitionContractError(ValueError):
@@ -105,6 +106,13 @@ class AcceptedAck:
 
 
 @dataclass(frozen=True)
+class ActorQEligibility:
+    valid: bool
+    reason: str
+    contract_version: str = ACTOR_Q_ELIGIBILITY_CONTRACT
+
+
+@dataclass(frozen=True)
 class AckMacro:
     grid_monotonic_ns: tuple[int, int, int]
     ack_ids: tuple[str, str, str]
@@ -121,6 +129,63 @@ class AckMacro:
     contract_version: str = CRITIC_ACTION_CONTRACT.version
     next_timestamp_ns: int = 0
     macro_duration_ns: int = CRITIC_ACTION_CONTRACT.macro_duration_ns
+
+
+def derive_actor_q_eligibility(
+    *,
+    macro: AckMacro,
+    action_source: str,
+    quarantined: bool,
+    observation_valid: bool = True,
+    next_observation_valid: bool = True,
+) -> ActorQEligibility:
+    """Authorize Actor-Q only for full held-command deployment ACK macros."""
+
+    def reject(reason: str) -> ActorQEligibility:
+        return ActorQEligibility(False, reason)
+
+    if quarantined:
+        return reject("quarantined")
+    if action_source == "offline_demonstration":
+        return reject("offline_demonstration_not_ack_deployment_semantics")
+    if action_source not in {"policy", "human"}:
+        return reject("action_source_not_actor_q_learnable")
+    if macro.contract_version != CRITIC_ACTION_CONTRACT.version:
+        return reject("critic_action_contract_mismatch")
+    if tuple(macro.behavior_mask) != (True, True, True):
+        return reject("partial_macro")
+    if macro.macro_duration_ns != CRITIC_ACTION_CONTRACT.macro_duration_ns:
+        return reject("macro_duration_mismatch")
+    if any(macro.workspace_clip_flags):
+        return reject("workspace_clipped")
+    if not observation_valid or not next_observation_valid:
+        return reject("observation_invalid")
+    expected_owner = "policy" if action_source == "policy" else "human_intervention"
+    if set(macro.slot_owner) != {expected_owner}:
+        return reject("slot_owner_not_learnable")
+    for values, reason in (
+        (macro.ack_ids, "mid_macro_ack_change"),
+        (macro.source_command_ids, "mid_macro_command_change"),
+        (macro.source_dispatch_sequences, "mid_macro_dispatch_change"),
+        (macro.chunk_ids, "mid_macro_chunk_change"),
+    ):
+        if len(set(values)) != 1 or values[0] in {"", -1}:
+            return reject(reason)
+    if action_source == "policy" and (
+        len(set(macro.source_model_indices)) != 1
+        or macro.source_model_indices[0] < 0
+    ):
+        return reject("mid_macro_policy_model_change")
+    for requested, acknowledged in zip(
+        macro.gripper_command_ids,
+        macro.gripper_ack_command_ids,
+        strict=True,
+    ):
+        if not requested or requested != acknowledged:
+            return reject("gripper_ack_mismatch")
+    if not np.isfinite(macro.accepted_absolute_action_k7).all():
+        return reject("behavior_action_nonfinite")
+    return ActorQEligibility(True, "eligible")
 
 
 def _lineage(ack: AcceptedAck) -> tuple[object, ...]:
@@ -399,6 +464,41 @@ def _schema() -> dict:
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
+def _derive_payload_actor_q_eligibility(value: Mapping) -> ActorQEligibility:
+    behavior = value["behavior_ack"]
+    sources = tuple(behavior["accepted_action_source"])
+    source = sources[0] if len(set(sources)) == 1 else "mixed"
+    if source == "offline":
+        source = "offline_demonstration"
+    chunk_id = str(value["policy_proposal"]["chunk_id"])
+    model_index = 0 if source == "policy" else -1
+    macro = AckMacro(
+        grid_monotonic_ns=(1, 2, 3),
+        ack_ids=tuple(behavior["ack_ids"]),
+        gripper_command_ids=tuple(behavior["gripper_command_ids"]),
+        gripper_ack_command_ids=tuple(behavior["gripper_ack_command_ids"]),
+        accepted_absolute_action_k7=np.asarray(
+            behavior["accepted_absolute_action_k7"], dtype=np.float64
+        ),
+        slot_owner=tuple(behavior["slot_owner"]),
+        workspace_clip_flags=tuple(behavior["workspace_clip_flags"]),
+        source_command_ids=tuple(behavior["ack_ids"]),
+        source_dispatch_sequences=(0, 0, 0),
+        source_model_indices=(model_index, model_index, model_index),
+        chunk_ids=(chunk_id, chunk_id, chunk_id),
+    )
+    return derive_actor_q_eligibility(
+        macro=macro,
+        action_source=source,
+        quarantined=bool(value["eligibility"].get("quarantined", False)),
+        observation_valid=bool(value["observation"].get("valid", False)),
+        next_observation_valid=(
+            value["next_observation"] is not None
+            and bool(value["next_observation"].get("valid", False))
+        ),
+    )
+
+
 def validate_ack_transition(payload: Mapping) -> dict:
     value = deepcopy(dict(payload))
     errors = sorted(
@@ -413,6 +513,14 @@ def validate_ack_transition(payload: Mapping) -> dict:
     if value["integrity"]["canonical_payload_sha256"] != canonical_payload_sha256(value):
         raise TransitionContractError("ONLINE_REPLAY_TRANSITION_DIGEST_MISMATCH")
     eligibility = value["eligibility"]
+    derived_actor_q = _derive_payload_actor_q_eligibility(value)
+    if (
+        eligibility["actor_q_valid"] is not derived_actor_q.valid
+        or eligibility["actor_q_eligibility_reason"] != derived_actor_q.reason
+        or eligibility["eligibility_contract_version"]
+        != derived_actor_q.contract_version
+    ):
+        raise TransitionContractError("ONLINE_REPLAY_ACTOR_Q_ELIGIBILITY_MISMATCH")
     if eligibility["quarantined"]:
         if any(eligibility[name] for name in ("critic_td_valid", "actor_q_valid", "expert_fm_available")):
             raise TransitionContractError("ONLINE_REPLAY_QUARANTINED_ROW_MARKED_TRAINABLE")
@@ -471,6 +579,12 @@ def validate_ack_transition(payload: Mapping) -> dict:
 
 def finalize_ack_transition(payload_without_integrity: Mapping) -> dict:
     value = deepcopy(dict(payload_without_integrity))
+    eligibility = _derive_payload_actor_q_eligibility(value)
+    value["eligibility"].update(
+        actor_q_valid=eligibility.valid,
+        actor_q_eligibility_reason=eligibility.reason,
+        eligibility_contract_version=eligibility.contract_version,
+    )
     value.setdefault("identity", {})["transition_uid"] = compute_transition_uid(value)
     value["integrity"] = {"canonical_payload_sha256": canonical_payload_sha256(value)}
     return validate_ack_transition(value)

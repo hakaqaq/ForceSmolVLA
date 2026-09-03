@@ -18,8 +18,10 @@ import yaml
 from forcesmolvla.rft.online.transition_authority import (
     AcceptedAck,
     AckMacro,
+    ActorQEligibility,
     TransitionContractError,
     build_ack_behavior_macro,
+    derive_actor_q_eligibility,
     normalized_ack_behavior_action,
 )
 from forcesmolvla.rft.critic_action_adapter_v2 import (
@@ -100,6 +102,7 @@ class ProductionAckMacro:
     behavior: AckMacro
     next_grid_monotonic_ns: int
     ack_provenance: tuple[Mapping[str, Any], ...]
+    actor_q_eligibility: ActorQEligibility
 
 
 def _rational_grid_from_transition(
@@ -323,7 +326,20 @@ def build_ack_macros(
                 }
                 for slot, ack_id in enumerate(behavior.ack_ids)
             )
-            macros.append(ProductionAckMacro(row, behavior, next_grid, provenance))
+            eligibility = derive_actor_q_eligibility(
+                macro=behavior,
+                action_source=action_source,
+                quarantined=bool(row.get("eligibility", {}).get("quarantined", False)),
+                observation_valid=bool(row["observation"].get("valid", True)),
+                next_observation_valid=bool(
+                    row["next_observation"].get("valid", True)
+                ),
+            )
+            macros.append(
+                ProductionAckMacro(
+                    row, behavior, next_grid, provenance, eligibility
+                )
+            )
     return tuple(macros)
 
 
@@ -559,6 +575,8 @@ class FormalReplay:
             "action_source": "policy",
             "td_eligible": True,
             "fm_eligible": False,
+            "actor_q_valid": macro.actor_q_eligibility.valid,
+            "actor_q_eligibility_reason": macro.actor_q_eligibility.reason,
         }
 
 
@@ -637,6 +655,8 @@ class HumanCorrectionReplay:
             "action_source": "human",
             "td_eligible": True,
             "fm_eligible": fm_eligible,
+            "actor_q_valid": macro.actor_q_eligibility.valid,
+            "actor_q_eligibility_reason": macro.actor_q_eligibility.reason,
             "action_target": action_target,
             "action_valid_mask": feature_mask,
             "human_action_target_h50": action_target,
@@ -734,6 +754,10 @@ class DemoReplay:
             "action_source": "offline_demonstration",
             "td_eligible": True,
             "fm_eligible": True,
+            "actor_q_valid": False,
+            "actor_q_eligibility_reason": (
+                "offline_demonstration_not_ack_deployment_semantics"
+            ),
         }
 
 
