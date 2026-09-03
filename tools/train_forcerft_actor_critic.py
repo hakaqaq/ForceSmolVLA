@@ -319,6 +319,33 @@ def _snapshot_trainable_actor(actor) -> dict[str, torch.Tensor]:
     }
 
 
+def _snapshot_actor_state(actor) -> dict[str, torch.Tensor]:
+    return {
+        name: value.detach().cpu().clone()
+        for name, value in actor.state_dict().items()
+    }
+
+
+def assert_offline_initialization_keeps_actor_frozen(
+    actor,
+    sft_state: Mapping[str, torch.Tensor],
+    actor_optimizer: torch.optim.Optimizer,
+) -> None:
+    current = actor.state_dict()
+    require(current.keys() == sft_state.keys(), "FORCERFT_SFT_ACTOR_STATE_KEYS_CHANGED")
+    require(
+        all(
+            torch.equal(current[name].detach().cpu(), sft_state[name])
+            for name in current
+        ),
+        "FORCERFT_OFFLINE_INITIALIZATION_CHANGED_SFT_ACTOR",
+    )
+    require(
+        not actor_optimizer.state,
+        "FORCERFT_OFFLINE_INITIALIZATION_ACTOR_OPTIMIZER_STEPPED",
+    )
+
+
 def _relative_change(
     actor,
     reference: Mapping[str, torch.Tensor],
@@ -1089,6 +1116,7 @@ def load_offline_training_parents(
         strict=True,
         artifact_use="development",
     ).to(device)
+    sft_state = _snapshot_actor_state(actor)
     apply_frozen_vlm_trainability(actor)
     data = config["data"]
     q1, q2, q1_target, q2_target, _conversion = build_twin_q(
@@ -1158,6 +1186,9 @@ def load_offline_training_parents(
         build_frozen_vlm_actor_optimizer(
             actor, lr=float(config["optimizer"]["actor"]["lr"])
         )
+    )
+    assert_offline_initialization_keeps_actor_frozen(
+        actor, sft_state, actor_optimizer
     )
     return (
         actor,
@@ -1531,6 +1562,46 @@ def run_offline_joint_training(
     }
 
 
+def run_offline_critic_initialization_only(
+    *,
+    actor_checkpoint: Path,
+    critic_checkpoint: Path,
+) -> dict[str, Any]:
+    """Validate the production SFT-Actor plus initialized-Critic parents."""
+
+    require(torch.cuda.is_available(), "FORCERFT_OFFLINE_INITIALIZATION_CUDA_UNAVAILABLE")
+    (
+        actor,
+        _q1,
+        _q2,
+        _q1_target,
+        _q2_target,
+        _modules,
+        _critic_optimizer,
+        _critic_scheduler,
+        actor_optimizer,
+        actor_scheduler,
+        _actor_ownership,
+        _config,
+    ) = load_offline_training_parents(
+        actor_checkpoint=actor_checkpoint,
+        critic_checkpoint=critic_checkpoint,
+        device=torch.device("cuda:0"),
+    )
+    require(
+        actor_scheduler.last_epoch == 0,
+        "FORCERFT_OFFLINE_INITIALIZATION_ACTOR_SCHEDULER_STEPPED",
+    )
+    return {
+        "MODE": "production_critic_initialization_only",
+        "ACTOR_SOURCE": str(actor_checkpoint),
+        "CRITIC_SOURCE": str(critic_checkpoint),
+        "ACTOR_OPTIMIZER_STEPS": 0,
+        "ACTOR_Q_IMPROVEMENT_ENABLED": False,
+        "ACTOR_EQUAL_TO_SFT": True,
+    }
+
+
 def strict_load_offline_checkpoint(
     *, actor_checkpoint: Path, critic_checkpoint: Path, checkpoint: Path
 ) -> dict[str, Any]:
@@ -1645,19 +1716,26 @@ def main() -> int:
                     checkpoint=checkpoint,
                 )
                 if args.strict_load_only
-                else run_offline_joint_training(
-                    cycles=args.offline_joint_cycles,
-                    actor_checkpoint=actor_checkpoint,
-                    critic_checkpoint=critic_checkpoint,
-                    checkpoint=checkpoint,
-                    run_name=args.run_name,
-                    checkpoint_every_cycles=args.checkpoint_every_cycles,
-                    diagnostics_every_cycles=args.diagnostics_every_cycles,
-                    eta_actor_q_override=args.eta_actor_q_override,
-                    actor_lr_override=args.actor_lr_override,
-                    allow_legacy_offline_actor_ablation=(
-                        args.allow_legacy_offline_actor_ablation
-                    ),
+                else (
+                    run_offline_joint_training(
+                        cycles=args.offline_joint_cycles,
+                        actor_checkpoint=actor_checkpoint,
+                        critic_checkpoint=critic_checkpoint,
+                        checkpoint=checkpoint,
+                        run_name=args.run_name,
+                        checkpoint_every_cycles=args.checkpoint_every_cycles,
+                        diagnostics_every_cycles=args.diagnostics_every_cycles,
+                        eta_actor_q_override=args.eta_actor_q_override,
+                        actor_lr_override=args.actor_lr_override,
+                        allow_legacy_offline_actor_ablation=(
+                            args.allow_legacy_offline_actor_ablation
+                        ),
+                    )
+                    if args.allow_legacy_offline_actor_ablation
+                    else run_offline_critic_initialization_only(
+                        actor_checkpoint=actor_checkpoint,
+                        critic_checkpoint=critic_checkpoint,
+                    )
                 )
             ),
             indent=2,

@@ -1,0 +1,11 @@
+configuration_kind: forcerft_offline_critic_initialization_v1
+
+offline_training:
+  critic_initialization_only: true
+  actor_q_improvement_enabled: false
+  actor_optimizer_steps: 0
+
+data_contract:
+  offline_demonstration_critic_td_valid: true
+  offline_demonstration_actor_q_valid: false
+  preserve_recorded_behavior_macro: true
