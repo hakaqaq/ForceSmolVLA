@@ -230,6 +230,7 @@ def prepare_learner(
     resume_checkpoint: Path,
     warmup_api: Any,
     joint_api: Any,
+    task: str,
 ) -> dict[str, Any]:
     """Restore one exact-resume Learner without importing CLI modules from src."""
 
@@ -350,7 +351,7 @@ def prepare_learner(
         cycles=1,
     )
     d_replay.prefetch_joint(critic_d, actor_d)
-    feature = torch.from_numpy(frozen_task_feature()).to(
+    feature = torch.from_numpy(frozen_task_feature(task)).to(
         device=device, dtype=torch.float32
     )
     normalizer_mean = torch.tensor(

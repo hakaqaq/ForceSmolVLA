@@ -1,0 +1,530 @@
+{
+  "canonical_task_prompt": "Pick up the green plug, insert it fully into the red socket, and release it.",
+  "episode_count": 20,
+  "episodes": [
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000000",
+      "first_confident_complete_frame": 1035,
+      "hard_negative_intervals": [
+        [
+          625,
+          1034
+        ]
+      ],
+      "last_confident_incomplete_frame": 1034,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          624
+        ]
+      ],
+      "output_episode_index": 0,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000001",
+      "first_confident_complete_frame": 736,
+      "hard_negative_intervals": [
+        [
+          594,
+          735
+        ]
+      ],
+      "last_confident_incomplete_frame": 735,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          593
+        ]
+      ],
+      "output_episode_index": 1,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000002",
+      "first_confident_complete_frame": 746,
+      "hard_negative_intervals": [
+        [
+          618,
+          745
+        ]
+      ],
+      "last_confident_incomplete_frame": 745,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          617
+        ]
+      ],
+      "output_episode_index": 2,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000003",
+      "first_confident_complete_frame": 903,
+      "hard_negative_intervals": [
+        [
+          651,
+          902
+        ]
+      ],
+      "last_confident_incomplete_frame": 902,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          650
+        ]
+      ],
+      "output_episode_index": 3,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000004",
+      "first_confident_complete_frame": 943,
+      "hard_negative_intervals": [
+        [
+          594,
+          942
+        ]
+      ],
+      "last_confident_incomplete_frame": 942,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          593
+        ]
+      ],
+      "output_episode_index": 4,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000005",
+      "first_confident_complete_frame": 931,
+      "hard_negative_intervals": [
+        [
+          618,
+          930
+        ]
+      ],
+      "last_confident_incomplete_frame": 930,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          617
+        ]
+      ],
+      "output_episode_index": 5,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000006",
+      "first_confident_complete_frame": 657,
+      "hard_negative_intervals": [
+        [
+          533,
+          656
+        ]
+      ],
+      "last_confident_incomplete_frame": 656,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          532
+        ]
+      ],
+      "output_episode_index": 6,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000008",
+      "first_confident_complete_frame": 656,
+      "hard_negative_intervals": [
+        [
+          498,
+          655
+        ]
+      ],
+      "last_confident_incomplete_frame": 655,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          497
+        ]
+      ],
+      "output_episode_index": 7,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000009",
+      "first_confident_complete_frame": 606,
+      "hard_negative_intervals": [
+        [
+          499,
+          605
+        ]
+      ],
+      "last_confident_incomplete_frame": 605,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          498
+        ]
+      ],
+      "output_episode_index": 8,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000012",
+      "first_confident_complete_frame": 762,
+      "hard_negative_intervals": [
+        [
+          503,
+          761
+        ]
+      ],
+      "last_confident_incomplete_frame": 761,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          502
+        ]
+      ],
+      "output_episode_index": 11,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000013",
+      "first_confident_complete_frame": 616,
+      "hard_negative_intervals": [
+        [
+          466,
+          615
+        ]
+      ],
+      "last_confident_incomplete_frame": 615,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          465
+        ]
+      ],
+      "output_episode_index": 12,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000014",
+      "first_confident_complete_frame": 675,
+      "hard_negative_intervals": [
+        [
+          548,
+          674
+        ]
+      ],
+      "last_confident_incomplete_frame": 674,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          547
+        ]
+      ],
+      "output_episode_index": 13,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000015",
+      "first_confident_complete_frame": 596,
+      "hard_negative_intervals": [
+        [
+          509,
+          595
+        ]
+      ],
+      "last_confident_incomplete_frame": 595,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          508
+        ]
+      ],
+      "output_episode_index": 14,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000017",
+      "first_confident_complete_frame": 647,
+      "hard_negative_intervals": [
+        [
+          570,
+          646
+        ]
+      ],
+      "last_confident_incomplete_frame": 646,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          569
+        ]
+      ],
+      "output_episode_index": 16,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000018",
+      "first_confident_complete_frame": 759,
+      "hard_negative_intervals": [
+        [
+          588,
+          758
+        ]
+      ],
+      "last_confident_incomplete_frame": 758,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          587
+        ]
+      ],
+      "output_episode_index": 17,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000019",
+      "first_confident_complete_frame": 741,
+      "hard_negative_intervals": [
+        [
+          490,
+          740
+        ]
+      ],
+      "last_confident_incomplete_frame": 740,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          489
+        ]
+      ],
+      "output_episode_index": 18,
+      "positive_available": true,
+      "split": "train",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000010",
+      "first_confident_complete_frame": 861,
+      "hard_negative_intervals": [
+        [
+          581,
+          860
+        ]
+      ],
+      "last_confident_incomplete_frame": 860,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          580
+        ]
+      ],
+      "output_episode_index": 9,
+      "positive_available": true,
+      "split": "val",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000016",
+      "first_confident_complete_frame": 603,
+      "hard_negative_intervals": [
+        [
+          489,
+          602
+        ]
+      ],
+      "last_confident_incomplete_frame": 602,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          488
+        ]
+      ],
+      "output_episode_index": 15,
+      "positive_available": true,
+      "split": "val",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000027",
+      "first_confident_complete_frame": 680,
+      "hard_negative_intervals": [
+        [
+          614,
+          679
+        ]
+      ],
+      "last_confident_incomplete_frame": 679,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          613
+        ]
+      ],
+      "output_episode_index": 26,
+      "positive_available": true,
+      "split": "val",
+      "task_outcome_context": "success"
+    },
+    {
+      "ambiguous_intervals": [],
+      "completion_stable": true,
+      "completion_visible": true,
+      "confidence": "high",
+      "episode_id": "episode_000043",
+      "first_confident_complete_frame": 597,
+      "hard_negative_intervals": [
+        [
+          472,
+          596
+        ]
+      ],
+      "last_confident_incomplete_frame": 596,
+      "manual_review_status": "human_reviewed",
+      "ordinary_negative_intervals": [
+        [
+          0,
+          471
+        ]
+      ],
+      "output_episode_index": 41,
+      "positive_available": true,
+      "split": "val",
+      "task_outcome_context": "success"
+    }
+  ],
+  "programmatic_labels_generated": false,
+  "schema": "forcesmolvla.reward_frame_labels",
+  "status": "final",
+  "task_id": "task3"
+}

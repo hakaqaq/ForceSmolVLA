@@ -18,10 +18,6 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "configs/online_replay_production_bridge.v1.development.yaml"
-REWARD_DETECTOR_CHECKPOINT = (
-    ROOT
-    / "outputs/task2/reward_classifier/checkpoints/best/best_checkpoint.msgpack"
-)
 REWARD_CLASSIFIER_TOOL = ROOT / "tools/reward_classifier/train_reward_classifier.py"
 CONRFT_RUNTIME_ROOT = Path("/home/rlc123/conrft/serl_launcher")
 CAMERA_KEYS = ("d435_third_person", "d405_wrist")
@@ -95,10 +91,10 @@ def _detector_worker(request_path: Path, output_path: Path) -> None:
             pretrained_encoder_path=str(bridge),
             n_way=2,
         )
-    state = serialization.from_bytes(
-        target, REWARD_DETECTOR_CHECKPOINT.read_bytes()
-    )
-    if int(state.step) != 150:
+    checkpoint = Path(request["checkpoint"]).expanduser().resolve()
+    state = serialization.from_bytes(target, checkpoint.read_bytes())
+    expected_step = int(request["expected_train_state_step"])
+    if int(state.step) != expected_step:
         raise RuntimeError("BRIDGE_REWARD_DETECTOR_CHECKPOINT_STEP_DRIFT")
 
     @jax.jit
@@ -147,6 +143,13 @@ def _detector_worker(request_path: Path, output_path: Path) -> None:
 
 
 class OneShotFrozenRewardDetector:
+    def __init__(
+        self, checkpoint: Path, detector_id: str, expected_train_state_step: int
+    ) -> None:
+        self.checkpoint = checkpoint
+        self.detector_id = detector_id
+        self.expected_train_state_step = int(expected_train_state_step)
+
     def __call__(self, prepared):
         from forcesmolvla.rft.online.production_bridge import FrozenDetectorScores
         from PIL import Image
@@ -184,7 +187,13 @@ class OneShotFrozenRewardDetector:
                     batch[name] = str(batch_path)
                 batches.append(batch)
             request.write_text(
-                json.dumps({"batches": batches}),
+                json.dumps(
+                    {
+                        "batches": batches,
+                        "checkpoint": str(self.checkpoint),
+                        "expected_train_state_step": self.expected_train_state_step,
+                    }
+                ),
                 encoding="utf-8",
             )
             environment = os.environ.copy()
@@ -211,11 +220,15 @@ class OneShotFrozenRewardDetector:
         return FrozenDetectorScores(
             probabilities=tuple(float(value) for value in probabilities),
             validity=(True,) * len(probabilities),
+            detector_id=self.detector_id,
         )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--task-id", default="task2")
+    parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--reward-transition-config", type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--episode", type=Path)
     parser.add_argument("--state-root", type=Path)
@@ -248,6 +261,33 @@ def main(argv: list[str] | None = None) -> int:
         frozen_episode_materializer,
         load_bridge_config,
     )
+    from forcesmolvla.training_runtime import resolve_task_output_root
+
+    output_root = resolve_task_output_root(
+        ROOT, task_id=args.task_id, output_root=args.output_root
+    )
+    reward_transition_config = (
+        args.reward_transition_config
+        or ROOT
+        / "configs/tasks"
+        / args.task_id
+        / "forcerft_offline_reward_transitions.json"
+    ).resolve()
+    reward_transition_spec = json.loads(
+        reward_transition_config.read_text(encoding="utf-8")
+    )
+    detector_id = str(reward_transition_spec["detector_spec"]["detector_id"])
+    detector_train_state_step = int(
+        reward_transition_spec["classifier_train_state_step"]
+    )
+    reward_detector_checkpoint = (
+        output_root
+        / "reward_classifier/checkpoints/best/best_checkpoint.msgpack"
+    )
+    actor_checkpoint = (
+        output_root
+        / "offline/checkpoints/offline_actor_critic_cycle_000210/actor"
+    )
 
     config, raw = load_bridge_config(args.config)
     episode = args.episode or Path(raw["recorded_offline_fixture"]["episode_dir"])
@@ -268,10 +308,19 @@ def main(argv: list[str] | None = None) -> int:
     bridge = ProductionBridge(
         config=config,
         state_root=state_root,
+        parent_binding_path=actor_checkpoint,
         episode_materializer=(
             None
             if policy_execution_smoke and args.dry_run
-            else frozen_episode_materializer(OneShotFrozenRewardDetector())
+            else frozen_episode_materializer(
+                OneShotFrozenRewardDetector(
+                    reward_detector_checkpoint,
+                    detector_id,
+                    detector_train_state_step,
+                ),
+                parent_binding_path=actor_checkpoint,
+                detector_config_path=reward_transition_config,
+            )
         ),
     )
     if args.admit_formal_online_r:

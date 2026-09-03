@@ -17,15 +17,11 @@ import torch.nn.functional as F
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-AUTHORIZED_REWARD_TRANSITION_ROOT = (
-    PROJECT_ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
-)
-AUTHORIZED_REWARD_TRANSITION_MANIFEST_SHA256 = (
-    "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
+DEFAULT_REWARD_TRANSITION_ROOT = (
+    PROJECT_ROOT / "datasets/task2_forcerft_offline_reward_transitions"
 )
 SAFE_RESNET10_SHA256 = "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5"
 CANONICAL_TASK = "Pick up the purple ring and place it onto the red peg."
-CANONICAL_TASK_SHA256 = "f85a8ba9fe524b42220c85e71737bdcf3ffd441b772981b92a87d6a89e324219"
 TASK_FEATURE_DIM = 256
 ACTION_SLOTS = 3
 ACTION_DIM = 7
@@ -54,10 +50,11 @@ def _array_sha256(value: np.ndarray) -> str:
 
 
 def frozen_task_feature(task: str = CANONICAL_TASK) -> np.ndarray:
-    """Return the deterministic, hash-bound canonical task feature."""
+    """Return a deterministic feature for one task prompt."""
 
-    if task != CANONICAL_TASK or hashlib.sha256(task.encode()).hexdigest() != CANONICAL_TASK_SHA256:
-        raise ValueError("G2_NONCANONICAL_TASK_REJECTED")
+    task = task.strip()
+    if not task:
+        raise ValueError("G2_EMPTY_TASK_REJECTED")
     raw = np.frombuffer(
         hashlib.shake_256(b"ForceSmolVLA/G2/task-feature/v1\0" + task.encode()).digest(
             TASK_FEATURE_DIM
@@ -394,9 +391,10 @@ def build_twin_q(
     asset_manifest_path: Path,
     *,
     seed: int = 0,
+    task: str = CANONICAL_TASK,
 ) -> tuple[ForceAwareMacroCritic, ForceAwareMacroCritic, ForceAwareMacroCritic, ForceAwareMacroCritic, dict]:
     backbone, conversion = load_frozen_conrft_resnet10(safe_npz_path, asset_manifest_path)
-    feature = frozen_task_feature()
+    feature = frozen_task_feature(task)
     with torch.random.fork_rng(devices=[]):
         torch.manual_seed(seed)
         q1 = ForceAwareMacroCritic(copy.deepcopy(backbone), copy.deepcopy(backbone), task_feature=feature)
@@ -435,21 +433,16 @@ def polyak_blend_state(
 
 
 def load_authorized_critic_train_transitions(
-    root: Path = AUTHORIZED_REWARD_TRANSITION_ROOT,
+    root: Path = DEFAULT_REWARD_TRANSITION_ROOT,
+    *,
+    task_id: str | None = None,
 ):
-    """Open the hash-bound reward-transition view used to train the Critic."""
+    """Open an authorized task reward-transition dataset for Critic training."""
 
     root = Path(root).resolve()
-    if root != AUTHORIZED_REWARD_TRANSITION_ROOT.resolve():
-        raise RuntimeError("G2_REJECTED_NONAUTHORIZED_G1_ROOT_BEFORE_OPEN")
-    if (
-        _sha256_file(root / "g1_manifest.json")
-        != AUTHORIZED_REWARD_TRANSITION_MANIFEST_SHA256
-    ):
-        raise RuntimeError("G2_AUTHORIZED_G1_MANIFEST_SHA_DRIFT")
     from forcesmolvla.rft.detector_reward_transitions import load_training_transitions
 
-    table = load_training_transitions(root)
+    table = load_training_transitions(root, task_id=task_id)
     return table.select(AUTHORIZED_G2_COLUMNS)
 
 

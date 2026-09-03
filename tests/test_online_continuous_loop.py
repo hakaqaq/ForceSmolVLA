@@ -22,6 +22,10 @@ def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> 
     ])
 
     assert args.output_root == (tmp_path / "outputs/task2").resolve()
+    assert args.dataset_root == (ROOT / "datasets/task2_lerobotv3").resolve()
+    assert args.reward_transition_root == (
+        ROOT / "datasets/task2_forcerft_offline_reward_transitions"
+    ).resolve()
     assert args.formal_r_root == (tmp_path / "outputs/task2/online").resolve()
     assert args.allow_development_policy_execution_smoke is False
     assert not hasattr(args, "deployment_profile")
@@ -259,6 +263,7 @@ def test_pose_ack_timeout_skips_episode_and_keeps_learner_alive(
 
 
 def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
+    admission_commands: list[list[str]] = []
     capture._print_payload({
         "status": "CAPTURE_SEALED",
         "episode_seal": {
@@ -280,7 +285,7 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     assert "observations=370" in output
     assert "stream_counts" not in output
 
-    monkeypatch.setattr(loop, "_report", lambda _command: {
+    monkeypatch.setattr(loop, "_report", lambda command: admission_commands.append(command) or {
         "status": "FORMAL_ONLINE_R_ADMITTED",
         "accepted_unique_r_transition_count": 364,
         "human_override_replay_count": 2,
@@ -290,6 +295,7 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     assert loop._admit(
         type("Args", (), {
             "model_python": Path("python"), "formal_r_root": Path("r"),
+            "task_id": "task3", "output_root": Path("outputs/task3"),
         })(),
         Path("episode"),
         outcome="success",
@@ -297,6 +303,9 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     output = capsys.readouterr().out
     assert output.count("\n") == 1
     assert "human_expert=2" in output
+    assert admission_commands[0][2:6] == [
+        "--task-id", "task3", "--output-root", "outputs/task3",
+    ]
 
 
 def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatch) -> None:
@@ -311,6 +320,7 @@ def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatc
     admitted = loop._admit(
         type("Args", (), {
             "model_python": Path("python"), "formal_r_root": Path("r"),
+            "task_id": "task3", "output_root": Path("outputs/task3"),
         })(),
         Path("episode"),
         outcome="failure",
@@ -382,9 +392,13 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
     args = type("Args", (), {
         "allow_development_policy_execution_smoke": True,
         "output_root": tmp_path,
-        "model_python": Path("python"),
-        "task_id": "task2",
-        "policy_port": 8000,
+            "model_python": Path("python"),
+            "task_id": "task2",
+            "task": "ring",
+            "dataset_root": tmp_path / "datasets/task2_lerobotv3",
+            "reward_transition_root": tmp_path / "datasets/task2_forcerft_offline_reward_transitions",
+            "safety_config": None,
+            "policy_port": 8000,
         "server_start_timeout": 1.0,
         "max_episodes": 2,
         "root_prefix": tmp_path / "capture",
@@ -420,9 +434,13 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     args = type("Args", (), {
         "allow_development_policy_execution_smoke": True,
         "output_root": tmp_path,
-        "model_python": Path("python"),
-        "task_id": "task2",
-        "policy_port": 8000,
+            "model_python": Path("python"),
+            "task_id": "task2",
+            "task": "ring",
+            "dataset_root": tmp_path / "datasets/task2_lerobotv3",
+            "reward_transition_root": tmp_path / "datasets/task2_forcerft_offline_reward_transitions",
+            "safety_config": None,
+            "policy_port": 8000,
         "server_start_timeout": 1.0,
         "max_episodes": 1,
         "root_prefix": tmp_path / "capture",

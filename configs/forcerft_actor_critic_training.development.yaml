@@ -22,10 +22,10 @@ environment:
   cudnn_deterministic: true
 
 data:
-  transition_root: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  transition_root: datasets/task2_forcerft_offline_reward_transitions
   lerobot_v3_root: datasets/task2_lerobotv3
-  critic_backbone_npz: artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz
-  critic_backbone_manifest: artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json
+  critic_backbone_npz: assets/reward_classifier/resnet10_parameters.npz
+  critic_backbone_manifest: assets/reward_classifier/resnet10_manifest.json
   online_replay_root: outputs/task2/online/replay
   offline_D_source: materialized_reward_terminal_demo_replay
   current_episode_sampling: false

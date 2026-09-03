@@ -32,8 +32,8 @@ CANONICAL_MANIFEST_ROOT = (
 )
 DEFAULT_TERMINAL_INDEX = (
     ROOT
-    / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
-    / "transition_index.parquet"
+    / "datasets/task2_forcerft_offline_reward_transitions"
+    / "forcerft_offline_td_transitions.parquet"
 )
 FIXTURE_ID = "task2-episode_000018-recorded-ack-k3-terminal"
 

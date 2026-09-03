@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>task2 Reward Frame Manual Review v2</title>
+  <title>Reward Frame Manual Review</title>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     body { margin: 0; background: #11151a; color: #e9eef5; }
@@ -29,16 +29,14 @@
 </head>
 <body>
   <header>
-    <strong>task2 双相机人工完成边界审核 v2</strong>
+    <strong id="taskTitle">双相机人工完成边界审核</strong>
     <label>Episode <select id="episodeSelect"></select></label>
     <span id="reviewProgress"></span>
   </header>
 
-  <div class="warning controls" style="display:block">
-    Canonical task：Pick up the purple ring and place it onto the red peg。
-    Positive 必须同时确认：peg 穿过 ring 中心孔、ring 已脱离夹爪、ring 稳定落在 peg/base assembly、后续未滑落/弹出/重新被抓取。
-    禁止用 saved=true、episode 末帧、last_valid_frame、文件名、episode 成功标签或示例视频时间推断完成帧。
-    <a href="/labeling_protocol.md" target="_blank">查看冻结 v2 协议</a>
+  <div id="taskWarning" class="warning controls" style="display:block">
+    Positive 必须确认任务已经完成、物体已释放且完成状态稳定。禁止用 episode 末帧或文件名推断完成帧。
+    <a href="/labeling_protocol.md" target="_blank">查看标注协议</a>
   </div>
 
   <div class="cameras">
@@ -64,9 +62,6 @@
     <label class="wide">ordinary_negative_intervals（JSON，例如 [[0,120]]）<textarea id="ordinaryIntervals">[]</textarea></label>
     <label class="wide">hard_negative_intervals（JSON，例如 [[121,200]]）<textarea id="hardIntervals">[]</textarea></label>
     <label class="wide">ambiguous_intervals / ignore（JSON，例如 [[201,210]]）<textarea id="ambiguousIntervals">[]</textarea></label>
-    <label>reviewer_id<input id="reviewerId"></label>
-    <label>review_timestamp（ISO-8601，人工填写）<input id="reviewTimestamp"></label>
-    <label class="wide">notes<textarea id="notes"></textarea></label>
     <div class="footer-actions">
       <button id="saveEpisode">保存本集人工记录（仅浏览器内存）</button>
       <button id="exportLabels">导出 JSON</button>
@@ -100,9 +95,6 @@
       value.ordinary_negative_intervals = parseIntervals("ordinaryIntervals");
       value.hard_negative_intervals = parseIntervals("hardIntervals");
       value.ambiguous_intervals = parseIntervals("ambiguousIntervals");
-      value.reviewer_id = $("reviewerId").value || null;
-      value.review_timestamp = $("reviewTimestamp").value || null;
-      value.notes = $("notes").value || null;
       if (markReviewed) value.manual_review_status = "human_reviewed";
       updateProgress();
     }
@@ -118,9 +110,6 @@
       $("ordinaryIntervals").value = JSON.stringify(v.ordinary_negative_intervals);
       $("hardIntervals").value = JSON.stringify(v.hard_negative_intervals);
       $("ambiguousIntervals").value = JSON.stringify(v.ambiguous_intervals);
-      $("reviewerId").value = v.reviewer_id ?? "";
-      $("reviewTimestamp").value = v.review_timestamp ?? "";
-      $("notes").value = v.notes ?? "";
     }
 
     function updateProgress() {
@@ -170,6 +159,8 @@
         fetch("/review_index.json").then(r => r.json()),
         fetch("/label_template.json").then(r => r.json())
       ]);
+      $("taskTitle").textContent = `${labelDocument.task_id} 双相机人工完成边界审核`;
+      $("taskWarning").prepend(`Task：${labelDocument.canonical_task_prompt} `);
       for (const item of reviewIndex.episodes) {
         const option = document.createElement("option");
         option.value = item.episode_id;
@@ -189,7 +180,7 @@
       try { saveForm(false); } catch (e) { alert(e.message); return; }
       const blob = new Blob([JSON.stringify(labelDocument, null, 2) + "\n"], {type: "application/json"});
       const link = document.createElement("a"); link.href = URL.createObjectURL(blob);
-      link.download = "task2_reward_frame_labels.v2.reviewed.json"; link.click(); URL.revokeObjectURL(link.href);
+      link.download = `${labelDocument.task_id}_reward_frame_labels.json`; link.click(); URL.revokeObjectURL(link.href);
     });
     document.addEventListener("keydown", e => { if (e.key === "ArrowLeft") showFrame(frame - 1); if (e.key === "ArrowRight") showFrame(frame + 1); });
     init().catch(e => { document.body.textContent = "UI 初始化失败: " + e; });

@@ -30,19 +30,6 @@ from forcesmolvla.rft.online import replay_training as warmup  # noqa: E402
 
 
 TASK_ID = "task2"
-TASK_OUTPUT_ROOT = ROOT / "outputs/task2"
-SFT_CHECKPOINT = (
-    TASK_OUTPUT_ROOT
-    / "sft/checkpoints/forcesmolvla_sft_step_010000"
-)
-CRITIC_CHECKPOINT = (
-    TASK_OUTPUT_ROOT
-    / "offline/checkpoints/offline_twin_q_critic_warmup_step_000256"
-)
-JOINT_CHECKPOINT = (
-    TASK_OUTPUT_ROOT
-    / "offline/checkpoints/offline_actor_critic_cycle_000210"
-)
 ACTOR_CHECKPOINT_ID = "offline-actor-critic-cycle-000210"
 
 
@@ -886,6 +873,7 @@ def load_resume_modules(
         warmup._resolve(data["critic_backbone_npz"]),
         warmup._resolve(data["critic_backbone_manifest"]),
         seed=0,
+        task=warmup.TASK,
     )
     q1.train(True)
     q2.train(True)
@@ -926,6 +914,7 @@ def load_offline_training_parents(
         warmup._resolve(data["critic_backbone_npz"]),
         warmup._resolve(data["critic_backbone_manifest"]),
         seed=0,
+        task=warmup.TASK,
     )
     modules = {
         "q1": q1,
@@ -1096,7 +1085,7 @@ def run_offline_joint_training(
         d_rng, replay.population, cycles=cycles
     )
     replay.prefetch_joint(critic_schedule, actor_schedule)
-    feature = torch.from_numpy(frozen_task_feature()).to(
+    feature = torch.from_numpy(frozen_task_feature(warmup.TASK)).to(
         device=device, dtype=torch.float32
     )
     delta_mean = torch.tensor(
@@ -1235,7 +1224,7 @@ def run_offline_joint_training(
         runtime_state=runtime_state,
         parent_binding=None,
         actor_parent_path=actor_checkpoint,
-        parent_binding_id="task2-offline-sft-and-twin-q",
+        parent_binding_id=f"{warmup.TASK_ID}-offline-sft-and-twin-q",
         source_checkpoint=critic_checkpoint,
         total_joint_cycles=cycles,
         actor_checkpoint_id=ACTOR_CHECKPOINT_ID,
@@ -1314,6 +1303,8 @@ def strict_load_offline_checkpoint(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task-id", default=TASK_ID)
+    parser.add_argument("--dataset-root", type=Path)
+    parser.add_argument("--reward-transition-root", type=Path)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--offline-joint-cycles", type=int, default=210)
     parser.add_argument("--actor-checkpoint", type=Path)
@@ -1324,11 +1315,29 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    from forcesmolvla.training_runtime import resolve_task_output_root
+    from forcesmolvla.training_runtime import (
+        resolve_task_dataset_root,
+        resolve_task_output_root,
+        resolve_task_reward_transition_root,
+    )
 
     args = parse_args()
     output_root = resolve_task_output_root(
         ROOT, task_id=args.task_id, output_root=args.output_root
+    )
+    dataset_root = resolve_task_dataset_root(
+        ROOT, task_id=args.task_id, dataset_root=args.dataset_root
+    )
+    reward_transition_root = resolve_task_reward_transition_root(
+        ROOT,
+        task_id=args.task_id,
+        reward_transition_root=args.reward_transition_root,
+    )
+    warmup.configure_task_paths(
+        task_id=args.task_id,
+        dataset_root=dataset_root,
+        reward_transition_root=reward_transition_root,
+        output_root=output_root,
     )
     actor_checkpoint = args.actor_checkpoint or (
         output_root / "sft/checkpoints/forcesmolvla_sft_step_010000"

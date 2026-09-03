@@ -36,7 +36,8 @@ from forcesmolvla.rft.critic_action_adapter_v2 import (
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = ROOT / "configs/twin_q_critic_warmup.development.yaml"
 SOURCE_MANIFEST = ROOT / "artifacts/development/stage2/stage2_source_manifest.v10_g7a_r2.json"
-REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
+TASK_ID = "task2"
+REWARD_TRANSITION_ROOT = ROOT / "datasets/task2_forcerft_offline_reward_transitions"
 ACTION_CONTRACT_DIAGNOSTIC = {
     "raw_gripper_values": 0,
     "raw_gripper_out_of_public_tolerance": 0,
@@ -201,7 +202,8 @@ def load_split_rows(split: str) -> list[dict]:
     require(split in {"train", "val"}, "OFFLINE_TWIN_Q_TEST_SPLIT_FORBIDDEN")
     columns = list(AUTHORIZED_G4_COLUMNS) + ["detector_terminal_frame"]
     table = pq.read_table(
-        REWARD_TRANSITION_ROOT / "transition_index.parquet", columns=columns,
+        REWARD_TRANSITION_ROOT / "forcerft_offline_td_transitions.parquet",
+        columns=columns,
         filters=[("split", "=", split)],
     )
     require(set(table.column("split").to_pylist()) == {split}, "OFFLINE_TWIN_Q_SPLIT_FILTER_LEAK")
@@ -771,6 +773,7 @@ def initialize_fresh(*, device: torch.device, with_data: bool) -> dict:
     )
     from forcesmolvla.rft.training_cycle import module_state_sha256
     from forcesmolvla.rft.training_cycle import (
+        DATASET,
         PARENT_ACTOR_CHECKPOINT,
         REWARD_BACKBONE_MANIFEST,
         REWARD_BACKBONE_PARAMETERS,
@@ -797,8 +800,16 @@ def initialize_fresh(*, device: torch.device, with_data: bool) -> dict:
             artifact_use="development",
         ).to(device)
     policy.eval()
+    dataset_conversion = json.loads(
+        (DATASET / "conversion_manifest.json").read_text(encoding="utf-8")
+    )
+    task_prompts = {str(item["task"]) for item in dataset_conversion["episodes"]}
+    require(len(task_prompts) == 1, "OFFLINE_TWIN_Q_TASK_PROMPT_AMBIGUOUS")
     q1, q2, q1_target, q2_target, conversion = build_twin_q(
-        REWARD_BACKBONE_PARAMETERS, REWARD_BACKBONE_MANIFEST, seed=0
+        REWARD_BACKBONE_PARAMETERS,
+        REWARD_BACKBONE_MANIFEST,
+        seed=0,
+        task=task_prompts.pop(),
     )
     q1, q2, q1_target, q2_target = (
         module.to(device) for module in (q1, q2, q1_target, q2_target)
@@ -1057,9 +1068,13 @@ def run_warmup(args) -> None:
     sampler_final = {name: sampler.state_dict() for name, sampler in samplers.items()}
     rng_final = capture_rng_states(generators)
     protected = json.loads(args.protected_snapshot.read_text())
+    parent_actor_tree = protected["trees"].get(
+        "parent_actor_checkpoint", protected["trees"].get("r5_checkpoint")
+    )
+    require(parent_actor_tree is not None, "OFFLINE_TWIN_Q_PARENT_ACTOR_TREE_MISSING")
     actor_binding = {
         "parent_actor_path": PARENT_ACTOR_CHECKPOINT.relative_to(ROOT).as_posix(),
-        "r5_tree": protected["trees"]["r5_checkpoint"],
+        "r5_tree": parent_actor_tree,
         "state_initial": actor_initial, "state_final": module_component_digests(policy),
         "bitwise_unchanged": True, "optimizer_created": False,
         "scheduler_created": False, "optimizer_updates": 0,
@@ -1069,8 +1084,8 @@ def run_warmup(args) -> None:
         "g7a/stage2_g7a_critic_warmup.development.yaml": CONFIG.read_bytes(),
         "g7a/critic_training.py": Path(__file__).read_bytes(),
         "g7a/protected_snapshot.json": args.protected_snapshot.read_bytes(),
-        "reward_transitions/g1_manifest.json": (
-            REWARD_TRANSITION_ROOT / "g1_manifest.json"
+        "reward_transitions/dataset_manifest.json": (
+            REWARD_TRANSITION_ROOT / "dataset_manifest.json"
         ).read_bytes(),
     }
     rng_before_save = canonical_digest(rng_final)
@@ -1121,7 +1136,7 @@ def run_warmup(args) -> None:
         "checkpoint_manifest_payload_sha256": checkpoint_manifest["manifest_payload_sha256"],
         "checkpoint_save_rng_unchanged": True,
         "data_access_audit": {
-            "train_transition_reads": 10075,
+            "train_transition_reads": len(data.rows),
             "validation_transition_reads": len(validation_rows),
             "test_transition_reads": 0, "test_image_reads": 0,
             "manual_reward_transition_files_opened": 0,
@@ -1280,7 +1295,27 @@ def main() -> None:
     parser.add_argument("--result", type=Path, required=True)
     parser.add_argument("--fixed-diagnostics", type=Path)
     parser.add_argument("--protected-snapshot", type=Path)
+    parser.add_argument("--task-id", default="task2")
+    parser.add_argument("--dataset-root", type=Path)
+    parser.add_argument("--reward-transition-root", type=Path)
+    parser.add_argument("--output-root", type=Path)
     args = parser.parse_args()
+    from forcesmolvla.rft import training_cycle_runtime
+    from forcesmolvla.training_runtime import resolve_task_reward_transition_root
+
+    global TASK_ID, REWARD_TRANSITION_ROOT
+    TASK_ID = args.task_id
+    REWARD_TRANSITION_ROOT = resolve_task_reward_transition_root(
+        ROOT,
+        task_id=args.task_id,
+        reward_transition_root=args.reward_transition_root,
+    )
+    training_cycle_runtime.configure_task_paths(
+        task_id=args.task_id,
+        dataset_root=args.dataset_root,
+        reward_transition_root=REWARD_TRANSITION_ROOT,
+        output_root=args.output_root,
+    )
     require(CONFIG.is_file(), "OFFLINE_TWIN_Q_STARTUP_CONFIG_MISSING")
     flow_sampling.critic_action_for_q_guidance = audited_action_contract_v2_adapter
     losses.critic_action_for_q_guidance = audited_action_contract_v2_adapter

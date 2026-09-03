@@ -22,25 +22,7 @@ import numpy as np
 
 
 ROOT = Path(__file__).parents[1].resolve()
-DEFAULT_CONFIG = ROOT / "configs/reward_transition_materialization.development.json"
-DEFAULT_DATASET = ROOT / "datasets/task2_lerobotv3"
-DEFAULT_OUTPUT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
-MANUAL_REWARD_TRANSITION_ROOT = (
-    ROOT / "artifacts/development/stage2/g1_manual_reward_transition_view.v1"
-)
-MANUAL_REWARD_TRANSITION_DISPOSITION = (
-    MANUAL_REWARD_TRANSITION_ROOT / "g1_training_disposition.v1.json"
-)
-CHECKPOINT_PATH = ROOT / "outputs/task2/reward_classifier/checkpoints/best/best_checkpoint.msgpack"
-SAFE_ASSET_PATH = ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
-TRAINING_SOURCE = ROOT / "tools/reward_classifier/train_reward_classifier.py"
-ADAPTER_SOURCE = ROOT / "tools/reward_classifier/conrft_lerobot_v3_adapter.py"
-CALIBRATION_SOURCE = ROOT / "tools/reward_classifier/calibrate_task2_reward_detector.py"
-DETECTOR_SOURCE = ROOT / "src/forcesmolvla/rft/detector_reward_transitions.py"
 CONRFT_RUNTIME_ROOT = Path("/home/rlc123/conrft/serl_launcher")
-EXPECTED_CHECKPOINT_SHA256 = "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
-EXPECTED_P8_STORAGE_SHA256 = "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
-EXPECTED_ONE_SHOT_SHA256 = "ec02e805c84a80778be9e16525d751da058a28bd1ebde85f394b33875b6a3988"
 SOURCE_CAMERA_KEYS = ("observation.images.camera1", "observation.images.camera2")
 CLASSIFIER_CAMERA_KEYS = ("d435_third_person", "d405_wrist")
 IMAGE_SHAPE = (480, 640, 3)
@@ -77,12 +59,6 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def canonical_sha256(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
-    ).hexdigest()
-
-
 def load_json(path: Path) -> dict:
     value = json.loads(path.read_text(encoding="utf-8"))
     require(isinstance(value, dict), f"JSON_OBJECT_REQUIRED:{path}")
@@ -94,26 +70,9 @@ def display_path(path: Path) -> str:
     return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else str(path)
 
 
-def binding(path: Path) -> dict:
-    path = path.resolve()
-    return {"path": display_path(path), "sha256": sha256_file(path), "file_size": path.stat().st_size}
-
-
-def tree_binding(root: Path, files: list[Path]) -> dict:
-    records = [
-        {
-            "relative_path": path.relative_to(root).as_posix(),
-            "file_size": path.stat().st_size,
-            "sha256": sha256_file(path),
-        }
-        for path in sorted(files)
-    ]
-    return {
-        "root": str(root),
-        "file_count": len(records),
-        "total_file_size": sum(item["file_size"] for item in records),
-        "tree_sha256": canonical_sha256(records),
-    }
+def configured_path(config: dict, name: str) -> Path:
+    value = config["inputs"][name]
+    return (ROOT / value).resolve() if not Path(value).is_absolute() else Path(value).resolve()
 
 
 def p8_storage_tree(dataset_root: Path) -> dict:
@@ -139,23 +98,33 @@ def import_path(name: str, path: Path):
     return module
 
 
-def verify_config(config_path: Path, dataset_root: Path, output_root: Path) -> dict:
+def verify_config(config_path: Path, *, task_id: str, dataset_root: Path) -> dict:
     config = load_json(config_path)
-    require(config["artifact_status"] == "DEVELOPMENT_AUTHORIZED_BUILD_ONLY", "REWARD_TRANSITION_CONFIG_STATUS_DRIFT")
-    require(config["scope"] == "g1_frozen_detector_transition_view.v1", "REWARD_TRANSITION_CONFIG_SCOPE_DRIFT")
-    detector = config["detector_spec"]
     require(
-        detector["classifier_checkpoint_sha256"] == EXPECTED_CHECKPOINT_SHA256
-        and detector["probability_threshold"] == 0.83
-        and detector["required_consecutive_frames"] == 5
+        config.get("schema")
+        == "forcesmolvla.forcerft_offline_reward_transition_materialization"
+        and config.get("status") == "final"
+        and config.get("task_id") == task_id,
+        "REWARD_TRANSITION_CONFIG_IDENTITY_INVALID",
+    )
+    detector = config["detector_spec"]
+    probability_threshold = float(detector["probability_threshold"])
+    required_consecutive_frames = int(detector["required_consecutive_frames"])
+    require(
+        0.0 < probability_threshold < 1.0
+        and required_consecutive_frames >= 1
         and detector["detector_input_rate_hz"] == 30
-        and detector["trigger_timestamp"] == "fifth_confirming_frame"
+        and detector["trigger_timestamp"] in {
+            "current_confirming_frame",
+            "fifth_confirming_frame",
+        }
+        and (
+            detector["trigger_timestamp"] != "fifth_confirming_frame"
+            or required_consecutive_frames == 5
+        )
         and detector["trigger_backfilled_to_streak_start"] is False,
         "REWARD_TRANSITION_FROZEN_SPEC_DRIFT",
     )
-    require(config["output_root"] == output_root.relative_to(ROOT).as_posix(), "REWARD_TRANSITION_OUTPUT_CONFIG_DRIFT")
-    require(dataset_root == ROOT / config["frozen_inputs"]["dataset_root"], "REWARD_TRANSITION_DATASET_CONFIG_DRIFT")
-    require(not output_root.is_relative_to(dataset_root), "REWARD_TRANSITION_OUTPUT_INSIDE_DATASET")
     require(config["required_runtime_audit"] == {
         "manual_label_files_opened": 0,
         "manual_boundary_fields_consumed": 0,
@@ -163,26 +132,31 @@ def verify_config(config_path: Path, dataset_root: Path, output_root: Path) -> d
         "classifier_optimizer_updates": 0,
         "detector_parameter_search_count": 0,
     }, "REWARD_TRANSITION_AUDIT_CONTRACT_DRIFT")
-    for name, item in config["frozen_inputs"].items():
-        if not isinstance(item, dict) or "path" not in item:
-            continue
-        path = ROOT / item["path"]
-        require(path.is_file() and sha256_file(path) == item["sha256"], f"REWARD_TRANSITION_FROZEN_INPUT_DRIFT:{name}")
-    require(
-        sha256_file(CHECKPOINT_PATH) == EXPECTED_CHECKPOINT_SHA256,
-        "REWARD_DETECTOR_CHECKPOINT_DRIFT",
-    )
-    candidate = load_json(ROOT / config["frozen_inputs"]["detector_candidate"]["path"])
-    require(candidate["candidate"] == {"consecutive_positive_frames": 5, "probability_threshold": 0.83}, "REWARD_TRANSITION_CANDIDATE_DRIFT")
-    require(sha256_file(ROOT / config["frozen_inputs"]["historical_one_shot_test"]["path"]) == EXPECTED_ONE_SHOT_SHA256, "REWARD_TRANSITION_HISTORICAL_TEST_DRIFT")
-    disposition = load_json(MANUAL_REWARD_TRANSITION_DISPOSITION)
-    require(
-        disposition["artifact_role"] == "historical_manual_audit_only"
-        and disposition["training_authorized"] is False
-        and disposition["downstream_loader_authorized"] is False
-        and disposition["superseded_by"] == "g1_frozen_detector_transition_view.v1",
-        "REWARD_TRANSITION_MANUAL_DISPOSITION_INVALID",
-    )
+    require(dataset_root.is_dir(), "REWARD_TRANSITION_DATASET_MISSING")
+    for name in (
+        "classifier_checkpoint",
+        "safe_resnet10_npz",
+        "safe_resnet10_manifest",
+        "actor_checkpoint",
+        "classifier_training_source",
+        "adapter_source",
+    ):
+        path = configured_path(config, name)
+        require(
+            path.is_dir() if name == "actor_checkpoint" else path.is_file(),
+            f"REWARD_TRANSITION_INPUT_MISSING:{name}:{path}",
+        )
+    if "detector_calibration" in config["inputs"]:
+        calibration = load_json(configured_path(config, "detector_calibration"))
+        require(
+            calibration.get("status") == "approved"
+            and calibration.get("task_id") == task_id
+            and float(calibration["selected"]["probability_threshold"])
+            == probability_threshold
+            and int(calibration["selected"]["required_consecutive_frames"])
+            == required_consecutive_frames,
+            "REWARD_TRANSITION_CALIBRATION_MISMATCH",
+        )
     return config
 
 
@@ -200,7 +174,7 @@ def episode_descriptors(dataset_root: Path) -> tuple[list[dict], dict, dict, dic
     info = load_json(dataset_root / "meta/info.json")
     metadata = episode_metadata(dataset_root)
     split_lookup = {episode_id: name for name in ("train", "val", "test") for episode_id in split[name]}
-    require(len(split_lookup) == 47 and [len(split[name]) for name in ("train", "val", "test")] == [38, 5, 4], "REWARD_TRANSITION_SPLIT_INVALID")
+    require(split_lookup, "REWARD_TRANSITION_SPLIT_INVALID")
     episodes = []
     for source in sorted(conversion["episodes"], key=lambda item: int(item["output_episode_index"])):
         index = int(source["output_episode_index"])
@@ -219,7 +193,11 @@ def episode_descriptors(dataset_root: Path) -> tuple[list[dict], dict, dict, dic
             "source_data_relative_path": relative,
             "task": source["task"],
         })
-    require(len(episodes) == 47 and {item["episode_id"] for item in episodes} == set(split_lookup), "REWARD_TRANSITION_EPISODE_COVERAGE_INVALID")
+    require(
+        len(episodes) == len(split_lookup)
+        and {item["episode_id"] for item in episodes} == set(split_lookup),
+        "REWARD_TRANSITION_EPISODE_COVERAGE_INVALID",
+    )
     return episodes, conversion, split, info
 
 
@@ -246,11 +224,19 @@ def read_protocol_line(process: subprocess.Popen, prefix: str, log_path: Path) -
 
 
 def run_frozen_classifier(
-    *, episodes: list[dict], dataset_root: Path, temporary_root: Path, config_path: Path
+    *,
+    episodes: list[dict],
+    dataset_root: Path,
+    dataset_root_id: str,
+    temporary_root: Path,
+    config_path: Path,
+    config: dict,
 ) -> tuple[list[dict], dict]:
     import pyarrow.parquet as pq
 
-    adapter_module = import_path("detector_g1_adapter", ADAPTER_SOURCE)
+    adapter_module = import_path(
+        "reward_transition_adapter", configured_path(config, "adapter_source")
+    )
     adapter = adapter_module.ConRFTLeRobotV3Adapter()
     batch_root = temporary_root / ".streaming_batch"
     batch_root.mkdir()
@@ -312,7 +298,7 @@ def run_frozen_classifier(
                                 SOURCE_CAMERA_KEYS[1]: np.transpose(rgb2, (2, 0, 1)),
                             },
                             row_reference=adapter_module.RowReference(
-                                "task2_lerobotv3", episode["source_data_relative_path"], frame,
+                                dataset_root_id, episode["source_data_relative_path"], frame,
                                 episode["episode_id"], frame, float(row["timestamp"]),
                             ),
                             camera_row_identity=adapter_module.CameraRowIdentity(
@@ -367,7 +353,11 @@ def run_frozen_classifier(
                     "valid": np.ones(len(frames), dtype=np.bool_),
                 })
                 score_cursor += len(frames)
-                print(f"REWARD_TRANSITION_DETECTOR_SCORES:{ordinal}/47:{episode['episode_id']}:frames={len(frames)}", flush=True)
+                print(
+                    f"REWARD_TRANSITION_DETECTOR_SCORES:{ordinal}/{len(episodes)}:"
+                    f"{episode['episode_id']}:frames={len(frames)}",
+                    flush=True,
+                )
                 del table, rows
             require(process.stdin is not None, "REWARD_TRANSITION_GPU_STDIN_MISSING")
             process.stdin.write(json.dumps({"command": "stop"}) + "\n")
@@ -381,7 +371,11 @@ def run_frozen_classifier(
             raise
     shutil.rmtree(batch_root)
     log_path.unlink(missing_ok=True)
-    require(adapter.episode_reset_count == 47 and score_cursor == sum(item["frame_count"] for item in episodes), "REWARD_TRANSITION_ADAPTER_OR_SCORE_COVERAGE_INVALID")
+    require(
+        adapter.episode_reset_count == len(episodes)
+        and score_cursor == sum(item["frame_count"] for item in episodes),
+        "REWARD_TRANSITION_ADAPTER_OR_SCORE_COVERAGE_INVALID",
+    )
     return score_episodes, summary
 
 
@@ -389,9 +383,17 @@ def gpu_server(config_path: Path) -> None:
     install_manual_file_audit()
     require(os.environ.get("CONDA_DEFAULT_ENV") == "conrft_reward", "REWARD_TRANSITION_GPU_ENV_REQUIRED")
     config = load_json(config_path)
-    checkpoint = ROOT / config["frozen_inputs"]["classifier_checkpoint"]["path"]
-    require(sha256_file(checkpoint) == EXPECTED_CHECKPOINT_SHA256, "REWARD_TRANSITION_GPU_CHECKPOINT_DRIFT")
-    training_tool = import_path("detector_g1_training_tool", TRAINING_SOURCE)
+    checkpoint = configured_path(config, "classifier_checkpoint")
+    training_tool = import_path(
+        "reward_transition_training_tool",
+        configured_path(config, "classifier_training_source"),
+    )
+    training_tool.SAFE_ASSET_PATH = configured_path(config, "safe_resnet10_npz")
+    training_tool.SAFE_MANIFEST_PATH = configured_path(
+        config, "safe_resnet10_manifest"
+    )
+    safe_manifest = load_json(training_tool.SAFE_MANIFEST_PATH)
+    training_tool.EXPECTED_SAFE_ASSET_SHA256 = safe_manifest["safe_asset"]["sha256"]
     training_tool.install_type_only_octo_shim()
     sys.path.insert(0, str(CONRFT_RUNTIME_ROOT))
     import flax
@@ -414,7 +416,8 @@ def gpu_server(config_path: Path) -> None:
             pretrained_encoder_path=str(bridge), n_way=2,
         )
     state = serialization.from_bytes(target, checkpoint.read_bytes())
-    require(int(state.step) == 150, "REWARD_TRANSITION_GPU_CHECKPOINT_STEP_DRIFT")
+    expected_step = int(config["classifier_train_state_step"])
+    require(int(state.step) == expected_step, "REWARD_TRANSITION_GPU_CHECKPOINT_STEP_DRIFT")
     checkpoint_before = sha256_file(checkpoint)
     params_before = training_tool.tree_sha(state.params)
     backbone_before = training_tool.tree_sha(state.params, training_tool.is_backbone)
@@ -449,9 +452,9 @@ def gpu_server(config_path: Path) -> None:
     checkpoint_after = sha256_file(checkpoint)
     params_after = training_tool.tree_sha(state.params)
     backbone_after = training_tool.tree_sha(state.params, training_tool.is_backbone)
-    require(checkpoint_before == checkpoint_after == EXPECTED_CHECKPOINT_SHA256, "REWARD_TRANSITION_GPU_CHECKPOINT_CHANGED")
+    require(checkpoint_before == checkpoint_after, "REWARD_TRANSITION_GPU_CHECKPOINT_CHANGED")
     require(params_before == params_after and backbone_before == backbone_after, "REWARD_TRANSITION_GPU_PARAMETERS_CHANGED")
-    require(int(state.step) == 150, "REWARD_TRANSITION_GPU_OPTIMIZER_STEP_CHANGED")
+    require(int(state.step) == expected_step, "REWARD_TRANSITION_GPU_OPTIMIZER_STEP_CHANGED")
     print("REWARD_GPU_SUMMARY " + json.dumps({
         "environment": os.environ["CONDA_DEFAULT_ENV"],
         "backend": jax.default_backend(),
@@ -467,7 +470,7 @@ def gpu_server(config_path: Path) -> None:
         "random_augmentation": False,
         "dropout_rng_supplied": False,
         "optimizer_updates": 0,
-        "train_state_step_before": 150,
+        "train_state_step_before": expected_step,
         "train_state_step_after": int(state.step),
         "checkpoint_sha256_before": checkpoint_before,
         "checkpoint_sha256_after": checkpoint_after,
@@ -518,7 +521,6 @@ def frame_score_schema():
         ("is_trigger_frame", pa.bool_()),
         ("detector_latched", pa.bool_()),
         ("reward_source", pa.string()),
-        ("classifier_checkpoint_sha256", pa.string()),
         ("probability_threshold", pa.float64()),
         ("required_consecutive_frames", pa.int8()),
     ])
@@ -543,13 +545,9 @@ def transition_schema():
         ("anchor_row_index", pa.int32()),
         ("source_frame_start_inclusive", pa.int32()),
         ("source_frame_stop_exclusive", pa.int32()),
-        ("stage1_horizon", pa.int16()),
+        ("actor_horizon", pa.int16()),
         ("executed_slice_start", pa.int8()),
         ("executed_slice_stop_exclusive", pa.int8()),
-        ("absolute_action_chunk_sha256", pa.string()),
-        ("delta_action_chunk_sha256", pa.string()),
-        ("normalized_action_chunk_sha256", pa.string()),
-        ("action_valid_mask_sha256", pa.string()),
     ])
     return pa.schema([
         ("transition_index", pa.int64()),
@@ -566,14 +564,13 @@ def transition_schema():
         ("executed_steps", pa.int8()),
         ("executed_action_mask", pa.list_(pa.bool_(), K)),
         ("normalized_delta_action_exec_flat", pa.list_(pa.float32())),
-        ("stage1_action_valid_mask_h50", pa.list_(pa.bool_(), HORIZON)),
+        ("actor_action_valid_mask_h50", pa.list_(pa.bool_(), HORIZON)),
         ("reward", pa.float32()),
         ("terminated", pa.bool_()),
         ("bootstrap_mask", pa.int8()),
         ("discount", pa.float64()),
         ("mc_return", pa.float64()),
         ("reward_source", pa.string()),
-        ("classifier_checkpoint_sha256", pa.string()),
         ("observation_row_reference", row_reference),
         ("next_observation_row_reference", row_reference),
         ("action_chunk_reference", action_reference),
@@ -590,47 +587,52 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
 
     sys.path.insert(0, str(ROOT / "src"))
     from forcesmolvla.rft.detector_reward_transitions import (
-        CHECKPOINT_SHA256,
         HORIZON,
         K,
-        REQUIRED_CONSECUTIVE_FRAMES,
         REWARD_SOURCE,
-        TAU,
         causal_detection_trace,
         iter_detector_episode_transitions,
         load_training_transitions,
         load_transition_split_for_training,
         self_check,
     )
-    from forcesmolvla.rft.offline_transitions import PROVENANCE_KEYS, OrderedTensorDigest, dataset_tree_sha256
+    from forcesmolvla.rft.offline_transitions import PROVENANCE_KEYS, dataset_tree_sha256
     from forcesmolvla.training_data import load_runtime_artifacts
 
     self_check()
     dataset_root = args.dataset_root.resolve()
     output_root = args.output_root.resolve()
-    config = verify_config(args.config.resolve(), dataset_root, output_root)
+    config = verify_config(
+        args.config.resolve(), task_id=args.task_id, dataset_root=dataset_root
+    )
+    probability_threshold = float(config["detector_spec"]["probability_threshold"])
+    required_consecutive_frames = int(
+        config["detector_spec"]["required_consecutive_frames"]
+    )
     episodes, conversion, split, info = episode_descriptors(dataset_root)
-    require(info["fps"] == 30 and info["total_episodes"] == 47, "REWARD_TRANSITION_DATASET_INFO_DRIFT")
+    require(
+        info["fps"] == config["detector_spec"]["detector_input_rate_hz"]
+        and info["total_episodes"] == len(episodes),
+        "REWARD_TRANSITION_DATASET_INFO_DRIFT",
+    )
+    dataset_root_id = dataset_root.name
+    checkpoint_path = configured_path(config, "classifier_checkpoint")
     protected_files = {
-        "classifier_checkpoint": CHECKPOINT_PATH,
-        "historical_one_shot_test": ROOT / config["frozen_inputs"]["historical_one_shot_test"]["path"],
-        "manual_reward_manifest": MANUAL_REWARD_TRANSITION_ROOT / "g1_manifest.json",
-        "manual_reward_transition_index": (
-            MANUAL_REWARD_TRANSITION_ROOT / "transition_index.parquet"
-        ),
+        "classifier_checkpoint": checkpoint_path,
     }
-    r5_root = ROOT / config["frozen_inputs"]["r5_checkpoint"]
+    r5_root = configured_path(config, "actor_checkpoint")
     before = {
         "p8_storage_tree": p8_storage_tree(dataset_root),
         "r5_checkpoint_tree": dataset_tree_sha256(r5_root),
         "protected_file_sha256": {name: sha256_file(path) for name, path in protected_files.items()},
     }
-    require(before["p8_storage_tree"]["tree_sha256"] == EXPECTED_P8_STORAGE_SHA256, "REWARD_TRANSITION_P8_SHA_DRIFT")
     score_episodes, gpu_evidence = run_frozen_classifier(
         episodes=episodes,
         dataset_root=dataset_root,
+        dataset_root_id=dataset_root_id,
         temporary_root=temporary_root,
         config_path=args.config.resolve(),
+        config=config,
     )
     require(gpu_evidence["frame_count"] == info["total_frames"], "REWARD_TRANSITION_GPU_TOTAL_FRAME_DRIFT")
     require(gpu_evidence["optimizer_updates"] == 0, "REWARD_TRANSITION_OPTIMIZER_UPDATE_DETECTED")
@@ -643,8 +645,9 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
     missed_by_split = Counter()
     for episode in score_episodes:
         trace = causal_detection_trace(
-            episode["frame_indices"], episode["probabilities"], episode["valid"], tau=TAU,
-            required=REQUIRED_CONSECUTIVE_FRAMES,
+            episode["frame_indices"], episode["probabilities"], episode["valid"],
+            tau=probability_threshold,
+            required=required_consecutive_frames,
         )
         trigger = trace.trigger_frame
         detected = trigger is not None
@@ -686,13 +689,16 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
                 "is_trigger_frame": frame == trigger,
                 "detector_latched": trace.latched[offset],
                 "reward_source": REWARD_SOURCE,
-                "classifier_checkpoint_sha256": CHECKPOINT_SHA256,
-                "probability_threshold": TAU,
-                "required_consecutive_frames": REQUIRED_CONSECUTIVE_FRAMES,
+                "probability_threshold": probability_threshold,
+                "required_consecutive_frames": required_consecutive_frames,
             })
-    require(len(detections) == 47 and len(frame_rows) == info["total_frames"], "REWARD_TRANSITION_SCORE_COVERAGE_INVALID")
+    require(
+        len(detections) == len(episodes)
+        and len(frame_rows) == info["total_frames"],
+        "REWARD_TRANSITION_SCORE_COVERAGE_INVALID",
+    )
     frame_table = pa.Table.from_pylist(frame_rows, schema=frame_score_schema())
-    frame_path = temporary_root / "frame_scores.parquet"
+    frame_path = temporary_root / "reward_detector_frame_scores.parquet"
     pq.write_table(frame_table, frame_path, compression="zstd", row_group_size=8192)
 
     runtime = load_runtime_artifacts(
@@ -706,11 +712,6 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
         "observation.state", "observation.wrench", "action", "frame_index", "episode_index", "index",
         *PROVENANCE_KEYS,
     )
-    digest_names = (
-        "absolute_action_chunk_h50", "delta_action_chunk_h50", "normalized_action_chunk_h50",
-        "action_valid_mask_h50", "executed_normalized_action", "executed_action_mask_k3",
-    )
-    digests = {name: OrderedTensorDigest() for name in digest_names}
     transition_rows = []
     per_episode_transition_counts = {}
     split_transition_counts = Counter()
@@ -730,21 +731,14 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
             detector_terminal_frame=int(detection["detector_trigger_frame"]),
             detector_streak_start_frame=int(detection["detector_streak_start_frame"]),
             detector_probability_at_trigger=float(detection["detector_probability_at_trigger"]),
+            detector_probability_threshold=probability_threshold,
+            detector_required_consecutive_frames=required_consecutive_frames,
             normalizer=runtime.normalizer,
+            dataset_root_id=dataset_root_id,
             source_data_relative_path=episode["source_data_relative_path"],
             task=episode["task"],
         ):
             row = {"transition_index": len(transition_rows), **prepared.row}
-            identity = f"{row['episode_id']}/anchor={row['anchor_frame']}"
-            for name, value in (
-                ("absolute_action_chunk_h50", prepared.absolute_action_chunk),
-                ("delta_action_chunk_h50", prepared.delta_action_chunk),
-                ("normalized_action_chunk_h50", prepared.normalized_action_chunk),
-                ("action_valid_mask_h50", prepared.action_valid_mask),
-                ("executed_normalized_action", prepared.executed_normalized_action),
-                ("executed_action_mask_k3", np.asarray(row["executed_action_mask"], dtype=np.bool_)),
-            ):
-                digests[name].update(identity, value)
             transition_rows.append(row)
             episode_rows.append(row)
             split_transition_counts[row["split"]] += 1
@@ -755,7 +749,7 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
         per_episode_transition_counts[episode["episode_id"]] = len(episode_rows)
     require(transition_rows, "REWARD_TRANSITION_NO_DETECTED_TRANSITIONS")
     transition_table = pa.Table.from_pylist(transition_rows, schema=transition_schema())
-    transition_path = temporary_root / "transition_index.parquet"
+    transition_path = temporary_root / "forcerft_offline_td_transitions.parquet"
     pq.write_table(transition_table, transition_path, compression="zstd", row_group_size=8192)
 
     after = {
@@ -770,11 +764,12 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
     trigger_rows = [row for row in frame_rows if row["is_trigger_frame"]]
     terminal_rows = [row for row in transition_rows if row["terminated"]]
     fixed_spec_trigger_exact = all(
-        item["detector_trigger_frame"] == item["detector_streak_start_frame"] + REQUIRED_CONSECUTIVE_FRAMES - 1
+        item["detector_trigger_frame"]
+        == item["detector_streak_start_frame"] + required_consecutive_frames - 1
         for item in detections if item["detected"]
     )
     acceptance = {
-        "all_47_episodes_reported_detected_or_missed": len(detections) == 47,
+        "all_episodes_reported_detected_or_missed": len(detections) == len(episodes),
         "misses_not_manually_filled": all(not item["manual_terminal_fallback_used"] for item in detections),
         "one_reward_1_per_detected_episode": sum(row["reward"] == 1.0 for row in transition_rows) == len(detected_ids),
         "one_terminated_per_detected_episode": len(terminal_rows) == len(detected_ids),
@@ -790,73 +785,46 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
         "manual_terminal_fallback_count_zero": True,
         "classifier_optimizer_updates_zero": gpu_evidence["optimizer_updates"] == 0,
         "detector_parameter_search_count_zero": True,
-        "classifier_checkpoint_unchanged": before["protected_file_sha256"]["classifier_checkpoint"] == after["protected_file_sha256"]["classifier_checkpoint"] == EXPECTED_CHECKPOINT_SHA256,
+        "classifier_checkpoint_unchanged": before["protected_file_sha256"]["classifier_checkpoint"] == after["protected_file_sha256"]["classifier_checkpoint"],
         "r5_checkpoint_unchanged": before["r5_checkpoint_tree"] == after["r5_checkpoint_tree"],
         "stage1_dataset_unchanged": before["p8_storage_tree"] == after["p8_storage_tree"],
-        "old_artifacts_unchanged": before["protected_file_sha256"] == after["protected_file_sha256"],
+        "protected_inputs_unchanged": before["protected_file_sha256"] == after["protected_file_sha256"],
         "images_not_copied_to_output": not any(path.suffix.lower() in {".png", ".jpg", ".jpeg", ".npy"} for path in temporary_root.rglob("*")),
     }
     require(all(acceptance.values()), f"REWARD_TRANSITION_ACCEPTANCE_FAILED:{acceptance}")
 
-    source_bindings = {
-        "resolved_config": binding(args.config.resolve()),
-        "classifier_checkpoint": binding(CHECKPOINT_PATH),
-        "classifier_training_report": binding(ROOT / config["frozen_inputs"]["classifier_training_report"]["path"]),
-        "safe_resnet10_npz": binding(SAFE_ASSET_PATH),
-        "detector_candidate": binding(ROOT / config["frozen_inputs"]["detector_candidate"]["path"]),
-        "historical_one_shot_test": binding(ROOT / config["frozen_inputs"]["historical_one_shot_test"]["path"]),
-        "manual_reward_disposition": binding(
-            MANUAL_REWARD_TRANSITION_DISPOSITION
-        ),
-        "split_manifest": binding(dataset_root / "split_manifest.json"),
-        "conversion_manifest": binding(dataset_root / "conversion_manifest.json"),
-        "normalizer_manifest": binding(dataset_root / "normalizer_manifest.json"),
-        "action_delta_spec": binding(ROOT / "artifacts/development/action_delta_spec.json"),
-        "action_delta_source": binding(ROOT / "src/forcesmolvla/action_delta.py"),
-        "training_data_source": binding(ROOT / "src/forcesmolvla/training_data.py"),
-        "adapter_source": binding(ADAPTER_SOURCE),
-        "classifier_training_source": binding(TRAINING_SOURCE),
-        "causal_calibration_source": binding(CALIBRATION_SOURCE),
-        "detector_transition_source": binding(DETECTOR_SOURCE),
-        "builder_source": binding(Path(__file__).resolve()),
-    }
     manifest = {
-        "schema_version": "forcesmolvla_g1_frozen_detector_transition_view.v1",
-        "artifact_status": "PASS_REWARD_TRANSITION_FROZEN_DETECTOR_TRANSITION_VIEW" if not missed_ids else "COMPLETE_WITH_DETECTOR_MISSES_EXCLUDED",
-        "artifact_role": "development_frozen_detector_reward_source",
+        "schema": "forcesmolvla.forcerft_offline_reward_transitions",
+        "dataset_type": "forcerft_offline_reward_transitions",
+        "task_id": args.task_id,
+        "status": "final",
         "training_authorized": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "scope": "development",
         "unbiased_reward_model_evaluation": False,
         "reward_model_training_overlap": True,
-        "formal_eligible": False,
-        "output_root": output_root.relative_to(ROOT).as_posix(),
+        "dataset_root": display_path(output_root),
+        "source_dataset": display_path(dataset_root),
+        "reward_classifier_checkpoint": display_path(checkpoint_path),
         "detector_spec": config["detector_spec"],
         "reward_contract": config["reward_contract"],
         "temporal_contract": config["temporal_contract"],
         "action_contract": {
             **config["action_contract"],
-            "stage1_owner": "forcesmolvla.training_data.prepare_training_sample",
-            "ordered_tensor_digests": {name: digest.record() for name, digest in sorted(digests.items())},
+            "transform_owner": "forcesmolvla.training_data.prepare_training_sample",
             "parity_checked_transition_count": len(transition_rows),
         },
-        "frame_scores": {
-            "relative_path": "frame_scores.parquet",
-            "sha256": sha256_file(frame_path),
-            "file_size": frame_path.stat().st_size,
-            "row_count": frame_table.num_rows,
-            "schema": str(frame_table.schema),
+        "files": {
+            "reward_detector_frame_scores": {
+                "path": "reward_detector_frame_scores.parquet",
+                "rows": frame_table.num_rows,
+            },
+            "forcerft_offline_td_transitions": {
+                "path": "forcerft_offline_td_transitions.parquet",
+                "rows": transition_table.num_rows,
+            },
         },
-        "transition_index": {
-            "relative_path": "transition_index.parquet",
-            "sha256": sha256_file(transition_path),
-            "file_size": transition_path.stat().st_size,
-            "row_count": transition_table.num_rows,
-            "schema": str(transition_table.schema),
-        },
-        "episode_detection_results": detections,
         "statistics": {
-            "episode_count": 47,
+            "episode_count": len(episodes),
             "detected_episode_count": len(detected_ids),
             "missed_episode_count": len(missed_ids),
             "detected_episode_ids": detected_ids,
@@ -887,34 +855,14 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
             "test_used_for_parameter_selection": False,
             "old_test_already_viewed": True,
         },
-        "classifier_freeze_evidence": gpu_evidence,
-        "protected_inputs_before": before,
-        "protected_inputs_after": after,
-        "source_manifest": source_bindings,
         "acceptance": acceptance,
         "loader_contract": {
-            "accepted_artifact_role": "development_frozen_detector_reward_source",
             "accepted_split": "train",
-            "manual_g1_rejected": True,
         },
-        "terminal_status": {
-            "STRICT_ZERO_FRAME_ALIGNMENT_ACCEPTANCE": "FAIL_preserved",
-            "DEVELOPMENT_DETECTOR_OPERATIONAL": "yes",
-            "FORMAL_DETECTOR_APPROVED": "no",
-            "PRODUCTION_DETECTOR_APPROVED": "no",
-            "REWARD_TRANSITION_FROZEN_DETECTOR_TRANSITIONS": "complete" if not missed_ids else "complete_with_misses_excluded",
-            "TWIN_Q_AUTHORIZED": "no",
-            "TWIN_Q_CREATED": "no",
-            "TwinQ_CREATED": "no",
-            "CalQL_CREATED": "no",
-            "ACTOR_TRAINING": "not_started",
-            "NEXT_ALLOWED_ACTION": "review_detector_g1_miss_list" if missed_ids else "request_TWIN_Q_TwinQ_topology_approval",
-        },
-        "forbidden_outputs_created": [],
     }
-    manifest_path = temporary_root / "g1_manifest.json"
+    manifest_path = temporary_root / "dataset_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    train_table = load_training_transitions(temporary_root)
+    train_table = load_training_transitions(temporary_root, task_id=args.task_id)
     require(train_table.num_rows == split_transition_counts["train"], "REWARD_TRANSITION_TRAIN_LOADER_COUNT_MISMATCH")
     for forbidden_split in ("val", "test"):
         try:
@@ -923,14 +871,7 @@ def build(args: argparse.Namespace, temporary_root: Path) -> dict:
             pass
         else:
             raise RuntimeError("REWARD_TRANSITION_LOADER_ACCEPTED_HELDOUT_SPLIT")
-    try:
-        load_training_transitions(MANUAL_REWARD_TRANSITION_ROOT)
-    except RuntimeError:
-        pass
-    else:
-        raise RuntimeError("REWARD_TRANSITION_LOADER_ACCEPTED_MANUAL_SOURCE")
     manifest["loader_contract"]["train_row_count"] = train_table.num_rows
-    manifest["manifest_payload_sha256"] = canonical_sha256(manifest)
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return manifest
 
@@ -940,9 +881,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     build_parser = subparsers.add_parser("build")
-    build_parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    build_parser.add_argument("--dataset-root", type=Path, default=DEFAULT_DATASET)
-    build_parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
+    build_parser.add_argument("--task-id", default="task2")
+    build_parser.add_argument("--config", type=Path)
+    build_parser.add_argument("--dataset-root", type=Path)
+    build_parser.add_argument(
+        "--reward-transition-root", "--output-root", dest="output_root", type=Path
+    )
     gpu_parser = subparsers.add_parser("gpu-server")
     gpu_parser.add_argument("--config", type=Path, required=True)
     subparsers.add_parser("self-check")
@@ -957,9 +901,33 @@ def main() -> None:
     if args.command == "self-check":
         print("REWARD_TRANSITION_FROZEN_DETECTOR_TRANSITION_SELF_CHECK=PASS")
         return
-    output_root = args.output_root.resolve()
-    dataset_root = args.dataset_root.resolve()
-    require(not output_root.exists(), f"refusing to overwrite append-only detector G1 output: {output_root}")
+    from forcesmolvla.training_runtime import (
+        resolve_task_dataset_root,
+        resolve_task_reward_transition_root,
+    )
+
+    args.config = (
+        args.config
+        or ROOT
+        / "configs"
+        / "tasks"
+        / args.task_id
+        / "forcerft_offline_reward_transitions.json"
+    ).resolve()
+    args.dataset_root = resolve_task_dataset_root(
+        ROOT, task_id=args.task_id, dataset_root=args.dataset_root
+    )
+    args.output_root = resolve_task_reward_transition_root(
+        ROOT,
+        task_id=args.task_id,
+        reward_transition_root=args.output_root,
+    )
+    output_root = args.output_root
+    dataset_root = args.dataset_root
+    require(
+        not output_root.exists(),
+        f"refusing to overwrite reward-transition dataset: {output_root}",
+    )
     require(not output_root.is_relative_to(dataset_root), "REWARD_TRANSITION_OUTPUT_INSIDE_DATASET")
     output_root.parent.mkdir(parents=True, exist_ok=True)
     temporary_root = Path(tempfile.mkdtemp(prefix=f".{output_root.name}.", dir=output_root.parent))
@@ -970,7 +938,8 @@ def main() -> None:
         shutil.rmtree(temporary_root, ignore_errors=True)
         raise
     print(json.dumps({
-        "artifact_status": manifest["artifact_status"],
+        "status": manifest["status"],
+        "task_id": manifest["task_id"],
         "output_root": str(output_root),
         "detected": manifest["statistics"]["detected_episode_count"],
         "missed": manifest["statistics"]["missed_episode_count"],

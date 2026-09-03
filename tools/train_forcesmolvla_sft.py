@@ -429,6 +429,8 @@ def _copy_checkpoint_payloads(
         / "configs/calibration_bundle.development.json",
         "manifests/training_stage.development.json": root
         / "configs/training_stage.development.json",
+        "manifests/p7_training_recipe.development.yaml": root
+        / "configs/p7_training_recipe.development.yaml",
         "manifests/forcesmolvla_sft_recipe.development.yaml": root
         / "configs/forcesmolvla_sft_recipe.development.yaml",
         "manifests/offline_sft_training_recipe.development.yaml": recipe_path,

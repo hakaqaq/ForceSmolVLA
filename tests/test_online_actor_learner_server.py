@@ -185,6 +185,7 @@ def test_less_than_100_online_rows_runs_no_optimizer_step(tmp_path: Path) -> Non
         checkpoint_root=tmp_path / "checkpoints",
         replay_root=tmp_path / "online",
         current_session_id=None,
+        task="ring",
     )
     result = learner(InferencePriorityCoordinator())
     assert result["waiting_for_replay"] is True
@@ -204,6 +205,7 @@ def test_training_start_prepares_learner_on_configured_device(
         checkpoint_root=tmp_path / "checkpoints",
         replay_root=tmp_path / "online",
         current_session_id=None,
+        task="ring",
     )
     observed: list[torch.device] = []
     monkeypatch.setattr(

@@ -102,6 +102,7 @@ class ContinuousLearner:
         checkpoint_root: Path,
         replay_root: Path,
         current_session_id: str | None,
+        task: str,
     ) -> None:
         self.device = device
         self.resume_checkpoint = resume_checkpoint.resolve()
@@ -109,6 +110,7 @@ class ContinuousLearner:
         self.checkpoint_root.mkdir(parents=True, exist_ok=True)
         self.replay_root = replay_root.resolve()
         self.current_session_id = current_session_id
+        self.task = task
         self.learner: dict[str, Any] | None = None
         self.unique_r_count = 0
         self.r_macro_count = 0
@@ -151,6 +153,7 @@ class ContinuousLearner:
             resume_checkpoint=self.resume_checkpoint,
             warmup_api=warmup,
             joint_api=joint,
+            task=self.task,
         )
         return True
 
@@ -712,7 +715,11 @@ class RequestHandler(serve_policy.RequestHandler):
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task-id", default="task2")
+    parser.add_argument("--task", required=True)
     parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--dataset-root", type=Path)
+    parser.add_argument("--reward-transition-root", type=Path)
+    parser.add_argument("--safety-config", type=Path)
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--episode-id", required=True)
     parser.add_argument("--learner-resume-checkpoint", type=Path)
@@ -730,7 +737,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
-    from forcesmolvla.training_runtime import resolve_task_output_root
+    from forcesmolvla.training_runtime import (
+        resolve_task_dataset_root,
+        resolve_task_output_root,
+        resolve_task_reward_transition_root,
+    )
 
     require(
         args.allow_development_policy_execution_smoke,
@@ -740,6 +751,21 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     output_root = resolve_task_output_root(
         ROOT, task_id=args.task_id, output_root=args.output_root
     )
+    dataset_root = resolve_task_dataset_root(
+        ROOT, task_id=args.task_id, dataset_root=args.dataset_root
+    )
+    reward_transition_root = resolve_task_reward_transition_root(
+        ROOT,
+        task_id=args.task_id,
+        reward_transition_root=args.reward_transition_root,
+    )
+    warmup.configure_task_paths(
+        task_id=args.task_id,
+        dataset_root=dataset_root,
+        reward_transition_root=reward_transition_root,
+        output_root=output_root,
+    )
+    require(warmup.TASK == args.task.strip(), "FORCERFT_TASK_PROMPT_MISMATCH")
     resume_checkpoint = (
         select_exact_resume_checkpoint(output_root)
         if args.learner_resume_checkpoint is None
@@ -759,9 +785,14 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     )
     actor_package = resume_checkpoint / str(checkpoint_metadata["actor_directory"])
     device = torch.device("cuda:0")
+    safety_config = (
+        ROOT / f"configs/live_action_safety.{args.task_id}.development.yaml"
+        if args.safety_config is None
+        else args.safety_config.resolve()
+    )
     engine = serve_policy.InferenceEngine(
         actor_package,
-        ROOT / "configs/live_action_safety.task2.development.yaml",
+        safety_config,
         ROOT / "schemas/rulespec.schema.json",
         device,
         allow_development_policy_execution_smoke=True,
@@ -795,6 +826,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         checkpoint_root=checkpoint_root,
         replay_root=output_root / "online",
         current_session_id=args.session_id,
+        task=args.task.strip(),
     )
     return AsyncPolicyLearnerRuntime(
         engine=engine,

@@ -1,0 +1,12 @@
+{
+  "schema_version": "forcesmolvla-deployment-profile-v1",
+  "artifact_status": "development_only",
+  "deployment_id": "task3-sft-step010000",
+  "checkpoint": "outputs/task3/sft/checkpoints/forcesmolvla_sft_step_010000",
+  "rulespec": "configs/live_action_safety.task3.development.yaml",
+  "deployment_binding": "artifacts/development/live/task3_sft_step010000_live_deployment_binding.v1.json",
+  "deployment_binding_sha256": "c615b6459342c09d58925805c3b1c7480a63c0d814d618022b36a47d25c2970b",
+  "dataset_manifest": "datasets/task3_lerobotv3/conversion_manifest.json",
+  "raw_session": "/home/rlc123/fr3_client_ws/datasets/task3/session.json",
+  "tool_profile": "onrobot_robotiq"
+}

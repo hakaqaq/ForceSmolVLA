@@ -1,0 +1,60 @@
+{
+  "schema": "forcesmolvla.forcerft_offline_reward_transition_materialization",
+  "status": "final",
+  "task_id": "task2",
+  "classifier_train_state_step": 150,
+  "detector_spec": {
+    "detector_id": "task2_reward_classifier",
+    "probability_threshold": 0.83,
+    "required_consecutive_frames": 5,
+    "detector_input_rate_hz": 30,
+    "trigger_timestamp": "fifth_confirming_frame",
+    "trigger_backfilled_to_streak_start": false,
+    "latch_after_trigger": true,
+    "reward_mode": "sparse_binary_terminal",
+    "post_trigger_frames": "excluded"
+  },
+  "temporal_contract": {
+    "data_rate_hz": 30,
+    "policy_rate_hz": 10,
+    "critic_steps": 3,
+    "actor_horizon": 50,
+    "anchor_stride": 3,
+    "next_frame": "min(anchor_frame + critic_steps, detector_trigger_frame)",
+    "executed_steps": "next_frame - anchor_frame",
+    "partial_terminal_action_allowed": true,
+    "terminal_self_loop": false
+  },
+  "reward_contract": {
+    "reward_source": "frozen_classifier_detector",
+    "terminal_source": "causal_fifth_confirming_frame",
+    "probability_as_continuous_reward": false,
+    "manual_boundary_allowed": false,
+    "episode_end_fallback_allowed": false,
+    "detector_miss_policy": "exclude_without_fallback"
+  },
+  "action_contract": {
+    "source": "recorded_absolute_action7",
+    "delta_owner": "forcesmolvla.action_delta.ActionDeltaProcessor",
+    "normalizer": "frozen_actor_action_normalizer",
+    "normalizer_refit": false,
+    "action_horizon": 50,
+    "executed_slots": "first_executed_steps",
+    "features": 7
+  },
+  "inputs": {
+    "classifier_checkpoint": "outputs/task2/reward_classifier/checkpoints/best/best_checkpoint.msgpack",
+    "safe_resnet10_npz": "assets/reward_classifier/resnet10_parameters.npz",
+    "safe_resnet10_manifest": "assets/reward_classifier/resnet10_manifest.json",
+    "actor_checkpoint": "outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000",
+    "classifier_training_source": "tools/reward_classifier/train_reward_classifier.py",
+    "adapter_source": "tools/reward_classifier/conrft_lerobot_v3_adapter.py"
+  },
+  "required_runtime_audit": {
+    "manual_label_files_opened": 0,
+    "manual_boundary_fields_consumed": 0,
+    "manual_terminal_fallback_count": 0,
+    "classifier_optimizer_updates": 0,
+    "detector_parameter_search_count": 0
+  }
+}

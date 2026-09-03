@@ -1,0 +1,12 @@
+{
+  "schema_version": "forcesmolvla-deployment-profile-v1",
+  "artifact_status": "development_only",
+  "deployment_id": "task3-offline-actor-critic-cycle-000210",
+  "checkpoint": "/home/rlc123/ForceSmolVLA/outputs/task3/offline/checkpoints/offline_actor_critic_cycle_000210/actor",
+  "rulespec": "/home/rlc123/ForceSmolVLA/configs/live_action_safety.task3.development.yaml",
+  "deployment_binding": "/home/rlc123/ForceSmolVLA/configs/tasks/task3/live_deployment_binding_offline_actor_critic_cycle_000210.json",
+  "deployment_binding_sha256": "1df9dd8ccd64aad103b753412e29632219495c7a701ac62c5136188e1d129e17",
+  "dataset_manifest": "/home/rlc123/ForceSmolVLA/datasets/task3_lerobotv3/conversion_manifest.json",
+  "raw_session": "/home/rlc123/fr3_client_ws/datasets/task3/session.json",
+  "tool_profile": "onrobot_robotiq"
+}

@@ -19,7 +19,7 @@
     },
     "reviewed_labels": {
       "file_size": 40100,
-      "path": "labels/task2_reward_frame_labels.v2.reviewed.json",
+      "path": "labels/task2_reward_frame_labels.json",
       "sha256": "ecda7d480f6a4c49dbe63a31b7e3172b30a5470437510522b1da2217eae77a9c"
     },
     "training_report": {

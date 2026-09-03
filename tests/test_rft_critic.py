@@ -16,8 +16,8 @@ from forcesmolvla.rft.critic import (
 )
 
 
-SAFE = PROJECT_ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
-SAFE_MANIFEST = PROJECT_ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json"
+SAFE = PROJECT_ROOT / "assets/reward_classifier/resnet10_parameters.npz"
+SAFE_MANIFEST = PROJECT_ROOT / "assets/reward_classifier/resnet10_manifest.json"
 
 
 @pytest.fixture(scope="module")
@@ -112,4 +112,4 @@ def test_wrong_shapes_and_non_detector_root_rejected_before_open(topology, tmp_p
     with pytest.raises(ValueError, match="ACTION_K7_SHAPE"):
         topology[0](*values)
     with pytest.raises(RuntimeError, match="BEFORE_OPEN"):
-        load_authorized_critic_train_transitions(tmp_path / "does-not-exist-manual-g1")
+        load_authorized_critic_train_transitions(tmp_path / "does-not-exist-manual-reward")

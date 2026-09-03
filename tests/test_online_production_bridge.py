@@ -3097,7 +3097,7 @@ def test_rejected_pose_ack_is_quarantined_and_never_outboxed(tmp_path: Path) -> 
     assert 2 not in outboxed
 
 
-def test_frozen_g1_partial_terminal_macro_is_materialized_with_mask(tmp_path: Path) -> None:
+def test_frozen_reward_partial_terminal_macro_is_materialized_with_mask(tmp_path: Path) -> None:
     episode = _fixture(tmp_path)
     state = tmp_path / "state"
     report = ProductionBridge(
@@ -3174,7 +3174,7 @@ def test_remote_pose_clock_is_retained_but_not_compared_to_upper_clock(tmp_path:
 @pytest.mark.skipif(
     not REAL_EPISODE.is_dir(), reason="accepted offline recorder episode unavailable"
 )
-def test_task2_episode18_materialization_matches_existing_g1_row_4922(
+def test_task2_episode18_materialization_matches_reward_transition_row_4922(
     tmp_path: Path,
 ) -> None:
     import pyarrow.parquet as pq
@@ -3205,9 +3205,9 @@ def test_task2_episode18_materialization_matches_existing_g1_row_4922(
     payload = next(
         item for item in _wal_payloads(state) if item["identity"]["anchor_frame"] == 837
     )
-    g1 = pq.read_table(
+    reward_transition = pq.read_table(
         ROOT
-        / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1/transition_index.parquet"
+        / "datasets/task2_forcerft_offline_reward_transitions/forcerft_offline_td_transitions.parquet"
     ).slice(4922, 1).to_pylist()[0]
     source = pq.read_table(
         ROOT / "datasets/task2_lerobotv3/data/chunk-000/file-018.parquet",
@@ -3227,8 +3227,8 @@ def test_task2_episode18_materialization_matches_existing_g1_row_4922(
         payload["ack_macro"]["accepted_absolute_action_k7"],
         [row["action"] for row in source[:3]],
     )
-    assert payload["outcome"]["reward"] == g1["reward"]
-    assert payload["outcome"]["task_terminated"] == g1["terminated"]
-    assert payload["identity"]["next_frame"] == g1["next_frame"] == 840
+    assert payload["outcome"]["reward"] == reward_transition["reward"]
+    assert payload["outcome"]["task_terminated"] == reward_transition["terminated"]
+    assert payload["identity"]["next_frame"] == reward_transition["next_frame"] == 840
     assert payload["commit"]["wrench_materialized"] is True
     assert payload["commit"]["reward_terminal_materialized"] is True

@@ -76,7 +76,7 @@ targets:
   requires_grad: false
 
 data:
-  only_rl_source: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  only_rl_source: datasets/task2_forcerft_offline_reward_transitions
   expected_train_transitions: 10075
   allowed_split: train
   validation_test_reads_allowed: false

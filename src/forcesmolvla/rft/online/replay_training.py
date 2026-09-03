@@ -35,12 +35,49 @@ if str(SRC) not in sys.path:
 if str(ROOT / "tools") not in sys.path:
     sys.path.insert(0, str(ROOT / "tools"))
 
+TASK_ID = "task2"
 FORMAL_R_ROOT = ROOT / "outputs/task2/online"
 TRAINING_CONFIG = ROOT / "configs/forcerft_actor_critic_training.development.yaml"
 DATASET = ROOT / "datasets/task2_lerobotv3"
-REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
+REWARD_TRANSITION_ROOT = ROOT / "datasets/task2_forcerft_offline_reward_transitions"
 SEED = 4404
 TASK = "Pick up the purple ring and place it onto the red peg."
+
+
+def configure_task_paths(
+    *,
+    task_id: str,
+    dataset_root: Path | None = None,
+    reward_transition_root: Path | None = None,
+    output_root: Path | None = None,
+) -> None:
+    """Configure task-scoped data and output roots before creating replay objects."""
+
+    from forcesmolvla.training_runtime import (
+        resolve_task_dataset_root,
+        resolve_task_output_root,
+        resolve_task_reward_transition_root,
+    )
+
+    global TASK_ID, FORMAL_R_ROOT, DATASET, REWARD_TRANSITION_ROOT, TASK
+    TASK_ID = task_id
+    DATASET = resolve_task_dataset_root(
+        ROOT, task_id=task_id, dataset_root=dataset_root
+    )
+    REWARD_TRANSITION_ROOT = resolve_task_reward_transition_root(
+        ROOT,
+        task_id=task_id,
+        reward_transition_root=reward_transition_root,
+    )
+    FORMAL_R_ROOT = resolve_task_output_root(
+        ROOT, task_id=task_id, output_root=output_root
+    ) / "online"
+    conversion_path = DATASET / "conversion_manifest.json"
+    if conversion_path.is_file():
+        conversion = json.loads(conversion_path.read_text(encoding="utf-8"))
+        tasks = {str(item["task"]) for item in conversion.get("episodes", ())}
+        if len(tasks) == 1:
+            TASK = tasks.pop()
 
 
 def require(condition: bool, message: str) -> None:
@@ -624,7 +661,7 @@ class DemoReplay:
         from forcesmolvla.rft.losses import load_authorized_reward_train_transitions
 
         self.rows = load_authorized_reward_train_transitions(
-            REWARD_TRANSITION_ROOT
+            REWARD_TRANSITION_ROOT, task_id=TASK_ID
         ).to_pylist()
         self.population = tuple(
             index for index, row in enumerate(self.rows)

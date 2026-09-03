@@ -2,6 +2,18 @@
 .cache/
 assets/
 datasets/
+
+# Keep lightweight final manifests reviewable; model and parquet payloads stay local.
+!assets/
+assets/*
+!assets/reward_classifier/
+assets/reward_classifier/*
+!assets/reward_classifier/resnet10_manifest.json
+!datasets/
+datasets/*
+!datasets/*_forcerft_offline_reward_transitions/
+datasets/*_forcerft_offline_reward_transitions/*
+!datasets/*_forcerft_offline_reward_transitions/dataset_manifest.json
 outputs/
 __pycache__/
 .pytest_cache/

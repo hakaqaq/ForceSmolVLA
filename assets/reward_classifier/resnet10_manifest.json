@@ -1,0 +1,957 @@
+{
+  "classifier_checkpoint_created": false,
+  "conversion_tool": {
+    "path": "tools/reward_classifier/freeze_conrft_resnet10_asset.py",
+    "sha256": "2886386737ce313809871530fe07c3e3bb99fad78f8186684cd0bfb8d2baee9c"
+  },
+  "download_timestamp": "2026-08-25T07:34:26.246353+00:00",
+  "download_timestamp_evidence": "frozen_asset_filesystem_ctime_ns",
+  "expected_parameter_coverage": {
+    "allowed_unused_imagenet_output_head_paths": [
+      [
+        "output_head",
+        "bias"
+      ],
+      [
+        "output_head",
+        "kernel"
+      ]
+    ],
+    "asset_only_paths": [
+      [
+        "output_head",
+        "bias"
+      ],
+      [
+        "output_head",
+        "kernel"
+      ]
+    ],
+    "backbone_exact": true,
+    "coverage_fraction": 1.0,
+    "expected_key_count": 36,
+    "forbidden_unexpected_paths": [],
+    "imagenet_output_head_consumed_by_conrft": false,
+    "matched_key_and_shape_count": 36,
+    "missing_paths": [],
+    "model": "ConRFT resnetv1-10-frozen",
+    "shape_mismatches": []
+  },
+  "future_load_policy": "load frozen safe_asset only; mutable cache download forbidden",
+  "loader_source": {
+    "classifier_loader_path": "/home/rlc123/conrft/serl_launcher/serl_launcher/networks/reward_classifier.py",
+    "classifier_loader_sha256": "917e182cf0ca366dc80e2453ad722a21847209c500394ad8254e9dac0d84dde3",
+    "function": "load_resnet10_params",
+    "path": "/home/rlc123/conrft/serl_launcher/serl_launcher/utils/train_utils.py",
+    "resnet_definition_path": "/home/rlc123/conrft/serl_launcher/serl_launcher/vision/resnet_v1.py",
+    "resnet_definition_sha256": "5582fb42145da35eceaaaf058758f9a6f850bfb1ea1c278a1b14526d4608c7bd",
+    "sha256": "5831fd4aa7f15d0c6fcf35b1b888c44d0555ed7776fe46e9d22d0139e6d4bd20"
+  },
+  "optimizer_created": false,
+  "optimizer_update_count": 0,
+  "parameter_byte_count": 21675168,
+  "parameter_element_count": 5418792,
+  "parameter_inventory": [
+    {
+      "array_sha256": "bac795a44cb03a47e01a269fdf5a177f87b5b874c1fd754fa77390ce101e1c6f",
+      "byte_count": 147456,
+      "dtype": "float32",
+      "element_count": 36864,
+      "parameter_path": [
+        "ResNetBlock_0",
+        "Conv_0",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0000",
+      "shape": [
+        3,
+        3,
+        64,
+        64
+      ]
+    },
+    {
+      "array_sha256": "838a36ec2e5877ef82f542fa74f846571514ea67fecff63ab6882ed3767dbc14",
+      "byte_count": 147456,
+      "dtype": "float32",
+      "element_count": 36864,
+      "parameter_path": [
+        "ResNetBlock_0",
+        "Conv_1",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0001",
+      "shape": [
+        3,
+        3,
+        64,
+        64
+      ]
+    },
+    {
+      "array_sha256": "5395b5a48004f7e3bcc62718fdcfc958e1eb9cf60ae7449038b1f84b7df4a69a",
+      "byte_count": 256,
+      "dtype": "float32",
+      "element_count": 64,
+      "parameter_path": [
+        "ResNetBlock_0",
+        "MyGroupNorm_0",
+        "bias"
+      ],
+      "safe_npz_key": "array_0002",
+      "shape": [
+        64
+      ]
+    },
+    {
+      "array_sha256": "fee2605fe2f9a278bb24a93517c7711833608309a4f3313ffc97c4c79cf158e8",
+      "byte_count": 256,
+      "dtype": "float32",
+      "element_count": 64,
+      "parameter_path": [
+        "ResNetBlock_0",
+        "MyGroupNorm_0",
+        "scale"
+      ],
+      "safe_npz_key": "array_0003",
+      "shape": [
+        64
+      ]
+    },
+    {
+      "array_sha256": "6851b160f4b4447cb951cd5d4b9d71fd543e063f99135962c08e196e45e26609",
+      "byte_count": 256,
+      "dtype": "float32",
+      "element_count": 64,
+      "parameter_path": [
+        "ResNetBlock_0",
+        "MyGroupNorm_1",
+        "bias"
+      ],
+      "safe_npz_key": "array_0004",
+      "shape": [
+        64
+      ]
+    },
+    {
+      "array_sha256": "9f468d49260120d5c1938e163e091a85e1f9e8c4bca496cd9e4d1da7134522b5",
+      "byte_count": 256,
+      "dtype": "float32",
+      "element_count": 64,
+      "parameter_path": [
+        "ResNetBlock_0",
+        "MyGroupNorm_1",
+        "scale"
+      ],
+      "safe_npz_key": "array_0005",
+      "shape": [
+        64
+      ]
+    },
+    {
+      "array_sha256": "1cf920b78b181cf9efd5c237f335713e817dc9d762a71abc3af05b55cd8ef9ee",
+      "byte_count": 294912,
+      "dtype": "float32",
+      "element_count": 73728,
+      "parameter_path": [
+        "ResNetBlock_1",
+        "Conv_0",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0006",
+      "shape": [
+        3,
+        3,
+        64,
+        128
+      ]
+    },
+    {
+      "array_sha256": "77c71e1cf4ad88545ddc62eaa827dad23404b84d8340b26bed4c6b4d0ca45758",
+      "byte_count": 589824,
+      "dtype": "float32",
+      "element_count": 147456,
+      "parameter_path": [
+        "ResNetBlock_1",
+        "Conv_1",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0007",
+      "shape": [
+        3,
+        3,
+        128,
+        128
+      ]
+    },
+    {
+      "array_sha256": "7251bf5716bd4041b6fb7fe1464cfde85956e842e87fb9e39df55689f1c505b6",
+      "byte_count": 512,
+      "dtype": "float32",
+      "element_count": 128,
+      "parameter_path": [
+        "ResNetBlock_1",
+        "MyGroupNorm_0",
+        "bias"
+      ],
+      "safe_npz_key": "array_0008",
+      "shape": [
+        128
+      ]
+    },
+    {
+      "array_sha256": "9db2df026e30ca6e86f6c9da6dc8b56e26efecac91ea9090743f2dae57dd0feb",
+      "byte_count": 512,
+      "dtype": "float32",
+      "element_count": 128,
+      "parameter_path": [
+        "ResNetBlock_1",
+        "MyGroupNorm_0",
+        "scale"
+      ],
+      "safe_npz_key": "array_0009",
+      "shape": [
+        128
+      ]
+    },
+    {
+      "array_sha256": "5e6a841cb1862221163488f5f443f660804aa411cf2546c80aa05940987e0e08",
+      "byte_count": 512,
+      "dtype": "float32",
+      "element_count": 128,
+      "parameter_path": [
+        "ResNetBlock_1",
+        "MyGroupNorm_1",
+        "bias"
+      ],
+      "safe_npz_key": "array_0010",
+      "shape": [
+        128
+      ]
+    },
+    {
+      "array_sha256": "89cf6bdd5edecac4ea97257a3a0d3eae70c1369b02381cdc61aa20aa1a68825c",
+      "byte_count": 512,
+      "dtype": "float32",
+      "element_count": 128,
+      "parameter_path": [
+        "ResNetBlock_1",
+        "MyGroupNorm_1",
+        "scale"
+      ],
+      "safe_npz_key": "array_0011",
+      "shape": [
+        128
+      ]
+    },
+    {
+      "array_sha256": "c8f947dba053b49821e61cee722cd83156a0c002a31127e326ffdf8c73d9d49b",
+      "byte_count": 32768,
+      "dtype": "float32",
+      "element_count": 8192,
+      "parameter_path": [
+        "ResNetBlock_1",
+        "conv_proj",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0012",
+      "shape": [
+        1,
+        1,
+        64,
+        128
+      ]
+    },
+    {
+      "array_sha256": "5e6a841cb1862221163488f5f443f660804aa411cf2546c80aa05940987e0e08",
+      "byte_count": 512,
+      "dtype": "float32",
+      "element_count": 128,
+      "parameter_path": [
+        "ResNetBlock_1",
+        "norm_proj",
+        "bias"
+      ],
+      "safe_npz_key": "array_0013",
+      "shape": [
+        128
+      ]
+    },
+    {
+      "array_sha256": "ad8a69a0e4ea352b7bd160357daa51176f86e32c7ead9340c67d3b258ab46096",
+      "byte_count": 512,
+      "dtype": "float32",
+      "element_count": 128,
+      "parameter_path": [
+        "ResNetBlock_1",
+        "norm_proj",
+        "scale"
+      ],
+      "safe_npz_key": "array_0014",
+      "shape": [
+        128
+      ]
+    },
+    {
+      "array_sha256": "2eb76bff484253da38dd0a7396c6394bf25a3cc8a6768387d7a403652372fa28",
+      "byte_count": 1179648,
+      "dtype": "float32",
+      "element_count": 294912,
+      "parameter_path": [
+        "ResNetBlock_2",
+        "Conv_0",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0015",
+      "shape": [
+        3,
+        3,
+        128,
+        256
+      ]
+    },
+    {
+      "array_sha256": "aece10e8f18078090241c6346ef8a6a6dbc8710a905c57d240b0e3558eeb961a",
+      "byte_count": 2359296,
+      "dtype": "float32",
+      "element_count": 589824,
+      "parameter_path": [
+        "ResNetBlock_2",
+        "Conv_1",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0016",
+      "shape": [
+        3,
+        3,
+        256,
+        256
+      ]
+    },
+    {
+      "array_sha256": "1abe3d838f25425849b8322cbb3ea26829e2090c3ec07f702d671ef4d4563cba",
+      "byte_count": 1024,
+      "dtype": "float32",
+      "element_count": 256,
+      "parameter_path": [
+        "ResNetBlock_2",
+        "MyGroupNorm_0",
+        "bias"
+      ],
+      "safe_npz_key": "array_0017",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "array_sha256": "b8c8dc7ddee568dd5e62514f3d4def236d205d371f8cf0cc2ec2523dd19b9940",
+      "byte_count": 1024,
+      "dtype": "float32",
+      "element_count": 256,
+      "parameter_path": [
+        "ResNetBlock_2",
+        "MyGroupNorm_0",
+        "scale"
+      ],
+      "safe_npz_key": "array_0018",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "array_sha256": "6e16d9f892e83e159b825eadd06a3935262f9447ef4ee042c42d841ca7ba5783",
+      "byte_count": 1024,
+      "dtype": "float32",
+      "element_count": 256,
+      "parameter_path": [
+        "ResNetBlock_2",
+        "MyGroupNorm_1",
+        "bias"
+      ],
+      "safe_npz_key": "array_0019",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "array_sha256": "17bb9f9b40cfe8233dd0dff13e7f125faea316666488489fd41de905d91d10b1",
+      "byte_count": 1024,
+      "dtype": "float32",
+      "element_count": 256,
+      "parameter_path": [
+        "ResNetBlock_2",
+        "MyGroupNorm_1",
+        "scale"
+      ],
+      "safe_npz_key": "array_0020",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "array_sha256": "9cd2083720dff16a2822660ecdf0c943db20f5f56c29baefc7ac32ad9e92acbe",
+      "byte_count": 131072,
+      "dtype": "float32",
+      "element_count": 32768,
+      "parameter_path": [
+        "ResNetBlock_2",
+        "conv_proj",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0021",
+      "shape": [
+        1,
+        1,
+        128,
+        256
+      ]
+    },
+    {
+      "array_sha256": "6e16d9f892e83e159b825eadd06a3935262f9447ef4ee042c42d841ca7ba5783",
+      "byte_count": 1024,
+      "dtype": "float32",
+      "element_count": 256,
+      "parameter_path": [
+        "ResNetBlock_2",
+        "norm_proj",
+        "bias"
+      ],
+      "safe_npz_key": "array_0022",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "array_sha256": "a4b7f0f633d57086472578db50520ccabded32818ba93b2345a9a74c63f84052",
+      "byte_count": 1024,
+      "dtype": "float32",
+      "element_count": 256,
+      "parameter_path": [
+        "ResNetBlock_2",
+        "norm_proj",
+        "scale"
+      ],
+      "safe_npz_key": "array_0023",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "array_sha256": "9f393d961aff25e41c3ce6e09c9e8ab311d8746ee46e3ddc825a42158fdb625c",
+      "byte_count": 4718592,
+      "dtype": "float32",
+      "element_count": 1179648,
+      "parameter_path": [
+        "ResNetBlock_3",
+        "Conv_0",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0024",
+      "shape": [
+        3,
+        3,
+        256,
+        512
+      ]
+    },
+    {
+      "array_sha256": "6d8c7fbf169bcec2ab5e7009fe85338dc0248ab39dbb23d44732dbf675003121",
+      "byte_count": 9437184,
+      "dtype": "float32",
+      "element_count": 2359296,
+      "parameter_path": [
+        "ResNetBlock_3",
+        "Conv_1",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0025",
+      "shape": [
+        3,
+        3,
+        512,
+        512
+      ]
+    },
+    {
+      "array_sha256": "7b73edeb1c94fc9474c9d49f03d294828040e3c39ab36929d42baeffb699bc67",
+      "byte_count": 2048,
+      "dtype": "float32",
+      "element_count": 512,
+      "parameter_path": [
+        "ResNetBlock_3",
+        "MyGroupNorm_0",
+        "bias"
+      ],
+      "safe_npz_key": "array_0026",
+      "shape": [
+        512
+      ]
+    },
+    {
+      "array_sha256": "81f0fcc4f2c0b1770233f592e83e599d890a09420d71c73515c16ff159258b3f",
+      "byte_count": 2048,
+      "dtype": "float32",
+      "element_count": 512,
+      "parameter_path": [
+        "ResNetBlock_3",
+        "MyGroupNorm_0",
+        "scale"
+      ],
+      "safe_npz_key": "array_0027",
+      "shape": [
+        512
+      ]
+    },
+    {
+      "array_sha256": "7a8d5ff8a24e8b2647d443bf73b1bcd58e16430acd80f8dea66f3e5fdd108a9a",
+      "byte_count": 2048,
+      "dtype": "float32",
+      "element_count": 512,
+      "parameter_path": [
+        "ResNetBlock_3",
+        "MyGroupNorm_1",
+        "bias"
+      ],
+      "safe_npz_key": "array_0028",
+      "shape": [
+        512
+      ]
+    },
+    {
+      "array_sha256": "3fa4c569f252f9b7ff5561c7c4260198573b05e63e31cdd4aad57be407e2d080",
+      "byte_count": 2048,
+      "dtype": "float32",
+      "element_count": 512,
+      "parameter_path": [
+        "ResNetBlock_3",
+        "MyGroupNorm_1",
+        "scale"
+      ],
+      "safe_npz_key": "array_0029",
+      "shape": [
+        512
+      ]
+    },
+    {
+      "array_sha256": "2aefa943acd328eab9a1518798031350c8de2702ec6faaaccc8541dc3d5c09dc",
+      "byte_count": 524288,
+      "dtype": "float32",
+      "element_count": 131072,
+      "parameter_path": [
+        "ResNetBlock_3",
+        "conv_proj",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0030",
+      "shape": [
+        1,
+        1,
+        256,
+        512
+      ]
+    },
+    {
+      "array_sha256": "7a8d5ff8a24e8b2647d443bf73b1bcd58e16430acd80f8dea66f3e5fdd108a9a",
+      "byte_count": 2048,
+      "dtype": "float32",
+      "element_count": 512,
+      "parameter_path": [
+        "ResNetBlock_3",
+        "norm_proj",
+        "bias"
+      ],
+      "safe_npz_key": "array_0031",
+      "shape": [
+        512
+      ]
+    },
+    {
+      "array_sha256": "2b196a8cb08339c7eeaeb49de500f6bf99c05daeda0de37cfe1038c39219253e",
+      "byte_count": 2048,
+      "dtype": "float32",
+      "element_count": 512,
+      "parameter_path": [
+        "ResNetBlock_3",
+        "norm_proj",
+        "scale"
+      ],
+      "safe_npz_key": "array_0032",
+      "shape": [
+        512
+      ]
+    },
+    {
+      "array_sha256": "916f526c28084db16d6bc6b4448ab29d417f029c24653c387421e91e7bc161cf",
+      "byte_count": 37632,
+      "dtype": "float32",
+      "element_count": 9408,
+      "parameter_path": [
+        "conv_init",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0033",
+      "shape": [
+        7,
+        7,
+        3,
+        64
+      ]
+    },
+    {
+      "array_sha256": "2720dce1058ce53d263cd12285fe6fe363721c3b101e454c4f6977ffb304d97d",
+      "byte_count": 256,
+      "dtype": "float32",
+      "element_count": 64,
+      "parameter_path": [
+        "norm_init",
+        "bias"
+      ],
+      "safe_npz_key": "array_0034",
+      "shape": [
+        64
+      ]
+    },
+    {
+      "array_sha256": "858216ad30fb2ad9a8ae5576a5cdd1dc535c78fece5a2ae8fadeeb5cbe211f5b",
+      "byte_count": 256,
+      "dtype": "float32",
+      "element_count": 64,
+      "parameter_path": [
+        "norm_init",
+        "scale"
+      ],
+      "safe_npz_key": "array_0035",
+      "shape": [
+        64
+      ]
+    },
+    {
+      "array_sha256": "354032361a5878e3495f77054fa1604ab2d436be39f0bda5ab340803bb066b37",
+      "byte_count": 4000,
+      "dtype": "float32",
+      "element_count": 1000,
+      "parameter_path": [
+        "output_head",
+        "bias"
+      ],
+      "safe_npz_key": "array_0036",
+      "shape": [
+        1000
+      ]
+    },
+    {
+      "array_sha256": "175cf8a5f5fe6e1c3e6620f3910c7d20ee540ee2ebd7894c4c2a577a15330af7",
+      "byte_count": 2048000,
+      "dtype": "float32",
+      "element_count": 512000,
+      "parameter_path": [
+        "output_head",
+        "kernel"
+      ],
+      "safe_npz_key": "array_0037",
+      "shape": [
+        512,
+        1000
+      ]
+    }
+  ],
+  "parameter_key_count": 38,
+  "parameter_shapes": {
+    "ResNetBlock_0/Conv_0/kernel": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        3,
+        64,
+        64
+      ]
+    },
+    "ResNetBlock_0/Conv_1/kernel": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        3,
+        64,
+        64
+      ]
+    },
+    "ResNetBlock_0/MyGroupNorm_0/bias": {
+      "dtype": "float32",
+      "shape": [
+        64
+      ]
+    },
+    "ResNetBlock_0/MyGroupNorm_0/scale": {
+      "dtype": "float32",
+      "shape": [
+        64
+      ]
+    },
+    "ResNetBlock_0/MyGroupNorm_1/bias": {
+      "dtype": "float32",
+      "shape": [
+        64
+      ]
+    },
+    "ResNetBlock_0/MyGroupNorm_1/scale": {
+      "dtype": "float32",
+      "shape": [
+        64
+      ]
+    },
+    "ResNetBlock_1/Conv_0/kernel": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        3,
+        64,
+        128
+      ]
+    },
+    "ResNetBlock_1/Conv_1/kernel": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        3,
+        128,
+        128
+      ]
+    },
+    "ResNetBlock_1/MyGroupNorm_0/bias": {
+      "dtype": "float32",
+      "shape": [
+        128
+      ]
+    },
+    "ResNetBlock_1/MyGroupNorm_0/scale": {
+      "dtype": "float32",
+      "shape": [
+        128
+      ]
+    },
+    "ResNetBlock_1/MyGroupNorm_1/bias": {
+      "dtype": "float32",
+      "shape": [
+        128
+      ]
+    },
+    "ResNetBlock_1/MyGroupNorm_1/scale": {
+      "dtype": "float32",
+      "shape": [
+        128
+      ]
+    },
+    "ResNetBlock_1/conv_proj/kernel": {
+      "dtype": "float32",
+      "shape": [
+        1,
+        1,
+        64,
+        128
+      ]
+    },
+    "ResNetBlock_1/norm_proj/bias": {
+      "dtype": "float32",
+      "shape": [
+        128
+      ]
+    },
+    "ResNetBlock_1/norm_proj/scale": {
+      "dtype": "float32",
+      "shape": [
+        128
+      ]
+    },
+    "ResNetBlock_2/Conv_0/kernel": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        3,
+        128,
+        256
+      ]
+    },
+    "ResNetBlock_2/Conv_1/kernel": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        3,
+        256,
+        256
+      ]
+    },
+    "ResNetBlock_2/MyGroupNorm_0/bias": {
+      "dtype": "float32",
+      "shape": [
+        256
+      ]
+    },
+    "ResNetBlock_2/MyGroupNorm_0/scale": {
+      "dtype": "float32",
+      "shape": [
+        256
+      ]
+    },
+    "ResNetBlock_2/MyGroupNorm_1/bias": {
+      "dtype": "float32",
+      "shape": [
+        256
+      ]
+    },
+    "ResNetBlock_2/MyGroupNorm_1/scale": {
+      "dtype": "float32",
+      "shape": [
+        256
+      ]
+    },
+    "ResNetBlock_2/conv_proj/kernel": {
+      "dtype": "float32",
+      "shape": [
+        1,
+        1,
+        128,
+        256
+      ]
+    },
+    "ResNetBlock_2/norm_proj/bias": {
+      "dtype": "float32",
+      "shape": [
+        256
+      ]
+    },
+    "ResNetBlock_2/norm_proj/scale": {
+      "dtype": "float32",
+      "shape": [
+        256
+      ]
+    },
+    "ResNetBlock_3/Conv_0/kernel": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        3,
+        256,
+        512
+      ]
+    },
+    "ResNetBlock_3/Conv_1/kernel": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        3,
+        512,
+        512
+      ]
+    },
+    "ResNetBlock_3/MyGroupNorm_0/bias": {
+      "dtype": "float32",
+      "shape": [
+        512
+      ]
+    },
+    "ResNetBlock_3/MyGroupNorm_0/scale": {
+      "dtype": "float32",
+      "shape": [
+        512
+      ]
+    },
+    "ResNetBlock_3/MyGroupNorm_1/bias": {
+      "dtype": "float32",
+      "shape": [
+        512
+      ]
+    },
+    "ResNetBlock_3/MyGroupNorm_1/scale": {
+      "dtype": "float32",
+      "shape": [
+        512
+      ]
+    },
+    "ResNetBlock_3/conv_proj/kernel": {
+      "dtype": "float32",
+      "shape": [
+        1,
+        1,
+        256,
+        512
+      ]
+    },
+    "ResNetBlock_3/norm_proj/bias": {
+      "dtype": "float32",
+      "shape": [
+        512
+      ]
+    },
+    "ResNetBlock_3/norm_proj/scale": {
+      "dtype": "float32",
+      "shape": [
+        512
+      ]
+    },
+    "conv_init/kernel": {
+      "dtype": "float32",
+      "shape": [
+        7,
+        7,
+        3,
+        64
+      ]
+    },
+    "norm_init/bias": {
+      "dtype": "float32",
+      "shape": [
+        64
+      ]
+    },
+    "norm_init/scale": {
+      "dtype": "float32",
+      "shape": [
+        64
+      ]
+    },
+    "output_head/bias": {
+      "dtype": "float32",
+      "shape": [
+        1000
+      ]
+    },
+    "output_head/kernel": {
+      "dtype": "float32",
+      "shape": [
+        512,
+        1000
+      ]
+    }
+  },
+  "parameter_tree_content_sha256_after": "bdd8fd891acb485e45ac6a92145a6ab4d906d88419650f571d4df93161fa29b2",
+  "parameter_tree_content_sha256_before": "bdd8fd891acb485e45ac6a92145a6ab4d906d88419650f571d4df93161fa29b2",
+  "repository_copy": {
+    "classification": "truncated_committed_pickle",
+    "file_size": 1835008,
+    "git_lfs_pointer": false,
+    "path": "/home/rlc123/conrft/examples/experiments/resnet10_params.pkl",
+    "pickletools_error": "ValueError: expected 1179648 bytes in a bytes4, but only 617209 remain",
+    "sha256": "cddfa2e40a29ab87cd4353d29febea4526b1c3a88a2a50408e752103b47d9f48"
+  },
+  "safe_asset": {
+    "conversion_semantics": "lossless array tree flattening; paths bound by parameter_inventory",
+    "file_size": 21684766,
+    "format": "numpy_npz_arrays_only",
+    "load_contract": "numpy.load(..., allow_pickle=False)",
+    "relative_path": "assets/reward_classifier/resnet10_parameters.npz",
+    "round_trip_verified": true,
+    "sha256": "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5"
+  },
+  "schema": "forcesmolvla.reward_classifier_resnet10_asset",
+  "source_commit": "a779fde7fa5db5a469960a8490c100f35b41b49e",
+  "source_repository": "https://github.com/cccedric/conrft.git",
+  "source_url": "https://github.com/rail-berkeley/serl/releases/download/resnet10/resnet10_params.pkl",
+  "status": "PASS_FROZEN_SAFE_COPY_READY",
+  "unsafe_pickle_asset": {
+    "controlled_load_backend": "cpu",
+    "controlled_load_environment": "conrft_reward",
+    "file_size": 21677915,
+    "relative_path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.pkl",
+    "sha256": "175745d43d30233eb01b5369465d1c24c11b8ee71ccb734cc1c1bca13e07f57b"
+  }
+}

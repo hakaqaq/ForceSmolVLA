@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import socket
 import sys
 
@@ -18,6 +19,7 @@ from forcesmolvla.inference import (
     load_checkpoint_inference_contract,
     validate_inference_request,
 )
+from forcesmolvla.deployment_binding import CLIENT_SOURCE_FILES
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
 from serve_policy import (  # noqa: E402
@@ -104,6 +106,30 @@ def test_task2_checkpoint_contract_and_request() -> None:
     assert camera1.shape == camera2.shape == IMAGE_SHAPE
 
 
+def test_canonical_converter_runtime_spec_name_is_loadable(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    shutil.copytree(CHECKPOINT / "manifests", checkpoint / "manifests")
+    expected_repo_id = json.loads(
+        (checkpoint / "manifests/conversion_manifest.json").read_text()
+    )["repo_id"]
+    legacy = next(
+        (checkpoint / "manifests").glob(
+            "converter_runtime_spec.*.development.json"
+        )
+    )
+    canonical = checkpoint / "manifests/converter_runtime_spec.json"
+    legacy.rename(canonical)
+
+    contract = load_checkpoint_inference_contract(checkpoint)
+    assert contract.repo_id == expected_repo_id
+
+    shutil.copy2(canonical, legacy)
+    with pytest.raises(
+        RuntimeError, match="CHECKPOINT_CONVERTER_RUNTIME_SPEC_COUNT_MISMATCH:2"
+    ):
+        load_checkpoint_inference_contract(checkpoint)
+
+
 def test_future_pose_is_rejected() -> None:
     contract = load_checkpoint_inference_contract(CHECKPOINT)
     request = valid_request(contract)
@@ -137,6 +163,17 @@ def test_development_execution_metadata_requires_explicit_server_opt_in() -> Non
         "required_client_source_sha256": None,
         "controller_ack_timeout_ms": None,
     }
+
+
+def test_deployment_binding_excludes_editable_deployment_entrypoints() -> None:
+    assert CLIENT_SOURCE_FILES == (
+        "scripts/record_franka_hilserl_impedance.py",
+        "scripts/hilserl_impedance_protocol.py",
+        "scripts/record_franka_forcevla.py",
+        "scripts/record_franka_forcevla_raw.py",
+        "scripts/record_franka_spacemouse_publisher.py",
+        "scripts/convert_franka_forcevla_raw_to_lerobot_v21.py",
+    )
 
 
 def test_test_only_rulespec_cannot_authorize_execution() -> None:

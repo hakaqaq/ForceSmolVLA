@@ -24,7 +24,11 @@ from train_forcerft_actor_critic import (  # noqa: E402
 )
 from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger  # noqa: E402
 from forcesmolvla.rft.online import replay_training  # noqa: E402
-from forcesmolvla.training_runtime import resolve_task_output_root  # noqa: E402
+from forcesmolvla.training_runtime import (  # noqa: E402
+    resolve_task_dataset_root,
+    resolve_task_output_root,
+    resolve_task_reward_transition_root,
+)
 
 
 def test_task_output_root_is_canonical(tmp_path: Path) -> None:
@@ -35,6 +39,15 @@ def test_task_output_root_is_canonical(tmp_path: Path) -> None:
     assert resolve_task_output_root(
         tmp_path, task_id="task2", output_root=explicit
     ) == explicit.resolve()
+
+
+def test_task_data_roots_are_generic_and_unambiguous(tmp_path: Path) -> None:
+    assert resolve_task_dataset_root(tmp_path, task_id="task4") == (
+        tmp_path / "datasets/task4_lerobotv3"
+    ).resolve()
+    assert resolve_task_reward_transition_root(tmp_path, task_id="task4") == (
+        tmp_path / "datasets/task4_forcerft_offline_reward_transitions"
+    ).resolve()
 
 
 class TinyPolicy(torch.nn.Module):

@@ -25,10 +25,7 @@ from forcesmolvla.raw_to_lerobot_v3 import (
     prepare_episode,
 )
 from forcesmolvla.rft.detector_reward_transitions import (
-    CHECKPOINT_SHA256,
-    REQUIRED_CONSECUTIVE_FRAMES,
     REWARD_SOURCE,
-    TAU,
     DetectionTrace,
     DetectorMacroTransition,
     causal_detection_trace,
@@ -279,7 +276,7 @@ ONLINE_CAMERA_MAX_AGE_MS = 100.0
 
 
 def _online_runtime_contract(path: Path) -> RuntimeContract:
-    """Use the task2 online camera budget without rewriting checkpoint provenance."""
+    """Use the online camera budget without rewriting checkpoint provenance."""
 
     return replace(
         RuntimeContract.from_development_json(path),
@@ -294,14 +291,31 @@ def _runtime_input_paths(parent_binding_path: Path | None) -> tuple[Path, Path, 
             CANONICAL_SFT_MANIFEST_ROOT / "converter_runtime_spec.task2.development.json",
             "task2-canonical-runtime-inputs",
         )
-    parent = _read_json(Path(parent_binding_path))
+    parent_path = Path(parent_binding_path)
+    if parent_path.is_dir():
+        manifest_root = parent_path / "manifests"
+        runtime_paths = tuple(manifest_root.glob("converter_runtime_spec*.json"))
+        if len(runtime_paths) != 1:
+            raise ProductionBridgeError("BRIDGE_PARENT_RUNTIME_CONTRACT_MISSING")
+        candidate_path = parent_path / "candidate.json"
+        candidate = _read_json(candidate_path) if candidate_path.is_file() else {}
+        parent_id = str(
+            candidate.get("revision_id")
+            or (parent_path.parent.name if parent_path.name == "actor" else parent_path.name)
+        )
+        return (
+            manifest_root / "calibration_bundle.development.json",
+            runtime_paths[0],
+            parent_id,
+        )
+    parent = _read_json(parent_path)
     return (
         Path(parent["calibration_binding"]["absolute_path"]),
         Path(parent["runtime_contract_binding"]["absolute_path"]),
         str(parent.get("binding_id", "")),
     )
 DEFAULT_REWARD_TRANSITION_CONFIG = (
-    REPO_ROOT / "configs/reward_transition_materialization.development.json"
+    REPO_ROOT / "configs/tasks/task2/forcerft_offline_reward_transitions.json"
 )
 DEFAULT_REWARD_CONTRACT = (
     REPO_ROOT / "configs/online_replay_reward_terminal_contract.v1.development.json"
@@ -326,8 +340,8 @@ class FrozenDetectorScores:
 
     probabilities: tuple[float, ...]
     validity: tuple[bool, ...]
-    detector_id: str = CHECKPOINT_SHA256
-    config_identity: str = "reward_transition_materialization.development"
+    detector_id: str = "task2_reward_classifier"
+    config_identity: str = "forcerft_offline_reward_transitions"
 
 
 @dataclass(frozen=True)
@@ -347,7 +361,7 @@ class EpisodeMaterialization:
             raise ProductionBridgeError("BRIDGE_DETECTOR_FRAME_COUNT_MISMATCH")
         if len(self.detector_scores.validity) != count:
             raise ProductionBridgeError("BRIDGE_DETECTOR_VALIDITY_COUNT_MISMATCH")
-        if self.detector_scores.detector_id != CHECKPOINT_SHA256:
+        if not self.detector_scores.detector_id:
             raise ProductionBridgeError("BRIDGE_DETECTOR_IDENTITY_MISMATCH")
         if self.detection_trace.trigger_frame is None:
             if self.macros:
@@ -402,12 +416,18 @@ def frozen_episode_materializer(
     detector_config = _read_json(Path(detector_config_path))
     spec = detector_config.get("detector_spec", {})
     reward_contract = detector_config.get("reward_contract", {})
+    try:
+        probability_threshold = float(spec["probability_threshold"])
+        required_consecutive_frames = int(spec["required_consecutive_frames"])
+        detector_input_rate_hz = int(spec["detector_input_rate_hz"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ProductionBridgeError(
+            "BRIDGE_FROZEN_DETECTOR_CONFIG_MISMATCH"
+        ) from error
     if (
-        spec.get("classifier_checkpoint_sha256") != CHECKPOINT_SHA256
-        or float(spec.get("probability_threshold", -1.0)) != TAU
-        or int(spec.get("required_consecutive_frames", -1))
-        != REQUIRED_CONSECUTIVE_FRAMES
-        or int(spec.get("detector_input_rate_hz", -1)) != 30
+        not 0.0 < probability_threshold <= 1.0
+        or required_consecutive_frames < 1
+        or detector_input_rate_hz != 30
         or reward_contract.get("reward_source") != REWARD_SOURCE
         or reward_contract.get("detector_miss_policy") != "exclude_without_fallback"
     ):
@@ -428,12 +448,17 @@ def frozen_episode_materializer(
                 contract=runtime_contract,
             )
             scores = detector(prepared)
+            if (
+                scores.detector_id != spec.get("detector_id")
+                or scores.config_identity != "forcerft_offline_reward_transitions"
+            ):
+                raise ProductionBridgeError("BRIDGE_DETECTOR_IDENTITY_MISMATCH")
             trace = causal_detection_trace(
                 range(len(prepared.tuple_host_ns)),
                 scores.probabilities,
                 scores.validity,
-                tau=TAU,
-                required=REQUIRED_CONSECUTIVE_FRAMES,
+                tau=probability_threshold,
+                required=required_consecutive_frames,
             )
             macros = (
                 ()
@@ -474,8 +499,8 @@ def frozen_episode_materializer(
                 "detector_id": scores.detector_id,
                 "detector_config_identity": scores.config_identity,
                 "detector_config_path": str(detector_config_path),
-                "probability_threshold": TAU,
-                "required_consecutive_frames": REQUIRED_CONSECUTIVE_FRAMES,
+                "probability_threshold": probability_threshold,
+                "required_consecutive_frames": required_consecutive_frames,
                 "trigger_frame": trace.trigger_frame,
                 "streak_start_frame": trace.streak_start_frame,
                 "manual_boundary_used": False,
@@ -855,10 +880,12 @@ class ProductionBridge:
         config: BridgeConfig,
         state_root: Path,
         episode_materializer: EpisodeMaterializer | None = None,
+        parent_binding_path: Path | None = DEFAULT_PARENT_BINDING,
     ) -> None:
         self.config = config.validate()
         self.state_root = Path(state_root)
         self.episode_materializer = episode_materializer
+        self.parent_binding_path = parent_binding_path
         self._camera_hashes: dict[Path, str] = {}
 
     def _episode_id(self, episode_dir: Path, start: Mapping[str, Any]) -> str:
@@ -2560,7 +2587,13 @@ class ProductionBridge:
             )
 
         try:
-            prepared = _prepare_native_episode(episode_dir)
+            prepared = (
+                _prepare_native_episode(episode_dir)
+                if self.parent_binding_path is None
+                else _prepare_native_episode(
+                    episode_dir, parent_binding_path=self.parent_binding_path
+                )
+            )
         except Exception as error:
             raise ProductionBridgeError(
                 f"BRIDGE_POLICY_EXECUTION_OBSERVATION_MATERIALIZATION_FAILED:"

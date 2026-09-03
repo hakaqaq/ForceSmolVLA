@@ -57,7 +57,14 @@ def load_checkpoint_inference_contract(checkpoint_dir: Path) -> CheckpointInfere
     conversion_path = manifests / "conversion_manifest.json"
     calibration_path = manifests / "calibration_bundle.development.json"
     geometry_path = manifests / "wrench_geometry_spec.development.json"
-    runtime_paths = tuple(manifests.glob("converter_runtime_spec.*.development.json"))
+    runtime_paths = tuple(
+        path
+        for path in (
+            manifests / "converter_runtime_spec.json",
+            *sorted(manifests.glob("converter_runtime_spec.*.development.json")),
+        )
+        if path.is_file()
+    )
     if len(runtime_paths) != 1:
         raise RuntimeError(
             f"CHECKPOINT_CONVERTER_RUNTIME_SPEC_COUNT_MISMATCH:{len(runtime_paths)}"

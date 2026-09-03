@@ -11,6 +11,28 @@ import subprocess
 from typing import Any
 
 
+def _validate_task_id(task_id: str) -> str:
+    task_id = task_id.strip()
+    if not task_id or any(
+        character not in "abcdefghijklmnopqrstuvwxyz0123456789_-"
+        for character in task_id
+    ):
+        raise ValueError("TASK_ID_INVALID")
+    return task_id
+
+
+def _resolve_task_root(
+    repository_root: Path,
+    *,
+    task_id: str,
+    selected_root: Path | None,
+    default_relative: Path,
+) -> Path:
+    _validate_task_id(task_id)
+    selected = repository_root / default_relative if selected_root is None else selected_root
+    return Path(selected).expanduser().resolve()
+
+
 def resolve_task_output_root(
     repository_root: Path,
     *,
@@ -19,11 +41,46 @@ def resolve_task_output_root(
 ) -> Path:
     """Return the sole task-scoped training output root."""
 
-    task_id = task_id.strip()
-    if not task_id or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in task_id):
-        raise ValueError("TASK_ID_INVALID")
-    selected = repository_root / "outputs" / task_id if output_root is None else output_root
-    return Path(selected).expanduser().resolve()
+    return _resolve_task_root(
+        repository_root,
+        task_id=task_id,
+        selected_root=output_root,
+        default_relative=Path("outputs") / task_id,
+    )
+
+
+def resolve_task_dataset_root(
+    repository_root: Path,
+    *,
+    task_id: str,
+    dataset_root: Path | None = None,
+) -> Path:
+    """Return the task's canonical LeRobot-v3 source dataset root."""
+
+    return _resolve_task_root(
+        repository_root,
+        task_id=task_id,
+        selected_root=dataset_root,
+        default_relative=Path("datasets") / f"{task_id}_lerobotv3",
+    )
+
+
+def resolve_task_reward_transition_root(
+    repository_root: Path,
+    *,
+    task_id: str,
+    reward_transition_root: Path | None = None,
+) -> Path:
+    """Return the task's canonical offline reward-transition dataset root."""
+
+    return _resolve_task_root(
+        repository_root,
+        task_id=task_id,
+        selected_root=reward_transition_root,
+        default_relative=(
+            Path("datasets") / f"{task_id}_forcerft_offline_reward_transitions"
+        ),
+    )
 
 
 def file_sha256(path: Path) -> str:

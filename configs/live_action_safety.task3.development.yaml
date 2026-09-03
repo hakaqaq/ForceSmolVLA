@@ -1,0 +1,131 @@
+schema_version: 1.0.0
+artifact_status: development_only
+acceptance_status: development_only
+profile: forcesmolvla-v4.1-available-sensor
+mode: development_only
+rules:
+  - rule_id: SS_WORKSPACE
+    description: Task3 TCP targets remain inside the recorded ForceVLA/HIL-SERL tabletop workspace.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: m
+    clock_domain: upper_host_monotonic_ns
+    formula: all(min_xyz_m <= xyz <= max_xyz_m)
+    formula_revision: task3-live-action-v1
+    window: full candidate chunk
+    sampling: every candidate action
+    aggregation: all_true
+    threshold: {value: true, comparator: all_true, provenance: exact task3 session workspace recorded by the proven ForceVLA HIL-SERL collection path and approved by rlc123 on 2026-09-02, approval_status: approved}
+    parameters: {min_xyz_m: [0.196, -0.293, 0.008], max_xyz_m: [0.796, 0.257, 0.415]}
+    failure_code: SHADOW_WORKSPACE_INVALID
+    severity: reject_candidate
+    remediation: Reject the full action chunk without dispatch.
+    golden_fixture: {artifact: datasets/task3_lerobotv3/conversion_manifest.json, sha256: null}
+  - rule_id: SS_ORIENTATION
+    description: Absolute ZYX orientation remains canonical and outside the frozen two-degree singular region.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: rad
+    clock_domain: upper_host_monotonic_ns
+    formula: principal ZYX chart and abs(abs(pitch)-pi/2)>=gimbal_margin_rad
+    formula_revision: task3-live-action-v1
+    window: full candidate chunk
+    sampling: every candidate action
+    aggregation: all_true
+    threshold: {value: true, comparator: all_true, provenance: frozen v4.2 action inverse safety contract approved by rlc123 on 2026-09-02, approval_status: approved}
+    parameters: {min_rpy_rad: [-3.141592653589793, -3.141592653589793, -3.141592653589793], max_rpy_rad: [3.141592653589793, 3.141592653589793, 3.141592653589793], gimbal_margin_rad: 0.03490658503988659}
+    failure_code: SHADOW_ORIENTATION_INVALID
+    severity: reject_candidate
+    remediation: Reject the full action chunk without dispatch.
+    golden_fixture: {artifact: tests/test_action_delta_and_masks.py, sha256: null}
+  - rule_id: SS_DELTA_XYZ
+    description: Adjacent absolute TCP translations remain within the ForceVLA deployment target-distance guard.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: m
+    clock_domain: upper_host_monotonic_ns
+    formula: max(norm(xyz[k]-xyz[k-1]))
+    formula_revision: task3-live-action-v1
+    window: full candidate chunk
+    sampling: adjacent valid actions
+    aggregation: maximum
+    threshold: {value: 0.08, comparator: le, provenance: exact deploy_forcevla.py max-target-distance default approved by rlc123 on 2026-09-02, approval_status: approved}
+    failure_code: SHADOW_DELTA_XYZ_EXCEEDED
+    severity: reject_candidate
+    remediation: Reject the full action chunk without dispatch.
+    golden_fixture: {artifact: scripts/deploy_forcevla.py, sha256: null}
+  - rule_id: SS_DELTA_ROT_GEODESIC
+    description: Adjacent absolute TCP rotations remain within the ForceVLA deployment geodesic guard.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: rad
+    clock_domain: upper_host_monotonic_ns
+    formula: max(so3_geodesic(R[k-1],R[k]))
+    formula_revision: task3-live-action-v1
+    window: full candidate chunk
+    sampling: adjacent valid actions
+    aggregation: maximum
+    threshold: {value: 0.4363323129985824, comparator: le, provenance: exact deploy_forcevla.py 25-degree max-target-rotation default approved by rlc123 on 2026-09-02, approval_status: approved}
+    failure_code: SHADOW_DELTA_ROT_EXCEEDED
+    severity: reject_candidate
+    remediation: Reject the full action chunk without dispatch.
+    golden_fixture: {artifact: scripts/deploy_forcevla.py, sha256: null}
+  - rule_id: SS_GRIPPER_RANGE_RATE
+    description: Task3 binary gripper targets retain absolute physical width semantics.
+    scope: candidate
+    inputs: [absolute_action7]
+    input_artifacts: []
+    frame: null
+    unit: m_and_m_per_s
+    clock_domain: upper_host_monotonic_ns
+    formula: range and abs(width[k]-width[k-1])*30
+    formula_revision: task3-live-action-v1
+    window: full candidate chunk
+    sampling: every valid action
+    aggregation: all_true
+    threshold: {value: true, comparator: all_true, provenance: task3 train population uses canonical binary gripper endpoints; approved by rlc123 on 2026-09-02, approval_status: approved}
+    parameters: {min_value: 0.0, max_value: 0.1, max_rate_per_s: 2.5500000000000003}
+    failure_code: SHADOW_GRIPPER_INVALID
+    severity: reject_candidate
+    remediation: Reject the full action chunk without clipping.
+    golden_fixture: {artifact: datasets/task3_lerobotv3/normalizer_manifest.json, sha256: null}
+  - rule_id: SS_CONTINUITY
+    description: The first chunk target remains continuous with the same t_ref raw state snapshot.
+    scope: candidate
+    inputs: [candidate_chunk, raw_state_snapshot]
+    input_artifacts: []
+    frame: fr3_link0
+    unit: mixed
+    clock_domain: upper_host_monotonic_ns
+    formula: xyz norm, SO3 geodesic, and gripper-width difference from raw_state_snapshot
+    formula_revision: task3-live-action-v1
+    window: first valid action
+    sampling: each candidate chunk
+    aggregation: all_true
+    threshold: {value: true, comparator: all_true, provenance: exact ForceVLA deployment target guards and task3 binary width semantics approved by rlc123 on 2026-09-02, approval_status: approved}
+    parameters: {max_xyz_m: 0.08, max_rotation_rad: 0.4363323129985824, max_gripper_delta: 0.1}
+    failure_code: SHADOW_CONTINUITY_INVALID
+    severity: reject_candidate
+    remediation: Reject the full action chunk without dispatch.
+    golden_fixture: {artifact: tests/test_inference.py, sha256: null}
+approval:
+  status: approved
+  approval_id: forcesmolvla-live-task3-development-20260902-001
+  approver_identity: rlc123
+  approver_role: experiment_lead
+  approved_at: "2026-09-02T11:37:26Z"
+signature:
+  status: configuration_pending
+  format: null
+  algorithm: null
+  digest: null
+  key_id: null
+  signature_file: null

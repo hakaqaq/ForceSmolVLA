@@ -1,0 +1,61 @@
+{
+  "action_contract": {
+    "action_horizon": 50,
+    "delta_owner": "forcesmolvla.action_delta.ActionDeltaProcessor",
+    "executed_slots": "first_executed_steps",
+    "features": 7,
+    "normalizer": "frozen_actor_action_normalizer",
+    "normalizer_refit": false,
+    "source": "recorded_absolute_action7"
+  },
+  "classifier_train_state_step": 120,
+  "detector_spec": {
+    "detector_id": "task3_reward_classifier",
+    "detector_input_rate_hz": 30,
+    "latch_after_trigger": true,
+    "post_trigger_frames": "excluded",
+    "probability_threshold": 0.9,
+    "required_consecutive_frames": 2,
+    "reward_mode": "sparse_binary_terminal",
+    "trigger_backfilled_to_streak_start": false,
+    "trigger_timestamp": "current_confirming_frame"
+  },
+  "inputs": {
+    "actor_checkpoint": "outputs/task3/sft/checkpoints/forcesmolvla_sft_step_010000",
+    "adapter_source": "tools/reward_classifier/conrft_lerobot_v3_adapter.py",
+    "classifier_checkpoint": "outputs/task3/reward_classifier/checkpoints/best/best_checkpoint.msgpack",
+    "classifier_training_source": "tools/reward_classifier/train_reward_classifier.py",
+    "detector_calibration": "outputs/task3/reward_classifier/detector_calibration.json",
+    "safe_resnet10_manifest": "assets/reward_classifier/resnet10_manifest.json",
+    "safe_resnet10_npz": "assets/reward_classifier/resnet10_parameters.npz"
+  },
+  "required_runtime_audit": {
+    "classifier_optimizer_updates": 0,
+    "detector_parameter_search_count": 0,
+    "manual_boundary_fields_consumed": 0,
+    "manual_label_files_opened": 0,
+    "manual_terminal_fallback_count": 0
+  },
+  "reward_contract": {
+    "detector_miss_policy": "exclude_without_fallback",
+    "episode_end_fallback_allowed": false,
+    "manual_boundary_allowed": false,
+    "probability_as_continuous_reward": false,
+    "reward_source": "frozen_classifier_detector",
+    "terminal_source": "causal_current_confirming_frame"
+  },
+  "schema": "forcesmolvla.forcerft_offline_reward_transition_materialization",
+  "status": "final",
+  "task_id": "task3",
+  "temporal_contract": {
+    "actor_horizon": 50,
+    "anchor_stride": 3,
+    "critic_steps": 3,
+    "data_rate_hz": 30,
+    "executed_steps": "next_frame - anchor_frame",
+    "next_frame": "min(anchor_frame + critic_steps, detector_trigger_frame)",
+    "partial_terminal_action_allowed": true,
+    "policy_rate_hz": 10,
+    "terminal_self_loop": false
+  }
+}

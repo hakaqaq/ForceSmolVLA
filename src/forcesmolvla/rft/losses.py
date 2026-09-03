@@ -18,9 +18,7 @@ from torch import Tensor, nn
 from forcesmolvla.rft.critic import (
     ACTION_DIM,
     ACTION_SLOTS,
-    AUTHORIZED_REWARD_TRANSITION_MANIFEST_SHA256,
-    AUTHORIZED_REWARD_TRANSITION_ROOT,
-    _sha256_file,
+    DEFAULT_REWARD_TRANSITION_ROOT,
 )
 from forcesmolvla.rft.flow_sampling import (
     critic_action_for_q_guidance,
@@ -560,7 +558,7 @@ def compute_offline_actor_objective(
 
 
 def validate_mc_return_recurrence(rows: list[dict], *, tolerance: float = 1e-12) -> dict:
-    """Validate automatic detector-G1 returns episode-by-episode in stored order."""
+    """Validate automatic detector returns episode-by-episode in stored order."""
 
     if not rows:
         raise ValueError("G4_MC_RETURN_ROWS_EMPTY")
@@ -568,7 +566,7 @@ def validate_mc_return_recurrence(rows: list[dict], *, tolerance: float = 1e-12)
     terminal_rows = 0
     for index, row in enumerate(rows):
         if row.get("reward_source") != "frozen_classifier_detector":
-            raise ValueError("G4_MC_RETURN_NOT_FROM_AUTOMATIC_DETECTOR_G1")
+            raise ValueError("G4_MC_RETURN_NOT_FROM_AUTOMATIC_DETECTOR")
         same_next_episode = index + 1 < len(rows) and rows[index + 1]["episode_id"] == row["episode_id"]
         next_return = float(rows[index + 1]["mc_return"]) if same_next_episode else 0.0
         expected = float(row["reward"]) + float(row["discount"]) * next_return
@@ -589,24 +587,19 @@ def validate_mc_return_recurrence(rows: list[dict], *, tolerance: float = 1e-12)
 
 
 def load_authorized_reward_train_transitions(
-    root: Path = AUTHORIZED_REWARD_TRANSITION_ROOT,
+    root: Path = DEFAULT_REWARD_TRANSITION_ROOT,
+    *,
+    task_id: str | None = None,
 ):
-    """Open only the hash-bound automatic reward-detector training view."""
+    """Open an authorized task reward-transition dataset."""
 
     root = Path(root).resolve()
-    if root != AUTHORIZED_REWARD_TRANSITION_ROOT.resolve():
-        raise RuntimeError("G4_REJECTED_NONAUTHORIZED_G1_ROOT_BEFORE_OPEN")
-    if (
-        _sha256_file(root / "g1_manifest.json")
-        != AUTHORIZED_REWARD_TRANSITION_MANIFEST_SHA256
-    ):
-        raise RuntimeError("G4_AUTHORIZED_G1_MANIFEST_SHA_DRIFT")
     from forcesmolvla.rft.detector_reward_transitions import load_training_transitions
 
-    table = load_training_transitions(root)
+    table = load_training_transitions(root, task_id=task_id)
     missing = set(AUTHORIZED_G4_COLUMNS) - set(table.column_names)
     if missing:
-        raise RuntimeError(f"G4_AUTHORIZED_G1_COLUMNS_MISSING:{sorted(missing)}")
+        raise RuntimeError(f"G4_REWARD_TRANSITION_COLUMNS_MISSING:{sorted(missing)}")
     result = table.select(AUTHORIZED_G4_COLUMNS)
     if set(result.column("split").to_pylist()) != {"train"}:
         raise RuntimeError("G4_HELDOUT_TRANSITION_LEAK")

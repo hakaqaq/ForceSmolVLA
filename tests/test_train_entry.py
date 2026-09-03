@@ -15,6 +15,11 @@ def test_training_entry_is_dataset_agnostic() -> None:
     assert not (ROOT / "tools/train_task2_full_gpu.py").exists()
 
 
+def test_checkpoint_payload_copy_includes_required_p7_recipe() -> None:
+    source = (ROOT / "tools/train_forcesmolvla_sft.py").read_text(encoding="utf-8")
+    assert '"manifests/p7_training_recipe.development.yaml"' in source
+
+
 def test_cli_requires_only_dataset_and_experiment_config(monkeypatch) -> None:
     dataset = ROOT / "datasets/example_lerobotv3"
     config = ROOT / "configs/train/example.json"

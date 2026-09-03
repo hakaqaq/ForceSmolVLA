@@ -623,14 +623,17 @@ def main() -> None:
     parser.add_argument(
         "--reviewed-labels",
         type=Path,
-        default=ROOT / "labels/task2_reward_frame_labels.v2.reviewed.json",
+        default=ROOT / "labels/task2_reward_frame_labels.json",
     )
     parser.add_argument("--dataset-root", type=Path, default=ROOT / "datasets/task2_lerobotv3")
     parser.add_argument(
-        "--protocol", type=Path, default=ROOT / "docs/task2_reward_labeling_protocol.v2.md"
+        "--protocol", type=Path, default=ROOT / "docs/reward_labeling_protocol.md"
     )
     parser.add_argument(
-        "--template", type=Path, default=ROOT / "labels/task2_reward_frame_labels.v2.template.json"
+        "--template",
+        type=Path,
+        default=ROOT
+        / "artifacts/development/stage2/task2_reward_review_bundle_v1/label_template.json",
     )
     parser.add_argument(
         "--review-bundle",

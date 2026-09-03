@@ -85,6 +85,7 @@ def _admit(args: argparse.Namespace, episode: Path, *, outcome: str) -> bool:
 
     report = _report([
         str(args.model_python), str(ROOT / "tools/run_forcerft_production_bridge.py"),
+        "--task-id", args.task_id, "--output-root", str(args.output_root),
         "--episode", str(episode), "--state-root", str(args.formal_r_root),
         "--operator-task-outcome", outcome, "--admit-formal-online-r",
     ])
@@ -311,11 +312,16 @@ def run_loop(args: argparse.Namespace) -> int:
     server_command = [
         str(args.model_python), str(ROOT / "tools/serve_forcerft_actor_learner.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
+        "--task", args.task,
+        "--dataset-root", str(args.dataset_root),
+        "--reward-transition-root", str(args.reward_transition_root),
         "--session-id", "waiting-for-episode", "--episode-id", EPISODE_ID,
         "--learner-resume-checkpoint", str(resume),
         "--allow-development-policy-execution-smoke",
         "--host", "127.0.0.1", "--port", str(args.policy_port),
     ]
+    if args.safety_config is not None:
+        server_command.extend(["--safety-config", str(args.safety_config)])
     server = subprocess.Popen(server_command, cwd=ROOT, env=os.environ.copy())
     completed = 0
     try:
@@ -356,6 +362,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task-id", default="task2")
     parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--dataset-root", type=Path)
+    parser.add_argument("--reward-transition-root", type=Path)
+    parser.add_argument("--safety-config", type=Path)
     parser.add_argument("--max-episodes", type=int, required=True)
     parser.add_argument("--root-prefix", type=Path)
     parser.add_argument("--task", required=True)
@@ -385,7 +394,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         or args.policy_port <= 0
     ):
         parser.error("invalid continuous-loop limits")
-    from forcesmolvla.training_runtime import resolve_task_output_root
+    from forcesmolvla.training_runtime import (
+        resolve_task_dataset_root,
+        resolve_task_output_root,
+        resolve_task_reward_transition_root,
+    )
 
     args.root_prefix = (
         ROOT / "datasets" / f"{args.task_id}_forcerft_online"
@@ -395,6 +408,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args.output_root = resolve_task_output_root(
         ROOT, task_id=args.task_id, output_root=args.output_root
     )
+    args.dataset_root = resolve_task_dataset_root(
+        ROOT, task_id=args.task_id, dataset_root=args.dataset_root
+    )
+    args.reward_transition_root = resolve_task_reward_transition_root(
+        ROOT,
+        task_id=args.task_id,
+        reward_transition_root=args.reward_transition_root,
+    )
+    if args.safety_config is not None:
+        args.safety_config = args.safety_config.resolve()
     args.formal_r_root = (
         args.output_root / "online"
         if args.formal_r_root is None else args.formal_r_root.resolve()

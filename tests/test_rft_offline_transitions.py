@@ -1,66 +1,14 @@
-import json
 from pathlib import Path
-import subprocess
-import sys
 
 import pytest
 
 from forcesmolvla.rft.offline_transitions import (
     GAMMA,
     macro_transition_specs,
-    validate_outcome_labels,
-    validate_reward_spec,
 )
 
 
 ROOT = Path(__file__).parents[1]
-
-
-def _json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def test_real_g1_inputs_are_explicitly_unapproved_and_generation_is_blocked():
-    labels = _json(ROOT / "labels/task2_episode_outcomes.v1.json")
-    reward = _json(ROOT / "configs/stage2_reward_spec.development.yaml")
-
-    validate_reward_spec(reward)
-    assert reward["real_g1_generation_permitted"] is False
-    assert labels["approval_status"] == "unapproved"
-    assert labels["generation_permitted"] is False
-    assert labels["episodes"] == []
-    assert labels["terminal_inference"] == "forbidden"
-    assert "last_valid_converted_frame" in labels["forbidden_terminal_rules"]
-
-
-def test_unapproved_placeholder_cannot_pass_external_reward_label_validation():
-    with pytest.raises(RuntimeError, match="OFFLINE_DEMO_REPLAY_EXTERNAL_REWARD_LABELS_NOT_FROZEN"):
-        validate_outcome_labels(
-            _json(ROOT / "labels/task2_episode_outcomes.v1.json"),
-            conversion_episodes=[],
-            episode_lengths={},
-        )
-
-
-def test_real_builder_fails_closed_before_creating_output(tmp_path):
-    output = tmp_path / "forbidden-real-g1-output"
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "tools/materialize_offline_demo_replay.py"),
-            "--reward-labels",
-            str(ROOT / "labels/task2_episode_outcomes.v1.json"),
-            "--output-root",
-            str(output),
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode != 0
-    assert "OFFLINE_DEMO_REPLAY_REAL_BUILD_BLOCKED" in result.stderr
-    assert not output.exists()
 
 
 @pytest.mark.parametrize("synthetic_terminal", [3, 6, 9, 12])

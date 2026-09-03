@@ -39,7 +39,7 @@ transition_contract:
   repeated_gamma_done_or_bootstrap_multiplier: false
 
 data:
-  source: artifacts/development/stage2/g1_frozen_detector_transition_view.v1
+  source: datasets/task2_forcerft_offline_reward_transitions
   train_transition_count: 10075
   validation_transition_count: 1205
   test_reads_allowed: false

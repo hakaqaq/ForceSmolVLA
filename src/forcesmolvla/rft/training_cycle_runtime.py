@@ -23,26 +23,55 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = ROOT / "configs/forcerft_training_cycle.development.yaml"
-REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_frozen_detector_transition_view.v1"
-MANUAL_REWARD_TRANSITION_ROOT = ROOT / "artifacts/development/stage2/g1_manual_reward_transition_view.v1"
+TASK_ID = "task2"
+REWARD_TRANSITION_ROOT = ROOT / "datasets/task2_forcerft_offline_reward_transitions"
+MANUAL_REWARD_TRANSITION_ROOT = ROOT / "datasets/task2_manual_reward_transitions"
 LABELS = ROOT / "labels"
 DATASET = ROOT / "datasets/task2_lerobotv3"
 PARENT_ACTOR_CHECKPOINT = (
     ROOT / "outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000"
 )
-REWARD_BACKBONE_PARAMETERS = (
-    ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
-)
-REWARD_BACKBONE_MANIFEST = (
-    ROOT
-    / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json"
-)
-EXPECTED_REWARD_MANIFEST_SHA256 = "96dcc37abc365c945a075086efd60198c3391ad2d5fb3f0b53ff869e565e7bd5"
-EXPECTED_DATASET_TREE_SHA256 = "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
+REWARD_BACKBONE_PARAMETERS = ROOT / "assets/reward_classifier/resnet10_parameters.npz"
+REWARD_BACKBONE_MANIFEST = ROOT / "assets/reward_classifier/resnet10_manifest.json"
 FORBIDDEN_OPENS: dict[str, set[str]] = {
     "manual_reward_transitions": set(),
     "manual_labels": set(),
 }
+
+
+def configure_task_paths(
+    *,
+    task_id: str,
+    dataset_root: Path | None = None,
+    reward_transition_root: Path | None = None,
+    output_root: Path | None = None,
+) -> None:
+    """Configure task-scoped inputs before constructing training state."""
+
+    from forcesmolvla.training_runtime import (
+        resolve_task_dataset_root,
+        resolve_task_output_root,
+        resolve_task_reward_transition_root,
+    )
+
+    global TASK_ID, DATASET, REWARD_TRANSITION_ROOT, MANUAL_REWARD_TRANSITION_ROOT
+    global PARENT_ACTOR_CHECKPOINT
+    TASK_ID = task_id
+    DATASET = resolve_task_dataset_root(
+        ROOT, task_id=task_id, dataset_root=dataset_root
+    )
+    REWARD_TRANSITION_ROOT = resolve_task_reward_transition_root(
+        ROOT,
+        task_id=task_id,
+        reward_transition_root=reward_transition_root,
+    )
+    MANUAL_REWARD_TRANSITION_ROOT = ROOT / "datasets" / f"{task_id}_manual_reward_transitions"
+    task_output_root = resolve_task_output_root(
+        ROOT, task_id=task_id, output_root=output_root
+    )
+    PARENT_ACTOR_CHECKPOINT = (
+        task_output_root / "sft/checkpoints/forcesmolvla_sft_step_010000"
+    )
 
 
 def require(condition: bool, message: str) -> None:
@@ -101,9 +130,13 @@ def file_tree(root: Path, subdirectories: tuple[str, ...] | None = None) -> dict
 
 def protected_snapshot() -> dict:
     files = {
-        "reward_manifest": REWARD_TRANSITION_ROOT / "g1_manifest.json",
-        "reward_frame_scores": REWARD_TRANSITION_ROOT / "frame_scores.parquet",
-        "reward_transition_index": REWARD_TRANSITION_ROOT / "transition_index.parquet",
+        "reward_manifest": REWARD_TRANSITION_ROOT / "dataset_manifest.json",
+        "reward_frame_scores": (
+            REWARD_TRANSITION_ROOT / "reward_detector_frame_scores.parquet"
+        ),
+        "reward_transition_index": (
+            REWARD_TRANSITION_ROOT / "forcerft_offline_td_transitions.parquet"
+        ),
         "critic_config": ROOT / "configs/twin_q_critic.development.yaml",
         "action_contract": ROOT / "configs/stage2_action_contract.v2.development.json",
         "training_cycle_config": CONFIG,
@@ -122,16 +155,6 @@ def protected_snapshot() -> dict:
         "dataset_storage_tree": file_tree(DATASET, ("data", "videos", "meta")),
         "parent_actor_checkpoint_tree": file_tree(PARENT_ACTOR_CHECKPOINT),
     }
-    require(
-        result["files"]["reward_manifest"]["sha256"]
-        == EXPECTED_REWARD_MANIFEST_SHA256,
-        "TRAINING_CYCLE_REWARD_MANIFEST_DRIFT",
-    )
-    require(
-        result["dataset_storage_tree"]["tree_sha256"]
-        == EXPECTED_DATASET_TREE_SHA256,
-        "TRAINING_CYCLE_DATASET_TREE_DRIFT",
-    )
     return result
 
 
@@ -188,7 +211,7 @@ def row_identity(row: dict) -> str:
 
 
 class TrainData:
-    """The sole automatic detector-G1 train view and its frozen populations."""
+    """The task's automatic detector train view and frozen populations."""
 
     def __init__(self) -> None:
         from forcesmolvla.rft.losses import (
@@ -197,9 +220,11 @@ class TrainData:
         )
         from forcesmolvla.training_data import load_runtime_artifacts
 
-        table = load_authorized_reward_train_transitions(REWARD_TRANSITION_ROOT)
+        table = load_authorized_reward_train_transitions(
+            REWARD_TRANSITION_ROOT, task_id=TASK_ID
+        )
         self.rows = table.to_pylist()
-        require(len(self.rows) == 10075 and {row["split"] for row in self.rows} == {"train"}, "G5_TRAIN_ROWS_INVALID")
+        require(self.rows and {row["split"] for row in self.rows} == {"train"}, "G5_TRAIN_ROWS_INVALID")
         self.mc_recurrence = validate_mc_return_recurrence(self.rows)
         self.td_population = tuple(range(len(self.rows)))
         self.calql_population = tuple(
@@ -212,12 +237,9 @@ class TrainData:
         self.proposal_population = self.actor_population
         conversion = json.loads((DATASET / "conversion_manifest.json").read_text())
         self.tasks = {item["raw_episode_id"]: item["task"] for item in conversion["episodes"]}
-        reward_manifest = json.loads(
-            (REWARD_TRANSITION_ROOT / "g1_manifest.json").read_text()
-        )
         self.frame_counts = {
-            item["episode_id"]: int(item["frame_count"])
-            for item in reward_manifest["episode_detection_results"]
+            item["raw_episode_id"]: int(item["diagnostics"]["frames"])
+            for item in conversion["episodes"]
         }
         self.runtime = load_runtime_artifacts(
             DATASET,

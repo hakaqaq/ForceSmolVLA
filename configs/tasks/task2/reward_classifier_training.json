@@ -1,0 +1,64 @@
+{
+  "schema": "forcesmolvla.reward_classifier_training",
+  "status": "final",
+  "task_id": "task2",
+  "dataset_root": "datasets/task2_lerobotv3",
+  "reviewed_labels": "labels/task2_reward_frame_labels.json",
+  "checkpoint_selection": {
+    "evaluation_interval_optimizer_updates": 10,
+    "primary": "minimum_validation_BCE",
+    "secondary_on_exact_BCE_tie": "maximum_validation_PR_AUC",
+    "validation_split": "validation",
+    "validation_uses_random_augmentation": false
+  },
+  "classifier": {
+    "backbone": "pretrained_ResNet10_pre_pooling_frozen",
+    "frame_stack": 1,
+    "implementation": "unmodified_ConRFT_create_classifier_BinaryClassifier",
+    "pretrained_asset": {
+      "format": "numpy_npz_allow_pickle_false",
+      "path": "assets/reward_classifier/resnet10_parameters.npz"
+    },
+    "trainable": [
+      "dual_camera_spatial_learned_embeddings",
+      "dual_camera_bottlenecks",
+      "binary_classifier_head"
+    ]
+  },
+  "diagnostic_threshold": {
+    "approved_detector_threshold": false,
+    "purpose": "training_diagnostics_only",
+    "value": 0.5
+  },
+  "label_mapping": {
+    "ambiguous": "exclude_completely",
+    "hard_negative": 0,
+    "ordinary_negative": 0,
+    "positive": 1
+  },
+  "optimizer": {
+    "gradient_accumulation": false,
+    "learning_rate": 0.0001,
+    "name": "Adam",
+    "objective": "optax.sigmoid_binary_cross_entropy",
+    "optimizer_updates": 150,
+    "updates_are_not_epochs": true
+  },
+  "reproducibility": {
+    "fixed_seed": 0,
+    "repeat_full_training_run": true
+  },
+  "sampling": {
+    "batch_size": 256,
+    "hard_negative_per_update": 64,
+    "ordinary_negative_per_update": 64,
+    "positive_per_update": 128,
+    "replacement": true,
+    "scope": "train_split_only"
+  },
+  "training_augmentation": {
+    "implementation": "ConRFT_batched_random_crop",
+    "num_batch_dims": 2,
+    "padding": 4
+  }
+}

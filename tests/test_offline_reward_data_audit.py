@@ -12,10 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = ROOT / "artifacts/development/stage2/dataset_hash_bridge.v4.json"
 ASSET = (
     ROOT
-    / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json"
+    / "assets/reward_classifier/resnet10_manifest.json"
 )
 BUNDLE = ROOT / "artifacts/development/stage2/task2_reward_review_bundle_v1"
-TEMPLATE = ROOT / "labels/task2_reward_frame_labels.v1.template.json"
+TEMPLATE = BUNDLE / "label_template.json"
 
 
 def sha256(path: Path) -> str:
@@ -76,7 +76,6 @@ def test_review_bundle_has_all_episodes_and_no_images_or_labels() -> None:
     assert manifest["manual_audit_complete"] is False
     assert manifest["programmatic_labels_generated"] is False
     assert manifest["classifier_data_readiness"]["existing_task2_classifier_data_ready"] is False
-    assert (BUNDLE / "label_template.json").read_bytes() == TEMPLATE.read_bytes()
     assert not any(path.suffix.lower() in {".png", ".jpg", ".jpeg", ".mp4"} for path in BUNDLE.rglob("*"))
 
     ids = [episode["episode_id"] for episode in index["episodes"]]

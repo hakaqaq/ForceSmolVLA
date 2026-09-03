@@ -92,7 +92,7 @@ def main() -> None:
     parser.add_argument(
         "--label-template",
         type=Path,
-        default=ROOT / "labels/task2_reward_frame_labels.v1.template.json",
+        required=True,
     )
     args = parser.parse_args()
 
@@ -249,9 +249,9 @@ def main() -> None:
                 name: {"sha256": sha256(dataset_root / name)} for name in EXPECTED_MANIFESTS
             },
             "resnet_asset_manifest": {
-                "path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json",
+                "path": "assets/reward_classifier/resnet10_manifest.json",
                 "sha256": sha256(
-                    ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json"
+                    ROOT / "assets/reward_classifier/resnet10_manifest.json"
                 ),
             },
             "source_files": {

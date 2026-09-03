@@ -10,12 +10,12 @@ from forcesmolvla.checkpoint import sha256_file
 
 
 CLIENT_SOURCE_FILES = (
-    "scripts/deploy_forcesmolvla.py",
-    "scripts/deploy_forcevla.py",
     "scripts/record_franka_hilserl_impedance.py",
     "scripts/hilserl_impedance_protocol.py",
     "scripts/record_franka_forcevla.py",
+    "scripts/record_franka_forcevla_raw.py",
     "scripts/record_franka_spacemouse_publisher.py",
+    "scripts/convert_franka_forcevla_raw_to_lerobot_v21.py",
 )
 
 

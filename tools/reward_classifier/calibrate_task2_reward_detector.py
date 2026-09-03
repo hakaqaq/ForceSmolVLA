@@ -31,10 +31,10 @@ CHECKPOINT_PATH = ROOT / "outputs/task2/reward_classifier/checkpoints/best/best_
 TRAINING_REPORT_PATH = ROOT / "artifacts/development/stage2/reward_classifier/r0_training/r0_training_validation_report.v1.json"
 INVENTORY_PATH = ROOT / "artifacts/development/stage2/reward_classifier/task2_frame_label_inventory.v2.json"
 READINESS_PATH = ROOT / "artifacts/development/stage2/s2_r0_label_ingestion_readiness.v4.json"
-REVIEWED_PATH = ROOT / "labels/task2_reward_frame_labels.v2.reviewed.json"
+REVIEWED_PATH = ROOT / "labels/task2_reward_frame_labels.json"
 SPLIT_PATH = ROOT / "datasets/task2_lerobotv3/split_manifest.json"
 DATASET_ROOT = ROOT / "datasets/task2_lerobotv3"
-SAFE_ASSET_PATH = ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
+SAFE_ASSET_PATH = ROOT / "assets/reward_classifier/resnet10_parameters.npz"
 
 CANDIDATE_PATH = ROOT / "configs/stage2_r0_reward_detector.candidate.development.json"
 CALIBRATION_PATH = ROOT / "artifacts/development/stage2/reward_classifier/r0_validation_detector_calibration.v1.json"

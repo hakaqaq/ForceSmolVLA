@@ -267,13 +267,44 @@ def production_main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--task-id", default="task2")
+    parser.add_argument("--dataset-root", type=Path)
+    parser.add_argument("--reward-transition-root", type=Path)
     parser.add_argument("--output-root", type=Path)
     args = parser.parse_args()
-    from forcesmolvla.training_runtime import resolve_task_output_root
+    from forcesmolvla.rft import training_cycle_runtime
+    from forcesmolvla.training_runtime import (
+        resolve_task_dataset_root,
+        resolve_task_output_root,
+        resolve_task_reward_transition_root,
+    )
 
     output_root = resolve_task_output_root(
         ROOT, task_id=args.task_id, output_root=args.output_root
     )
+    dataset_root = resolve_task_dataset_root(
+        ROOT, task_id=args.task_id, dataset_root=args.dataset_root
+    )
+    reward_transition_root = resolve_task_reward_transition_root(
+        ROOT,
+        task_id=args.task_id,
+        reward_transition_root=args.reward_transition_root,
+    )
+    training_cycle_runtime.configure_task_paths(
+        task_id=args.task_id,
+        dataset_root=dataset_root,
+        reward_transition_root=reward_transition_root,
+        output_root=output_root,
+    )
+    worker_task_args = [
+        "--task-id",
+        args.task_id,
+        "--dataset-root",
+        str(dataset_root),
+        "--reward-transition-root",
+        str(reward_transition_root),
+        "--output-root",
+        str(output_root),
+    ]
     checkpoint = (
         output_root
         / "offline/checkpoints/offline_twin_q_critic_warmup_step_000256"
@@ -321,6 +352,7 @@ def production_main() -> None:
                     str(fixed_path),
                     "--protected-snapshot",
                     str(protected_path),
+                    *worker_task_args,
                 ],
                 cwd=ROOT,
                 env=environment,
@@ -345,6 +377,7 @@ def production_main() -> None:
                     str(temp_checkpoint),
                     "--result",
                     str(verify_result_path),
+                    *worker_task_args,
                 ],
                 cwd=ROOT,
                 env=environment,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed R0 development reward-classifier training and evidence.
+"""Task-scoped reward-classifier training and evidence.
 
 ``prepare-cache`` runs in the project environment (PyArrow/Pillow available),
 reads only train/validation image rows, and creates an ephemeral native-resolution
@@ -32,21 +32,15 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 CONRFT_ROOT = Path("/home/rlc123/conrft")
 CONRFT_RUNTIME_ROOT = CONRFT_ROOT / "serl_launcher"
-CONFIG_DEFAULT = ROOT / "configs/stage2_r0_reward_classifier_training.development.json"
 DATASET_ROOT = ROOT / "datasets/task2_lerobotv3"
-READINESS_PATH = ROOT / "artifacts/development/stage2/s2_r0_label_ingestion_readiness.v4.json"
-INVENTORY_PATH = ROOT / "artifacts/development/stage2/reward_classifier/task2_frame_label_inventory.v2.json"
-REVIEWED_PATH = ROOT / "labels/task2_reward_frame_labels.v2.reviewed.json"
-SAFE_ASSET_PATH = ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.safe.npz"
-SAFE_MANIFEST_PATH = ROOT / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_asset_manifest.v4.json"
+REVIEWED_PATH = ROOT / "labels/task2_reward_frame_labels.json"
+TASK_ID = "task2"
+SAFE_ASSET_PATH = ROOT / "assets/reward_classifier/resnet10_parameters.npz"
+SAFE_MANIFEST_PATH = ROOT / "assets/reward_classifier/resnet10_manifest.json"
 ADAPTER_PATH = ROOT / "tools/reward_classifier/conrft_lerobot_v3_adapter.py"
 SPLIT_PATH = DATASET_ROOT / "split_manifest.json"
 
-EXPECTED_REVIEWED_SHA256 = "ecda7d480f6a4c49dbe63a31b7e3172b30a5470437510522b1da2217eae77a9c"
-EXPECTED_READINESS_SHA256 = "64ae61e7d83c7be49451f4716c0e95921c2e9dbd062a553cec8f7fccdcc690aa"
-EXPECTED_INVENTORY_SHA256 = "8839793f0e5d5c6d866b41e32bcb7fa576cd984a9faf5507719a1735be611a65"
 EXPECTED_SAFE_ASSET_SHA256 = "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5"
-EXPECTED_DATASET_STORAGE_SHA256 = "f9935b6479dc851e49444669065d20b8aef8cb3ad382f77f53391f701a55a58d"
 EXPECTED_CONRFT_COMMIT = "a779fde7fa5db5a469960a8490c100f35b41b49e"
 
 CAMERA_SOURCE_KEYS = ("observation.images.camera1", "observation.images.camera2")
@@ -60,6 +54,29 @@ VALIDATION_INTERVAL = 10
 OVERFIT_UPDATES = 30
 VALIDATION_BATCH_SIZE = 128
 IMAGE_SHAPE = (480, 640, 3)
+
+
+def configure_task_inputs(
+    *,
+    task_id: str,
+    dataset_root: Path | None = None,
+    reviewed_labels: Path | None = None,
+) -> None:
+    """Select the task dataset and its explicitly reviewed label subset."""
+
+    from forcesmolvla.training_runtime import resolve_task_dataset_root
+
+    global TASK_ID, DATASET_ROOT, REVIEWED_PATH, SPLIT_PATH
+    TASK_ID = task_id
+    DATASET_ROOT = resolve_task_dataset_root(
+        ROOT, task_id=task_id, dataset_root=dataset_root
+    )
+    REVIEWED_PATH = (
+        ROOT / "labels" / f"{task_id}_reward_frame_labels.json"
+        if reviewed_labels is None
+        else reviewed_labels
+    ).expanduser().resolve()
+    SPLIT_PATH = DATASET_ROOT / "split_manifest.json"
 
 
 def sha256_file(path: Path) -> str:
@@ -131,19 +148,143 @@ def _git(*args: str) -> str:
     ).stdout.strip()
 
 
-def verify_frozen_inputs(config_path: Path, *, hash_dataset: bool) -> dict[str, Any]:
-    expected = {
-        REVIEWED_PATH: EXPECTED_REVIEWED_SHA256,
-        READINESS_PATH: EXPECTED_READINESS_SHA256,
-        INVENTORY_PATH: EXPECTED_INVENTORY_SHA256,
-        SAFE_ASSET_PATH: EXPECTED_SAFE_ASSET_SHA256,
+def _label_inventory(
+    reviewed: dict, split_manifest: dict, conversion: dict, dataset_info: dict
+) -> dict:
+    episodes = reviewed.get("episodes")
+    require(isinstance(episodes, list) and episodes, "reviewed label subset is empty")
+    require(
+        reviewed.get("episode_count", len(episodes)) == len(episodes),
+        "reviewed label count mismatch",
+    )
+    conversion_by_id = {item["raw_episode_id"]: item for item in conversion["episodes"]}
+    split_by_id = {
+        episode_id: split
+        for split in ("train", "val", "test")
+        for episode_id in split_manifest[split]
     }
-    for path, digest in expected.items():
+    inventory_episodes = []
+    statistics = {
+        split: {
+            "episode_count": 0,
+            "classes": {name: {"frame_count": 0} for name in CLASS_NAMES},
+        }
+        for split in ("train", "validation", "test")
+    }
+    seen = set()
+    for label in episodes:
+        episode_id = label.get("episode_id")
+        require(
+            isinstance(episode_id, str)
+            and episode_id in conversion_by_id
+            and episode_id not in seen,
+            f"reviewed episode invalid or duplicated: {episode_id}",
+        )
+        seen.add(episode_id)
+        source = conversion_by_id[episode_id]
+        source_split = split_by_id[episode_id]
+        split = "validation" if source_split == "val" else source_split
+        require(
+            label.get("manual_review_status") == "human_reviewed"
+            and label.get("split") == source_split
+            and int(label.get("output_episode_index"))
+            == int(source["output_episode_index"]),
+            f"reviewed episode contract invalid: {episode_id}",
+        )
+        frame_count = int(source.get("frames", source["diagnostics"]["frames"]))
+        owner: list[str | None] = [None] * frame_count
+        intervals = {}
+        for class_name, field in (
+            ("ordinary_negative", "ordinary_negative_intervals"),
+            ("hard_negative", "hard_negative_intervals"),
+            ("ambiguous", "ambiguous_intervals"),
+        ):
+            values = label.get(field, [])
+            require(isinstance(values, list), f"label intervals invalid: {episode_id}")
+            intervals[class_name] = values
+            for value in values:
+                require(
+                    isinstance(value, list)
+                    and len(value) == 2
+                    and all(isinstance(item, int) and not isinstance(item, bool) for item in value),
+                    f"label interval invalid: {episode_id}:{field}",
+                )
+                start, stop = value
+                require(0 <= start <= stop < frame_count, f"label interval out of range: {episode_id}")
+                for frame in range(start, stop + 1):
+                    require(owner[frame] is None, f"overlapping labels: {episode_id}:{frame}")
+                    owner[frame] = class_name
+        first_positive = label.get("first_confident_complete_frame")
+        require(
+            isinstance(first_positive, int)
+            and not isinstance(first_positive, bool)
+            and 0 <= first_positive < frame_count,
+            f"positive boundary invalid: {episode_id}",
+        )
+        intervals["positive"] = [[first_positive, frame_count - 1]]
+        for frame in range(first_positive, frame_count):
+            require(owner[frame] is None, f"positive overlap: {episode_id}:{frame}")
+            owner[frame] = "positive"
+        require(all(owner), f"unlabeled frames remain in reviewed episode: {episode_id}")
+        counts = Counter(owner)
+        index = int(source["output_episode_index"])
+        chunk_index, file_index = divmod(index, int(dataset_info["chunks_size"]))
+        relative_path = dataset_info["data_path"].format(
+            chunk_index=chunk_index,
+            file_index=file_index,
+            episode_chunk=chunk_index,
+        )
+        inventory_episodes.append(
+            {
+                "episode_id": episode_id,
+                "output_episode_index": index,
+                "split": split,
+                "frame_count": frame_count,
+                "source_data_relative_path": relative_path,
+                "class_intervals_inclusive": intervals,
+                "class_frame_counts": {
+                    name: int(counts[name]) for name in CLASS_NAMES
+                },
+            }
+        )
+        statistics[split]["episode_count"] += 1
+        for name in CLASS_NAMES:
+            statistics[split]["classes"][name]["frame_count"] += int(counts[name])
+    for split in ("train", "validation"):
+        require(
+            statistics[split]["episode_count"] > 0
+            and all(
+                statistics[split]["classes"][name]["frame_count"] > 0
+                for name in ("positive", "ordinary_negative", "hard_negative")
+            ),
+            f"reviewed subset lacks class coverage in {split}",
+        )
+    return {
+        "artifact_status": "READY_FOR_REWARD_CLASSIFIER_TRAINING",
+        "validation": {
+            "schema_valid": True,
+            "intervals_valid": True,
+            "overlapping_frame_count": 0,
+            "unlabeled_frame_count": 0,
+        },
+        "leakage_checks": {"episode_leakage": False, "row_leakage": False},
+        "class_statistics": statistics,
+        "episodes": inventory_episodes,
+    }
+
+
+def verify_frozen_inputs(config_path: Path, *, hash_dataset: bool) -> dict[str, Any]:
+    for path in (REVIEWED_PATH, SAFE_ASSET_PATH):
         require(path.is_file(), f"required input missing: {path}")
-        require(sha256_file(path) == digest, f"frozen input SHA mismatch: {path}")
+    require(
+        sha256_file(SAFE_ASSET_PATH) == EXPECTED_SAFE_ASSET_SHA256,
+        "safe backbone input mismatch",
+    )
 
     config = load_json(config_path)
-    require(config["schema_version"] == "forcesmolvla_r0_reward_classifier_training.v1", "config schema mismatch")
+    require(config.get("schema") == "forcesmolvla.reward_classifier_training", "config schema mismatch")
+    require(config.get("status") == "final", "training config is not final")
+    require(config.get("task_id") == TASK_ID, "training config task_id mismatch")
     require(config["optimizer"]["optimizer_updates"] == OPTIMIZER_UPDATES, "optimizer update count mismatch")
     require(config["optimizer"]["learning_rate"] == 1e-4, "learning rate mismatch")
     require(config["sampling"] == {
@@ -161,43 +302,14 @@ def verify_frozen_inputs(config_path: Path, *, hash_dataset: bool) -> dict[str, 
         "padding": 4,
     }, "augmentation contract mismatch")
 
-    readiness = load_json(READINESS_PATH)
-    inventory = load_json(INVENTORY_PATH)
     reviewed = load_json(REVIEWED_PATH)
     split_manifest = load_json(SPLIT_PATH)
-    require(readiness["artifact_status"] == "PASS_DEVELOPMENT_R0_TRAINING_DATA_READY", "readiness did not pass")
-    require(readiness["readiness"]["DEVELOPMENT_R0_TRAINING_DATA_READY"] == "yes", "training data is not ready")
-    require(readiness["bindings"]["reviewed_labels"]["sha256"] == EXPECTED_REVIEWED_SHA256, "readiness label binding mismatch")
-    require(readiness["bindings"]["frame_label_inventory"]["sha256"] == EXPECTED_INVENTORY_SHA256, "readiness inventory binding mismatch")
-    require(inventory["artifact_status"] == "PASS_APPEND_ONLY_VALIDATED_LABEL_INGESTION", "inventory did not pass")
-    require(inventory["validation"]["schema_valid"] is True, "label schema invalid")
-    require(inventory["validation"]["intervals_valid"] is True, "label intervals invalid")
-    require(inventory["validation"]["overlapping_frame_count"] == 0, "overlapping labels")
-    require(inventory["validation"]["unlabeled_frame_count"] == 0, "unlabeled frames")
-    require(inventory["leakage_checks"]["episode_leakage"] is False, "episode leakage")
-    require(inventory["leakage_checks"]["row_leakage"] is False, "row leakage")
-    require(len(reviewed["episodes"]) == 47, "reviewed episode count mismatch")
-    require(all(e["manual_review_status"] == "human_reviewed" for e in reviewed["episodes"]), "not all episodes are human reviewed")
-
-    split_sets = {name: set(split_manifest[name]) for name in ("train", "val", "test")}
-    require([len(split_sets[name]) for name in ("train", "val", "test")] == [38, 5, 4], "split sizes mismatch")
-    require(not (split_sets["train"] & split_sets["val"] | split_sets["train"] & split_sets["test"] | split_sets["val"] & split_sets["test"]), "split episode overlap")
-    inv_sets = {
-        "train": {e["episode_id"] for e in inventory["episodes"] if e["split"] == "train"},
-        "val": {e["episode_id"] for e in inventory["episodes"] if e["split"] == "validation"},
-        "test": {e["episode_id"] for e in inventory["episodes"] if e["split"] == "test"},
-    }
-    require(inv_sets == split_sets, "inventory/split-manifest mismatch")
-
-    for entry in readiness["bindings"].values():
-        if "path" not in entry:
-            continue
-        path = ROOT / entry["path"]
-        require(path.is_file(), f"readiness binding missing: {path}")
-        require(sha256_file(path) == entry["sha256"], f"readiness binding SHA mismatch: {path}")
-
-    storage_sha = readiness["bindings"]["p8_dataset_storage"]["tree_sha256"]
-    require(storage_sha == EXPECTED_DATASET_STORAGE_SHA256, "readiness dataset SHA mismatch")
+    conversion = load_json(DATASET_ROOT / "conversion_manifest.json")
+    dataset_info = load_json(DATASET_ROOT / "meta/info.json")
+    inventory = _label_inventory(
+        reviewed, split_manifest, conversion, dataset_info
+    )
+    storage_sha = None
     if hash_dataset:
         hashes: dict[str, str] = {}
         for directory in ("data", "videos", "meta"):
@@ -207,14 +319,12 @@ def verify_frozen_inputs(config_path: Path, *, hash_dataset: bool) -> dict[str, 
         digest = hashlib.sha256()
         for name, value in hashes.items():
             digest.update(f"{name}\0{value}\n".encode())
-        require(len(hashes) == 51, "dataset storage file count mismatch")
-        require(digest.hexdigest() == EXPECTED_DATASET_STORAGE_SHA256, "dataset storage SHA mismatch")
+        storage_sha = digest.hexdigest()
 
     require(_git("rev-parse", "HEAD") == EXPECTED_CONRFT_COMMIT, "ConRFT commit mismatch")
     require(_git("status", "--porcelain") == "", "ConRFT worktree is modified")
     return {
         "config": config,
-        "readiness": readiness,
         "inventory": inventory,
         "reviewed": reviewed,
         "split_manifest": split_manifest,
@@ -244,12 +354,10 @@ def frame_pools(inventory: Mapping[str, Any], split: str) -> dict[str, list[tupl
 
 def build_schedule(inventory: Mapping[str, Any]) -> tuple[list[list[tuple[str, int, str]]], dict[str, Any]]:
     pools = frame_pools(inventory, "train")
-    require({name: len(pools[name]) for name in CLASS_NAMES} == {
-        "positive": 1712,
-        "ordinary_negative": 19890,
-        "hard_negative": 10025,
-        "ambiguous": 197,
-    }, "train pool inventory mismatch")
+    require(
+        all(pools[name] for name in TRAIN_COUNTS),
+        "reviewed train subset lacks a required class",
+    )
     rng = np.random.default_rng(SEED)
     schedule: list[list[tuple[str, int, str]]] = []
     counts: dict[str, Counter[str]] = defaultdict(Counter)
@@ -304,7 +412,7 @@ def prepare_cache(cache_dir: Path, config_path: Path) -> None:
         ]
     ]
     validation_rows.sort(key=lambda item: (item[0], item[1]))
-    require(len(validation_rows) == 3775, "validation frame count mismatch")
+    require(validation_rows, "reviewed validation subset has no usable frames")
     validation_keys = {(episode_id, frame) for episode_id, frame, _ in validation_rows}
     require(train_required.isdisjoint(validation_keys), "train/validation cache overlap")
     test_episodes = set(split_manifest["test"])
@@ -380,7 +488,7 @@ def prepare_cache(cache_dir: Path, config_path: Path) -> None:
                         CAMERA_SOURCE_KEYS[1]: np.ascontiguousarray(np.transpose(rgb2, (2, 0, 1))),
                     },
                     row_reference=adapter_module.RowReference(
-                        "task2_lerobotv3",
+                        DATASET_ROOT.name,
                         episode["source_data_relative_path"],
                         frame,
                         episode_id,
@@ -421,8 +529,8 @@ def prepare_cache(cache_dir: Path, config_path: Path) -> None:
             path = staging / name
             file_bindings[name] = {"file_size": path.stat().st_size, "sha256": sha256_file(path)}
         manifest = {
-            "schema_version": "forcesmolvla_r0_ephemeral_native_rgb_cache.v1",
-            "artifact_status": "COMPLETE_EPHEMERAL_TRAIN_VALIDATION_CACHE",
+            "schema": "forcesmolvla.reward_classifier_training_cache",
+            "status": "complete",
             "created_at": utc_now(),
             "cache_frame_count": len(all_rows),
             "native_rgb_shape": list(IMAGE_SHAPE),
@@ -441,10 +549,8 @@ def prepare_cache(cache_dir: Path, config_path: Path) -> None:
             },
             "frozen_bindings": {
                 "config": binding(config_path),
-                "inventory": binding(INVENTORY_PATH),
-                "readiness": binding(READINESS_PATH),
                 "reviewed_labels": binding(REVIEWED_PATH),
-                "dataset_storage_sha256": EXPECTED_DATASET_STORAGE_SHA256,
+                "dataset_storage_sha256": verified["dataset_storage_sha256"],
                 "adapter": binding(ADAPTER_PATH),
             },
             "files": file_bindings,
@@ -502,7 +608,7 @@ def verify_cache(cache_dir: Path) -> dict[str, Any]:
     manifest_path = cache_dir / "cache_manifest.json"
     require(manifest_path.is_file(), "cache manifest missing")
     manifest = load_json(manifest_path)
-    require(manifest["artifact_status"] == "COMPLETE_EPHEMERAL_TRAIN_VALIDATION_CACHE", "cache incomplete")
+    require(manifest.get("status") == "complete", "cache incomplete")
     require(manifest["test_frame_count"] == 0 and manifest["ambiguous_frame_count"] == 0, "forbidden cache rows")
     for name, entry in manifest["files"].items():
         path = cache_dir / name
@@ -641,7 +747,10 @@ def validation_metrics(logits: np.ndarray, labels: np.ndarray, strata: np.ndarra
     logits = np.asarray(logits, dtype=np.float64).reshape(-1)
     labels = np.asarray(labels, dtype=np.uint8).reshape(-1)
     strata = np.asarray(strata, dtype=np.uint8).reshape(-1)
-    require(len(logits) == len(labels) == len(strata) == 3775, "validation row count mismatch")
+    require(
+        len(logits) == len(labels) == len(strata) and len(labels) > 0,
+        "validation row count mismatch",
+    )
     require(not np.any(strata == CLASS_CODE["ambiguous"]), "ambiguous validation metric consumption")
     losses = np.maximum(logits, 0.0) - logits * labels + np.log1p(np.exp(-np.abs(logits)))
     probabilities = sigmoid(logits)
@@ -682,8 +791,6 @@ def source_bindings(config_path: Path) -> dict[str, Any]:
         "training_source": Path(__file__).resolve(),
         "resolved_training_config": config_path,
         "adapter": ADAPTER_PATH,
-        "readiness": READINESS_PATH,
-        "inventory": INVENTORY_PATH,
         "reviewed_labels": REVIEWED_PATH,
         "safe_resnet10_npz": SAFE_ASSET_PATH,
         "safe_resnet10_manifest": SAFE_MANIFEST_PATH,
@@ -709,7 +816,11 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
     verified = verify_frozen_inputs(config_path, hash_dataset=False)
     cache_manifest = verify_cache(cache_dir)
     require(cache_manifest["frozen_bindings"]["config"]["sha256"] == sha256_file(config_path), "cache/config mismatch")
-    require(cache_manifest["frozen_bindings"]["dataset_storage_sha256"] == EXPECTED_DATASET_STORAGE_SHA256, "cache/dataset mismatch")
+    require(
+        cache_manifest["frozen_bindings"]["reviewed_labels"]["sha256"]
+        == sha256_file(REVIEWED_PATH),
+        "cache/reviewed-label subset mismatch",
+    )
 
     os.environ.setdefault("TF_CUDNN_DETERMINISTIC", "1")
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
@@ -738,7 +849,10 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
     val_codes = np.load(cache_dir / "validation_class_codes.npy", allow_pickle=False)
     require(camera1.shape == camera2.shape == (cache_manifest["cache_frame_count"], *IMAGE_SHAPE), "cache camera shape mismatch")
     require(schedule.shape == (150, 256), "schedule shape mismatch")
-    require(len(val_indices) == 3775, "validation cache mismatch")
+    require(
+        len(val_indices) == int(cache_manifest["validation_complete_frame_count"]),
+        "validation cache mismatch",
+    )
     val_labels = (val_codes == CLASS_CODE["positive"]).astype(np.uint8)
 
     sample = {
@@ -978,7 +1092,7 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
             "train_loss_by_update": train_losses,
             "validation_trace": trace,
             "validation_evaluation_updates": list(range(10, 151, 10)),
-            "full_validation_frames_per_evaluation": 3775,
+            "full_validation_frames_per_evaluation": len(val_indices),
             "best_optimizer_update": best_update,
             "best_validation_metrics": best_metrics,
             "selection_rule": "minimum_BCE_then_maximum_PR_AUC_on_exact_BCE_tie",
@@ -1058,6 +1172,7 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
         resume_leaves, resume_tree = jax.tree_util.tree_flatten(restored_resume_state)
         checkpoint_restore_audit = {
             "status": "pass",
+            "best_checkpoint_expected_step": primary["best_optimizer_update"],
             "best_checkpoint_restored_step": int(restored_best.step),
             "last_checkpoint_restored_step": int(restored_last.step),
             "resume_state_restored_step": int(restored_resume_state.step),
@@ -1071,7 +1186,8 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
             ),
         }
         require(
-            checkpoint_restore_audit["best_checkpoint_restored_step"] == OPTIMIZER_UPDATES
+            checkpoint_restore_audit["best_checkpoint_restored_step"]
+            == checkpoint_restore_audit["best_checkpoint_expected_step"]
             and checkpoint_restore_audit["last_checkpoint_restored_step"] == OPTIMIZER_UPDATES
             and checkpoint_restore_audit["resume_state_restored_step"] == OPTIMIZER_UPDATES
             and checkpoint_restore_audit["resume_next_optimizer_update"] == OPTIMIZER_UPDATES + 1
@@ -1080,16 +1196,14 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
         )
         access = cache_manifest["source_access_audit"]
         report = {
-            "schema_version": "forcesmolvla_r0_reward_classifier_training_report.v1",
-            "artifact_status": "PASS_R0_DEVELOPMENT_CLASSIFIER_TRAINING_COMPLETE",
+            "schema": "forcesmolvla.reward_classifier_training_report",
+            "status": "complete",
             "completed_at": utc_now(),
-            "authorization": "user_approved_R0_development_reward_classifier_training",
+            "task_id": TASK_ID,
             "resolved_training_config": binding(config_path),
             "frozen_input_bindings": {
                 "reviewed_labels": binding(REVIEWED_PATH),
-                "readiness": binding(READINESS_PATH),
-                "inventory": binding(INVENTORY_PATH),
-                "dataset_storage_tree_sha256": EXPECTED_DATASET_STORAGE_SHA256,
+                "dataset_storage_tree_sha256": cache_manifest["frozen_bindings"]["dataset_storage_sha256"],
                 "safe_resnet10_npz": binding(SAFE_ASSET_PATH),
                 "safe_resnet10_manifest": binding(SAFE_MANIFEST_PATH),
                 "ConRFT_git_commit": EXPECTED_CONRFT_COMMIT,
@@ -1126,7 +1240,7 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
                 "frame_stack": 1,
                 "sampling_relationship": {
                     "ConRFT_compatible": "50_percent_positive_and_50_percent_negative",
-                    "ForceRFT_development_extension": "negative_half_split_64_ordinary_and_64_hard",
+                    "ForceRFT_sampling": "negative_half_split_64_ordinary_and_64_hard",
                     "unmodified_ConRFT_sampling_claim": False,
                 },
             },
@@ -1163,8 +1277,8 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
                     "fixed_seed_repeat": OPTIMIZER_UPDATES * 256,
                 },
                 "validation_inference_row_occurrences": {
-                    "primary_baseline": 15 * 3775,
-                    "fixed_seed_repeat": 15 * 3775,
+                    "primary_baseline": 15 * len(val_indices),
+                    "fixed_seed_repeat": 15 * len(val_indices),
                 },
                 "validation_gradient_row_occurrences": 0,
                 "test_image_rows_loaded": 0,
@@ -1191,37 +1305,37 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
             },
             "next_validation_only_recommendation": "Request approval for validation-only DetectorSpec calibration of probability threshold and consecutive-positive frames; keep test images sealed and do not generate reward/terminal during that calibration request.",
             "terminal_status": {
-                "R0_CLASSIFIER_TRAINING": "complete",
+                "REWARD_CLASSIFIER_TRAINING": "complete",
                 "BEST_CLASSIFIER_SELECTED": "yes",
                 "DETECTOR_THRESHOLD_APPROVED": "no",
                 "TEST_EVALUATED": "no",
-                "TASK2_REWARD_TERMINAL_CREATED": "no",
+                "REWARD_TERMINAL_CREATED": "no",
                 "REWARD_TRANSITION_CREATED": "no",
                 "TWIN_Q_CREATED": "no",
                 "NEXT_ALLOWED_ACTION": "request_validation_only_detector_calibration",
             },
         }
-        report_path = staging / "r0_training_validation_report.v1.json"
+        report_path = staging / "reward_classifier_training_report.json"
         atomic_json(report_path, report)
 
         sources = source_bindings(config_path)
         artifacts = {"training_report": {
-            "path": f"{relative(output_dir)}/r0_training_validation_report.v1.json",
+            "path": f"{relative(output_dir)}/reward_classifier_training_report.json",
             "file_size": report_path.stat().st_size,
             "sha256": sha256_file(report_path),
         }, **{f"checkpoint_{name.removesuffix('.msgpack')}": value for name, value in checkpoint_bindings.items()}}
         manifest = {
-            "schema_version": "forcesmolvla_r0_reward_classifier_source_artifact_manifest.v1",
-            "artifact_status": "PASS_BOUND_SOURCE_AND_TRAINING_ARTIFACTS",
+            "schema": "forcesmolvla.reward_classifier_artifact_manifest",
+            "status": "complete",
             "created_at": utc_now(),
             "self_included": False,
             "sources": sources,
             "artifacts": artifacts,
-            "dataset_storage_tree_sha256": EXPECTED_DATASET_STORAGE_SHA256,
+            "dataset_storage_tree_sha256": cache_manifest["frozen_bindings"]["dataset_storage_sha256"],
             "ConRFT_git_commit": EXPECTED_CONRFT_COMMIT,
             "prohibited_artifacts_created": [],
         }
-        atomic_json(staging / "source_artifact_manifest.v1.json", manifest)
+        atomic_json(staging / "reward_classifier_artifact_manifest.json", manifest)
         staging.replace(output_dir)
         print(json.dumps({
             "status": "training_complete",
@@ -1238,8 +1352,10 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=Path, default=CONFIG_DEFAULT)
+    parser.add_argument("--config", type=Path)
     parser.add_argument("--task-id", default="task2")
+    parser.add_argument("--dataset-root", type=Path)
+    parser.add_argument("--reviewed-labels", type=Path)
     parser.add_argument("--output-root", type=Path)
     subparsers = parser.add_subparsers(dest="command", required=True)
     prepare = subparsers.add_parser("prepare-cache")
@@ -1252,7 +1368,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    config_path = args.config.resolve()
+    configure_task_inputs(
+        task_id=args.task_id,
+        dataset_root=args.dataset_root,
+        reviewed_labels=args.reviewed_labels,
+    )
+    config_path = (
+        args.config
+        or ROOT / "configs/tasks" / args.task_id / "reward_classifier_training.json"
+    ).resolve()
     if args.command == "prepare-cache":
         prepare_cache(args.cache_dir.resolve(), config_path)
     else:

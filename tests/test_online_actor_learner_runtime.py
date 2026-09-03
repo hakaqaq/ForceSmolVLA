@@ -169,6 +169,7 @@ def test_prepare_learner_uses_exact_resume_loader_signature(tmp_path) -> None:
             resume_checkpoint=checkpoint,
             warmup_api=object(),
             joint_api=JointApi(),
+            task="Pick up the purple ring and place it onto the red peg.",
         )
 
 

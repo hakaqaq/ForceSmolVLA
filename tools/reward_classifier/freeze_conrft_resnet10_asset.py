@@ -97,11 +97,11 @@ def git(*args: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    pretrained_dir = ROOT / "artifacts/development/stage2/reward_classifier/pretrained"
+    pretrained_dir = ROOT / "assets/reward_classifier"
     parser.add_argument("--pickle", type=Path, default=pretrained_dir / "resnet10_params.pkl")
-    parser.add_argument("--safe-npz", type=Path, default=pretrained_dir / "resnet10_params.safe.npz")
+    parser.add_argument("--safe-npz", type=Path, default=pretrained_dir / "resnet10_parameters.npz")
     parser.add_argument(
-        "--manifest", type=Path, default=pretrained_dir / "resnet10_asset_manifest.v4.json"
+        "--manifest", type=Path, default=pretrained_dir / "resnet10_manifest.json"
     )
     args = parser.parse_args()
 
@@ -188,7 +188,7 @@ def main() -> None:
     reward_classifier = CONRFT / "serl_launcher/serl_launcher/networks/reward_classifier.py"
     resnet_source = CONRFT / "serl_launcher/serl_launcher/vision/resnet_v1.py"
     manifest = {
-        "schema_version": "force_rft_conrft_resnet10_asset.v4",
+        "schema": "forcesmolvla.reward_classifier_resnet10_asset",
         "status": "PASS_FROZEN_SAFE_COPY_READY",
         "source_url": SOURCE_URL,
         "source_repository": git("remote", "get-url", "origin"),

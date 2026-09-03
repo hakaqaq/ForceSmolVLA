@@ -34,7 +34,7 @@ def test_detector_macro_transition_terminal_and_partial_mask(terminal, steps):
     assert all(row.anchor_frame < row.next_frame <= terminal for row in rows)
 
 
-def test_manual_g1_loader_is_fail_closed():
+def test_historical_manual_reward_loader_is_fail_closed():
     with pytest.raises(RuntimeError, match="HISTORICAL_MANUAL_AUDIT"):
         load_manual(ROOT / "artifacts/development/stage2/g1_manual_reward_transition_view.v1")
 
@@ -42,7 +42,7 @@ def test_manual_g1_loader_is_fail_closed():
 def test_new_sources_have_no_manual_boundary_dependency():
     paths = [
         ROOT / "src/forcesmolvla/rft/detector_reward_transitions.py",
-        ROOT / "configs/reward_transition_materialization.development.json",
+        ROOT / "configs/tasks/task2/forcerft_offline_reward_transitions.json",
     ]
     forbidden = ("first_confident_complete_frame", "task2_reward_frame_labels", "reviewed.json")
     for path in paths:

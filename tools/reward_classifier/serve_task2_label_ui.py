@@ -24,8 +24,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BUNDLE = ROOT / "artifacts/development/stage2/task2_reward_review_bundle_v1"
 DEFAULT_DATASET = ROOT / "datasets/task2_lerobotv3"
 DEFAULT_UI = ROOT / "tools/reward_classifier/task2_label_ui.html"
-DEFAULT_LABEL_TEMPLATE = ROOT / "labels/task2_reward_frame_labels.v2.template.json"
-DEFAULT_PROTOCOL = ROOT / "docs/task2_reward_labeling_protocol.v2.md"
+DEFAULT_LABEL_TEMPLATE = DEFAULT_BUNDLE / "label_template.json"
+DEFAULT_PROTOCOL = ROOT / "docs/reward_labeling_protocol.md"
 CANONICAL_TASK_PROMPT = "Pick up the purple ring and place it onto the red peg."
 CAMERA_KEYS = {
     "camera1": "observation.images.camera1",

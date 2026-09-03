@@ -1,9 +1,8 @@
-"""Frozen-detector G1 reward and macro-transition semantics."""
+"""Frozen-detector reward and macro-transition semantics."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 from pathlib import Path
 from typing import Iterator, Literal, Sequence
 
@@ -21,21 +20,11 @@ GAMMA = 0.99
 TAU = 0.83
 REQUIRED_CONSECUTIVE_FRAMES = 5
 REWARD_SOURCE = "frozen_classifier_detector"
-CHECKPOINT_SHA256 = "6b4e366baa55993d150cb3dd86e67a1d708e58d836b123a0c433190835021510"
 
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise RuntimeError(message)
-
-
-def tensor_sha256(value: np.ndarray) -> str:
-    array = np.ascontiguousarray(value)
-    digest = hashlib.sha256()
-    digest.update(array.dtype.str.encode("ascii"))
-    digest.update(str(array.shape).encode("ascii"))
-    digest.update(array.view(np.uint8))
-    return digest.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -166,12 +155,12 @@ def detector_macro_transitions(detector_terminal_frame: int) -> tuple[DetectorMa
         )
         for index, item in enumerate(raw)
     )
-    _require(sum(item.reward == 1.0 for item in result) == 1, "DETECTOR_G1_REWARD_COUNT_INVALID")
-    _require(sum(item.terminated for item in result) == 1, "DETECTOR_G1_TERMINAL_COUNT_INVALID")
-    _require(result[-1].next_frame == detector_terminal_frame, "DETECTOR_G1_TERMINAL_NOT_REACHED")
+    _require(sum(item.reward == 1.0 for item in result) == 1, "REWARD_TRANSITION_REWARD_COUNT_INVALID")
+    _require(sum(item.terminated for item in result) == 1, "REWARD_TRANSITION_TERMINAL_COUNT_INVALID")
+    _require(result[-1].next_frame == detector_terminal_frame, "REWARD_TRANSITION_TERMINAL_NOT_REACHED")
     _require(
         all(item.anchor_frame < item.next_frame <= detector_terminal_frame for item in result),
-        "DETECTOR_G1_SELF_LOOP_OR_POST_TERMINAL",
+        "REWARD_TRANSITION_SELF_LOOP_OR_POST_TERMINAL",
     )
     return result
 
@@ -193,7 +182,10 @@ def iter_detector_episode_transitions(
     detector_terminal_frame: int,
     detector_streak_start_frame: int,
     detector_probability_at_trigger: float,
+    detector_probability_threshold: float = TAU,
+    detector_required_consecutive_frames: int = REQUIRED_CONSECUTIVE_FRAMES,
     normalizer,
+    dataset_root_id: str,
     source_data_relative_path: str,
     task: str,
 ) -> Iterator[PreparedDetectorTransition]:
@@ -213,7 +205,7 @@ def iter_detector_episode_transitions(
         and np.array_equal(frame_indices, np.arange(frame_count))
         and np.all(episode_indices == episode_index)
         and 0 < detector_terminal_frame < frame_count,
-        "DETECTOR_G1_EPISODE_ARRAY_CONTRACT_INVALID",
+        "REWARD_TRANSITION_EPISODE_ARRAY_CONTRACT_INVALID",
     )
 
     for spec in detector_macro_transitions(detector_terminal_frame):
@@ -243,19 +235,19 @@ def iter_detector_episode_transitions(
         valid = np.asarray(prepared["action_valid_mask"], dtype=np.bool_)
         _require(
             np.array_equal(normalized, normalized_expected),
-            "DETECTOR_G1_STAGE1_NORMALIZATION_ELEMENTWISE_MISMATCH",
+            "REWARD_TRANSITION_NORMALIZATION_ELEMENTWISE_MISMATCH",
         )
         _require(
             np.array_equal(valid, valid_expected),
-            "DETECTOR_G1_STAGE1_ACTION_MASK_ELEMENTWISE_MISMATCH",
+            "REWARD_TRANSITION_ACTION_MASK_ELEMENTWISE_MISMATCH",
         )
         executed = np.asarray(normalized[: spec.executed_steps], dtype=np.float32)
-        _require(executed.shape == (spec.executed_steps, 7), "DETECTOR_G1_EXECUTED_ACTION_SLICE_INVALID")
-        _require(spec.next_frame - anchor == len(executed), "DETECTOR_G1_ACTION_NEXT_OFF_BY_ONE")
+        _require(executed.shape == (spec.executed_steps, 7), "REWARD_TRANSITION_EXECUTED_ACTION_SLICE_INVALID")
+        _require(spec.next_frame - anchor == len(executed), "REWARD_TRANSITION_ACTION_NEXT_OFF_BY_ONE")
 
         def row_reference(frame: int) -> dict:
             return {
-                "dataset_root_id": "task2_lerobotv3",
+                "dataset_root_id": dataset_root_id,
                 "data_relative_path": source_data_relative_path,
                 "row_index": int(frame),
                 "episode_id": episode_id,
@@ -264,18 +256,14 @@ def iter_detector_episode_transitions(
             }
 
         action_reference = {
-            "dataset_root_id": "task2_lerobotv3",
+            "dataset_root_id": dataset_root_id,
             "data_relative_path": source_data_relative_path,
             "anchor_row_index": int(anchor),
             "source_frame_start_inclusive": int(anchor),
             "source_frame_stop_exclusive": int(min(anchor + HORIZON, frame_count)),
-            "stage1_horizon": HORIZON,
+            "actor_horizon": HORIZON,
             "executed_slice_start": 0,
             "executed_slice_stop_exclusive": spec.executed_steps,
-            "absolute_action_chunk_sha256": tensor_sha256(absolute_chunk),
-            "delta_action_chunk_sha256": tensor_sha256(delta_chunk),
-            "normalized_action_chunk_sha256": tensor_sha256(normalized),
-            "action_valid_mask_sha256": tensor_sha256(valid),
         }
         row = {
             "episode_id": episode_id,
@@ -286,26 +274,25 @@ def iter_detector_episode_transitions(
             "detector_terminal_frame": detector_terminal_frame,
             "detector_streak_start_frame": detector_streak_start_frame,
             "detector_probability_at_trigger": detector_probability_at_trigger,
-            "detector_probability_threshold": TAU,
-            "detector_required_consecutive_frames": REQUIRED_CONSECUTIVE_FRAMES,
+            "detector_probability_threshold": detector_probability_threshold,
+            "detector_required_consecutive_frames": detector_required_consecutive_frames,
             "executed_steps": spec.executed_steps,
             "executed_action_mask": list(spec.executed_action_mask),
             "normalized_delta_action_exec_flat": executed.reshape(-1).tolist(),
-            "stage1_action_valid_mask_h50": valid.tolist(),
+            "actor_action_valid_mask_h50": valid.tolist(),
             "reward": spec.reward,
             "terminated": spec.terminated,
             "bootstrap_mask": spec.bootstrap_mask,
             "discount": spec.discount,
             "mc_return": spec.mc_return,
             "reward_source": REWARD_SOURCE,
-            "classifier_checkpoint_sha256": CHECKPOINT_SHA256,
             "observation_row_reference": row_reference(anchor),
             "next_observation_row_reference": row_reference(spec.next_frame),
             "action_chunk_reference": action_reference,
             "detector_prediction_used_for_reward": True,
             "manual_boundary_used": False,
             "reward_model_training_overlap": split == "train",
-            "claim_scope": "development",
+            "claim_scope": "offline_training",
         }
         yield PreparedDetectorTransition(
             row=row,
@@ -317,29 +304,49 @@ def iter_detector_episode_transitions(
         )
 
 
-def load_training_transitions(root: Path):
-    """Only the detector-based G1 root and train rows are accepted."""
+def load_training_transitions(root: Path, *, task_id: str | None = None):
+    """Load authorized train rows from a task reward-transition dataset."""
 
     import json
     import pyarrow.parquet as pq
 
     root = Path(root).resolve()
-    manifest = json.loads((root / "g1_manifest.json").read_text(encoding="utf-8"))
+    manifest_path = root / "dataset_manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError("REWARD_TRANSITION_DATASET_REJECTED_BEFORE_OPEN")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError("REWARD_TRANSITION_DATASET_MANIFEST_INVALID") from error
     _require(
-        manifest.get("schema_version") == "forcesmolvla_g1_frozen_detector_transition_view.v1"
-        and manifest.get("artifact_role") == "development_frozen_detector_reward_source"
+        manifest.get("schema") == "forcesmolvla.forcerft_offline_reward_transitions"
+        and manifest.get("dataset_type") == "forcerft_offline_reward_transitions"
+        and manifest.get("status") == "final"
         and manifest.get("training_authorized") is True,
-        "STAGE2_REJECTED_NON_DETECTOR_OR_UNAUTHORIZED_G1",
+        "REWARD_TRANSITION_DATASET_UNAUTHORIZED",
     )
-    table = pq.read_table(root / "transition_index.parquet", filters=[("split", "=", "train")])
-    _require(table.num_rows > 0 and set(table.column("split").to_pylist()) == {"train"}, "DETECTOR_G1_TRAIN_SPLIT_LEAK")
+    if task_id is not None:
+        _require(manifest.get("task_id") == task_id, "REWARD_TRANSITION_TASK_MISMATCH")
+    table = pq.read_table(
+        root / "forcerft_offline_td_transitions.parquet",
+        filters=[("split", "=", "train")],
+    )
+    _require(
+        table.num_rows > 0 and set(table.column("split").to_pylist()) == {"train"},
+        "REWARD_TRANSITION_TRAIN_SPLIT_LEAK",
+    )
     return table
 
 
-def load_transition_split_for_training(root: Path, split: Literal["train"] = "train"):
+def load_transition_split_for_training(
+    root: Path,
+    split: Literal["train"] = "train",
+    *,
+    task_id: str | None = None,
+):
     if split != "train":
-        raise ValueError("Stage-2 downstream loader permits detector G1 train transitions only")
-    return load_training_transitions(root)
+        raise ValueError("downstream loader permits train reward transitions only")
+    return load_training_transitions(root, task_id=task_id)
 
 
 def self_check() -> None:
