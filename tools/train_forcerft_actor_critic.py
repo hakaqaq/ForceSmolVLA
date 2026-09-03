@@ -45,22 +45,48 @@ def make_schedules(
     d_population: tuple[int, ...],
     fm_population: tuple[int, ...],
     cycles: int,
+    critic_updates_per_cycle: int = 2,
+    actor_updates_per_cycle: int = 1,
+    demo_ratio: float = 0.5,
+    online_ratio: float = 0.5,
 ) -> tuple[list[list[int]], list[list[int]], list[list[int]], list[list[int]]]:
-    require(bool(fm_population), "ONLINE_REPLAY_JOINT_NO_FM_POPULATION")
+    require(
+        critic_updates_per_cycle >= 1 and actor_updates_per_cycle >= 0,
+        "ONLINE_REPLAY_JOINT_UPDATE_SCHEDULE_INVALID",
+    )
+    require(
+        0.0 <= demo_ratio <= 1.0
+        and 0.0 <= online_ratio <= 1.0
+        and abs(demo_ratio + online_ratio - 1.0) < 1.0e-9,
+        "ONLINE_REPLAY_JOINT_REPLAY_RATIO_INVALID",
+    )
+    critic_r_count = round(64 * online_ratio)
+    critic_d_count = 64 - critic_r_count
+    actor_r_count = round(24 * online_ratio)
+    actor_d_count = 24 - actor_r_count
+    require(
+        critic_d_count == 0 or bool(d_population),
+        "ONLINE_REPLAY_JOINT_NO_DEMO_POPULATION",
+    )
+    require(
+        actor_d_count == 0 or bool(fm_population),
+        "ONLINE_REPLAY_JOINT_NO_FM_POPULATION",
+    )
     fm_indices = frozenset(fm_population)
     critic_r: list[list[int]] = []
     critic_d: list[list[int]] = []
     actor_r: list[list[int]] = []
     actor_d: list[list[int]] = []
     for _cycle in range(cycles):
-        for _substep in range(2):
-            critic_r.append(r_rng.sample(range(r_population_size), 32))
-            critic_d.append(d_rng.sample(d_population, 32))
-        actor_r.append(r_rng.sample(range(r_population_size), 12))
-        actor_batch = d_rng.sample(d_population, 12)
-        if fm_indices.isdisjoint(actor_batch):
-            actor_batch[-1] = d_rng.choice(fm_population)
-        actor_d.append(actor_batch)
+        for _substep in range(critic_updates_per_cycle):
+            critic_r.append(r_rng.sample(range(r_population_size), critic_r_count))
+            critic_d.append(d_rng.sample(d_population, critic_d_count))
+        for _substep in range(actor_updates_per_cycle):
+            actor_r.append(r_rng.sample(range(r_population_size), actor_r_count))
+            actor_batch = d_rng.sample(d_population, actor_d_count)
+            if actor_batch and fm_indices.isdisjoint(actor_batch):
+                actor_batch[-1] = d_rng.choice(fm_population)
+            actor_d.append(actor_batch)
     return critic_r, critic_d, actor_r, actor_d
 
 
@@ -639,7 +665,11 @@ def actor_step(
         total_expert_features = int(
             (expert_feature_mask & valid.unsqueeze(-1)).sum()
         )
-        require(total_expert_features > 0, "ONLINE_REPLAY_JOINT_NO_EXPERT_FM")
+        require(
+            total_expert_features > 0
+            or float(config["loss"].get("lambda_sft_reference_anchor", 0.0)) > 0.0,
+            "ONLINE_REPLAY_JOINT_NO_PRESERVATION_LOSS",
+        )
         anchor_eligible = (
             batch["policy_row_mask"]
             & ~batch["terminated"]
@@ -779,7 +809,11 @@ def actor_step(
             expert_count = int(
                 (expert_mask & local_valid.unsqueeze(-1)).sum()
             )
-            fm_weight = expert_count / total_expert_features
+            fm_weight = (
+                expert_count / total_expert_features
+                if total_expert_features
+                else 0.0
+            )
             local_actor_q_rows = int(batch["actor_q_valid"][index].sum())
             q_weight = (
                 local_actor_q_rows / total_actor_q_rows
@@ -902,7 +936,10 @@ def actor_step(
             not human_fm_present or human_fm_gradient_square > 0.0,
             "ONLINE_REPLAY_JOINT_HUMAN_FM_MISSING",
         )
-        require(expert_gripper_fm_square > 0.0, "ONLINE_REPLAY_JOINT_EXPERT_GRIPPER_FM_MISSING")
+        require(
+            total_expert_features == 0 or expert_gripper_fm_square > 0.0,
+            "ONLINE_REPLAY_JOINT_EXPERT_GRIPPER_FM_MISSING",
+        )
         require(
             gripper_q_gradient_max == 0.0
             and (not bool(batch["actor_q_valid"].any()) or tcp_q_gradient_square > 0.0),

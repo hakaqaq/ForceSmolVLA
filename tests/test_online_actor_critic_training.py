@@ -116,6 +116,26 @@ def test_actor_schedule_is_deterministic_after_rng_restore() -> None:
     assert [len(batch) for batch in schedules[3]] == [12] * 2
 
 
+def test_schedule_uses_configured_ratios_and_update_counts() -> None:
+    critic_r, critic_d, actor_r, actor_d = make_schedules(
+        random.Random(7),
+        random.Random(8),
+        r_population_size=200,
+        d_population=tuple(range(200)),
+        fm_population=tuple(range(20)),
+        cycles=1,
+        critic_updates_per_cycle=3,
+        actor_updates_per_cycle=2,
+        demo_ratio=0.25,
+        online_ratio=0.75,
+    )
+
+    assert [len(batch) for batch in critic_r] == [48, 48, 48]
+    assert [len(batch) for batch in critic_d] == [16, 16, 16]
+    assert [len(batch) for batch in actor_r] == [18, 18]
+    assert [len(batch) for batch in actor_d] == [6, 6]
+
+
 def test_offline_checkpoint_cycles_are_dynamic_and_include_boundaries() -> None:
     assert offline_checkpoint_cycles(7) == (0, 1, 5, 7)
     assert offline_checkpoint_cycles(12, 4) == (0, 1, 4, 5, 8, 10, 12)

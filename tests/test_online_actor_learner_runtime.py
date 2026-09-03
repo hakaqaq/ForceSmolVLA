@@ -119,6 +119,24 @@ def test_fixed_online_training_schedule_and_checkpoint_retention(tmp_path) -> No
     assert not online_checkpoint_path(tmp_path, 50).exists()
 
 
+def test_online_schedule_accepts_experiment_values_with_valid_ranges() -> None:
+    policy = OnlineTrainingPolicy(
+        training_starts=64,
+        demo_ratio=0.25,
+        online_ratio=0.75,
+        critic_updates_per_cycle=3,
+        actor_updates_per_cycle=2,
+        target_polyak_updates_per_cycle=3,
+        actor_parameter_broadcast_period=10,
+        checkpoint_period=20,
+        keep_latest_checkpoints=4,
+    )
+
+    assert policy.training_ready(64)
+    assert policy.broadcast_due(10)
+    assert policy.checkpoint_due(20)
+
+
 def test_resume_selection_prefers_latest_recoverable_online(tmp_path) -> None:
     checkpoint_root = tmp_path / "online/checkpoints"
     cycle_50 = online_checkpoint_path(checkpoint_root, 50)

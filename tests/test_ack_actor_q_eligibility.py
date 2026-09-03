@@ -24,6 +24,7 @@ def _macro() -> AckMacro:
         source_dispatch_sequences=(7, 7, 7),
         source_model_indices=(0, 0, 0),
         chunk_ids=("chunk", "chunk", "chunk"),
+        controller_authorities=("controller", "controller", "controller"),
     )
 
 
@@ -44,6 +45,16 @@ def test_only_full_held_ack_macro_is_actor_q_eligible() -> None:
     assert not _eligible(
         replace(_macro(), workspace_clip_flags=(False, True, False))
     ).valid
+
+
+def test_transport_ack_id_may_change_for_one_logical_command() -> None:
+    result = _eligible(replace(_macro(), ack_ids=("ack-1", "ack-2", "ack-3")))
+    assert result.valid
+
+
+def test_duration_allows_bounded_physical_jitter() -> None:
+    assert _eligible(replace(_macro(), macro_duration_ns=102_000_000)).valid
+    assert not _eligible(replace(_macro(), macro_duration_ns=106_000_000)).valid
 
 
 def test_offline_demonstration_is_never_actor_q_eligible() -> None:

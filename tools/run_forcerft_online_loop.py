@@ -328,9 +328,12 @@ def run_loop(args: argparse.Namespace) -> int:
     ]
     if args.safety_config is not None:
         server_command.extend(["--safety-config", str(args.safety_config)])
-    if args.sft_reference_checkpoint is not None:
+    if getattr(args, "sft_reference_checkpoint", None) is not None:
         server_command.extend(
-            ["--sft-reference-checkpoint", str(args.sft_reference_checkpoint)]
+            [
+                "--sft-reference-checkpoint",
+                str(args.sft_reference_checkpoint),
+            ]
         )
     if getattr(args, "allow_legacy_offline_fallback", False):
         server_command.append("--allow-legacy-offline-fallback")

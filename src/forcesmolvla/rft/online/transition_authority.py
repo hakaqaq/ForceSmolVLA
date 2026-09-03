@@ -126,6 +126,7 @@ class AckMacro:
     source_dispatch_sequences: tuple[int, int, int] = (-1, -1, -1)
     source_model_indices: tuple[int, int, int] = (-1, -1, -1)
     chunk_ids: tuple[str, str, str] = ("", "", "")
+    controller_authorities: tuple[str, str, str] = ("", "", "")
     contract_version: str = CRITIC_ACTION_CONTRACT.version
     next_timestamp_ns: int = 0
     macro_duration_ns: int = CRITIC_ACTION_CONTRACT.macro_duration_ns
@@ -138,6 +139,7 @@ def derive_actor_q_eligibility(
     quarantined: bool,
     observation_valid: bool = True,
     next_observation_valid: bool = True,
+    duration_tolerance_ns: int = 5_000_000,
 ) -> ActorQEligibility:
     """Authorize Actor-Q only for full held-command deployment ACK macros."""
 
@@ -154,7 +156,9 @@ def derive_actor_q_eligibility(
         return reject("critic_action_contract_mismatch")
     if tuple(macro.behavior_mask) != (True, True, True):
         return reject("partial_macro")
-    if macro.macro_duration_ns != CRITIC_ACTION_CONTRACT.macro_duration_ns:
+    if duration_tolerance_ns < 0 or abs(
+        macro.macro_duration_ns - CRITIC_ACTION_CONTRACT.macro_duration_ns
+    ) > duration_tolerance_ns:
         return reject("macro_duration_mismatch")
     if any(macro.workspace_clip_flags):
         return reject("workspace_clipped")
@@ -163,11 +167,13 @@ def derive_actor_q_eligibility(
     expected_owner = "policy" if action_source == "policy" else "human_intervention"
     if set(macro.slot_owner) != {expected_owner}:
         return reject("slot_owner_not_learnable")
+    if any(not ack_id for ack_id in macro.ack_ids):
+        return reject("ack_identity_missing")
     for values, reason in (
-        (macro.ack_ids, "mid_macro_ack_change"),
         (macro.source_command_ids, "mid_macro_command_change"),
         (macro.source_dispatch_sequences, "mid_macro_dispatch_change"),
         (macro.chunk_ids, "mid_macro_chunk_change"),
+        (macro.controller_authorities, "mid_macro_controller_change"),
     ):
         if len(set(values)) != 1 or values[0] in {"", -1}:
             return reject(reason)
@@ -176,6 +182,11 @@ def derive_actor_q_eligibility(
         or macro.source_model_indices[0] < 0
     ):
         return reject("mid_macro_policy_model_change")
+    if not np.array_equal(
+        macro.accepted_absolute_action_k7,
+        np.repeat(macro.accepted_absolute_action_k7[:1], 3, axis=0),
+    ):
+        return reject("mid_macro_accepted_target_change")
     for requested, acknowledged in zip(
         macro.gripper_command_ids,
         macro.gripper_ack_command_ids,
@@ -263,7 +274,14 @@ def build_ack_behavior_macro(
             raise TransitionContractError(
                 "ONLINE_REPLAY_COMMAND_EFFECTIVE_ANCHOR_MISMATCH"
             )
-        if any(ack.ack_id != required_anchor_ack_id for ack in chosen_valid):
+        first = chosen_valid[0]
+        if any(
+            ack.source_command_id != first.source_command_id
+            or ack.source_dispatch_sequence != first.source_dispatch_sequence
+            or ack.controller_authority != first.controller_authority
+            or ack.accepted_absolute_action7 != first.accepted_absolute_action7
+            for ack in chosen_valid[1:]
+        ):
             raise TransitionContractError(
                 "ONLINE_REPLAY_COMMAND_EFFECTIVE_PHASE_CHANGED"
             )
@@ -291,6 +309,7 @@ def build_ack_behavior_macro(
         source_dispatch_sequences=values("source_dispatch_sequence", -1),
         source_model_indices=values("source_model_index", -1),
         chunk_ids=values("chunk_id", ""),
+        controller_authorities=values("controller_authority", ""),
         contract_version=contract.version,
         next_timestamp_ns=next_timestamp,
         macro_duration_ns=next_timestamp - grid[0],

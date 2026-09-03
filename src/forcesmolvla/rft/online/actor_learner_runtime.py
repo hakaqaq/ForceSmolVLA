@@ -48,14 +48,17 @@ class OnlineTrainingPolicy:
 
     def __post_init__(self) -> None:
         require(
-            self.training_starts == 100
-            and self.demo_ratio == self.online_ratio == 0.5
-            and self.critic_updates_per_cycle == 2
-            and self.actor_updates_per_cycle == 1
-            and self.target_polyak_updates_per_cycle == 2
-            and self.actor_parameter_broadcast_period == 5
-            and self.checkpoint_period == 50
-            and self.keep_latest_checkpoints == 2,
+            self.training_starts >= 0
+            and 0.0 <= self.demo_ratio <= 1.0
+            and 0.0 <= self.online_ratio <= 1.0
+            and abs(self.demo_ratio + self.online_ratio - 1.0) < 1.0e-9
+            and self.critic_updates_per_cycle >= 1
+            and self.actor_updates_per_cycle >= 0
+            and self.target_polyak_updates_per_cycle
+            == self.critic_updates_per_cycle
+            and self.actor_parameter_broadcast_period >= 1
+            and self.checkpoint_period >= 1
+            and self.keep_latest_checkpoints >= 1,
             "FORCERFT_ONLINE_TRAINING_POLICY_INVALID",
         )
 
@@ -230,7 +233,7 @@ def select_resume_or_seed_checkpoint(
 def retain_latest_online_checkpoints(checkpoint_root: Path, *, keep: int = 2) -> tuple[Path, ...]:
     """Keep the newest exact-resume directories after a successful save."""
 
-    require(keep == 2, "FORCERFT_ONLINE_CHECKPOINT_RETENTION_INVALID")
+    require(keep >= 1, "FORCERFT_ONLINE_CHECKPOINT_RETENTION_INVALID")
     checkpoints: list[tuple[int, Path]] = []
     for path in checkpoint_root.glob("online_actor_critic_cycle_*"):
         if not path.is_dir():
@@ -452,6 +455,14 @@ def prepare_learner(
         d_population=d_replay.population,
         fm_population=d_replay.fm_population,
         cycles=1,
+        critic_updates_per_cycle=int(
+            config["online_training"]["critic_updates_per_cycle"]
+        ),
+        actor_updates_per_cycle=int(
+            config["online_training"]["actor_updates_per_cycle"]
+        ),
+        demo_ratio=float(config["online_training"]["demo_ratio"]),
+        online_ratio=float(config["online_training"]["online_ratio"]),
     )
     d_replay.prefetch_joint(critic_d, actor_d)
     feature = torch.from_numpy(frozen_task_feature(task)).to(
@@ -491,6 +502,29 @@ def prepare_learner(
         "critic_only_updates": int(runtime.get("critic_only_updates", 0)),
         "actor_updates_enabled": bool(
             runtime.get("flags", {}).get("actor_updates_enabled", False)
+        ),
+        "training_policy": OnlineTrainingPolicy(
+            training_starts=int(config["online_training"]["training_starts"]),
+            demo_ratio=float(config["online_training"]["demo_ratio"]),
+            online_ratio=float(config["online_training"]["online_ratio"]),
+            critic_updates_per_cycle=int(
+                config["online_training"]["critic_updates_per_cycle"]
+            ),
+            actor_updates_per_cycle=int(
+                config["online_training"]["actor_updates_per_cycle"]
+            ),
+            target_polyak_updates_per_cycle=int(
+                config["online_training"]["target_polyak_updates_per_cycle"]
+            ),
+            actor_parameter_broadcast_period=int(
+                config["online_training"]["actor_parameter_broadcast_period"]
+            ),
+            checkpoint_period=int(
+                config["online_training"]["checkpoint_period"]
+            ),
+            keep_latest_checkpoints=int(
+                config["online_training"]["keep_latest_checkpoints"]
+            ),
         ),
         "critic_noise": critic_noise,
         "r_rng": r_rng,
