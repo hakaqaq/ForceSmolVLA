@@ -42,7 +42,7 @@ from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
 )
 from forcesmolvla.rft.online.actor_unlock import (  # noqa: E402
     ActorUnlockPolicy,
-    actor_unlock_is_approved,
+    actor_unlock_is_ready,
 )
 from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
@@ -113,7 +113,8 @@ class ContinuousLearner:
         current_session_id: str | None,
         task: str,
         sft_reference_checkpoint: Path | None = None,
-        actor_unlock_approval: Path | None = None,
+        actor_readiness_manifest: Path | None = None,
+        actor_unlock_policy: ActorUnlockPolicy | None = None,
         training_policy: OnlineTrainingPolicy | None = None,
     ) -> None:
         self.device = device
@@ -128,11 +129,13 @@ class ContinuousLearner:
             if sft_reference_checkpoint is None
             else sft_reference_checkpoint.resolve()
         )
-        self.actor_unlock_approval = (
-            self.checkpoint_root.parent / "approvals/actor_q_unlock.json"
-            if actor_unlock_approval is None
-            else actor_unlock_approval.resolve()
+        self.actor_readiness_manifest = (
+            self.checkpoint_root.parent
+            / "readiness/actor_update_readiness.json"
+            if actor_readiness_manifest is None
+            else actor_readiness_manifest.resolve()
         )
+        self.actor_unlock_policy = actor_unlock_policy or ActorUnlockPolicy()
         self.training_policy = training_policy or OnlineTrainingPolicy()
         self.learner: dict[str, Any] | None = None
         self.unique_r_count = 0
@@ -293,22 +296,11 @@ class ContinuousLearner:
             learner["critic_only_updates"] += (
                 self.training_policy.critic_updates_per_cycle
             )
-            learner["actor_updates_enabled"] = actor_unlock_is_approved(
-                self.actor_unlock_approval,
+            learner["actor_updates_enabled"] = actor_unlock_is_ready(
+                self.actor_readiness_manifest,
                 actor_q_valid_ack_rows=learner["actor_q_valid_ack_rows"],
                 critic_only_updates=learner["critic_only_updates"],
-                policy=ActorUnlockPolicy(
-                    minimum_actor_q_valid_ack_rows=int(
-                        learner["config"]["actor_unlock"][
-                            "minimum_actor_q_valid_ack_rows"
-                        ]
-                    ),
-                    minimum_critic_only_updates=int(
-                        learner["config"]["actor_unlock"][
-                            "minimum_critic_only_updates"
-                        ]
-                    ),
-                ),
+                policy=self.actor_unlock_policy,
             )
 
         actor_records: list[dict[str, Any]] = []
@@ -568,11 +560,14 @@ class AsyncPolicyLearnerRuntime:
             "online_actor_learner": True,
             "server_persistent": True,
             "current_episode_sampling": False,
-            "training_starts": 100,
-            "actor_parameter_broadcast_period": 5,
+            "training_starts": self._policy.training_starts,
+            "actor_parameter_broadcast_period": (
+                self._policy.actor_parameter_broadcast_period
+            ),
             "active_actor_online_cycle": self._active_actor_online_cycle,
-            "checkpoint_period": 50,
-            "keep_latest_checkpoints": 2,
+            "checkpoint_period": self._policy.checkpoint_period,
+            "keep_latest_checkpoints": self._policy.keep_latest_checkpoints,
+            "actor_readiness_mode": self.learner_job.actor_unlock_policy.mode,
             "save_checkpoint_on_graceful_exit": False,
             "save_checkpoint_on_operator_q": True,
             "runtime_session_id": self.session_id,
@@ -833,6 +828,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--learner-resume-checkpoint", type=Path)
     parser.add_argument("--stage3-seed-bundle", type=Path)
     parser.add_argument("--sft-reference-checkpoint", type=Path)
+    parser.add_argument("--actor-readiness-manifest", type=Path)
+    parser.add_argument(
+        "--actor-readiness-mode",
+        choices=("manual_approval", "automatic_readiness"),
+    )
     parser.add_argument("--allow-legacy-offline-fallback", action="store_true")
     parser.add_argument(
         "--allow-development-policy-execution-smoke",
@@ -957,6 +957,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     checkpoint_root = output_root / "online/checkpoints"
     common_config = warmup.load_common_actor_critic_config(args.task_id)
     online_config = common_config["online_training"]
+    actor_unlock_config = common_config["actor_unlock"]
     training_policy = OnlineTrainingPolicy(
         training_starts=int(online_config["training_starts"]),
         demo_ratio=float(online_config["demo_ratio"]),
@@ -985,6 +986,26 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         current_session_id=args.session_id,
         task=args.task.strip(),
         sft_reference_checkpoint=sft_reference_checkpoint,
+        actor_readiness_manifest=args.actor_readiness_manifest,
+        actor_unlock_policy=ActorUnlockPolicy(
+            minimum_actor_q_valid_ack_rows=int(
+                actor_unlock_config["minimum_actor_q_valid_ack_rows"]
+            ),
+            minimum_critic_only_updates=int(
+                actor_unlock_config["minimum_critic_only_updates"]
+            ),
+            minimum_same_state_comparisons=int(
+                actor_unlock_config["minimum_same_state_comparisons"]
+            ),
+            minimum_human_gt_policy_fraction=float(
+                actor_unlock_config["minimum_human_gt_policy_fraction"]
+            ),
+            mode=(
+                actor_unlock_config["mode"]
+                if args.actor_readiness_mode is None
+                else args.actor_readiness_mode
+            ),
+        ),
         training_policy=training_policy,
     )
     return AsyncPolicyLearnerRuntime(

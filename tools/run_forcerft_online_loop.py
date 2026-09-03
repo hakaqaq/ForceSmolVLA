@@ -335,6 +335,17 @@ def run_loop(args: argparse.Namespace) -> int:
                 str(args.sft_reference_checkpoint),
             ]
         )
+    if getattr(args, "actor_readiness_manifest", None) is not None:
+        server_command.extend(
+            [
+                "--actor-readiness-manifest",
+                str(args.actor_readiness_manifest),
+            ]
+        )
+    if getattr(args, "actor_readiness_mode", None) is not None:
+        server_command.extend(
+            ["--actor-readiness-mode", args.actor_readiness_mode]
+        )
     if getattr(args, "allow_legacy_offline_fallback", False):
         server_command.append("--allow-legacy-offline-fallback")
     server = subprocess.Popen(server_command, cwd=ROOT, env=os.environ.copy())
@@ -382,6 +393,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--safety-config", type=Path)
     parser.add_argument("--stage3-seed-bundle", type=Path)
     parser.add_argument("--sft-reference-checkpoint", type=Path)
+    parser.add_argument("--actor-readiness-manifest", type=Path)
+    parser.add_argument(
+        "--actor-readiness-mode",
+        choices=("manual_approval", "automatic_readiness"),
+    )
     parser.add_argument("--allow-legacy-offline-fallback", action="store_true")
     parser.add_argument("--max-episodes", type=int, required=True)
     parser.add_argument("--root-prefix", type=Path)
