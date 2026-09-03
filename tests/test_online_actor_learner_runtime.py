@@ -25,7 +25,7 @@ from forcesmolvla.rft.online.actor_learner_runtime import (
     run_timed_actor,
     online_checkpoint_path,
     retain_latest_online_checkpoints,
-    select_exact_resume_checkpoint,
+    select_resume_or_seed_checkpoint,
 )
 
 
@@ -119,11 +119,7 @@ def test_fixed_online_training_schedule_and_checkpoint_retention(tmp_path) -> No
     assert not online_checkpoint_path(tmp_path, 50).exists()
 
 
-def test_resume_selection_prefers_latest_recoverable_online_then_offline(tmp_path) -> None:
-    offline = tmp_path / "offline/checkpoints/offline_actor_critic_cycle_000210"
-    _exact_checkpoint(offline, "offline_actor_critic_exact_resume")
-    assert select_exact_resume_checkpoint(tmp_path) == offline.resolve()
-
+def test_resume_selection_prefers_latest_recoverable_online(tmp_path) -> None:
     checkpoint_root = tmp_path / "online/checkpoints"
     cycle_50 = online_checkpoint_path(checkpoint_root, 50)
     cycle_75_legacy = online_checkpoint_path(checkpoint_root, 75)
@@ -139,7 +135,11 @@ def test_resume_selection_prefers_latest_recoverable_online_then_offline(tmp_pat
         cycle_100 / "optimizers/actor_scheduler_state.pt",
     )
     cycle_107_incomplete.mkdir(parents=True)
-    assert select_exact_resume_checkpoint(tmp_path) == cycle_50.resolve()
+    selected = select_resume_or_seed_checkpoint(
+        tmp_path, configured_seed_bundle=None
+    )
+    assert selected.path == cycle_50.resolve()
+    assert selected.kind == "online_actor_critic_exact_resume"
 
 
 def test_prepare_learner_uses_exact_resume_loader_signature(tmp_path) -> None:

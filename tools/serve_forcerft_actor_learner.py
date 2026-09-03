@@ -38,7 +38,7 @@ from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
     PinnedEpisode,
     prepare_learner,
     reconcile_post_checkpoint_replay,
-    select_exact_resume_checkpoint,
+    select_resume_or_seed_checkpoint,
 )
 from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
@@ -723,6 +723,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--episode-id", required=True)
     parser.add_argument("--learner-resume-checkpoint", type=Path)
+    parser.add_argument("--stage3-seed-bundle", type=Path)
+    parser.add_argument("--allow-legacy-offline-fallback", action="store_true")
     parser.add_argument(
         "--allow-development-policy-execution-smoke",
         action="store_true",
@@ -767,7 +769,13 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     )
     require(warmup.TASK == args.task.strip(), "FORCERFT_TASK_PROMPT_MISMATCH")
     resume_checkpoint = (
-        select_exact_resume_checkpoint(output_root)
+        select_resume_or_seed_checkpoint(
+            output_root,
+            configured_seed_bundle=getattr(args, "stage3_seed_bundle", None),
+            allow_legacy_offline_fallback=getattr(
+                args, "allow_legacy_offline_fallback", False
+            ),
+        ).path
         if args.learner_resume_checkpoint is None
         else args.learner_resume_checkpoint.resolve()
     )
@@ -777,7 +785,20 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     checkpoint_kind = str(checkpoint_metadata.get("kind", ""))
     require(
         checkpoint_kind
-        in {"offline_actor_critic_exact_resume", "online_actor_critic_exact_resume"}
+        in {
+            "stage3_safe_seed_v1",
+            "legacy_offline_actor_critic_ablation",
+            "offline_actor_critic_exact_resume",
+            "online_actor_critic_exact_resume",
+        }
+        and (
+            checkpoint_kind
+            not in {
+                "legacy_offline_actor_critic_ablation",
+                "offline_actor_critic_exact_resume",
+            }
+            or getattr(args, "allow_legacy_offline_fallback", False)
+        )
         and exact_resume_checkpoint_is_recoverable(
             resume_checkpoint, expected_kind=checkpoint_kind
         ),
@@ -808,7 +829,12 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     active_revision_id = str(actor_checkpoint.get("checkpoint_id", ""))
     require(
         checkpoint_kind
-        in {"offline_actor_critic_exact_resume", "online_actor_critic_exact_resume"}
+        in {
+            "stage3_safe_seed_v1",
+            "legacy_offline_actor_critic_ablation",
+            "offline_actor_critic_exact_resume",
+            "online_actor_critic_exact_resume",
+        }
         and active_revision_id,
         "FORCERFT_EXACT_RESUME_METADATA_INVALID",
     )

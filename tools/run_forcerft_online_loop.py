@@ -23,7 +23,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
-    select_exact_resume_checkpoint,
+    select_resume_or_seed_checkpoint,
 )
 
 MODEL_PYTHON = Path("/home/rlc123/anaconda3/envs/forcesmolvla/bin/python")
@@ -308,7 +308,13 @@ def run_loop(args: argparse.Namespace) -> int:
         args.allow_development_policy_execution_smoke,
         "FORCERFT_ONLINE_ROBOT_EXECUTION_FLAG_REQUIRED",
     )
-    resume = select_exact_resume_checkpoint(args.output_root)
+    resume = select_resume_or_seed_checkpoint(
+        args.output_root,
+        configured_seed_bundle=getattr(args, "stage3_seed_bundle", None),
+        allow_legacy_offline_fallback=getattr(
+            args, "allow_legacy_offline_fallback", False
+        ),
+    ).path
     server_command = [
         str(args.model_python), str(ROOT / "tools/serve_forcerft_actor_learner.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
@@ -322,6 +328,8 @@ def run_loop(args: argparse.Namespace) -> int:
     ]
     if args.safety_config is not None:
         server_command.extend(["--safety-config", str(args.safety_config)])
+    if getattr(args, "allow_legacy_offline_fallback", False):
+        server_command.append("--allow-legacy-offline-fallback")
     server = subprocess.Popen(server_command, cwd=ROOT, env=os.environ.copy())
     completed = 0
     try:
@@ -365,6 +373,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dataset-root", type=Path)
     parser.add_argument("--reward-transition-root", type=Path)
     parser.add_argument("--safety-config", type=Path)
+    parser.add_argument("--stage3-seed-bundle", type=Path)
+    parser.add_argument("--allow-legacy-offline-fallback", action="store_true")
     parser.add_argument("--max-episodes", type=int, required=True)
     parser.add_argument("--root-prefix", type=Path)
     parser.add_argument("--task", required=True)

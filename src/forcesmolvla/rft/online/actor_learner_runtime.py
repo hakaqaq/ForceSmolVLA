@@ -24,6 +24,14 @@ class AsyncRuntimeError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class SelectedCheckpoint:
+    """An explicitly classified Stage-3 resume parent."""
+
+    path: Path
+    kind: str
+
+
+@dataclass(frozen=True)
 class OnlineTrainingPolicy:
     """Fixed scheduling contract for the persistent online Learner."""
 
@@ -111,6 +119,12 @@ def exact_resume_checkpoint_is_recoverable(
             and metadata.get("critic_action_contract_version")
             == CRITIC_ACTION_CONTRACT.version
         )
+    if expected_kind == "stage3_safe_seed_v1":
+        files_complete = bool(
+            files_complete
+            and metadata.get("actor_equal_to_sft") is True
+            and metadata.get("actor_q_guidance_enabled") is False
+        )
     if not files_complete:
         return False
     try:
@@ -127,6 +141,12 @@ def exact_resume_checkpoint_is_recoverable(
         counters = runtime["counters"]
         joint_cycles = int(counters["joint_cycles"])
         online_cycles = int(runtime.get("online_joint_cycles", 0))
+        if expected_kind == "stage3_safe_seed_v1":
+            return bool(
+                int(counters["joint_cycles"]) == 0
+                and int(counters["actor_optimizer_steps"]) == 0
+                and int(actor_scheduler["last_epoch"]) == 0
+            )
         counters_match = (
             int(counters["critic_optimizer_steps"]) == joint_cycles * 2
             and int(counters["actor_optimizer_steps"]) == joint_cycles
@@ -143,8 +163,13 @@ def exact_resume_checkpoint_is_recoverable(
         return False
 
 
-def select_exact_resume_checkpoint(output_root: Path) -> Path:
-    """Choose the newest recoverable online checkpoint, else offline cycle 210."""
+def select_resume_or_seed_checkpoint(
+    output_root: Path,
+    *,
+    configured_seed_bundle: Path | None,
+    allow_legacy_offline_fallback: bool = False,
+) -> SelectedCheckpoint:
+    """Choose online exact-resume, then an explicit safe seed, else fail closed."""
 
     online_root = output_root.resolve() / "online/checkpoints"
     candidates: list[tuple[int, Path]] = []
@@ -160,7 +185,23 @@ def select_exact_resume_checkpoint(output_root: Path) -> Path:
         ):
             candidates.append((cycle, path.resolve()))
     if candidates:
-        return max(candidates)[1]
+        return SelectedCheckpoint(
+            path=max(candidates)[1],
+            kind="online_actor_critic_exact_resume",
+        )
+
+    if configured_seed_bundle is not None:
+        seed = configured_seed_bundle.resolve()
+        require(
+            exact_resume_checkpoint_is_recoverable(
+                seed, expected_kind="stage3_safe_seed_v1"
+            ),
+            "FORCERFT_STAGE3_SAFE_SEED_MISSING_OR_INCOMPLETE",
+        )
+        return SelectedCheckpoint(path=seed, kind="stage3_safe_seed_v1")
+
+    if not allow_legacy_offline_fallback:
+        raise AsyncRuntimeError("FORCERFT_STAGE3_RESUME_OR_SAFE_SEED_REQUIRED")
 
     offline = (
         output_root.resolve()
@@ -172,7 +213,10 @@ def select_exact_resume_checkpoint(output_root: Path) -> Path:
         ),
         "FORCERFT_OFFLINE_EXACT_RESUME_MISSING_OR_INCOMPLETE",
     )
-    return offline.resolve()
+    return SelectedCheckpoint(
+        path=offline.resolve(),
+        kind="legacy_offline_actor_critic_ablation",
+    )
 
 
 def retain_latest_online_checkpoints(checkpoint_root: Path, *, keep: int = 2) -> tuple[Path, ...]:

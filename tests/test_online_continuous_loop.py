@@ -375,7 +375,11 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
     class Process:
         pass
 
-    monkeypatch.setattr(loop, "select_exact_resume_checkpoint", lambda _root: resume)
+    monkeypatch.setattr(
+        loop,
+        "select_resume_or_seed_checkpoint",
+        lambda *_args, **_kwargs: type("Selected", (), {"path": resume})(),
+    )
     monkeypatch.setattr(loop.subprocess, "Popen", lambda *_args, **_kwargs: Process())
     monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
         "server_persistent": True,
@@ -417,7 +421,11 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     class Process:
         pass
 
-    monkeypatch.setattr(loop, "select_exact_resume_checkpoint", lambda _root: resume)
+    monkeypatch.setattr(
+        loop,
+        "select_resume_or_seed_checkpoint",
+        lambda *_args, **_kwargs: type("Selected", (), {"path": resume})(),
+    )
     monkeypatch.setattr(
         loop.subprocess,
         "Popen",
