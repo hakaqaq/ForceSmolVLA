@@ -1058,6 +1058,7 @@ def save_joint_checkpoint(
     critic_scheduler=None,
     checkpoint_kind: str = "online_replay_actor_critic_training",
     actor_directory: str = "candidate_policy",
+    metadata_overrides: Mapping[str, Any] | None = None,
 ) -> None:
     from forcesmolvla.checkpoint import export_development_actor_checkpoint
     from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_CONTRACT
@@ -1070,6 +1071,7 @@ def save_joint_checkpoint(
         (temporary / "optimizers").mkdir()
         (temporary / "state").mkdir()
         (temporary / "artifacts").mkdir()
+        (temporary / "manifests").mkdir()
         candidate = temporary / actor_directory
         if actor_parent_path is None:
             require(parent_binding is not None, "FORCERFT_ACTOR_PARENT_REQUIRED")
@@ -1113,6 +1115,14 @@ def save_joint_checkpoint(
             shutil.copy2(normalizer_source, temporary / "artifacts/normalizer_manifest.json")
         if action_contract_source.is_file():
             shutil.copy2(action_contract_source, temporary / "artifacts/action_delta_spec.json")
+        for name in (
+            "reward_detector_manifest",
+            "reward_calibration_manifest",
+            "common_online_config",
+        ):
+            source = Path(str(artifacts.get(name, "")))
+            if source.is_file():
+                shutil.copy2(source, temporary / "manifests" / source.name)
         metadata = {
             "kind": checkpoint_kind,
             "complete": True,
@@ -1130,6 +1140,8 @@ def save_joint_checkpoint(
                 "path": actor_directory,
             },
         }
+        if metadata_overrides is not None:
+            metadata.update(dict(metadata_overrides))
         (temporary / "metadata.json").write_text(
             json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
@@ -1154,7 +1166,11 @@ def load_joint_checkpoint_once(
     from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
 
     metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
-    if metadata.get("kind") == "online_actor_critic_exact_resume":
+    checkpoint_kind = str(metadata.get("kind", ""))
+    if checkpoint_kind in {
+        "online_actor_critic_exact_resume",
+        "stage3_safe_seed_v1",
+    }:
         from forcesmolvla.rft.critic_action_adapter_v2 import (
             CRITIC_ACTION_CONTRACT,
         )
@@ -1164,10 +1180,31 @@ def load_joint_checkpoint_once(
             == CRITIC_ACTION_CONTRACT.version,
             "FORCERFT_LEGACY_ONLINE_ACTION_SEMANTICS_INCOMPATIBLE",
         )
+    safe_seed = checkpoint_kind == "stage3_safe_seed_v1"
+    online_checkpoint = checkpoint_kind == "online_actor_critic_exact_resume"
     require(
         metadata.get("complete") is True
-        and metadata.get("critic_ready") is True
-        and metadata.get("actor_q_guidance_enabled") is True,
+        and (
+            (
+                safe_seed
+                and metadata.get("actor_equal_to_sft") is True
+                and metadata.get("actor_q_guidance_enabled") is False
+                and metadata.get("actor_updates_enabled") is False
+                and metadata.get("critic_updates_enabled") is True
+            )
+            or (
+                online_checkpoint
+                and metadata.get("critic_updates_enabled") is True
+                and metadata.get("actor_updates_enabled")
+                is metadata.get("actor_q_guidance_enabled")
+            )
+            or (
+                not safe_seed
+                and not online_checkpoint
+                and metadata.get("critic_ready") is True
+                and metadata.get("actor_q_guidance_enabled") is True
+            )
+        ),
         "ONLINE_REPLAY_JOINT_CHECKPOINT_INCOMPLETE",
     )
     actor_directory = str(metadata.get("actor_directory", "candidate_policy"))
@@ -1211,7 +1248,10 @@ def load_resume_modules(
     metadata_path = checkpoint / "metadata.json"
     require(metadata_path.is_file(), "FORCERFT_EXACT_RESUME_METADATA_MISSING")
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if metadata.get("kind") == "online_actor_critic_exact_resume":
+    if metadata.get("kind") in {
+        "online_actor_critic_exact_resume",
+        "stage3_safe_seed_v1",
+    }:
         from forcesmolvla.rft.critic_action_adapter_v2 import (
             CRITIC_ACTION_CONTRACT,
         )
@@ -1228,6 +1268,7 @@ def load_resume_modules(
             "legacy_offline_actor_critic_ablation",
             "offline_actor_critic_exact_resume",
             "online_actor_critic_exact_resume",
+            "stage3_safe_seed_v1",
         }
         and actor_directory == "actor"
         and actor_package.resolve() == (checkpoint / "actor").resolve(),

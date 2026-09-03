@@ -2500,7 +2500,8 @@ class ProductionBridge:
             == identity.get("policy_revision")
             and seal.get("active_actor_model_revision")
             == manifest.get("policy_metadata", {}).get("model_sha256")
-            and (learner_critic_steps, learner_actor_steps) in {(0, 0), (2, 1)}
+            and (learner_critic_steps, learner_actor_steps)
+            in {(0, 0), (2, 0), (2, 1)}
             and int(seal.get("critic_updates", -1)) == learner_critic_steps
             and int(seal.get("actor_updates", -1)) == learner_actor_steps
             and seal.get("current_episode_sampled_by_learner") is False

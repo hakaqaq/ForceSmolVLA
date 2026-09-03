@@ -40,6 +40,9 @@ from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
     reconcile_post_checkpoint_replay,
     select_resume_or_seed_checkpoint,
 )
+from forcesmolvla.rft.online.actor_unlock import (  # noqa: E402
+    actor_unlock_is_approved,
+)
 from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
     RevisionRecord,
@@ -104,6 +107,7 @@ class ContinuousLearner:
         current_session_id: str | None,
         task: str,
         sft_reference_checkpoint: Path | None = None,
+        actor_unlock_approval: Path | None = None,
     ) -> None:
         self.device = device
         self.resume_checkpoint = resume_checkpoint.resolve()
@@ -116,6 +120,11 @@ class ContinuousLearner:
             None
             if sft_reference_checkpoint is None
             else sft_reference_checkpoint.resolve()
+        )
+        self.actor_unlock_approval = (
+            self.checkpoint_root.parent / "approvals/actor_q_unlock.json"
+            if actor_unlock_approval is None
+            else actor_unlock_approval.resolve()
         )
         self.learner: dict[str, Any] | None = None
         self.unique_r_count = 0
@@ -206,6 +215,9 @@ class ContinuousLearner:
             learner["r_replay"] = warmup.FormalReplay(
                 r_macros, source_episodes, learner["normalizer"]
             )
+            learner["actor_q_valid_ack_rows"] = sum(
+                int(macro.actor_q_eligibility.valid) for macro in r_macros
+            )
         if len(human_rows) != len(learner["d_replay"].human_replay.rows):
             learner["d_replay"].set_human_rows(
                 human_rows, source_episodes
@@ -269,48 +281,58 @@ class ContinuousLearner:
             td_losses.append(float(record["loss"]))
             learner["critic_scheduler"].step()
 
-        rows = [
-            joint._online_actor_row(learner["r_replay"], index)
-            for index in learner["actor_r"][0]
-        ]
-        rows.extend(
-            learner["d_replay"].materialize_actor(index)
-            for index in learner["actor_d"][0]
-        )
-        selected_identities.extend(str(row["identity"]) for row in rows)
-        try:
-            with learner_slot("actor_batch_prepare"):
-                batch = joint.build_actor_training_batch(
-                    rows,
-                    learner["actor"],
-                    learner["feature"],
-                    self.device,
-                )
-            actor_record = joint.actor_step(
-                cycle=base_cycle + online_cycle,
-                actor=learner["actor"],
-                q1=learner["q1"],
-                q2=learner["q2"],
-                q1_target=learner["q1_target"],
-                q2_target=learner["q2_target"],
-                optimizer=learner["actor_optimizer"],
-                scheduler=learner["actor_scheduler"],
-                batch=batch,
-                flow=learner["flow"],
-                delta_mean=learner["delta_mean"],
-                delta_std=learner["delta_std"],
-                config=learner["config"],
-                microbatch_slot=learner_slot,
-                reference_actor=learner["reference_actor"],
-                q_gradient_controller=learner["q_gradient_controller"],
+        if not learner["actor_updates_enabled"]:
+            learner["critic_only_updates"] += 2
+            learner["actor_updates_enabled"] = actor_unlock_is_approved(
+                self.actor_unlock_approval,
+                actor_q_valid_ack_rows=learner["actor_q_valid_ack_rows"],
+                critic_only_updates=learner["critic_only_updates"],
             )
-            del batch
-        except torch.cuda.OutOfMemoryError:
-            oom_count += 1
-            raise
-        except FloatingPointError:
-            nonfinite_count += 1
-            raise
+
+        actor_record = None
+        if learner["actor_updates_enabled"]:
+            rows = [
+                joint._online_actor_row(learner["r_replay"], index)
+                for index in learner["actor_r"][0]
+            ]
+            rows.extend(
+                learner["d_replay"].materialize_actor(index)
+                for index in learner["actor_d"][0]
+            )
+            selected_identities.extend(str(row["identity"]) for row in rows)
+            try:
+                with learner_slot("actor_batch_prepare"):
+                    batch = joint.build_actor_training_batch(
+                        rows,
+                        learner["actor"],
+                        learner["feature"],
+                        self.device,
+                    )
+                actor_record = joint.actor_step(
+                    cycle=base_cycle + online_cycle,
+                    actor=learner["actor"],
+                    q1=learner["q1"],
+                    q2=learner["q2"],
+                    q1_target=learner["q1_target"],
+                    q2_target=learner["q2_target"],
+                    optimizer=learner["actor_optimizer"],
+                    scheduler=learner["actor_scheduler"],
+                    batch=batch,
+                    flow=learner["flow"],
+                    delta_mean=learner["delta_mean"],
+                    delta_std=learner["delta_std"],
+                    config=learner["config"],
+                    microbatch_slot=learner_slot,
+                    reference_actor=learner["reference_actor"],
+                    q_gradient_controller=learner["q_gradient_controller"],
+                )
+                del batch
+            except torch.cuda.OutOfMemoryError:
+                oom_count += 1
+                raise
+            except FloatingPointError:
+                nonfinite_count += 1
+                raise
 
         current_episode_sampled = _session_was_sampled(
             current_session_id, selected_identities
@@ -325,7 +347,8 @@ class ContinuousLearner:
         counters = {
             "joint_cycles": base_cycle + 1,
             "critic_optimizer_steps": critic_offset + 2,
-            "actor_optimizer_steps": int(previous["actor_optimizer_steps"]) + 1,
+            "actor_optimizer_steps": int(previous["actor_optimizer_steps"])
+            + int(actor_record is not None),
             "target_polyak_steps": int(previous["target_polyak_steps"]) + 2,
         }
         runtime_state = {
@@ -337,13 +360,20 @@ class ContinuousLearner:
             "q_gradient_controller": learner[
                 "q_gradient_controller"
             ].state_dict(),
-            "flags": {"critic_ready": True, "actor_q_guidance_enabled": True},
+            "critic_only_updates": learner["critic_only_updates"],
+            "flags": {
+                "critic_ready": True,
+                "critic_updates_enabled": True,
+                "actor_updates_enabled": learner["actor_updates_enabled"],
+                "actor_q_guidance_enabled": learner["actor_updates_enabled"],
+            },
             "counters": counters,
             "replay": {
                 "formal_r_root": str(self.replay_root),
                 "unique_r_transition_count": self.unique_r_count,
                 "new_r_transition_count": learner["new_r_transition_count"],
                 "eligible_ack_macro_count": self.r_macro_count,
+                "actor_q_valid_ack_rows": learner["actor_q_valid_ack_rows"],
                 "mix": {"R": 32, "D": 32},
                 "current_episode_sampled": False,
             },
@@ -369,8 +399,14 @@ class ContinuousLearner:
             "runtime_artifacts": learner["runtime"].get("runtime_artifacts", {}),
             "step_metrics": {
                 "critic_td_loss": td_losses,
-                "actor_fm_loss": [float(actor_record["fm_loss"])],
-                "actor_min_twin_q_loss": [float(actor_record["actor_q_loss"])],
+                "actor_fm_loss": (
+                    [] if actor_record is None else [float(actor_record["fm_loss"])]
+                ),
+                "actor_min_twin_q_loss": (
+                    []
+                    if actor_record is None
+                    else [float(actor_record["actor_q_loss"])]
+                ),
             },
         }
         learner["runtime"] = runtime_state
@@ -381,13 +417,15 @@ class ContinuousLearner:
             latest_checkpoint = self.save_checkpoint()
         return {
             "learner_critic_steps": 2,
-            "learner_actor_steps": 1,
+            "learner_actor_steps": int(actor_record is not None),
             "learner_polyak_steps": 2,
             "current_episode_sampled": False,
             "nonfinite_count": nonfinite_count,
             "oom_count": oom_count,
             "online_joint_cycle": online_cycle + 1,
             "learner_actor": learner["actor"],
+            "actor_updates_enabled": learner["actor_updates_enabled"],
+            "critic_only_updates": learner["critic_only_updates"],
             "latest_checkpoint_path": (
                 None if latest_checkpoint is None else str(latest_checkpoint)
             ),
@@ -417,6 +455,18 @@ class ContinuousLearner:
                 actor_checkpoint_id=f"online-actor-critic-cycle-{completed:06d}",
                 checkpoint_kind="online_actor_critic_exact_resume",
                 actor_directory="actor",
+                metadata_overrides={
+                    "critic_ready": bool(
+                        learner["runtime"]["flags"]["actor_updates_enabled"]
+                    ),
+                    "critic_updates_enabled": True,
+                    "actor_updates_enabled": bool(
+                        learner["runtime"]["flags"]["actor_updates_enabled"]
+                    ),
+                    "actor_q_guidance_enabled": bool(
+                        learner["runtime"]["flags"]["actor_updates_enabled"]
+                    ),
+                },
             )
         retain_latest_online_checkpoints(self.checkpoint_root, keep=2)
         return target
@@ -593,7 +643,10 @@ class AsyncPolicyLearnerRuntime:
                             self._stop_learner.wait(0.25)
                             continue
                         cycle = int(result["online_joint_cycle"])
-                        if self._policy.broadcast_due(cycle):
+                        if (
+                            int(result.get("learner_actor_steps", 0)) > 0
+                            and self._policy.broadcast_due(cycle)
+                        ):
                             with self.engine._lock:
                                 broadcast_actor_parameters(
                                     result["learner_actor"], self.engine.policy

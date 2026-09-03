@@ -110,7 +110,10 @@ def exact_resume_checkpoint_is_recoverable(
         and metadata.get("actor_directory") == "actor"
         and all((checkpoint / relative).is_file() for relative in _EXACT_RESUME_FILES)
     )
-    if expected_kind == "online_actor_critic_exact_resume":
+    if expected_kind in {
+        "online_actor_critic_exact_resume",
+        "stage3_safe_seed_v1",
+    }:
         from forcesmolvla.rft.critic_action_adapter_v2 import (
             CRITIC_ACTION_CONTRACT,
         )
@@ -124,7 +127,10 @@ def exact_resume_checkpoint_is_recoverable(
         files_complete = bool(
             files_complete
             and metadata.get("actor_equal_to_sft") is True
+            and metadata.get("actor_updates_enabled") is False
             and metadata.get("actor_q_guidance_enabled") is False
+            and metadata.get("critic_updates_enabled") is True
+            and metadata.get("legacy_actor210_parent") is False
         )
     if not files_complete:
         return False
@@ -150,9 +156,10 @@ def exact_resume_checkpoint_is_recoverable(
             )
         counters_match = (
             int(counters["critic_optimizer_steps"]) == joint_cycles * 2
-            and int(counters["actor_optimizer_steps"]) == joint_cycles
+            and 0 <= int(counters["actor_optimizer_steps"]) <= joint_cycles
             and int(counters["target_polyak_steps"]) == joint_cycles * 2
-            and int(actor_scheduler["last_epoch"]) == joint_cycles
+            and int(actor_scheduler["last_epoch"])
+            == int(counters["actor_optimizer_steps"])
         )
         if expected_kind == "online_actor_critic_exact_resume":
             counters_match = (
@@ -392,13 +399,15 @@ def prepare_learner(
     counters = runtime["counters"]
     joint_cycles = int(counters["joint_cycles"])
     online_cycles = int(runtime.get("online_joint_cycles", 0))
+    actor_optimizer_steps = int(counters["actor_optimizer_steps"])
+    safe_seed = metadata.get("kind") == "stage3_safe_seed_v1"
     require(
         int(counters["critic_optimizer_steps"]) == joint_cycles * 2
-        and int(counters["actor_optimizer_steps"]) == joint_cycles
+        and 0 <= actor_optimizer_steps <= joint_cycles
         and int(counters["target_polyak_steps"]) == joint_cycles * 2
         and critic_optimizer.state
-        and actor_optimizer.state
-        and actor_scheduler.last_epoch == joint_cycles,
+        and (safe_seed or bool(actor_optimizer.state))
+        and actor_scheduler.last_epoch == actor_optimizer_steps,
         "ONLINE_REPLAY_ASYNC_LEARNER_EXACT_RESUME_INVALID",
     )
     actor_optimizer_ids = {
@@ -488,6 +497,13 @@ def prepare_learner(
         "runtime": runtime,
         "credits": credits,
         "new_r_transition_count": new_r_transition_count,
+        "actor_q_valid_ack_rows": sum(
+            int(macro.actor_q_eligibility.valid) for macro in r_macros
+        ),
+        "critic_only_updates": int(runtime.get("critic_only_updates", 0)),
+        "actor_updates_enabled": bool(
+            runtime.get("flags", {}).get("actor_updates_enabled", False)
+        ),
         "critic_noise": critic_noise,
         "r_rng": r_rng,
         "d_rng": d_rng,

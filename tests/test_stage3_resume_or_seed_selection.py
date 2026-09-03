@@ -40,7 +40,11 @@ def _checkpoint(path: Path, kind: str, *, cycle: int = 0) -> Path:
     if kind == "stage3_safe_seed_v1":
         metadata.update(
             actor_equal_to_sft=True,
+            actor_updates_enabled=False,
             actor_q_guidance_enabled=False,
+            critic_updates_enabled=True,
+            legacy_actor210_parent=False,
+            critic_action_contract_version=CRITIC_ACTION_CONTRACT.version,
         )
     (path / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
     for relative in FILES:
