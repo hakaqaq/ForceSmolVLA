@@ -384,6 +384,7 @@ def prepare_learner(
         eta_min=float(controller_config["eta_min"]),
         eta_max=float(controller_config["eta_max"]),
         epsilon=float(controller_config["epsilon"]),
+        calibration_interval=int(controller_config["calibration_interval"]),
     )
     if "q_gradient_controller" in runtime:
         q_gradient_controller.load_state_dict(runtime["q_gradient_controller"])

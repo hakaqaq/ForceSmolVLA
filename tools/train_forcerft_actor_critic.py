@@ -649,9 +649,13 @@ def actor_step(
     microbatch = int(config["batching"]["flow_inference_subbatch"])
     require(batch_size == 24 and microbatch == 4, "ONLINE_REPLAY_JOINT_ACTOR_BATCH")
     parameters = [parameter for parameter in actor.parameters() if parameter.requires_grad]
+    audit_q_gradients = bool(
+        q_gradient_controller is not None
+        and q_gradient_controller.should_audit()
+    )
     preservation_grads: list[torch.Tensor | None] | None = None
     q_grads_raw: list[torch.Tensor | None] | None = None
-    if q_gradient_controller is not None:
+    if audit_q_gradients:
         preservation_grads = [None] * len(parameters)
         q_grads_raw = [None] * len(parameters)
     slot = microbatch_slot or (lambda _kind: nullcontext())
@@ -677,12 +681,16 @@ def actor_step(
             & batch["behavior_mask"].any(dim=1)
         )
         total_anchor_rows = int(anchor_eligible.sum())
-        total_actor_q_rows = int(batch["actor_q_valid"].sum())
+        effective_actor_q_valid = (
+            batch["actor_q_valid"] & batch["policy_row_mask"]
+        )
+        total_actor_q_rows = int(effective_actor_q_valid.sum())
         human_fm_present = any(
             source == "human" and bool(batch["fm_eligible"][index])
             for index, source in enumerate(batch["action_sources"])
         )
     fm_total = q_total = anchor_total = reference_anchor_total = 0.0
+    reference_distance_total = 0.0
     route_total = total_loss = 0.0
     q1_values: list[torch.Tensor] = []
     q2_values: list[torch.Tensor] = []
@@ -788,10 +796,16 @@ def actor_step(
                 local_terminated,
                 local_truncated,
             )
-            reference_anchor = compute_sft_reference_anchor_loss(
+            reference_distance = compute_sft_reference_anchor_loss(
                 q_action,
                 reference_action,
                 torch.ones(microbatch, dtype=torch.bool, device=device),
+            )
+            local_actor_q_valid = effective_actor_q_valid[index]
+            reference_anchor = compute_sft_reference_anchor_loss(
+                q_action,
+                reference_action,
+                local_actor_q_valid,
             )
             local_anchor_rows = int(
                 (
@@ -814,7 +828,7 @@ def actor_step(
                 if total_expert_features
                 else 0.0
             )
-            local_actor_q_rows = int(batch["actor_q_valid"][index].sum())
+            local_actor_q_rows = int(local_actor_q_valid.sum())
             q_weight = (
                 local_actor_q_rows / total_actor_q_rows
                 if total_actor_q_rows
@@ -826,7 +840,7 @@ def actor_step(
                 expert_feature_mask_h50x7=expert_mask,
                 q1_actor_value=q1_value,
                 q2_actor_value=q2_value,
-                actor_q_valid=batch["actor_q_valid"][index],
+                actor_q_valid=local_actor_q_valid,
                 policy_behavior_anchor_loss=policy_anchor,
                 sft_reference_anchor_loss=reference_anchor,
                 balance_loss=auxiliary.balance,
@@ -834,8 +848,12 @@ def actor_step(
                 beta=float(config["loss"]["beta_expert_flow_matching"]) * fm_weight,
                 eta=(
                     0.0
-                    if q_gradient_controller is not None
-                    else float(config["loss"]["eta_actor_q"]) * q_weight
+                    if audit_q_gradients
+                    else (
+                        q_gradient_controller.current_eta * q_weight
+                        if q_gradient_controller is not None
+                        else float(config["loss"]["eta_actor_q"]) * q_weight
+                    )
                 ),
                 lambda_policy_behavior_anchor=(
                     float(config["loss"]["lambda_policy_behavior_anchor"])
@@ -843,12 +861,12 @@ def actor_step(
                 ),
                 lambda_sft_reference_anchor=(
                     float(config["loss"].get("lambda_sft_reference_anchor", 0.0))
-                    * (microbatch / batch_size)
+                    * q_weight
                 ),
                 balance_weight=float(config["loss"]["balance_weight"]) / (batch_size / microbatch),
                 z_weight=float(config["loss"]["z_weight"]) / (batch_size / microbatch),
             )
-            if bool(batch["actor_q_valid"][index].all()):
+            if bool(local_actor_q_valid.all()):
                 require(
                     torch.equal(q_contract_loss, terms.actor_q),
                     "ONLINE_REPLAY_JOINT_ACTOR_Q_NOT_MIN_TWIN",
@@ -878,7 +896,7 @@ def actor_step(
                 expert_gripper_fm_square += float(
                     fm_gradient[local_expert, :, 6].float().square().sum().cpu()
                 )
-            if q_gradient_controller is None:
+            if not audit_q_gradients:
                 terms.total.backward()
             else:
                 assert preservation_grads is not None and q_grads_raw is not None
@@ -902,8 +920,11 @@ def actor_step(
             anchor_total += anchor_weight * float(
                 terms.policy_behavior_anchor.detach().cpu()
             )
-            reference_anchor_total += (microbatch / batch_size) * float(
+            reference_anchor_total += q_weight * float(
                 terms.sft_reference_anchor.detach().cpu()
+            )
+            reference_distance_total += (microbatch / batch_size) * float(
+                reference_distance.detach().cpu()
             )
             route_total += float(
                 (
@@ -917,7 +938,7 @@ def actor_step(
 
     with slot("actor_optimizer"):
         gradient_decision = None
-        if q_gradient_controller is not None:
+        if audit_q_gradients:
             assert preservation_grads is not None and q_grads_raw is not None
             gradient_decision = q_gradient_controller.update(
                 preservation_grads,
@@ -931,6 +952,10 @@ def actor_step(
                 eta=gradient_decision.eta,
             )
             total_loss += gradient_decision.eta * q_total
+        elif q_gradient_controller is not None:
+            gradient_decision = q_gradient_controller.hold(
+                actor_q_valid_count=total_actor_q_rows
+            )
         require(online_fm_gradient_max == 0.0, "ONLINE_REPLAY_JOINT_ONLINE_SELF_IMITATION")
         require(
             not human_fm_present or human_fm_gradient_square > 0.0,
@@ -942,7 +967,7 @@ def actor_step(
         )
         require(
             gripper_q_gradient_max == 0.0
-            and (not bool(batch["actor_q_valid"].any()) or tcp_q_gradient_square > 0.0),
+            and (total_actor_q_rows == 0 or tcp_q_gradient_square > 0.0),
             "ONLINE_REPLAY_JOINT_Q_GRADIENT_SEMANTICS",
         )
         require(
@@ -1048,10 +1073,14 @@ def actor_step(
                 if gradient_decision is None
                 else gradient_decision.hard_cap_applied
             ),
+            "q_gradient_audited": (
+                False if gradient_decision is None else gradient_decision.audited
+            ),
             "actor_q_valid_count": total_actor_q_rows,
             "actor_q_valid_fraction": total_actor_q_rows / batch_size,
             "actor_policy_behavior_anchor_loss": anchor_total,
             "actor_sft_reference_anchor_loss": reference_anchor_total,
+            "actor_sft_reference_distance_all_rows": reference_distance_total,
             "actor_total_loss": total_loss,
             "q1_actor_mean": q1_stats["mean"],
             "q2_actor_mean": q2_stats["mean"],

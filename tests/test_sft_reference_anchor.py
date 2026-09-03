@@ -51,13 +51,14 @@ def test_gripper_difference_is_not_anchored() -> None:
     assert torch.count_nonzero(actor.grad) == 0
 
 
-def test_reference_anchor_applies_to_every_valid_actor_row() -> None:
+def test_reference_anchor_applies_only_to_q_guided_policy_rows() -> None:
     actor = torch.ones(2, 3, 7, requires_grad=True)
+    actor[1].detach().fill_(10.0)
     reference = torch.zeros_like(actor)
     reference_loss = compute_sft_reference_anchor_loss(
         actor,
         reference,
-        torch.tensor([True, True]),
+        torch.tensor([True, False]),
     )
     terms = compute_online_actor_objective(
         per_feature_flow_loss=torch.zeros(2, 50, 7),
@@ -76,4 +77,3 @@ def test_reference_anchor_applies_to_every_valid_actor_row() -> None:
 
     assert terms.sft_reference_anchor.item() == pytest.approx(1.0)
     assert terms.total.item() == pytest.approx(1.0)
-

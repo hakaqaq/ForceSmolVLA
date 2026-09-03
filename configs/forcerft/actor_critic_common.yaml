@@ -80,6 +80,7 @@ q_gradient_controller:
   eta_min: 0.0
   eta_max: 0.10
   epsilon: 1.0e-8
+  calibration_interval: 10
   skip_if_preservation_grad_zero: true
   skip_if_nonfinite: true
 
@@ -88,4 +89,3 @@ action_contract:
   candidate_execution_indices: [0, 0, 0]
   policy_rate_hz: 10
   macro_duration_ms: 100
-

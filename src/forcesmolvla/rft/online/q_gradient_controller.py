@@ -20,6 +20,7 @@ class QGradientDecision:
     cosine: float
     skipped_reason: str | None
     hard_cap_applied: bool
+    audited: bool
 
 
 def gradient_pair_statistics(
@@ -56,12 +57,14 @@ class QGradientRatioController:
         eta_min: float = 0.0,
         eta_max: float = 0.10,
         epsilon: float = 1.0e-8,
+        calibration_interval: int = 10,
     ) -> None:
         if not (
             0.0 <= target_ratio <= hard_max_ratio
             and 0.0 <= eta_min <= eta_max
             and 0.0 <= ema_decay < 1.0
             and epsilon > 0.0
+            and calibration_interval >= 1
         ):
             raise ValueError("FORCERFT_Q_GRADIENT_CONTROLLER_CONFIG_INVALID")
         self.target_ratio = float(target_ratio)
@@ -70,10 +73,14 @@ class QGradientRatioController:
         self.eta_min = float(eta_min)
         self.eta_max = float(eta_max)
         self.epsilon = float(epsilon)
+        self.calibration_interval = int(calibration_interval)
         self.controller_step = 0
         self.ema_q_grad_norm = 0.0
         self.ema_preservation_grad_norm = 0.0
         self.current_eta = 0.0
+
+    def should_audit(self) -> bool:
+        return self.controller_step % self.calibration_interval == 0
 
     def update(
         self,
@@ -100,6 +107,7 @@ class QGradientRatioController:
         elif q_norm == 0.0:
             reason = "zero_q_gradient"
 
+        applied_eta = 0.0
         if reason is None:
             decay = self.ema_decay
             self.ema_preservation_grad_norm = (
@@ -119,19 +127,44 @@ class QGradientRatioController:
                 applied_ratio = self.hard_max_ratio
                 hard_cap_applied = True
             self.current_eta = eta
+            applied_eta = eta
         else:
-            self.current_eta = 0.0
             applied_ratio = 0.0
+            if reason != "no_actor_q_valid_rows":
+                self.current_eta = 0.0
 
         return QGradientDecision(
-            eta=self.current_eta,
+            eta=applied_eta,
             preservation_grad_norm=preservation_norm,
             q_grad_norm_raw=q_norm,
-            q_grad_norm_weighted=self.current_eta * q_norm,
+            q_grad_norm_weighted=applied_eta * q_norm,
             applied_ratio=applied_ratio,
             cosine=cosine,
             skipped_reason=reason,
             hard_cap_applied=hard_cap_applied,
+            audited=True,
+        )
+
+    def hold(self, *, actor_q_valid_count: int) -> QGradientDecision:
+        """Advance one Actor update while reusing the last calibrated eta."""
+
+        self.controller_step += 1
+        eta = self.current_eta if actor_q_valid_count > 0 else 0.0
+        ratio = eta * self.ema_q_grad_norm / (
+            self.ema_preservation_grad_norm + self.epsilon
+        )
+        return QGradientDecision(
+            eta=eta,
+            preservation_grad_norm=self.ema_preservation_grad_norm,
+            q_grad_norm_raw=self.ema_q_grad_norm,
+            q_grad_norm_weighted=eta * self.ema_q_grad_norm,
+            applied_ratio=min(ratio, self.hard_max_ratio),
+            cosine=0.0,
+            skipped_reason=(
+                None if actor_q_valid_count > 0 else "no_actor_q_valid_rows"
+            ),
+            hard_cap_applied=False,
+            audited=False,
         )
 
     def state_dict(self) -> dict[str, float | int]:
@@ -146,6 +179,7 @@ class QGradientRatioController:
             "eta_max": self.eta_max,
             "ema_decay": self.ema_decay,
             "epsilon": self.epsilon,
+            "calibration_interval": self.calibration_interval,
         }
 
     def load_state_dict(self, state: Mapping[str, float | int]) -> None:
@@ -156,6 +190,7 @@ class QGradientRatioController:
             "eta_max",
             "ema_decay",
             "epsilon",
+            "calibration_interval",
         ):
             if float(state[name]) != getattr(self, name):
                 raise ValueError("FORCERFT_Q_GRADIENT_CONTROLLER_RESUME_CONFIG_MISMATCH")
