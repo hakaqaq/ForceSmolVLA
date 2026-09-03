@@ -68,6 +68,7 @@ def build_stage3_seed_bundle(
         critic_checkpoint=critic_checkpoint,
         device=device,
         actor_lr_override=1.0e-6,
+        production_config=True,
     )
     parent_rng = torch.load(
         critic_checkpoint / "state/rng_states.pt",
@@ -192,7 +193,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--normalizer", type=Path)
     parser.add_argument("--action-contract", type=Path)
-    parser.add_argument("--common-online-config", type=Path, required=True)
+    parser.add_argument(
+        "--common-online-config",
+        type=Path,
+        default=ROOT / "configs/forcerft/actor_critic_common.yaml",
+    )
     parser.add_argument("--reward-detector-manifest", type=Path)
     parser.add_argument("--reward-calibration-manifest", type=Path)
     args = parser.parse_args()

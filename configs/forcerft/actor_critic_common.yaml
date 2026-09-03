@@ -1,0 +1,91 @@
+configuration_kind: forcerft_actor_critic_common
+
+environment:
+  seed: 4404
+  deterministic_algorithms: true
+  cudnn_benchmark: false
+  cudnn_deterministic: true
+
+data:
+  critic_backbone_npz: assets/reward_classifier/resnet10_parameters.npz
+  critic_backbone_manifest: assets/reward_classifier/resnet10_manifest.json
+
+batching:
+  critic_batch_size: 64
+  critic_R_count: 32
+  critic_D_count: 32
+  actor_batch_size: 24
+  actor_R_count: 12
+  actor_D_count: 12
+  flow_inference_subbatch: 4
+  flow_horizon: 50
+  flow_steps: 10
+  critic_slots: 3
+  action_features: 7
+
+offline_training:
+  critic_initialization_only: true
+  actor_q_improvement_enabled: false
+  actor_optimizer_steps: 0
+  preserve_recorded_behavior_macro: true
+
+online_training:
+  training_starts: 100
+  demo_ratio: 0.5
+  online_ratio: 0.5
+  critic_updates_per_cycle: 2
+  actor_updates_per_cycle: 1
+  target_polyak_updates_per_cycle: 2
+  actor_parameter_broadcast_period: 5
+  checkpoint_period: 50
+  keep_latest_checkpoints: 2
+
+actor_unlock:
+  minimum_actor_q_valid_ack_rows: 100
+  minimum_critic_only_updates: 256
+  require_critic_readiness_manifest: true
+  require_manual_approval: true
+
+optimizer:
+  actor:
+    type: AdamW
+    lr: 1.0e-6
+    grad_clip_norm: 10.0
+  critic:
+    type: Adam
+    lr: 3.0e-4
+    grad_clip_norm: 10.0
+  polyak_tau: 0.005
+
+loss:
+  beta_expert_flow_matching: 1.0
+  lambda_policy_behavior_anchor: 0.0
+  lambda_sft_reference_anchor: 1.0
+  balance_weight: 0.01
+  z_weight: 0.001
+  online_critic: pure_td
+  min_twin_q_actor_guidance: true
+  tcp6_q_gradient: true
+  gripper_q_stop_gradient: true
+  calql_enabled: false
+  cql_enabled: false
+  random_candidates_enabled: false
+  mc_return_input_enabled: false
+
+q_gradient_controller:
+  enabled: true
+  target_ratio: 0.03
+  hard_max_ratio: 0.10
+  ema_decay: 0.95
+  eta_min: 0.0
+  eta_max: 0.10
+  epsilon: 1.0e-8
+  skip_if_preservation_grad_zero: true
+  skip_if_nonfinite: true
+
+action_contract:
+  version: critic-action-contract-v3-command-effective-r30-k3
+  candidate_execution_indices: [0, 0, 0]
+  policy_rate_hz: 10
+  macro_duration_ms: 100
+

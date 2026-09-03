@@ -1,0 +1,10 @@
+task_id: task2
+dataset_root: datasets/task2_lerobotv3
+output_root: outputs/task2
+offline_replay_root: datasets/task2_forcerft_offline_reward_transitions
+online_replay_root: outputs/task2/online
+reward_calibration_path: artifacts/development/stage2/reward_classifier/r0_validation_detector_calibration.v1.json
+normalizer_path: datasets/task2_lerobotv3/normalizer_manifest.json
+task_prompt: Pick up the purple ring and place it onto the red peg.
+workspace_configuration: configs/live_action_safety.task2.development.yaml
+

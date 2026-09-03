@@ -1279,8 +1279,13 @@ def load_resume_modules(
             "absolute_path": str(checkpoint / "artifacts/normalizer_manifest.json")
         }
     }
-    config = warmup.yaml.safe_load(
-        warmup.TRAINING_CONFIG.read_text(encoding="utf-8")
+    config = (
+        warmup.load_common_actor_critic_config(warmup.TASK_ID)
+        if metadata.get("kind")
+        in {"online_actor_critic_exact_resume", "stage3_safe_seed_v1"}
+        else warmup.yaml.safe_load(
+            warmup.TRAINING_CONFIG.read_text(encoding="utf-8")
+        )
     )
     actor = ForceSmolVLAPolicy.from_pretrained(
         actor_package,
@@ -1313,6 +1318,7 @@ def load_offline_training_parents(
     device: torch.device,
     actor_lr_override: float | None = None,
     eta_actor_q_override: float | None = None,
+    production_config: bool = False,
 ):
     """Restore the SFT Actor and the completed offline Twin-Q warmup."""
 
@@ -1323,7 +1329,13 @@ def load_offline_training_parents(
         build_frozen_vlm_actor_optimizer,
     )
 
-    config = warmup.yaml.safe_load(warmup.TRAINING_CONFIG.read_text(encoding="utf-8"))
+    config = (
+        warmup.load_common_actor_critic_config(warmup.TASK_ID)
+        if production_config
+        else warmup.yaml.safe_load(
+            warmup.TRAINING_CONFIG.read_text(encoding="utf-8")
+        )
+    )
     if actor_lr_override is not None:
         require(actor_lr_override > 0.0, "FORCERFT_ACTOR_LR_OVERRIDE_INVALID")
         config["optimizer"]["actor"]["lr"] = float(actor_lr_override)

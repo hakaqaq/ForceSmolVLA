@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from copy import deepcopy
 from functools import lru_cache
 from io import BytesIO
 import json
@@ -40,10 +41,71 @@ if str(ROOT / "tools") not in sys.path:
 TASK_ID = "task2"
 FORMAL_R_ROOT = ROOT / "outputs/task2/online"
 TRAINING_CONFIG = ROOT / "configs/forcerft_actor_critic_training.development.yaml"
+COMMON_TRAINING_CONFIG = ROOT / "configs/forcerft/actor_critic_common.yaml"
+TASK_PROFILE_ROOT = ROOT / "configs/forcerft/tasks"
 DATASET = ROOT / "datasets/task2_lerobotv3"
 REWARD_TRANSITION_ROOT = ROOT / "datasets/task2_forcerft_offline_reward_transitions"
 SEED = 4404
 TASK = "Pick up the purple ring and place it onto the red peg."
+
+
+def load_common_actor_critic_config(task_id: str | None = None) -> dict[str, Any]:
+    """Combine one immutable algorithm contract with one path-only task profile."""
+
+    selected_task = TASK_ID if task_id is None else task_id
+    common = yaml.safe_load(COMMON_TRAINING_CONFIG.read_text(encoding="utf-8"))
+    profile = yaml.safe_load(
+        (TASK_PROFILE_ROOT / f"{selected_task}.yaml").read_text(encoding="utf-8")
+    )
+    allowed_profile_keys = {
+        "task_id",
+        "dataset_root",
+        "output_root",
+        "offline_replay_root",
+        "online_replay_root",
+        "reward_calibration_path",
+        "normalizer_path",
+        "task_prompt",
+        "workspace_configuration",
+    }
+    if set(profile) != allowed_profile_keys:
+        raise ValueError("FORCERFT_TASK_PROFILE_FIELDS_INVALID")
+    config = deepcopy(common)
+    config["task"] = {
+        "task_id": profile["task_id"],
+        "output_root": profile["output_root"],
+        "prompt": profile["task_prompt"],
+    }
+    config["data"].update(
+        {
+            "transition_root": profile["offline_replay_root"],
+            "lerobot_v3_root": profile["dataset_root"],
+            "online_replay_root": profile["online_replay_root"],
+            "normalizer": profile["normalizer_path"],
+            "reward_calibration": profile["reward_calibration_path"],
+            "workspace_configuration": profile["workspace_configuration"],
+        }
+    )
+    return config
+
+
+def algorithm_hyperparameters(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the task-independent algorithm portion for direct parity checks."""
+
+    return {
+        name: deepcopy(config[name])
+        for name in (
+            "environment",
+            "batching",
+            "offline_training",
+            "online_training",
+            "actor_unlock",
+            "optimizer",
+            "loss",
+            "q_gradient_controller",
+            "action_contract",
+        )
+    }
 
 
 def configure_task_paths(

@@ -1,0 +1,18 @@
+configuration_kind: forcerft_legacy_eta0_common
+
+offline_training:
+  joint_cycles: 210
+  critic_updates_per_cycle: 2
+  actor_updates_per_cycle: 1
+  target_polyak_updates_per_cycle: 2
+  demo_only: true
+
+optimizer:
+  actor:
+    lr: 1.0e-5
+
+loss:
+  beta_expert_flow_matching: 1.0
+  eta_actor_q: 0.0
+  lambda_policy_behavior_anchor: 0.1
+

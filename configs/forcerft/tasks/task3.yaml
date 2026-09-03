@@ -1,0 +1,10 @@
+task_id: task3
+dataset_root: datasets/task3_lerobotv3
+output_root: outputs/task3
+offline_replay_root: datasets/task3_forcerft_offline_reward_transitions
+online_replay_root: outputs/task3/online
+reward_calibration_path: outputs/task3/reward_classifier/detector_calibration.json
+normalizer_path: datasets/task3_lerobotv3/normalizer_manifest.json
+task_prompt: Pick up the green plug, insert it fully into the red socket, and release it.
+workspace_configuration: configs/live_action_safety.task3.development.yaml
+

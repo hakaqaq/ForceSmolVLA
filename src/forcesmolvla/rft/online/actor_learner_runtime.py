@@ -315,18 +315,6 @@ def prepare_learner(
         )
     )
     config = deepcopy(config)
-    config["optimizer"]["actor"]["lr"] = 1.0e-6
-    config["loss"]["lambda_policy_behavior_anchor"] = 0.0
-    config["loss"]["lambda_sft_reference_anchor"] = 1.0
-    config["q_gradient_controller"] = {
-        "enabled": True,
-        "target_ratio": 0.03,
-        "hard_max_ratio": 0.10,
-        "ema_decay": 0.95,
-        "eta_min": 0.0,
-        "eta_max": 0.10,
-        "epsilon": 1.0e-8,
-    }
     trainability = apply_frozen_vlm_trainability(actor)
     critic_parameters = [
         parameter

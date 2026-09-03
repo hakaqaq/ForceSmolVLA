@@ -41,6 +41,7 @@ from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
     select_resume_or_seed_checkpoint,
 )
 from forcesmolvla.rft.online.actor_unlock import (  # noqa: E402
+    ActorUnlockPolicy,
     actor_unlock_is_approved,
 )
 from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
@@ -287,6 +288,18 @@ class ContinuousLearner:
                 self.actor_unlock_approval,
                 actor_q_valid_ack_rows=learner["actor_q_valid_ack_rows"],
                 critic_only_updates=learner["critic_only_updates"],
+                policy=ActorUnlockPolicy(
+                    minimum_actor_q_valid_ack_rows=int(
+                        learner["config"]["actor_unlock"][
+                            "minimum_actor_q_valid_ack_rows"
+                        ]
+                    ),
+                    minimum_critic_only_updates=int(
+                        learner["config"]["actor_unlock"][
+                            "minimum_critic_only_updates"
+                        ]
+                    ),
+                ),
             )
 
         actor_record = None
@@ -449,7 +462,10 @@ class ContinuousLearner:
                 critic_scheduler=learner["critic_scheduler"],
                 runtime_state=learner["runtime"], parent_binding=None,
                 actor_parent_path=self.resume_checkpoint / "actor",
-                parent_binding_id="task2-offline-exact-resume",
+                parent_binding_id=(
+                    f"{learner['config']['task']['task_id']}"
+                    "-online-actor-critic-exact-resume"
+                ),
                 source_checkpoint=self.resume_checkpoint,
                 total_joint_cycles=int(learner["runtime"]["counters"]["joint_cycles"]),
                 actor_checkpoint_id=f"online-actor-critic-cycle-{completed:06d}",
