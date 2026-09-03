@@ -287,6 +287,9 @@ def prepare_learner(
         build_frozen_vlm_actor_optimizer,
     )
     from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
+    from forcesmolvla.rft.online.q_gradient_controller import (
+        QGradientRatioController,
+    )
     from forcesmolvla.rft.throughput_v2 import FrozenPrefixFlowCounter
     from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
     from forcesmolvla.training_data import load_normalizer_manifest
@@ -304,6 +307,19 @@ def prepare_learner(
             device,
         )
     )
+    config = deepcopy(config)
+    config["optimizer"]["actor"]["lr"] = 1.0e-6
+    config["loss"]["lambda_policy_behavior_anchor"] = 0.0
+    config["loss"]["lambda_sft_reference_anchor"] = 1.0
+    config["q_gradient_controller"] = {
+        "enabled": True,
+        "target_ratio": 0.03,
+        "hard_max_ratio": 0.10,
+        "ema_decay": 0.95,
+        "eta_min": 0.0,
+        "eta_max": 0.10,
+        "epsilon": 1.0e-8,
+    }
     trainability = apply_frozen_vlm_trainability(actor)
     critic_parameters = [
         parameter
@@ -362,9 +378,17 @@ def prepare_learner(
     ).to(device)
     reference_actor.eval()
     reference_actor.requires_grad_(False)
-    config = deepcopy(config)
-    config["loss"]["lambda_policy_behavior_anchor"] = 0.0
-    config["loss"]["lambda_sft_reference_anchor"] = 1.0
+    controller_config = config["q_gradient_controller"]
+    q_gradient_controller = QGradientRatioController(
+        target_ratio=float(controller_config["target_ratio"]),
+        hard_max_ratio=float(controller_config["hard_max_ratio"]),
+        ema_decay=float(controller_config["ema_decay"]),
+        eta_min=float(controller_config["eta_min"]),
+        eta_max=float(controller_config["eta_max"]),
+        epsilon=float(controller_config["epsilon"]),
+    )
+    if "q_gradient_controller" in runtime:
+        q_gradient_controller.load_state_dict(runtime["q_gradient_controller"])
     counters = runtime["counters"]
     joint_cycles = int(counters["joint_cycles"])
     online_cycles = int(runtime.get("online_joint_cycles", 0))
@@ -449,6 +473,7 @@ def prepare_learner(
         "actor": actor,
         "reference_actor": reference_actor,
         "reference_actor_checkpoint": reference_checkpoint,
+        "q_gradient_controller": q_gradient_controller,
         "q1": q1,
         "q2": q2,
         "q1_target": q1_target,

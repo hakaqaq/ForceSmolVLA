@@ -302,6 +302,7 @@ class ContinuousLearner:
                 config=learner["config"],
                 microbatch_slot=learner_slot,
                 reference_actor=learner["reference_actor"],
+                q_gradient_controller=learner["q_gradient_controller"],
             )
             del batch
         except torch.cuda.OutOfMemoryError:
@@ -333,6 +334,9 @@ class ContinuousLearner:
             "reference_actor_checkpoint": str(
                 learner["reference_actor_checkpoint"]
             ),
+            "q_gradient_controller": learner[
+                "q_gradient_controller"
+            ].state_dict(),
             "flags": {"critic_ready": True, "actor_q_guidance_enabled": True},
             "counters": counters,
             "replay": {

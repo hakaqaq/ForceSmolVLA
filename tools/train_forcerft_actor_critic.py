@@ -284,6 +284,44 @@ def _gradient_norm(parameters: Iterable[torch.nn.Parameter]) -> float:
     return math.sqrt(total)
 
 
+def _accumulate_parameter_grads(
+    accumulated: list[torch.Tensor | None],
+    gradients: Iterable[torch.Tensor | None],
+) -> None:
+    for index, gradient in enumerate(gradients):
+        if gradient is None:
+            continue
+        value = gradient.detach().float().cpu()
+        if accumulated[index] is None:
+            accumulated[index] = value.clone()
+        else:
+            accumulated[index].add_(value)
+
+
+def _install_combined_parameter_grads(
+    parameters: list[torch.nn.Parameter],
+    preservation_grads: list[torch.Tensor | None],
+    q_grads: list[torch.Tensor | None],
+    *,
+    eta: float,
+) -> None:
+    for parameter, preservation, q_gradient in zip(
+        parameters, preservation_grads, q_grads, strict=True
+    ):
+        combined = None if preservation is None else preservation.clone()
+        if q_gradient is not None and eta != 0.0:
+            combined = (
+                eta * q_gradient
+                if combined is None
+                else combined.add(q_gradient, alpha=eta)
+            )
+        parameter.grad = (
+            None
+            if combined is None
+            else combined.to(device=parameter.device, dtype=parameter.dtype)
+        )
+
+
 _ACTOR_DIAGNOSTIC_PREFIXES = {
     "force_branch": ("model.force_branch.",),
     "force_adapter": ("model.force_adapter.",),
@@ -563,6 +601,7 @@ def actor_step(
     collect_diagnostics: bool = False,
     sft_actor_state: Mapping[str, torch.Tensor] | None = None,
     reference_actor=None,
+    q_gradient_controller=None,
 ) -> dict[str, Any]:
     from forcesmolvla.force_token import RouterState
     from forcesmolvla.rft.frozen_vlm_trainability import FROZEN_PREFIXES, frozen_prefix_flow_matching_terms
@@ -584,6 +623,11 @@ def actor_step(
     microbatch = int(config["batching"]["flow_inference_subbatch"])
     require(batch_size == 24 and microbatch == 4, "ONLINE_REPLAY_JOINT_ACTOR_BATCH")
     parameters = [parameter for parameter in actor.parameters() if parameter.requires_grad]
+    preservation_grads: list[torch.Tensor | None] | None = None
+    q_grads_raw: list[torch.Tensor | None] | None = None
+    if q_gradient_controller is not None:
+        preservation_grads = [None] * len(parameters)
+        q_grads_raw = [None] * len(parameters)
     slot = microbatch_slot or (lambda _kind: nullcontext())
     with slot("actor_setup"):
         optimizer.zero_grad(set_to_none=True)
@@ -754,7 +798,11 @@ def actor_step(
                 balance_loss=auxiliary.balance,
                 z_loss=auxiliary.z,
                 beta=float(config["loss"]["beta_expert_flow_matching"]) * fm_weight,
-                eta=float(config["loss"]["eta_actor_q"]) * q_weight,
+                eta=(
+                    0.0
+                    if q_gradient_controller is not None
+                    else float(config["loss"]["eta_actor_q"]) * q_weight
+                ),
                 lambda_policy_behavior_anchor=(
                     float(config["loss"]["lambda_policy_behavior_anchor"])
                     * anchor_weight
@@ -796,7 +844,25 @@ def actor_step(
                 expert_gripper_fm_square += float(
                     fm_gradient[local_expert, :, 6].float().square().sum().cpu()
                 )
-            terms.total.backward()
+            if q_gradient_controller is None:
+                terms.total.backward()
+            else:
+                assert preservation_grads is not None and q_grads_raw is not None
+                local_preservation_grads = torch.autograd.grad(
+                    terms.total,
+                    parameters,
+                    retain_graph=True,
+                    allow_unused=True,
+                )
+                local_q_grads = torch.autograd.grad(
+                    q_weight * terms.actor_q,
+                    parameters,
+                    allow_unused=True,
+                )
+                _accumulate_parameter_grads(
+                    preservation_grads, local_preservation_grads
+                )
+                _accumulate_parameter_grads(q_grads_raw, local_q_grads)
             fm_total += fm_weight * float(terms.expert_flow_matching.detach().cpu())
             q_total += q_weight * float(terms.actor_q.detach().cpu())
             anchor_total += anchor_weight * float(
@@ -816,6 +882,21 @@ def actor_step(
             q2_values.append(q2_value.detach())
 
     with slot("actor_optimizer"):
+        gradient_decision = None
+        if q_gradient_controller is not None:
+            assert preservation_grads is not None and q_grads_raw is not None
+            gradient_decision = q_gradient_controller.update(
+                preservation_grads,
+                q_grads_raw,
+                actor_q_valid_count=total_actor_q_rows,
+            )
+            _install_combined_parameter_grads(
+                parameters,
+                preservation_grads,
+                q_grads_raw,
+                eta=gradient_decision.eta,
+            )
+            total_loss += gradient_decision.eta * q_total
         require(online_fm_gradient_max == 0.0, "ONLINE_REPLAY_JOINT_ONLINE_SELF_IMITATION")
         require(
             not human_fm_present or human_fm_gradient_square > 0.0,
@@ -876,7 +957,11 @@ def actor_step(
     q1_stats = _tensor_statistics(q1_value)
     q2_stats = _tensor_statistics(q2_value)
     twin_gap = (q1_value - q2_value).abs()
-    eta = float(config["loss"]["eta_actor_q"])
+    eta = (
+        float(config["loss"]["eta_actor_q"])
+        if gradient_decision is None
+        else gradient_decision.eta
+    )
     return {
         "fm_loss": fm_total,
         "actor_q_loss": q_total,
@@ -892,6 +977,40 @@ def actor_step(
             "actor_route_loss": route_total,
             "actor_q_loss_raw": q_total,
             "actor_q_loss_weighted": eta * q_total,
+            "adaptive_q_eta": eta,
+            "preservation_parameter_grad_norm": (
+                actor_gradient
+                if gradient_decision is None
+                else gradient_decision.preservation_grad_norm
+            ),
+            "q_parameter_grad_norm_raw": (
+                math.sqrt(tcp_q_gradient_square)
+                if gradient_decision is None
+                else gradient_decision.q_grad_norm_raw
+            ),
+            "q_parameter_grad_norm_weighted": (
+                eta * math.sqrt(tcp_q_gradient_square)
+                if gradient_decision is None
+                else gradient_decision.q_grad_norm_weighted
+            ),
+            "fm_q_parameter_gradient_cosine": (
+                0.0 if gradient_decision is None else gradient_decision.cosine
+            ),
+            "q_to_fm_parameter_gradient_ratio": (
+                0.0
+                if gradient_decision is None
+                else gradient_decision.applied_ratio
+            ),
+            "q_gradient_skip_reason": (
+                None
+                if gradient_decision is None
+                else gradient_decision.skipped_reason
+            ),
+            "q_gradient_hard_cap_applied": (
+                False
+                if gradient_decision is None
+                else gradient_decision.hard_cap_applied
+            ),
             "actor_q_valid_count": total_actor_q_rows,
             "actor_q_valid_fraction": total_actor_q_rows / batch_size,
             "actor_policy_behavior_anchor_loss": anchor_total,
