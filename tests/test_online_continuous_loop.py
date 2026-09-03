@@ -85,6 +85,29 @@ def test_transient_capture_exit_is_typed_for_the_outer_loop(
         loop._run(["python", "capture.py"])
 
 
+def test_command_report_uses_final_json_after_child_process_logs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = (
+        'Loaded reward model\n'
+        '{"backend": "gpu", "frames": 1030}\n'
+        'Finished detector\n'
+        '{\n  "status": "FORMAL_ONLINE_R_ADMITTED",\n  "accepted": 1\n}\n'
+    )
+    monkeypatch.setattr(
+        loop,
+        "_run",
+        lambda *_args, **_kwargs: loop.subprocess.CompletedProcess(
+            ["python", "bridge.py"], 0, output, ""
+        ),
+    )
+
+    assert loop._report(["python", "bridge.py"]) == {
+        "status": "FORMAL_ONLINE_R_ADMITTED",
+        "accepted": 1,
+    }
+
+
 def test_online_capture_restart_uses_next_session_index(tmp_path: Path) -> None:
     prefix = tmp_path / "task2_forcerft_online"
     prefix.mkdir()

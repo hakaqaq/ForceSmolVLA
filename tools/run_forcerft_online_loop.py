@@ -70,14 +70,18 @@ def _run(
 
 def _report(command: list[str]) -> dict[str, Any]:
     output = _run(command, capture=True, echo_captured=False).stdout
-    start = output.find("{")
-    require(start >= 0, "FORCERFT_ONLINE_COMMAND_REPORT_MISSING")
-    try:
-        value = json.loads(output[start:])
-    except json.JSONDecodeError as error:
-        raise ContinuousLoopError("FORCERFT_ONLINE_COMMAND_REPORT_INVALID") from error
-    require(isinstance(value, dict), "FORCERFT_ONLINE_COMMAND_REPORT_INVALID")
-    return value
+    decoder = json.JSONDecoder()
+    for start in range(len(output) - 1, -1, -1):
+        if output[start] != "{":
+            continue
+        try:
+            value, end = decoder.raw_decode(output, start)
+        except json.JSONDecodeError:
+            continue
+        if not output[end:].strip() and isinstance(value, dict):
+            return value
+    require("{" in output, "FORCERFT_ONLINE_COMMAND_REPORT_MISSING")
+    raise ContinuousLoopError("FORCERFT_ONLINE_COMMAND_REPORT_INVALID")
 
 
 def _admit(args: argparse.Namespace, episode: Path, *, outcome: str) -> bool:
