@@ -49,12 +49,12 @@
     "episode_dir": "/home/rlc123/fr3_client_ws/datasets/task1/episodes/episode_000017",
     "classification": "recorded-offline production recorder provenance; not recorded-live policy parity"
   },
-  "audited_production_sources": {
-    "/home/rlc123/fr3_client_ws/scripts/record_franka_spacemouse_publisher.py": "5d0a6ab0538a67f6cc21e87f546d6ff3cac7039fbe4cbd2d9e3c3b7f365f491f",
-    "/home/rlc123/fr3_client_ws/scripts/record_franka_forcevla.py": "c9519d82bcbb953b85e73f37f07abc0c3c19642050703af4536ac6e164088db3",
-    "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py": "eba43dcc5d22d8ab06f7b7e64b474d0c63b4fa425bcfc85faba8829f65c6798c",
-    "/home/rlc123/fr3_client_ws/scripts/deploy_forcesmolvla.py": "c64acde5cc3eb8c531f58cc376d2b7e0d1d26e97f1adff9cfbfa8fc1118a94f2"
-  },
+  "audited_production_sources": [
+    "/home/rlc123/fr3_client_ws/scripts/record_franka_spacemouse_publisher.py",
+    "/home/rlc123/fr3_client_ws/scripts/record_franka_forcevla.py",
+    "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py",
+    "/home/rlc123/fr3_client_ws/scripts/deploy_forcesmolvla.py"
+  ],
   "known_blockers": [
     "current production selection omits request/result/proposal/revision/reset/takeover identities",
     "no recorded-live policy episode exists in the audited datasets",

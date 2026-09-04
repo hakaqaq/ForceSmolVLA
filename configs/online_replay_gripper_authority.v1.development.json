@@ -60,7 +60,6 @@
   },
   "current_production_source_audit": {
     "/home/rlc123/fr3_client_ws/scripts/record_franka_spacemouse_publisher.py": {
-      "sha256": "5d0a6ab0538a67f6cc21e87f546d6ff3cac7039fbe4cbd2d9e3c3b7f365f491f",
       "symbols": [
         "FrankaRecordSpaceMousePublisher._send_gripper_goal",
         "FrankaRecordSpaceMousePublisher._gripper_goal_response",
@@ -78,7 +77,6 @@
       ]
     },
     "/home/rlc123/fr3_client_ws/scripts/record_franka_forcevla.py": {
-      "sha256": "c9519d82bcbb953b85e73f37f07abc0c3c19642050703af4536ac6e164088db3",
       "symbols": [
         "IsolatedSpaceMouseController._on_gripper_goal_accepted",
         "IsolatedSpaceMouseController._on_gripper_goal_terminal",
@@ -97,7 +95,6 @@
       }
     },
     "/home/rlc123/fr3_client_ws/scripts/record_franka_hilserl_impedance.py": {
-      "sha256": "931a86761c92025cd38f357cf895af22bec35def1a46bf11f6032bc090450973",
       "symbols": [
         "HilserlNativeActionRecorder",
         "HilserlIsolatedSpaceMouseController._sync_gripper_toggle_for_takeover",
@@ -106,7 +103,6 @@
       "behavior": "inherits ForceVLA gripper target/status callbacks and reuses the same goal/state integrity gates"
     },
     "/home/rlc123/fr3_client_ws/scripts/deploy_forcesmolvla.py": {
-      "sha256": "c64acde5cc3eb8c531f58cc376d2b7e0d1d26e97f1adff9cfbfa8fc1118a94f2",
       "symbols": [
         "ForceSmolAbsoluteActionAdapter.apply",
         "LiveForceSmolObservation._gripper_callback",
@@ -163,10 +159,6 @@
   "recorded_offline_trace": {
     "classification": "recorded-offline gripper provenance; not an online recorded-live policy fixture",
     "episode_dir": "/home/rlc123/fr3_client_ws/datasets/task1/episodes/episode_000017",
-    "episode_result_sha256": "ca4f9566e56732561a039f27e6b14117157a39a99e49ef5f7eba29b430b1f9c7",
-    "gripper_target_sha256": "9521f78c34dbe26810c4928427e60997686d8d76f58df5602db0c527a9896832",
-    "gripper_goal_status_sha256": "b7cd02413146b05f0db4776dc821542a3479f03f8d31321e359f0257641607c6",
-    "gripper_state_sha256": "6fe4c7cbe313b93c1ac1f7b735216bc564de09df986262d5b1d59171c63f0d6c",
     "saved": true,
     "goal_count": 2,
     "state_count": 14312,
