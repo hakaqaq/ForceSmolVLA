@@ -5,27 +5,10 @@ from typing import Any
 
 
 _MODULE_EXPORTS = {
-    "training_batch": ("MixedReplaySampler", "build_expert_feature_mask"),
-    "learner_checkpoint": (
-        "cpu_round_trip_online_checkpoint",
-        "validate_online_checkpoint_metadata",
-    ),
-    "training_contracts": (
-        "apply_online_trainability",
-        "load_online_contracts",
-        "validate_online_contracts",
-    ),
     "training_losses": (
-        "compute_expert_only_flow_matching_loss",
-        "compute_min_twin_q_guidance_from_values",
-        "compute_online_twin_q_td_loss",
-        "compute_online_actor_objective",
-        "compute_online_min_twin_q_actor_loss",
-    ),
-    "learner": (
-        "OnlineLearner",
-        "OnlineLossAPI",
-        "TrainingStartsBlocked",
+        "ResidualActorLoss",
+        "residual_actor_loss",
+        "residual_critic_loss",
     ),
     "policy_protocol": ("InferenceDisposition", "PolicyEpochGate", "TransportEnvelope"),
     "policy_revision": (

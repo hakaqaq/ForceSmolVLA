@@ -805,6 +805,34 @@ def _read_policy_execution_streams(
     return rows
 
 
+def _native_stream_index(
+    records: Sequence[dict[str, Any]],
+) -> dict[int, list[dict[str, Any]]]:
+    """Index native samples without discarding repeated sensor timestamps."""
+
+    result: dict[int, list[dict[str, Any]]] = {}
+    for record in records:
+        result.setdefault(int(record.get("source_stamp_ns", 0)), []).append(record)
+    return result
+
+
+def _nearest_native_receive(
+    index: Mapping[int, Sequence[dict[str, Any]]],
+    *,
+    source_stamp_ns: int,
+    receive_monotonic_ns: int,
+) -> dict[str, Any] | None:
+    candidates = index.get(source_stamp_ns, ())
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda record: abs(
+            int(record.get("receive_monotonic_ns", 0)) - receive_monotonic_ns
+        ),
+    )
+
+
 def _finite_vector(value: Any, size: int, reason: str) -> tuple[float, ...]:
     try:
         result = tuple(float(item) for item in value)
@@ -1274,11 +1302,9 @@ class ProductionBridge:
                 "BRIDGE_POLICY_EXECUTION_LINEAGE_COUNT_MISMATCH"
             )
 
-        native_by_source: dict[str, dict[int, dict[str, Any]]] = {}
+        native_by_source: dict[str, dict[int, list[dict[str, Any]]]] = {}
         for name in ("measured_tcp_pose", "wrench_notch_sensor", "gripper_state"):
-            native_by_source[name] = {
-                int(item.get("source_stamp_ns", 0)): item for item in streams[name]
-            }
+            native_by_source[name] = _native_stream_index(streams[name])
         observation_by_id: dict[str, dict[str, Any]] = {}
         previous_t_ref = 0
         previous_generation = self._policy_execution_generation(identity, identity)
@@ -1331,16 +1357,15 @@ class ProductionBridge:
                     raise ProductionBridgeError(
                         f"BRIDGE_POLICY_EXECUTION_NATIVE_STREAM_ID_INVALID:{name}"
                     ) from error
-                native = native_index.get(source_ns)
-                native_receive_ns = int(
-                    0 if native is None else native.get("receive_monotonic_ns", 0)
+                native = _nearest_native_receive(
+                    native_index,
+                    source_stamp_ns=source_ns,
+                    receive_monotonic_ns=policy_receive_ns,
                 )
                 if (
                     native is None
-                    or policy_receive_ns > t_ref
+                    or not 0 <= t_ref - policy_receive_ns <= receive_skew_limits[name]
                     or identity_receive_ns != policy_receive_ns
-                    or abs(native_receive_ns - policy_receive_ns)
-                    > receive_skew_limits[name]
                 ):
                     raise ProductionBridgeError(
                         f"BRIDGE_POLICY_EXECUTION_NATIVE_STREAM_MISSING:{name}"
@@ -2811,12 +2836,9 @@ class ProductionBridge:
         ):
             raise ProductionBridgeError("BRIDGE_SHADOW_POLICY_LINEAGE_COUNT_MISMATCH")
 
-        native_by_source: dict[str, dict[int, dict[str, Any]]] = {}
+        native_by_source: dict[str, dict[int, list[dict[str, Any]]]] = {}
         for name in ("measured_tcp_pose", "wrench_notch_sensor", "gripper_state"):
-            native_by_source[name] = {
-                int(item.get("source_stamp_ns", 0)): item
-                for item in streams[name]
-            }
+            native_by_source[name] = _native_stream_index(streams[name])
         observation_by_id: dict[str, dict[str, Any]] = {}
         previous_t_ref = 0
         required_streams = set(native_by_source) | {"external_camera", "wrist_camera"}
@@ -2865,17 +2887,15 @@ class ProductionBridge:
                     raise ProductionBridgeError(
                         f"BRIDGE_SHADOW_NATIVE_STREAM_ID_MISMATCH:{name}"
                     ) from error
-                native = native_index.get(source_ns)
-                native_receive_ns = int(
-                    0 if native is None else native.get("receive_monotonic_ns", 0)
+                native = _nearest_native_receive(
+                    native_index,
+                    source_stamp_ns=source_ns,
+                    receive_monotonic_ns=policy_receive_ns,
                 )
                 if (
                     native is None
-                    or policy_receive_ns > t_ref
-                    or native_receive_ns > t_ref
+                    or not 0 <= t_ref - policy_receive_ns <= receive_skew_limits[name]
                     or identity_receive_ns != policy_receive_ns
-                    or abs(native_receive_ns - policy_receive_ns)
-                    > receive_skew_limits[name]
                 ):
                     raise ProductionBridgeError(
                         f"BRIDGE_SHADOW_NATIVE_STREAM_MISSING:{name}"
@@ -4648,6 +4668,52 @@ class ProductionBridge:
             chunk_compatibility_key=compatibility,
             discount=float(payload["outcome"]["discount"]),
         )
+        policy_by_sequence = {
+            int(candidate["selection"]["sequence"]): candidate
+            for candidate in policy_sources
+            if isinstance(candidate.get("selection"), Mapping)
+        }
+        base_k7: list[list[float]] = []
+        final_k7: list[list[float]] = []
+        for valid, dispatch_sequence in zip(
+            behavior_macro.behavior_mask,
+            behavior_macro.source_dispatch_sequences,
+            strict=True,
+        ):
+            if not valid:
+                base_k7.append([0.0] * 7)
+                final_k7.append([0.0] * 7)
+                continue
+            candidate = policy_by_sequence.get(int(dispatch_sequence))
+            if candidate is None:
+                raise ProductionBridgeError(
+                    "BRIDGE_FORMAL_R_RESIDUAL_LINEAGE_MISSING"
+                )
+            selection = candidate["selection"]
+            final_action = _finite_vector(
+                selection.get(
+                    "final_normalized_action7",
+                    selection.get("normalized_action7"),
+                ),
+                7,
+                "BRIDGE_FORMAL_R_FINAL_NORMALIZED_ACTION_INVALID",
+            )
+            base_action = _finite_vector(
+                selection.get("base_normalized_action7", final_action),
+                7,
+                "BRIDGE_FORMAL_R_BASE_NORMALIZED_ACTION_INVALID",
+            )
+            base_k7.append(list(base_action))
+            final_k7.append(list(final_action))
+        payload["base_normalized_action_k7"] = base_k7
+        payload["applied_residual_tcp6"] = list(
+            _finite_vector(
+                source["selection"].get("applied_residual_tcp6", [0.0] * 6),
+                6,
+                "BRIDGE_FORMAL_R_APPLIED_RESIDUAL_INVALID",
+            )
+        )
+        payload["final_normalized_action_k7"] = final_k7
         stable = {
             "schema_version": SCHEMA_VERSION,
             "episode_id": episode_id,
@@ -4968,6 +5034,51 @@ class ProductionBridge:
             chunk_compatibility_key=generation_key,
             discount=float(payload["outcome"]["discount"]),
         )
+        takeover_start = next(
+            (
+                item
+                for item in integrated.get("takeover_starts", ())
+                if self._policy_execution_generation(item, item)
+                == (
+                    int(generation["policy_epoch"]),
+                    int(generation["reset_generation"]),
+                    int(generation["takeover_generation"]),
+                )
+            ),
+            None,
+        )
+        pre_takeover = None
+        if takeover_start is not None:
+            start_ns = int(takeover_start["receive_monotonic_ns"])
+            candidates = [
+                item
+                for item in integrated.get("transitions", ())
+                if int(item.get("receive_monotonic_ns", 0)) < start_ns
+                and int(item.get("takeover_generation", -1))
+                == int(generation["takeover_generation"]) - 1
+                and isinstance(item.get("selection"), Mapping)
+            ]
+            if candidates:
+                prior = max(
+                    candidates,
+                    key=lambda item: int(item["receive_monotonic_ns"]),
+                )["selection"]
+                candidate = prior.get(
+                    "base_normalized_action7", prior.get("normalized_action7")
+                )
+                try:
+                    pre_takeover = list(
+                        _finite_vector(
+                            candidate,
+                            7,
+                            "BRIDGE_FORMAL_R_PRE_TAKEOVER_BASE_INVALID",
+                        )
+                    )
+                except ProductionBridgeError:
+                    pre_takeover = None
+        payload["human_residual_valid"] = pre_takeover is not None
+        if pre_takeover is not None:
+            payload["pre_takeover_base_normalized_action7"] = pre_takeover
         stable = {
             "schema_version": SCHEMA_VERSION,
             "episode_id": episode_id,
@@ -5039,6 +5150,10 @@ class ProductionBridge:
         )
         if outcome_pair == ("failure", "success"):
             raise ProductionBridgeError("BRIDGE_FORMAL_R_OUTCOME_CONFLICT")
+        if outcome_pair == ("success", "miss"):
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_OPERATOR_SUCCESS_DETECTOR_MISS"
+            )
         if (
             summary.get("technical_seal") != "complete"
             or outcome_pair

@@ -591,8 +591,6 @@ def validate_ack_transition(payload: Mapping) -> dict:
         "next_observation_valid": next_observation is not None and next_observation["valid"],
     })
     validate_reward_terminal(outcome)
-    if eligibility["critic_td_valid"] and not all(observation[name]["valid"] for name in ("camera1", "camera2")):
-        raise TransitionContractError("ONLINE_REPLAY_TD_ROW_HAS_INVALID_CAMERA")
     return value
 
 

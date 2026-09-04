@@ -15,10 +15,11 @@ from typing import Callable, Iterator
 import torch
 from torch import Tensor, nn
 
-from forcesmolvla.rft.critic import (
-    ACTION_DIM,
-    ACTION_SLOTS,
-    DEFAULT_REWARD_TRANSITION_ROOT,
+ACTION_DIM = 7
+ACTION_SLOTS = 3
+DEFAULT_REWARD_TRANSITION_ROOT = (
+    Path(__file__).resolve().parents[3]
+    / "datasets/task2_forcerft_offline_reward_transitions"
 )
 from forcesmolvla.rft.flow_sampling import (
     critic_action_for_q_guidance,

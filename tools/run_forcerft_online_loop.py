@@ -325,7 +325,11 @@ def _run_episode(
         metadata.get("active_actor_model_revision", model_revision or "")
     )
     policy_epoch = int(metadata.get("policy_epoch", policy_epoch or 0))
-    actor_checkpoint_value = str(metadata.get("active_actor_checkpoint", ""))
+    actor_checkpoint_value = str(
+        metadata.get(
+            "base_actor_checkpoint", metadata.get("active_actor_checkpoint", "")
+        )
+    )
     actor_checkpoint = (
         Path(actor_checkpoint_value).resolve() if actor_checkpoint_value else None
     )
@@ -431,17 +435,12 @@ def run_loop(args: argparse.Namespace) -> int:
     resume = select_resume_or_seed_checkpoint(
         args.output_root,
         configured_seed_bundle=getattr(args, "stage3_seed_bundle", None),
-        allow_legacy_offline_fallback=getattr(
-            args, "allow_legacy_offline_fallback", False
-        ),
     ).path
-    args.deployed_actor_checkpoint = (resume / "actor").resolve()
     server_command = [
         str(args.model_python), str(ROOT / "tools/serve_forcerft_actor_learner.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
         "--task", args.task,
         "--dataset-root", str(args.dataset_root),
-        "--reward-transition-root", str(args.reward_transition_root),
         "--session-id", "waiting-for-episode", "--episode-id", EPISODE_ID,
         "--learner-resume-checkpoint", str(resume),
         "--allow-development-policy-execution-smoke",
@@ -449,30 +448,10 @@ def run_loop(args: argparse.Namespace) -> int:
     ]
     if args.safety_config is not None:
         server_command.extend(["--safety-config", str(args.safety_config)])
-    if getattr(args, "sft_reference_checkpoint", None) is not None:
-        server_command.extend(
-            [
-                "--sft-reference-checkpoint",
-                str(args.sft_reference_checkpoint),
-            ]
-        )
     if getattr(args, "stage3_seed_bundle", None) is not None:
         server_command.extend(
             ["--stage3-seed-bundle", str(args.stage3_seed_bundle)]
         )
-    if getattr(args, "actor_readiness_manifest", None) is not None:
-        server_command.extend(
-            [
-                "--actor-readiness-manifest",
-                str(args.actor_readiness_manifest),
-            ]
-        )
-    if getattr(args, "actor_readiness_mode", None) is not None:
-        server_command.extend(
-            ["--actor-readiness-mode", args.actor_readiness_mode]
-        )
-    if getattr(args, "allow_legacy_offline_fallback", False):
-        server_command.append("--allow-legacy-offline-fallback")
     server = subprocess.Popen(server_command, cwd=ROOT, env=os.environ.copy())
     detector_process = detector_directory = detector_socket = None
     completed = 0
@@ -487,14 +466,18 @@ def run_loop(args: argparse.Namespace) -> int:
             metadata.get("learner_resume_checkpoint") == str(resume.resolve()),
             "FORCERFT_ONLINE_RESUME_CHECKPOINT_MISMATCH",
         )
-        active_actor_checkpoint = str(
-            metadata.get("active_actor_checkpoint", "")
+        base_actor_checkpoint = str(
+            metadata.get(
+                "base_actor_checkpoint",
+                metadata.get("active_actor_checkpoint", ""),
+            )
         )
+        args.deployed_actor_checkpoint = Path(base_actor_checkpoint).resolve()
         require(
             str(metadata.get("active_actor_model_revision", ""))
             and int(metadata.get("policy_epoch", -1)) >= 0
-            and active_actor_checkpoint
-            and Path(active_actor_checkpoint).is_dir(),
+            and base_actor_checkpoint
+            and args.deployed_actor_checkpoint.is_dir(),
             "FORCERFT_ONLINE_SERVER_METADATA_INVALID",
         )
         detector_process, detector_directory, detector_socket = (
@@ -528,20 +511,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task-id", default="task2")
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--dataset-root", type=Path)
-    parser.add_argument("--reward-transition-root", type=Path)
     parser.add_argument("--safety-config", type=Path)
     parser.add_argument("--stage3-seed-bundle", type=Path)
-    parser.add_argument("--sft-reference-checkpoint", type=Path)
-    parser.add_argument("--actor-readiness-manifest", type=Path)
-    parser.add_argument(
-        "--actor-readiness-mode",
-        choices=(
-            "offline_critic_ready",
-            "manual_approval",
-            "automatic_readiness",
-        ),
-    )
-    parser.add_argument("--allow-legacy-offline-fallback", action="store_true")
     parser.add_argument("--max-episodes", type=int, required=True)
     parser.add_argument("--root-prefix", type=Path)
     parser.add_argument("--task", required=True)
@@ -574,7 +545,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     from forcesmolvla.training_runtime import (
         resolve_task_dataset_root,
         resolve_task_output_root,
-        resolve_task_reward_transition_root,
     )
 
     args.root_prefix = (
@@ -588,15 +558,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args.dataset_root = resolve_task_dataset_root(
         ROOT, task_id=args.task_id, dataset_root=args.dataset_root
     )
-    args.reward_transition_root = resolve_task_reward_transition_root(
-        ROOT,
-        task_id=args.task_id,
-        reward_transition_root=args.reward_transition_root,
-    )
     if args.safety_config is not None:
         args.safety_config = args.safety_config.resolve()
-    if args.sft_reference_checkpoint is not None:
-        args.sft_reference_checkpoint = args.sft_reference_checkpoint.resolve()
     args.formal_r_root = (
         args.output_root / "online"
         if args.formal_r_root is None else args.formal_r_root.resolve()

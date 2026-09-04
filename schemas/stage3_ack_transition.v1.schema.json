@@ -53,6 +53,11 @@
       }
     },
     "observation": {"$ref": "#/$defs/observation"},
+    "base_normalized_action_k7": {"$ref": "#/$defs/k7"},
+    "applied_residual_tcp6": {"$ref": "#/$defs/vector6"},
+    "final_normalized_action_k7": {"$ref": "#/$defs/k7"},
+    "pre_takeover_base_normalized_action7": {"$ref": "#/$defs/vector7"},
+    "human_residual_valid": {"type": "boolean"},
     "next_observation": {
       "oneOf": [{"$ref": "#/$defs/observation"}, {"type": "null"}]
     },

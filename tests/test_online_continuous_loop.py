@@ -56,9 +56,7 @@ def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> 
 
     assert args.output_root == (tmp_path / "outputs/task2").resolve()
     assert args.dataset_root == (ROOT / "datasets/task2_lerobotv3").resolve()
-    assert args.reward_transition_root == (
-        ROOT / "datasets/task2_forcerft_offline_reward_transitions"
-    ).resolve()
+    assert not hasattr(args, "reward_transition_root")
     assert args.formal_r_root == (tmp_path / "outputs/task2/online").resolve()
     assert args.allow_development_policy_execution_smoke is False
     assert not hasattr(args, "deployment_profile")
@@ -414,6 +412,12 @@ def test_incomplete_action7_ack_coverage_is_episode_quality_rejection() -> None:
     )
 
 
+def test_operator_success_detector_miss_is_episode_quality_rejection() -> None:
+    assert bridge_tool._is_episode_quality_rejection(
+        "BRIDGE_FORMAL_R_OPERATOR_SUCCESS_DETECTOR_MISS"
+    )
+
+
 def test_formal_admission_requires_explicit_deployed_actor_checkpoint(
     tmp_path: Path,
 ) -> None:
@@ -483,7 +487,6 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
             "task_id": "task2",
             "task": "ring",
             "dataset_root": tmp_path / "datasets/task2_lerobotv3",
-            "reward_transition_root": tmp_path / "datasets/task2_forcerft_offline_reward_transitions",
             "safety_config": None,
             "policy_port": 8000,
         "server_start_timeout": 1.0,
@@ -536,7 +539,6 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
             "task_id": "task2",
             "task": "ring",
             "dataset_root": tmp_path / "datasets/task2_lerobotv3",
-            "reward_transition_root": tmp_path / "datasets/task2_forcerft_offline_reward_transitions",
             "safety_config": None,
             "policy_port": 8000,
         "server_start_timeout": 1.0,

@@ -1488,7 +1488,7 @@ def test_integrated_policy_execution_smoke_is_read_only_and_not_shadow(
     )
     next(
         row for row in pose_rows if int(row["source_stamp_ns"]) == source_ns
-    )["receive_monotonic_ns"] = observation_rows[0]["t_ref_ns"] + 100_000
+    )["receive_monotonic_ns"] = observation_rows[0]["t_ref_ns"] + 50_000_000
     _write_jsonl(observation_path, observation_rows)
     _write_jsonl(pose_path, pose_rows)
     monkeypatch.setattr(
@@ -1520,6 +1520,47 @@ def test_integrated_policy_execution_smoke_is_read_only_and_not_shadow(
     assert report.real_online_r_used is False
     assert report.model_update_count == 0
     assert not state.exists()
+
+
+def test_integrated_policy_execution_rejects_stale_policy_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    observation_path = (
+        episode.parent.parent
+        / "integrated_capture"
+        / episode.name
+        / "streams/policy_execute_observation.jsonl"
+    )
+    observations = [
+        json.loads(line) for line in observation_path.read_text().splitlines()
+    ]
+    observation = observations[0]
+    stream_id = observation["stream_ids"]["measured_tcp_pose"]
+    source_ns = int(stream_id.split("source:", 1)[1].split("@receive:", 1)[0])
+    stale_receive_ns = observation["t_ref_ns"] - 30_000_001
+    observation["stream_timestamps_ns"]["measured_tcp_pose"] = stale_receive_ns
+    observation["stream_ids"]["measured_tcp_pose"] = (
+        f"source:{source_ns}@receive:{stale_receive_ns}"
+    )
+    _write_jsonl(observation_path, observations)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "SEALED_QUARANTINED"
+    assert report.quarantine_reasons == (
+        "BRIDGE_POLICY_EXECUTION_NATIVE_STREAM_MISSING:measured_tcp_pose",
+    )
 
 
 def test_integrated_async_policy_execution_seal_is_read_only(
@@ -2153,8 +2194,27 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
         >= {"request", "result", "proposal", "chunk", "revision", "generation"}
         for item in policy_payloads
     )
+    assert all(
+        np.asarray(item["base_normalized_action_k7"]).shape == (3, 7)
+        and np.asarray(item["final_normalized_action_k7"]).shape == (3, 7)
+        and np.asarray(item["applied_residual_tcp6"]).shape == (6,)
+        and np.array_equal(
+            item["base_normalized_action_k7"],
+            item["final_normalized_action_k7"],
+        )
+        and np.count_nonzero(item["applied_residual_tcp6"]) == 0
+        for item in policy_payloads
+    )
     assert human["expert"] is True and human["intervention"] is True
     assert "policy_lineage" not in human
+    assert isinstance(human["human_residual_valid"], bool)
+    assert human["human_residual_valid"] is (
+        "pre_takeover_base_normalized_action7" in human
+    )
+    if human["human_residual_valid"]:
+        assert np.asarray(
+            human["pre_takeover_base_normalized_action7"]
+        ).shape == (7,)
     assert np.asarray(human["human_action_target_h50"]).shape == (50, 7)
     human_mask = np.asarray(
         human["human_action_valid_mask_h50"], dtype=np.bool_
@@ -2377,6 +2437,31 @@ def test_failure_detector_success_is_outcome_conflict_without_writes(
         _bridge(state).admit_policy_execution_smoke(
             episode,
             operator_task_outcome="failure",
+        )
+
+    assert not state.exists()
+
+
+def test_operator_success_detector_miss_rejects_without_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+    state = tmp_path / "formal-r"
+    bridge = ProductionBridge(
+        config=BridgeConfig(),
+        state_root=state,
+        episode_materializer=_fake_failure_materialization,
+    )
+
+    with pytest.raises(
+        ProductionBridgeError,
+        match="BRIDGE_FORMAL_R_OPERATOR_SUCCESS_DETECTOR_MISS",
+    ):
+        bridge.admit_policy_execution_smoke(
+            episode,
+            operator_task_outcome="success",
         )
 
     assert not state.exists()

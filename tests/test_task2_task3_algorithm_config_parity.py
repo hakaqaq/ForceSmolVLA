@@ -12,14 +12,17 @@ def test_task2_and_task3_share_one_algorithm_contract() -> None:
 
     assert task2["task"]["task_id"] == "task2"
     assert task3["task"]["task_id"] == "task3"
-    assert task2["data"]["lerobot_v3_root"] != task3["data"]["lerobot_v3_root"]
+    assert task2["paths"]["lerobot_v3_root"] != task3["paths"]["lerobot_v3_root"]
     assert algorithm_hyperparameters(task2) == algorithm_hyperparameters(task3)
 
 
 def test_task_profiles_cannot_override_algorithm_hyperparameters() -> None:
     task2 = load_common_actor_critic_config("task2")
 
-    assert task2["optimizer"]["actor"]["lr"] == 1.0e-6
-    assert task2["q_gradient_controller"]["target_ratio"] == 0.03
-    assert task2["actor_unlock"]["mode"] == "offline_critic_ready"
-    assert task2["actor_unlock"]["minimum_critic_only_updates"] == 0
+    assert task2["optimizer"]["actor"]["lr"] == 1.0e-4
+    assert task2["warmup"] == {
+        "training_starts": 100,
+        "critic_burnin_updates": 256,
+    }
+    assert "q_gradient_controller" not in task2
+    assert "actor_unlock" not in task2

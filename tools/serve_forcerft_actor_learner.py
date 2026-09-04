@@ -8,12 +8,10 @@ from contextlib import AbstractContextManager
 from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
-import random
 import sys
 import threading
 from typing import Any, Mapping
 
-import numpy as np
 import torch
 
 
@@ -24,7 +22,6 @@ for path in (SRC, ROOT / "tools"):
         sys.path.insert(0, str(path))
 
 from forcesmolvla.rft.online import replay_training as warmup  # noqa: E402
-import train_forcerft_actor_critic as joint  # noqa: E402
 import serve_policy  # noqa: E402
 from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
     OnlineTrainingPolicy,
@@ -35,12 +32,16 @@ from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
     InferencePriorityCoordinator,
     PinnedEpisode,
     prepare_learner,
-    reconcile_post_checkpoint_replay,
     select_resume_or_seed_checkpoint,
 )
-from forcesmolvla.rft.online.actor_unlock import (  # noqa: E402
-    ActorUnlockPolicy,
-    actor_unlock_is_ready,
+from forcesmolvla.rft.critic import polyak_update  # noqa: E402
+from forcesmolvla.rft.residual_actor import WristWrenchResidualActor  # noqa: E402
+from forcesmolvla.rft.online.learner_checkpoint import (  # noqa: E402
+    save_residual_checkpoint,
+)
+from forcesmolvla.rft.online.training_losses import (  # noqa: E402
+    residual_actor_loss,
+    residual_critic_loss,
 )
 from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
@@ -54,82 +55,48 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
-def _load_actor_checkpoint(policy: Any, checkpoint: Path) -> None:
-    from safetensors.torch import load_file
-
-    state = load_file(str(checkpoint / "model.safetensors"), device="cpu")
-    policy.load_state_dict(state, strict=True)
+def _load_residual_checkpoint(policy: Any, checkpoint: Path) -> None:
+    path = checkpoint if checkpoint.is_file() else checkpoint / "residual_actor.pt"
+    policy.load_state_dict(
+        torch.load(path, map_location=next(policy.parameters()).device, weights_only=True),
+        strict=True,
+    )
     policy.eval()
 
 
 def _select_deployed_actor_for_resume(
-    *,
-    resume_checkpoint: Path,
-    stage3_seed_bundle: Path | None,
-) -> tuple[Path, str, str | None, int]:
-    """Keep inference on the latest published Actor, not the Learner work copy."""
+    *, resume_checkpoint: Path
+) -> tuple[Path, Path, str, int]:
+    """Resolve the fixed base package and the last episode-active residual only."""
 
     resume_checkpoint = resume_checkpoint.resolve()
-    metadata = json.loads(
-        (resume_checkpoint / "metadata.json").read_text(encoding="utf-8")
-    )
-    actor_directory = str(metadata.get("actor_directory", "actor"))
-    if metadata.get("kind") != "online_actor_critic_exact_resume":
-        revision_id = str(metadata.get("actor_checkpoint", {}).get("checkpoint_id", ""))
-        require(bool(revision_id), "FORCERFT_DEPLOYED_ACTOR_METADATA_INVALID")
-        return resume_checkpoint / actor_directory, revision_id, None, 0
-
     runtime = torch.load(
         resume_checkpoint / "state/runtime_state.pt",
         map_location="cpu",
         weights_only=False,
     )
-    actor_optimizer_steps = int(runtime["counters"]["actor_optimizer_steps"])
-    candidates_root = resume_checkpoint.parent.parent / "actor_candidates"
-    eligible: list[tuple[int, Path, dict[str, Any]]] = []
-    for candidate_path in candidates_root.glob("online_actor_step_*"):
-        try:
-            step = int(candidate_path.name.rsplit("_", 1)[1])
-            candidate = json.loads(
-                (candidate_path / "candidate.json").read_text(encoding="utf-8")
-            )
-        except (OSError, ValueError, KeyError, json.JSONDecodeError):
-            continue
-        if (
-            0 < step <= actor_optimizer_steps
-            and candidate.get("published") is True
-            and candidate.get("state") == "published"
-            and isinstance(candidate.get("revision_id"), str)
-            and bool(candidate["revision_id"])
-            and isinstance(candidate.get("model_revision"), str)
-            and bool(candidate["model_revision"])
-            and (candidate_path / "model.safetensors").is_file()
-            and (candidate_path / "config.json").is_file()
-        ):
-            eligible.append((step, candidate_path.resolve(), candidate))
-    if eligible:
-        step, checkpoint, candidate = max(eligible, key=lambda item: item[0])
-        return (
-            checkpoint,
-            str(candidate["revision_id"]),
-            str(candidate["model_revision"]),
-            step,
+    base = Path(runtime["base_actor_checkpoint"]).resolve()
+    revision_id = str(runtime["active_residual_revision"])
+    try:
+        actor_step = int(revision_id.rsplit("-", 1)[1])
+    except ValueError:
+        actor_step = 0
+    candidate = (
+        resume_checkpoint.parent.parent
+        / "actor_candidates"
+        / f"online_actor_step_{actor_step:06d}"
+    )
+    residual = candidate / "residual_actor.pt"
+    if actor_step > 0:
+        require(
+            residual.is_file(),
+            "FORCERFT_ACTIVE_RESIDUAL_CANDIDATE_MISSING",
         )
-
-    require(
-        stage3_seed_bundle is not None,
-        "FORCERFT_STAGE3_SEED_REQUIRED_FOR_UNPUBLISHED_ACTOR_RESUME",
+    else:
+        residual = resume_checkpoint / "models/residual_actor.pt"
+    return base, residual.resolve(), revision_id, int(
+        runtime.get("online_joint_cycles", 0)
     )
-    seed = stage3_seed_bundle.resolve()
-    seed_metadata = json.loads((seed / "metadata.json").read_text(encoding="utf-8"))
-    require(
-        seed_metadata.get("kind") == "stage3_safe_seed_v1",
-        "FORCERFT_STAGE3_SEED_REQUIRED_FOR_UNPUBLISHED_ACTOR_RESUME",
-    )
-    revision_id = str(seed_metadata.get("actor_checkpoint", {}).get("checkpoint_id", ""))
-    require(bool(revision_id), "FORCERFT_DEPLOYED_ACTOR_METADATA_INVALID")
-    return seed / str(seed_metadata.get("actor_directory", "actor")), revision_id, None, 0
-
 
 def _session_was_sampled(
     session_id: str | None, selected_identities: list[str]
@@ -150,33 +117,8 @@ def _validate_cycle_completion(
     )
 
 
-def _refresh_training_schedules(learner: dict[str, Any]) -> None:
-    policy = learner.get("training_policy", OnlineTrainingPolicy())
-    schedules = joint.make_schedules(
-        learner["r_rng"],
-        learner["d_rng"],
-        r_population_size=len(learner["r_replay"].macros),
-        d_population=learner["d_replay"].population,
-        fm_population=learner["d_replay"].fm_population,
-        cycles=1,
-        critic_updates_per_cycle=policy.critic_updates_per_cycle,
-        actor_updates_per_cycle=policy.actor_updates_per_cycle,
-        demo_ratio=policy.demo_ratio,
-        online_ratio=policy.online_ratio,
-    )
-    (
-        learner["critic_r"],
-        learner["critic_d"],
-        learner["actor_r"],
-        learner["actor_d"],
-    ) = schedules
-    learner["d_replay"].prefetch_joint(
-        learner["critic_d"], learner["actor_d"]
-    )
-
-
 class ContinuousLearner:
-    """Persistent Learner over sealed replay, independent of episode boundaries."""
+    """Three-phase learner over sealed real ACK replay only."""
 
     def __init__(
         self,
@@ -187,11 +129,11 @@ class ContinuousLearner:
         replay_root: Path,
         current_session_id: str | None,
         task: str,
-        sft_reference_checkpoint: Path | None = None,
-        actor_readiness_manifest: Path | None = None,
-        actor_unlock_policy: ActorUnlockPolicy | None = None,
+        normalizer_path: Path | None = None,
         training_policy: OnlineTrainingPolicy | None = None,
     ) -> None:
+        from forcesmolvla.training_data import load_normalizer_manifest
+
         self.device = device
         self.resume_checkpoint = resume_checkpoint.resolve()
         self.checkpoint_root = checkpoint_root.resolve()
@@ -199,86 +141,31 @@ class ContinuousLearner:
         self.replay_root = replay_root.resolve()
         self.current_session_id = current_session_id
         self.task = task
-        self.sft_reference_checkpoint = (
-            None
-            if sft_reference_checkpoint is None
-            else sft_reference_checkpoint.resolve()
+        self.learner = prepare_learner(
+            device,
+            resume_checkpoint=self.resume_checkpoint,
         )
-        self.actor_readiness_manifest = (
-            self.checkpoint_root.parent
-            / "readiness/actor_update_readiness.json"
-            if actor_readiness_manifest is None
-            else actor_readiness_manifest.resolve()
+        self.training_policy = (
+            self.learner["training_policy"]
+            if training_policy is None
+            else training_policy
         )
-        self.actor_unlock_policy = actor_unlock_policy or ActorUnlockPolicy()
-        self.training_policy = training_policy or OnlineTrainingPolicy()
-        self.learner: dict[str, Any] | None = None
+        path = (
+            warmup.DATASET / "normalizer_manifest.json"
+            if normalizer_path is None
+            else Path(normalizer_path).resolve()
+        )
+        self.normalizer = load_normalizer_manifest(path)
+        self.replay: warmup.OnlineResidualReplay | None = None
         self.unique_r_count = 0
         self.r_macro_count = 0
         self._replay_signature: tuple[str, ...] | None = None
         self._replay_snapshot: tuple[Any, ...] | None = None
+        self._materialized_replay_signature: tuple[str, ...] | None = None
 
-    def _load_replay_snapshot(self) -> tuple[Any, ...]:
-        """Reload immutable replay only after a new episode seal appears."""
-
-        signature = tuple(
-            path.name
-            for path in sorted((self.replay_root / "episodes").glob("*.json"))
-        )
-        if self._replay_snapshot is None or signature != self._replay_signature:
-            self._replay_snapshot = warmup.load_formal_online_r(self.replay_root)
-            self._replay_signature = signature
-        return self._replay_snapshot
-
-    def export_actor_candidate(self, actor_optimizer_steps: int) -> dict[str, Any]:
-        """Save the exact Actor weights that may be activated next episode."""
-
-        require(self.learner is not None, "FORCERFT_ONLINE_LEARNER_NOT_READY")
-        from forcesmolvla.checkpoint import export_development_actor_checkpoint
-
-        learner = self.learner
-        task_id = str(learner["config"]["task"]["task_id"])
-        revision_id = f"{task_id}-online-actor-step-{actor_optimizer_steps:06d}"
-        destination = (
-            self.checkpoint_root.parent
-            / "actor_candidates"
-            / f"online_actor_step_{actor_optimizer_steps:06d}"
-        )
-        if destination.is_dir():
-            existing = json.loads(
-                (destination / "candidate.json").read_text(encoding="utf-8")
-            )
-            require(
-                existing.get("revision_id") == revision_id
-                and existing.get("published") is True,
-                "FORCERFT_ONLINE_ACTOR_CANDIDATE_COLLISION",
-            )
-            return {
-                "revision_id": revision_id,
-                "model_revision": str(existing["model_revision"]),
-                "checkpoint": destination.resolve(),
-                "actor_optimizer_steps": int(actor_optimizer_steps),
-            }
-        resume_metadata = json.loads(
-            (self.resume_checkpoint / "metadata.json").read_text(encoding="utf-8")
-        )
-        actor_directory = str(resume_metadata.get("actor_directory", "actor"))
-        manifest = export_development_actor_checkpoint(
-            policy=learner["actor"],
-            destination=destination,
-            runtime_parent=self.resume_checkpoint / actor_directory,
-            source_joint_checkpoint=self.resume_checkpoint,
-            candidate_revision_id=revision_id,
-            parent_binding_id=str(resume_metadata["parent_binding_id"]),
-            published=True,
-        )
-        model_revision = str(manifest["metadata"]["model_revision"])
-        return {
-            "revision_id": revision_id,
-            "model_revision": model_revision,
-            "checkpoint": destination.resolve(),
-            "actor_optimizer_steps": int(actor_optimizer_steps),
-        }
+    @property
+    def residual_actor(self) -> torch.nn.Module:
+        return self.learner["residual_actor"]
 
     def set_current_session(self, session_id: str) -> None:
         self.current_session_id = session_id
@@ -286,17 +173,29 @@ class ContinuousLearner:
     def clear_current_session(self) -> None:
         self.current_session_id = None
 
-    def _ensure_learner(self) -> bool:
-        if self.learner is not None:
-            return True
+    def _load_replay_snapshot(self) -> tuple[Any, ...]:
+        signature = self._episode_signature()
+        if self._replay_snapshot is None or signature != self._replay_signature:
+            self._replay_snapshot = warmup.load_formal_online_r(self.replay_root)
+            self._replay_signature = signature
+        return self._replay_snapshot
+
+    def _episode_signature(self) -> tuple[str, ...]:
+        return tuple(
+            path.name
+            for path in sorted((self.replay_root / "episodes").glob("*.json"))
+        )
+
+    def _refresh_replay(self) -> warmup.OnlineResidualReplay:
+        signature = self._episode_signature()
         if (
-            warmup.count_sealed_autonomous_policy_transitions(
-                self.replay_root
-            )
-            < self.training_policy.training_starts
+            self.replay is not None
+            and signature == self._materialized_replay_signature
         ):
-            return False
-        all_r, r_macros, source_episodes, human_rows = self._load_replay_snapshot()
+            return self.replay
+        all_r, policy_macros, _source_episodes, human_rows = (
+            self._load_replay_snapshot()
+        )
         if self.current_session_id is not None:
             require(
                 not any(
@@ -305,57 +204,224 @@ class ContinuousLearner:
                 ),
                 "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
             )
-        self.unique_r_count = len(all_r)
-        self.r_macro_count = len(r_macros)
-        self.learner = prepare_learner(
-            self.device,
-            all_r,
-            r_macros,
-            source_episodes,
-            human_rows,
-            resume_checkpoint=self.resume_checkpoint,
-            warmup_api=warmup,
-            joint_api=joint,
-            task=self.task,
-            sft_reference_checkpoint=self.sft_reference_checkpoint,
+        macros = (*policy_macros, *warmup.build_ack_macros(human_rows))
+        self.replay = warmup.OnlineResidualReplay(macros, self.normalizer)
+        self._materialized_replay_signature = signature
+        self._replay_snapshot = None
+        self.unique_r_count = len(all_r) + len(human_rows)
+        self.r_macro_count = len(macros)
+        runtime_replay = self.learner["runtime"]["replay"]
+        runtime_replay.update(
+            critic_td_valid_rows=self.replay.critic_td_valid_rows,
+            actor_q_valid_rows=self.replay.actor_q_valid_rows,
+            human_residual_valid_rows=self.replay.human_residual_valid_rows,
         )
-        return True
+        return self.replay
+
+    def _critic_update(
+        self,
+        coordinator: InferencePriorityCoordinator,
+        replay: warmup.OnlineResidualReplay,
+        *,
+        burnin: bool,
+    ) -> float:
+        learner = self.learner
+        counters = learner["runtime"]["counters"]
+        step = int(counters["critic_optimizer_steps"])
+        batch = replay.sample(
+            self.training_policy.critic_batch_size,
+            device=self.device,
+            seed=int(learner["config"]["environment"]["seed"]) + step,
+        )
+        require(batch is not None, "FORCERFT_CRITIC_REPLAY_EMPTY")
+        with coordinator.learner_step_slot(
+            "critic_burnin" if burnin else "critic"
+        ):
+            optimizer = learner["critic_optimizer"]
+            optimizer.zero_grad(set_to_none=True)
+            loss = residual_critic_loss(
+                learner["q1"],
+                learner["q2"],
+                learner["q1_target"],
+                learner["q2_target"],
+                learner["residual_actor_target"],
+                batch,
+                float(learner["config"]["loss"]["gamma_macro"]),
+            )
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                (*learner["q1"].parameters(), *learner["q2"].parameters()),
+                float(learner["config"]["optimizer"]["critic"]["grad_clip_norm"]),
+            )
+            optimizer.step()
+            tau = float(learner["config"]["optimizer"]["polyak_tau"])
+            polyak_update(learner["q1"], learner["q1_target"], tau)
+            polyak_update(learner["q2"], learner["q2_target"], tau)
+        counters["critic_optimizer_steps"] = step + 1
+        counters["target_polyak_steps"] = int(counters["target_polyak_steps"]) + 1
+        if burnin:
+            learner["runtime"]["critic_burnin_updates"] = (
+                int(learner["runtime"].get("critic_burnin_updates", 0)) + 1
+            )
+        return float(loss.detach())
+
+    def _actor_update(
+        self,
+        coordinator: InferencePriorityCoordinator,
+        replay: warmup.OnlineResidualReplay,
+    ) -> dict[str, float]:
+        learner = self.learner
+        counters = learner["runtime"]["counters"]
+        step = int(counters["actor_optimizer_steps"])
+        seed = int(learner["config"]["environment"]["seed"]) + 1_000_000 + step
+        policy_batch = replay.sample(
+            self.training_policy.actor_policy_batch_size,
+            device=self.device,
+            seed=seed,
+        )
+        human_batch = replay.sample(
+            self.training_policy.actor_human_batch_size,
+            device=self.device,
+            seed=seed + 1,
+            human_only=True,
+        )
+        require(policy_batch is not None, "FORCERFT_ACTOR_REPLAY_EMPTY")
+        critic_parameters = (
+            *learner["q1"].parameters(),
+            *learner["q2"].parameters(),
+        )
+        with coordinator.learner_step_slot(
+            "actor", episode_idle_required=True
+        ):
+            for parameter in critic_parameters:
+                parameter.requires_grad_(False)
+            try:
+                optimizer = learner["residual_actor_optimizer"]
+                optimizer.zero_grad(set_to_none=True)
+                losses = residual_actor_loss(
+                    learner["q1"],
+                    learner["q2"],
+                    learner["residual_actor"],
+                    policy_batch,
+                    human_batch,
+                    actor_q_weight=float(
+                        learner["config"]["loss"]["actor_q_weight"]
+                    ),
+                    residual_l2_weight=float(
+                        learner["config"]["loss"]["residual_l2_weight"]
+                    ),
+                    human_residual_weight=float(
+                        learner["config"]["loss"]["human_residual_weight"]
+                    ),
+                )
+                losses.total.backward()
+                torch.nn.utils.clip_grad_norm_(
+                    learner["residual_actor"].parameters(),
+                    float(
+                        learner["config"]["optimizer"]["actor"]["grad_clip_norm"]
+                    ),
+                )
+                optimizer.step()
+            finally:
+                for parameter in critic_parameters:
+                    parameter.requires_grad_(True)
+            polyak_update(
+                learner["residual_actor"],
+                learner["residual_actor_target"],
+                float(learner["config"]["optimizer"]["polyak_tau"]),
+            )
+        counters["actor_optimizer_steps"] = step + 1
+        return {
+            "total": float(losses.total.detach()),
+            "value": float(losses.value.detach()),
+            "residual": float(losses.residual.detach()),
+            "human": float(losses.human.detach()),
+        }
 
     def __call__(
         self, coordinator: InferencePriorityCoordinator
     ) -> dict[str, Any]:
-        current_session_id = self.current_session_id
-        if not self._ensure_learner():
-            return {
-                "waiting_for_replay": True,
-                "learner_critic_steps": 0,
-                "learner_actor_steps": 0,
-                "learner_polyak_steps": 0,
-                "current_episode_sampled": False,
-                "nonfinite_count": 0,
-                "oom_count": 0,
-            }
-        assert self.learner is not None
         learner = self.learner
-        all_r, r_macros, source_episodes, human_rows = self._load_replay_snapshot()
-        if current_session_id is not None:
+        runtime = learner["runtime"]
+        signature = self._episode_signature()
+        count = (
+            self.replay.critic_td_valid_rows
+            if self.replay is not None
+            and signature == self._materialized_replay_signature
+            else warmup.count_sealed_critic_td_valid_transitions(self.replay_root)
+        )
+        runtime["replay"]["critic_td_valid_rows"] = count
+        if count < self.training_policy.training_starts:
+            runtime["phase"] = "collecting"
+            return {
+                "waiting_for_replay": True,
+                "phase": "collecting",
+                "learner_critic_steps": 0,
+                "learner_actor_steps": 0,
+                "learner_polyak_steps": 0,
+                "current_episode_sampled": False,
+                "nonfinite_count": 0,
+                "oom_count": 0,
+            }
+
+        replay = self._refresh_replay()
+        if runtime["phase"] in {"collecting", "critic_burnin"}:
+            runtime["phase"] = "critic_burnin"
+            before = {
+                name: value.detach().clone()
+                for name, value in learner["residual_actor"].state_dict().items()
+            }
+            losses = []
+            remaining = (
+                self.training_policy.critic_burnin_updates
+                - int(runtime.get("critic_burnin_updates", 0))
+            )
+            for _ in range(max(0, remaining)):
+                losses.append(
+                    self._critic_update(coordinator, replay, burnin=True)
+                )
             require(
-                not any(
-                    row["identity"].get("session_id") == current_session_id
-                    for row in [*all_r, *human_rows]
+                all(
+                    torch.equal(before[name], value)
+                    for name, value in learner["residual_actor"].state_dict().items()
                 ),
-                "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
+                "FORCERFT_BURNIN_MODIFIED_RESIDUAL_ACTOR",
             )
-        reconcile_post_checkpoint_replay(learner["credits"], all_r)
-        online_cycle = int(learner.get("online_joint_cycles", 0))
-        cycle_budget = self.training_policy.joint_cycle_budget(
-            len(source_episodes)
+            runtime["phase"] = "joint"
+            runtime["critic_burnin_complete"] = True
+            return {
+                "waiting_for_replay": False,
+                "phase": "joint",
+                "critic_burnin_complete": True,
+                "critic_burnin_updates": int(runtime["critic_burnin_updates"]),
+                "learner_critic_steps": len(losses),
+                "learner_actor_steps": 0,
+                "learner_polyak_steps": len(losses),
+                "online_joint_cycle": int(runtime["online_joint_cycles"]),
+                "actor_optimizer_steps": int(
+                    runtime["counters"]["actor_optimizer_steps"]
+                ),
+                "latest_critic_td_loss": losses[-1] if losses else None,
+                "current_episode_sampled": False,
+                "nonfinite_count": 0,
+                "oom_count": 0,
+            }
+
+        require(
+            runtime["phase"] == "joint"
+            and runtime["critic_burnin_complete"] is True,
+            "FORCERFT_ONLINE_PHASE_INVALID",
         )
-        if online_cycle >= cycle_budget:
+        cycle = int(runtime["online_joint_cycles"])
+        budget = self.training_policy.joint_cycle_budget(
+            replay.critic_rows_per_episode
+        )
+        if cycle >= budget:
             return {
                 "waiting_for_replay": True,
+                "phase": "joint",
                 "episode_cycle_budget_exhausted": True,
-                "episode_cycle_budget": cycle_budget,
+                "episode_cycle_budget": budget,
                 "learner_critic_steps": 0,
                 "learner_actor_steps": 0,
                 "learner_polyak_steps": 0,
@@ -363,321 +429,81 @@ class ContinuousLearner:
                 "nonfinite_count": 0,
                 "oom_count": 0,
             }
-        if not learner["credits"].can_consume_joint_cycle():
-            return {
-                "waiting_for_replay": True,
-                "learner_critic_steps": 0,
-                "learner_actor_steps": 0,
-                "learner_polyak_steps": 0,
-                "current_episode_sampled": False,
-                "nonfinite_count": 0,
-                "oom_count": 0,
-            }
-        if len(r_macros) != len(learner["r_replay"].macros):
-            learner["r_replay"] = warmup.FormalReplay(
-                r_macros, source_episodes, learner["normalizer"]
-            )
-            learner["actor_q_valid_ack_rows"] = sum(
-                int(macro.actor_q_eligibility.valid) for macro in r_macros
-            )
-        if len(human_rows) != len(learner["d_replay"].human_replay.rows):
-            learner["d_replay"].set_human_rows(
-                human_rows, source_episodes
-            )
-        self.unique_r_count = len(all_r)
-        self.r_macro_count = len(r_macros)
-        previous = learner["runtime"]["counters"]
-        critic_offset = int(previous["critic_optimizer_steps"])
-        base_cycle = int(previous["joint_cycles"])
-        selected_identities: list[str] = []
-        td_losses: list[float] = []
-        nonfinite_count = 0
-        oom_count = 0
 
-        def learner_slot(kind: str):
-            return coordinator.learner_step_slot(
-                kind,
-                episode_idle_required=kind.startswith("actor"),
-            )
-
-        learner["credits"].consume_joint_cycle()
-        for substep in range(self.training_policy.critic_updates_per_cycle):
-            rows = [
-                learner["r_replay"].materialize(index)
-                for index in learner["critic_r"][substep]
-            ]
-            rows.extend(
-                learner["d_replay"].materialize(index)
-                for index in learner["critic_d"][substep]
-            )
-            selected_identities.extend(str(row["identity"]) for row in rows)
-            try:
-                with learner_slot("critic_batch_prepare"):
-                    batch = warmup.build_batch(
-                        rows,
-                        learner["actor"],
-                        learner["feature"],
-                        self.device,
-                    )
-                record = joint.critic_step(
-                    step=critic_offset + substep,
-                    actor=learner["actor"],
-                    q1=learner["q1"],
-                    q2=learner["q2"],
-                    q1_target=learner["q1_target"],
-                    q2_target=learner["q2_target"],
-                    optimizer=learner["critic_optimizer"],
-                    batch=batch,
-                    flow=learner["flow"],
-                    noise_generator=learner["critic_noise"],
-                    delta_mean=learner["delta_mean"],
-                    delta_std=learner["delta_std"],
-                    microbatch_size=4,
-                    microbatch_slot=learner_slot,
-                )
-                del batch
-            except torch.cuda.OutOfMemoryError:
-                oom_count += 1
-                raise
-            except FloatingPointError:
-                nonfinite_count += 1
-                raise
-            td_losses.append(float(record["loss"]))
-            learner["critic_scheduler"].step()
-
-        if not learner["actor_updates_enabled"]:
-            learner["critic_only_updates"] += (
-                self.training_policy.critic_updates_per_cycle
-            )
-            learner["actor_updates_enabled"] = actor_unlock_is_ready(
-                self.actor_readiness_manifest,
-                actor_q_valid_ack_rows=learner["actor_q_valid_ack_rows"],
-                critic_only_updates=learner["critic_only_updates"],
-                policy=self.actor_unlock_policy,
-            )
-
-        actor_records: list[dict[str, Any]] = []
-        if learner["actor_updates_enabled"]:
-            for actor_substep, (r_indices, d_indices) in enumerate(
-                zip(learner["actor_r"], learner["actor_d"], strict=True)
-            ):
-                rows = [
-                    joint._online_actor_row(learner["r_replay"], index)
-                    for index in r_indices
-                ]
-                rows.extend(
-                    learner["d_replay"].materialize_actor(index)
-                    for index in d_indices
-                )
-                selected_identities.extend(str(row["identity"]) for row in rows)
-                try:
-                    with learner_slot("actor_batch_prepare"):
-                        batch = joint.build_actor_training_batch(
-                            rows,
-                            learner["actor"],
-                            learner["feature"],
-                            self.device,
-                        )
-                    actor_records.append(
-                        joint.actor_step(
-                            cycle=(
-                                int(previous["actor_optimizer_steps"])
-                                + actor_substep
-                            ),
-                            actor=learner["actor"],
-                            q1=learner["q1"],
-                            q2=learner["q2"],
-                            q1_target=learner["q1_target"],
-                            q2_target=learner["q2_target"],
-                            optimizer=learner["actor_optimizer"],
-                            scheduler=learner["actor_scheduler"],
-                            batch=batch,
-                            flow=learner["flow"],
-                            delta_mean=learner["delta_mean"],
-                            delta_std=learner["delta_std"],
-                            config=learner["config"],
-                            microbatch_slot=learner_slot,
-                            reference_actor=learner["reference_actor"],
-                            q_gradient_controller=learner[
-                                "q_gradient_controller"
-                            ],
-                        )
-                    )
-                    del batch
-                except torch.cuda.OutOfMemoryError:
-                    oom_count += 1
-                    raise
-                except FloatingPointError:
-                    nonfinite_count += 1
-                    raise
-
-        current_episode_sampled = _session_was_sampled(
-            current_session_id, selected_identities
-        )
-        # This cycle owns its in-memory replay snapshot. Append-only Online-R
-        # growth becomes visible on the next cycle, as in ConRFT.
-        _validate_cycle_completion(
-            current_episode_sampled=current_episode_sampled,
-            nonfinite_count=nonfinite_count,
-            oom_count=oom_count,
-        )
-        counters = {
-            "joint_cycles": base_cycle + 1,
-            "critic_optimizer_steps": (
-                critic_offset + self.training_policy.critic_updates_per_cycle
-            ),
-            "actor_optimizer_steps": int(previous["actor_optimizer_steps"])
-            + len(actor_records),
-            "target_polyak_steps": int(previous["target_polyak_steps"])
-            + self.training_policy.target_polyak_updates_per_cycle,
-        }
-        runtime_state = {
-            "online_joint_cycles": online_cycle + 1,
-            "source_checkpoint": str(self.resume_checkpoint),
-            "reference_actor_checkpoint": str(
-                learner["reference_actor_checkpoint"]
-            ),
-            "q_gradient_controller": learner[
-                "q_gradient_controller"
-            ].state_dict(),
-            "critic_only_updates": learner["critic_only_updates"],
-            "flags": {
-                "critic_ready": True,
-                "critic_updates_enabled": True,
-                "actor_updates_enabled": learner["actor_updates_enabled"],
-                "actor_q_guidance_enabled": learner["actor_updates_enabled"],
-            },
-            "counters": counters,
-            "replay": {
-                "formal_r_root": str(self.replay_root),
-                "unique_r_transition_count": self.unique_r_count,
-                "new_r_transition_count": learner["new_r_transition_count"],
-                "eligible_ack_macro_count": self.r_macro_count,
-                "actor_q_valid_ack_rows": learner["actor_q_valid_ack_rows"],
-                "mix": {"R": 32, "D": 32},
-                "current_episode_sampled": False,
-            },
-            "sample_credit": learner["credits"].state_dict(),
-            "sampler_state": {
-                "cycle": online_cycle + 1,
-                "r_rng": learner["r_rng"].getstate(),
-                "d_rng": learner["d_rng"].getstate(),
-            },
-            "rng_state": {
-                "python": random.getstate(),
-                "numpy": np.random.get_state(),
-                "torch_cpu": torch.get_rng_state(),
-                "torch_cuda": torch.cuda.get_rng_state_all(),
-                "critic_noise_generator": learner["critic_noise"].get_state().cpu(),
-            },
-            "optimizer_ownership": {
-                "overlap": 0,
-                "frozen_vlm_or_state_prefix_in_actor_optimizer": 0,
-                "critic_optimizer_restored_from_joint_checkpoint": True,
-                "actor_optimizer_restored_from_joint_checkpoint": True,
-            },
-            "runtime_artifacts": learner["runtime"].get("runtime_artifacts", {}),
-            "step_metrics": {
-                "critic_td_loss": td_losses,
-                "actor_fm_loss": (
-                    [float(record["fm_loss"]) for record in actor_records]
-                ),
-                "actor_min_twin_q_loss": (
-                    [float(record["actor_q_loss"]) for record in actor_records]
-                ),
-            },
-        }
-        learner["runtime"] = runtime_state
-        learner["online_joint_cycles"] = online_cycle + 1
-        _refresh_training_schedules(learner)
+        critic_losses = [
+            self._critic_update(coordinator, replay, burnin=False)
+            for _ in range(self.training_policy.critic_updates_per_cycle)
+        ]
+        actor_metrics = self._actor_update(coordinator, replay)
+        runtime["online_joint_cycles"] = cycle + 1
+        learner["online_joint_cycles"] = cycle + 1
         latest_checkpoint = None
-        if self.training_policy.checkpoint_due(online_cycle + 1):
+        if self.training_policy.checkpoint_due(cycle + 1):
             latest_checkpoint = self.save_checkpoint()
-        latest_actor = actor_records[-1] if actor_records else None
-        latest_actor_diagnostics = (
-            latest_actor.get("diagnostics", {}) if latest_actor is not None else {}
-        )
         return {
+            "waiting_for_replay": False,
+            "phase": "joint",
             "learner_critic_steps": self.training_policy.critic_updates_per_cycle,
-            "learner_actor_steps": len(actor_records),
-            "learner_polyak_steps": self.training_policy.target_polyak_updates_per_cycle,
+            "learner_actor_steps": 1,
+            "learner_polyak_steps": self.training_policy.critic_updates_per_cycle,
             "current_episode_sampled": False,
-            "nonfinite_count": nonfinite_count,
-            "oom_count": oom_count,
-            "online_joint_cycle": online_cycle + 1,
-            "actor_optimizer_steps": counters["actor_optimizer_steps"],
-            "learner_actor": learner["actor"],
-            "actor_updates_enabled": learner["actor_updates_enabled"],
-            "critic_only_updates": learner["critic_only_updates"],
-            "latest_critic_td_loss": td_losses[-1] if td_losses else None,
-            "latest_actor_fm_loss": (
-                None if latest_actor is None else float(latest_actor["fm_loss"])
+            "nonfinite_count": 0,
+            "oom_count": 0,
+            "online_joint_cycle": cycle + 1,
+            "actor_optimizer_steps": int(
+                runtime["counters"]["actor_optimizer_steps"]
             ),
-            "latest_min_twin_q": (
-                None if latest_actor is None else -float(latest_actor["actor_q_loss"])
-            ),
-            "adaptive_q_eta": latest_actor_diagnostics.get("adaptive_q_eta"),
-            "q_to_preservation_grad_ratio": latest_actor_diagnostics.get(
-                "q_to_fm_parameter_gradient_ratio"
-            ),
+            "latest_critic_td_loss": critic_losses[-1],
+            "latest_actor_loss": actor_metrics["total"],
+            "latest_min_twin_q": -actor_metrics["value"],
             "latest_checkpoint_path": (
                 None if latest_checkpoint is None else str(latest_checkpoint)
             ),
         }
 
-    def save_checkpoint(self) -> Path | None:
-        if self.learner is None:
-            return None
+    def export_actor_candidate(self, actor_optimizer_steps: int) -> dict[str, Any]:
+        runtime = self.learner["runtime"]
+        current = str(runtime["active_residual_revision"])
+        task_id = current.split("-residual-step-", 1)[0]
+        revision_id = f"{task_id}-residual-step-{actor_optimizer_steps:06d}"
+        destination = (
+            self.checkpoint_root.parent
+            / "actor_candidates"
+            / f"online_actor_step_{actor_optimizer_steps:06d}"
+        )
+        destination.mkdir(parents=True, exist_ok=True)
+        path = destination / "residual_actor.pt"
+        if not path.exists():
+            torch.save(self.learner["residual_actor"].state_dict(), path)
+        return {
+            "revision_id": revision_id,
+            "checkpoint": destination.resolve(),
+            "actor_optimizer_steps": int(actor_optimizer_steps),
+        }
+
+    def mark_active_residual_revision(self, revision_id: str) -> None:
+        self.learner["runtime"]["active_residual_revision"] = str(revision_id)
+
+    def save_checkpoint(self) -> Path:
         learner = self.learner
-        completed = int(learner.get("online_joint_cycles", 0))
-        if completed <= 0:
-            return None
+        completed = int(learner["runtime"]["online_joint_cycles"])
         target = online_checkpoint_path(self.checkpoint_root, completed)
-        if not target.exists():
-            joint.save_joint_checkpoint(
-                target,
-                actor=learner["actor"], modules=learner["modules"],
-                critic_optimizer=learner["critic_optimizer"],
-                actor_optimizer=learner["actor_optimizer"],
-                actor_scheduler=learner["actor_scheduler"],
-                critic_scheduler=learner["critic_scheduler"],
-                runtime_state=learner["runtime"], parent_binding=None,
-                actor_parent_path=self.resume_checkpoint / "actor",
-                parent_binding_id=(
-                    f"{learner['config']['task']['task_id']}"
-                    "-online-actor-critic-exact-resume"
-                ),
-                source_checkpoint=self.resume_checkpoint,
-                total_joint_cycles=int(learner["runtime"]["counters"]["joint_cycles"]),
-                actor_checkpoint_id=f"online-actor-critic-cycle-{completed:06d}",
-                checkpoint_kind="online_actor_critic_exact_resume",
-                actor_directory="actor",
-                metadata_overrides={
-                    "critic_ready": bool(
-                        learner["runtime"]["flags"]["actor_updates_enabled"]
-                    ),
-                    "critic_updates_enabled": True,
-                    "actor_updates_enabled": bool(
-                        learner["runtime"]["flags"]["actor_updates_enabled"]
-                    ),
-                    "actor_q_guidance_enabled": bool(
-                        learner["runtime"]["flags"]["actor_updates_enabled"]
-                    ),
-                    "online_training_schedule": {
-                        "critic_updates_per_cycle": (
-                            self.training_policy.critic_updates_per_cycle
-                        ),
-                        "actor_updates_per_cycle": (
-                            self.training_policy.actor_updates_per_cycle
-                        ),
-                        "target_polyak_updates_per_cycle": (
-                            self.training_policy.target_polyak_updates_per_cycle
-                        ),
-                    },
-                },
-            )
+        save_residual_checkpoint(
+            target,
+            residual_actor=learner["residual_actor"],
+            residual_actor_target=learner["residual_actor_target"],
+            q1=learner["q1"],
+            q2=learner["q2"],
+            q1_target=learner["q1_target"],
+            q2_target=learner["q2_target"],
+            residual_actor_optimizer=learner["residual_actor_optimizer"],
+            critic_optimizer=learner["critic_optimizer"],
+            runtime_state=learner["runtime"],
+            config=learner["config"],
+        )
         retain_latest_online_checkpoints(
-            self.checkpoint_root, keep=self.training_policy.keep_latest_checkpoints
+            self.checkpoint_root,
+            keep=self.training_policy.keep_latest_checkpoints,
         )
         return target
 
@@ -708,6 +534,9 @@ class AsyncPolicyLearnerRuntime:
         self.active_revision_id = active_revision_id
         self.active_model_revision = active_model_revision
         self.active_actor_checkpoint = active_actor_checkpoint.resolve()
+        self.base_actor_checkpoint = Path(
+            engine.metadata.get("checkpoint", active_actor_checkpoint)
+        ).resolve()
         self.learner_resume_checkpoint = learner_resume_checkpoint.resolve()
         self.online_checkpoint_root = online_checkpoint_root.resolve()
         self.learner_job = learner_job
@@ -745,6 +574,9 @@ class AsyncPolicyLearnerRuntime:
 
     @property
     def metadata(self) -> dict[str, Any]:
+        learner_runtime = getattr(self.learner_job, "learner", {}).get(
+            "runtime", {}
+        )
         return {
             **self.engine.metadata,
             "online_actor_learner": True,
@@ -758,7 +590,10 @@ class AsyncPolicyLearnerRuntime:
             "active_actor_online_cycle": self._active_actor_online_cycle,
             "checkpoint_period": self._policy.checkpoint_period,
             "keep_latest_checkpoints": self._policy.keep_latest_checkpoints,
-            "actor_readiness_mode": self.learner_job.actor_unlock_policy.mode,
+            "phase": learner_runtime.get("phase", "collecting"),
+            "critic_burnin_complete": bool(
+                learner_runtime.get("critic_burnin_complete", False)
+            ),
             "save_checkpoint_on_graceful_exit": True,
             "save_checkpoint_on_operator_q": True,
             "runtime_session_id": self.session_id,
@@ -768,6 +603,7 @@ class AsyncPolicyLearnerRuntime:
             "active_actor_revision": self.active_revision_id,
             "active_actor_model_revision": self.active_model_revision,
             "active_actor_checkpoint": str(self.active_actor_checkpoint),
+            "base_actor_checkpoint": str(self.base_actor_checkpoint),
             "pending_actor_revision": self.machine.pending_revision_id,
             "actor_candidate_count": self._candidate_count,
             "policy_epoch": int(self.machine.policy_epoch),
@@ -777,6 +613,9 @@ class AsyncPolicyLearnerRuntime:
     def status(self) -> dict[str, Any]:
         with self._lock:
             result = dict(self._learner_result)
+            learner_runtime = getattr(self.learner_job, "learner", {}).get(
+                "runtime", {}
+            )
             return {
                 "online_actor_learner": True,
                 "server_persistent": True,
@@ -788,6 +627,7 @@ class AsyncPolicyLearnerRuntime:
                 "active_actor_revision": self.active_revision_id,
                 "active_actor_model_revision": self.active_model_revision,
                 "active_actor_checkpoint": str(self.active_actor_checkpoint),
+                "base_actor_checkpoint": str(self.base_actor_checkpoint),
                 "pending_actor_revision": self.machine.pending_revision_id,
                 "actor_candidate_count": self._candidate_count,
                 "policy_epoch": int(self.machine.policy_epoch),
@@ -817,17 +657,18 @@ class AsyncPolicyLearnerRuntime:
                 "active_actor_online_cycle": self._active_actor_online_cycle,
                 "online_joint_cycle": int(result.get("online_joint_cycle", 0)),
                 "actor_optimizer_steps": int(result.get("actor_optimizer_steps", 0)),
-                "actor_updates_enabled": bool(
-                    result.get("actor_updates_enabled", False)
+                "phase": result.get(
+                    "phase", learner_runtime.get("phase", "collecting")
                 ),
-                "critic_only_updates": int(result.get("critic_only_updates", 0)),
+                "critic_burnin_complete": bool(
+                    learner_runtime.get("critic_burnin_complete", False)
+                ),
+                "critic_burnin_updates": int(
+                    learner_runtime.get("critic_burnin_updates", 0)
+                ),
                 "latest_critic_td_loss": result.get("latest_critic_td_loss"),
-                "latest_actor_fm_loss": result.get("latest_actor_fm_loss"),
+                "latest_actor_loss": result.get("latest_actor_loss"),
                 "latest_min_twin_q": result.get("latest_min_twin_q"),
-                "adaptive_q_eta": result.get("adaptive_q_eta"),
-                "q_to_preservation_grad_ratio": result.get(
-                    "q_to_preservation_grad_ratio"
-                ),
             }
 
     def start_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -856,6 +697,7 @@ class AsyncPolicyLearnerRuntime:
         require(bool(session_id and episode_id), "ONLINE_REPLAY_ASYNC_CAPTURE_IDENTITY_MISMATCH")
         with self._lock:
             self._activate_pending_actor_locked()
+            self.engine.reset_residual_episode_context()
             self.session_id = session_id
             self.episode_id = episode_id
             self.learner_job.set_current_session(session_id)
@@ -863,13 +705,14 @@ class AsyncPolicyLearnerRuntime:
 
     def _stage_actor_candidate(self, candidate: Mapping[str, Any]) -> None:
         revision_id = str(candidate["revision_id"])
-        model_revision = str(candidate["model_revision"])
         checkpoint = Path(candidate["checkpoint"]).resolve()
         with self._lock:
             pending = self.machine.pending_revision_id
             if pending is not None:
                 self.machine.reject(pending, "superseded by a newer Actor candidate")
-            self.machine.register_candidate(revision_id, model_revision)
+            # Capture identity remains bound to the immutable frozen base Actor.
+            # Residual revisions are tracked by revision_id, not a new digest.
+            self.machine.register_candidate(revision_id, self.active_model_revision)
             self.machine.stage(revision_id)
             self._candidate_checkpoints[revision_id] = checkpoint
             self._candidate_online_cycles[revision_id] = int(
@@ -878,8 +721,7 @@ class AsyncPolicyLearnerRuntime:
             self._candidate_count += 1
         print(
             "[model] staged online Actor candidate "
-            f"revision={revision_id} model={model_revision} "+
-            f"checkpoint={checkpoint}",
+            f"revision={revision_id} checkpoint={checkpoint}",
             flush=True,
         )
 
@@ -890,22 +732,18 @@ class AsyncPolicyLearnerRuntime:
         checkpoint = self._candidate_checkpoints[pending]
         activated = self.machine.activate_pending_at_episode_boundary()
         with self.engine._lock:
-            _load_actor_checkpoint(self.engine.policy, checkpoint)
-            self.engine.checkpoint = checkpoint
-            self.engine.model_sha256 = activated.model_sha256
-            self.engine.metadata["checkpoint"] = str(checkpoint)
-            self.engine.metadata["model_sha256"] = activated.model_sha256
+            _load_residual_checkpoint(self.engine.residual_actor, checkpoint)
+        self.engine.reset_residual_episode_context()
         self.active_revision_id = activated.revision_id
-        self.active_model_revision = activated.model_sha256
         self.active_actor_checkpoint = checkpoint
+        self.learner_job.mark_active_residual_revision(activated.revision_id)
         self._active_actor_online_cycle = self._candidate_online_cycles.pop(
             activated.revision_id
         )
         self._broadcast_count += 1
         print(
             "[model] activated online Actor at episode boundary "
-            f"revision={activated.revision_id} model={activated.model_sha256} "+
-            f"epoch={self.machine.policy_epoch}",
+            f"revision={activated.revision_id} epoch={self.machine.policy_epoch}",
             flush=True,
         )
 
@@ -1097,23 +935,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task", required=True)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--dataset-root", type=Path)
-    parser.add_argument("--reward-transition-root", type=Path)
     parser.add_argument("--safety-config", type=Path)
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--episode-id", required=True)
     parser.add_argument("--learner-resume-checkpoint", type=Path)
     parser.add_argument("--stage3-seed-bundle", type=Path)
-    parser.add_argument("--sft-reference-checkpoint", type=Path)
-    parser.add_argument("--actor-readiness-manifest", type=Path)
-    parser.add_argument(
-        "--actor-readiness-mode",
-        choices=(
-            "offline_critic_ready",
-            "manual_approval",
-            "automatic_readiness",
-        ),
-    )
-    parser.add_argument("--allow-legacy-offline-fallback", action="store_true")
     parser.add_argument(
         "--allow-development-policy-execution-smoke",
         action="store_true",
@@ -1131,7 +957,6 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     from forcesmolvla.training_runtime import (
         resolve_task_dataset_root,
         resolve_task_output_root,
-        resolve_task_reward_transition_root,
     )
 
     require(
@@ -1145,62 +970,39 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     dataset_root = resolve_task_dataset_root(
         ROOT, task_id=args.task_id, dataset_root=args.dataset_root
     )
-    reward_transition_root = resolve_task_reward_transition_root(
-        ROOT,
-        task_id=args.task_id,
-        reward_transition_root=args.reward_transition_root,
-    )
     warmup.configure_task_paths(
         task_id=args.task_id,
         dataset_root=dataset_root,
-        reward_transition_root=reward_transition_root,
         output_root=output_root,
     )
     require(warmup.TASK == args.task.strip(), "FORCERFT_TASK_PROMPT_MISMATCH")
-    resume_checkpoint = (
-        select_resume_or_seed_checkpoint(
+    if args.learner_resume_checkpoint is None:
+        selected = select_resume_or_seed_checkpoint(
             output_root,
             configured_seed_bundle=getattr(args, "stage3_seed_bundle", None),
-            allow_legacy_offline_fallback=getattr(
-                args, "allow_legacy_offline_fallback", False
-            ),
-        ).path
-        if args.learner_resume_checkpoint is None
-        else args.learner_resume_checkpoint.resolve()
-    )
-    checkpoint_metadata = json.loads(
-        (resume_checkpoint / "metadata.json").read_text(encoding="utf-8")
-    )
-    checkpoint_kind = str(checkpoint_metadata.get("kind", ""))
-    require(
-        checkpoint_kind
-        in {
-            "stage3_safe_seed_v1",
-            "legacy_offline_actor_critic_ablation",
-            "offline_actor_critic_exact_resume",
-            "online_actor_critic_exact_resume",
-        }
-        and (
-            checkpoint_kind
-            not in {
-                "legacy_offline_actor_critic_ablation",
-                "offline_actor_critic_exact_resume",
-            }
-            or getattr(args, "allow_legacy_offline_fallback", False)
         )
-        and exact_resume_checkpoint_is_recoverable(
+        resume_checkpoint = selected.path
+        checkpoint_kind = selected.kind
+    else:
+        resume_checkpoint = args.learner_resume_checkpoint.resolve()
+        checkpoint_kind = (
+            "stage3_seed"
+            if resume_checkpoint.name.startswith("stage3_base_actor_residual_q_")
+            else "online_residual_actor_critic"
+        )
+    require(
+        exact_resume_checkpoint_is_recoverable(
             resume_checkpoint, expected_kind=checkpoint_kind
         ),
         "FORCERFT_EXACT_RESUME_CHECKPOINT_INVALID",
     )
     (
-        actor_package,
+        base_actor_checkpoint,
+        residual_checkpoint,
         active_revision_id,
-        expected_model_revision,
         active_actor_online_cycle,
     ) = _select_deployed_actor_for_resume(
         resume_checkpoint=resume_checkpoint,
-        stage3_seed_bundle=getattr(args, "stage3_seed_bundle", None),
     )
     device = torch.device("cuda:0")
     safety_config = (
@@ -1209,7 +1011,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         else args.safety_config.resolve()
     )
     engine = serve_policy.InferenceEngine(
-        actor_package,
+        base_actor_checkpoint,
         safety_config,
         ROOT / "schemas/rulespec.schema.json",
         device,
@@ -1222,25 +1024,22 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         "gripper_max_age_ms": 300.0,
         "controller_ack_timeout_ms": 20.0,
     })
+    engine.policy.eval().requires_grad_(False)
     require(
-        checkpoint_kind
-        in {
-            "stage3_safe_seed_v1",
-            "legacy_offline_actor_critic_ablation",
-            "offline_actor_critic_exact_resume",
-            "online_actor_critic_exact_resume",
-        }
-        and active_revision_id,
-        "FORCERFT_EXACT_RESUME_METADATA_INVALID",
-    )
-    require(
-        expected_model_revision in {None, engine.model_sha256},
-        "FORCERFT_DEPLOYED_ACTOR_MODEL_REVISION_MISMATCH",
+        active_revision_id
+        and not any(parameter.requires_grad for parameter in engine.policy.parameters()),
+        "FORCERFT_BASE_ACTOR_NOT_FROZEN",
     )
     common_config = warmup.load_common_actor_critic_config(args.task_id)
+    warmup_config = common_config["warmup"]
+    batching_config = common_config["batching"]
     online_config = common_config["online_training"]
-    initial_policy_epoch = (
-        active_actor_online_cycle // int(online_config["actor_candidate_period"])
+    try:
+        active_actor_steps = int(active_revision_id.rsplit("-", 1)[1])
+    except ValueError:
+        active_actor_steps = 0
+    initial_policy_epoch = active_actor_steps // int(
+        online_config["actor_candidate_period"]
     )
     machine = InMemoryRevisionStateMachine(
         RevisionRecord(
@@ -1251,16 +1050,18 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         initial_epoch=initial_policy_epoch,
     )
     checkpoint_root = output_root / "online/checkpoints"
-    actor_unlock_config = common_config["actor_unlock"]
     training_policy = OnlineTrainingPolicy(
-        training_starts=int(online_config["training_starts"]),
-        demo_ratio=float(online_config["demo_ratio"]),
-        online_ratio=float(online_config["online_ratio"]),
+        training_starts=int(warmup_config["training_starts"]),
+        critic_burnin_updates=int(warmup_config["critic_burnin_updates"]),
+        critic_batch_size=int(batching_config["critic_batch_size"]),
+        actor_policy_batch_size=int(
+            batching_config["actor_policy_batch_size"]
+        ),
+        actor_human_batch_size=int(
+            batching_config["actor_human_batch_size"]
+        ),
         critic_updates_per_cycle=int(online_config["critic_updates_per_cycle"]),
         actor_updates_per_cycle=int(online_config["actor_updates_per_cycle"]),
-        target_polyak_updates_per_cycle=int(
-            online_config["target_polyak_updates_per_cycle"]
-        ),
         max_joint_cycles_per_admitted_episode=int(
             online_config["max_joint_cycles_per_admitted_episode"]
         ),
@@ -1270,11 +1071,6 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         checkpoint_period=int(online_config["checkpoint_period"]),
         keep_latest_checkpoints=int(online_config["keep_latest_checkpoints"]),
     )
-    sft_reference_checkpoint = (
-        output_root / "sft/checkpoints/forcesmolvla_sft_step_010000"
-        if args.sft_reference_checkpoint is None
-        else args.sft_reference_checkpoint.resolve()
-    )
     learner = ContinuousLearner(
         device=device,
         resume_checkpoint=resume_checkpoint,
@@ -1282,29 +1078,18 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         replay_root=output_root / "online",
         current_session_id=args.session_id,
         task=args.task.strip(),
-        sft_reference_checkpoint=sft_reference_checkpoint,
-        actor_readiness_manifest=args.actor_readiness_manifest,
-        actor_unlock_policy=ActorUnlockPolicy(
-            minimum_actor_q_valid_ack_rows=int(
-                actor_unlock_config["minimum_actor_q_valid_ack_rows"]
-            ),
-            minimum_critic_only_updates=int(
-                actor_unlock_config["minimum_critic_only_updates"]
-            ),
-            minimum_same_state_comparisons=int(
-                actor_unlock_config["minimum_same_state_comparisons"]
-            ),
-            minimum_human_gt_policy_fraction=float(
-                actor_unlock_config["minimum_human_gt_policy_fraction"]
-            ),
-            mode=(
-                actor_unlock_config["mode"]
-                if args.actor_readiness_mode is None
-                else args.actor_readiness_mode
-            ),
-        ),
+        normalizer_path=dataset_root / "normalizer_manifest.json",
         training_policy=training_policy,
     )
+    engine.residual_actor = WristWrenchResidualActor(
+        hidden_dim=int(common_config["residual_actor"]["hidden_dim"]),
+        max_normalized_residual=float(
+            common_config["residual_actor"]["max_normalized_residual"]
+        ),
+    ).to(device)
+    engine.residual_actor.eval().requires_grad_(False)
+    if active_actor_steps > 0:
+        _load_residual_checkpoint(engine.residual_actor, residual_checkpoint)
     return AsyncPolicyLearnerRuntime(
         engine=engine,
         machine=machine,
@@ -1312,7 +1097,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         episode_id=args.episode_id,
         active_revision_id=active_revision_id,
         active_model_revision=engine.model_sha256,
-        active_actor_checkpoint=actor_package,
+        active_actor_checkpoint=residual_checkpoint,
         learner_resume_checkpoint=resume_checkpoint,
         online_checkpoint_root=checkpoint_root,
         learner_job=learner,

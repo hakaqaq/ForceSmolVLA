@@ -1966,6 +1966,15 @@ class IntegratedCaptureBackend:
                         "action_semantics": "absolute7",
                         "valid_horizon": int(result["valid_horizon"]),
                         "actions_absolute7": actions.tolist(),
+                        "base_normalized_actions": result.get(
+                            "base_normalized_actions"
+                        ),
+                        "applied_residual_tcp6": result.get(
+                            "applied_residual_tcp6"
+                        ),
+                        "final_normalized_actions": result.get(
+                            "final_normalized_actions"
+                        ),
                         "executed_action_source": "policy",
                         "formal_replay": False,
                         "real_online_r": False,
@@ -2003,6 +2012,15 @@ class IntegratedCaptureBackend:
                         "action_semantics": "absolute7",
                         "valid_horizon": int(result["valid_horizon"]),
                         "actions_absolute7": actions.tolist(),
+                        "base_normalized_actions": result.get(
+                            "base_normalized_actions"
+                        ),
+                        "applied_residual_tcp6": result.get(
+                            "applied_residual_tcp6"
+                        ),
+                        "final_normalized_actions": result.get(
+                            "final_normalized_actions"
+                        ),
                         "server_timing": {
                             key: result[key]
                             for key in (
@@ -2152,6 +2170,36 @@ class IntegratedCaptureBackend:
                     "apply_selection_monotonic_ns": selection_ns,
                     "selected_post_adapter_absolute7": target.tolist(),
                     "normalized_action7": normalized.tolist(),
+                    "base_normalized_action7": (
+                        result_base[action_index]
+                        if (
+                            isinstance(
+                                result_base := current_chunk["result"].get(
+                                    "base_normalized_actions"
+                                ),
+                                list,
+                            )
+                            and len(result_base) == 50
+                        )
+                        else normalized.tolist()
+                    ),
+                    "applied_residual_tcp6": (
+                        current_chunk["result"].get("applied_residual_tcp6")
+                        or [0.0] * 6
+                    ),
+                    "final_normalized_action7": (
+                        result_final[action_index]
+                        if (
+                            isinstance(
+                                result_final := current_chunk["result"].get(
+                                    "final_normalized_actions"
+                                ),
+                                list,
+                            )
+                            and len(result_final) == 50
+                        )
+                        else normalized.tolist()
+                    ),
                 }
                 audited_decision = dict(decision)
                 audited_decision["forcesmolvla_chunk_selection"] = selection

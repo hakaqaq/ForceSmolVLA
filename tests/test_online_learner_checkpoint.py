@@ -1,73 +1,103 @@
 from __future__ import annotations
 
-from copy import deepcopy
+from pathlib import Path
 
-import pytest
+import torch
+import yaml
 
+from forcesmolvla.rft.critic import build_twin_q, state_exact
+from forcesmolvla.rft.online.actor_learner_runtime import prepare_learner
 from forcesmolvla.rft.online.learner_checkpoint import (
-    OnlineCheckpointSchemaError,
-    cpu_round_trip_online_checkpoint,
-    validate_online_checkpoint_metadata,
+    RESIDUAL_CHECKPOINT_FILES,
+    residual_checkpoint_is_recoverable,
+    save_residual_checkpoint,
 )
+from forcesmolvla.rft.residual_actor import make_residual_actor_pair
 
 
-SHA = "a" * 64
+ROOT = Path(__file__).parents[1]
 
 
-def state_ref(name: str) -> dict:
-    return {"relative_path": f"state/{name}.pt", "sha256": SHA}
-
-
-def checkpoint_payload() -> dict:
-    return {
-        "schema_version": "forcesmolvla_stage3_online_checkpoint.v1",
-        "checkpoint_id": "checkpoint-2",
-        "boundary": {
-            "episode_sealed": True, "learner_update_committed": True,
-            "pending_graphs": 0, "pending_optimizer_steps": 0,
-        },
-        "parent": {
-            "binding_status": "approved_hybrid",
-            "cross_stage_optimizer_rebuilt": True,
-        },
-        "models": {name: state_ref(name) for name in ("actor", "q1", "q2", "q1_target", "q2_target")},
-        "optimizers": {name: state_ref(f"{name}_optimizer") for name in ("actor", "critic")},
-        "schedulers": {name: state_ref(f"{name}_scheduler") for name in ("actor", "critic")},
-        "rng": state_ref("rng"),
-        "samplers": state_ref("samplers"),
-        "replay": {
-            "canonical_index_sha256": SHA, "R_watermark": 2, "D_watermark": 1,
-            "wal_committed_offset": 2, "episode_finalization_state": "sealed",
-            "outbox_cursor": 2,
-        },
-        "credits": {"minted": 2, "consumed": 2, "available": 0},
-        "publication": {
-            "active_revision": "r0", "pending_revision": None,
-            "previous_revision": None, "policy_epoch": 0,
-        },
+def test_residual_checkpoint_restores_phase_burnin_and_only_requested_state(
+    tmp_path: Path,
+) -> None:
+    config = yaml.safe_load(
+        (ROOT / "configs/forcerft/actor_critic_common.yaml").read_text()
+    )
+    actor, actor_target = make_residual_actor_pair(hidden_dim=256)
+    q1, q2, q1_target, q2_target = build_twin_q(hidden_dim=256, seed=3)
+    actor_optimizer = torch.optim.Adam(actor.parameters(), lr=1e-4)
+    critic_optimizer = torch.optim.Adam(
+        (*q1.parameters(), *q2.parameters()), lr=3e-4
+    )
+    runtime = {
+        "base_actor_checkpoint": "/fixed/base",
+        "phase": "critic_burnin",
+        "critic_burnin_complete": False,
+        "critic_burnin_updates": 137,
+        "online_joint_cycles": 0,
+        "active_residual_revision": "task3-residual-step-000000",
         "counters": {
-            "learner_cycles": 2, "critic_updates": 4, "actor_updates": 2,
-            "polyak_updates_per_target": 4, "publication_count": 0,
+            "critic_optimizer_steps": 137,
+            "actor_optimizer_steps": 0,
+            "target_polyak_steps": 137,
         },
-        "bindings": {"source_tree_sha256": SHA, "action_contract_sha256": SHA},
-        "authorization": {"deployment_release": False, "robot_execution": False},
+        "replay": {
+            "critic_td_valid_rows": 100,
+            "actor_q_valid_rows": 80,
+            "human_residual_valid_rows": 0,
+        },
     }
+    checkpoint = tmp_path / "online_actor_critic_cycle_000000"
+    save_residual_checkpoint(
+        checkpoint,
+        residual_actor=actor,
+        residual_actor_target=actor_target,
+        q1=q1,
+        q2=q2,
+        q1_target=q1_target,
+        q2_target=q2_target,
+        residual_actor_optimizer=actor_optimizer,
+        critic_optimizer=critic_optimizer,
+        runtime_state=runtime,
+        config=config,
+    )
 
+    assert residual_checkpoint_is_recoverable(checkpoint)
+    assert {
+        path.relative_to(checkpoint).as_posix()
+        for path in checkpoint.rglob("*")
+        if path.is_file()
+    } == set(RESIDUAL_CHECKPOINT_FILES)
+    assert not (checkpoint / "metadata.json").exists()
+    assert not (checkpoint / "manifest.json").exists()
 
-def test_checkpoint_schema_and_cpu_json_round_trip() -> None:
-    value = checkpoint_payload()
-    assert validate_online_checkpoint_metadata(value) == value
-    decoded, encoded = cpu_round_trip_online_checkpoint(value)
-    assert decoded == value and isinstance(encoded, bytes)
+    restored = prepare_learner(torch.device("cpu"), resume_checkpoint=checkpoint)
+    assert restored["runtime"] == runtime
+    assert state_exact(actor, restored["residual_actor"])
+    assert state_exact(q1, restored["q1"])
+    assert state_exact(q2_target, restored["q2_target"])
 
-
-def test_checkpoint_fails_nonboundary_and_counter_or_credit_drift() -> None:
-    pending = checkpoint_payload(); pending["boundary"]["pending_optimizer_steps"] = 1
-    with pytest.raises(OnlineCheckpointSchemaError, match="SCHEMA"):
-        validate_online_checkpoint_metadata(pending)
-    counter = checkpoint_payload(); counter["counters"]["critic_updates"] = 3
-    with pytest.raises(OnlineCheckpointSchemaError, match="CRITIC_COUNTER"):
-        validate_online_checkpoint_metadata(counter)
-    credit = checkpoint_payload(); credit["credits"]["available"] = 1
-    with pytest.raises(OnlineCheckpointSchemaError, match="CREDIT_LEDGER"):
-        validate_online_checkpoint_metadata(credit)
+    runtime["phase"] = "joint"
+    runtime["critic_burnin_complete"] = True
+    runtime["critic_burnin_updates"] = 256
+    runtime["counters"]["critic_optimizer_steps"] = 256
+    runtime["counters"]["target_polyak_steps"] = 256
+    save_residual_checkpoint(
+        checkpoint,
+        residual_actor=actor,
+        residual_actor_target=actor_target,
+        q1=q1,
+        q2=q2,
+        q1_target=q1_target,
+        q2_target=q2_target,
+        residual_actor_optimizer=actor_optimizer,
+        critic_optimizer=critic_optimizer,
+        runtime_state=runtime,
+        config=config,
+    )
+    resumed_again = prepare_learner(
+        torch.device("cpu"), resume_checkpoint=checkpoint
+    )
+    assert resumed_again["runtime"]["phase"] == "joint"
+    assert resumed_again["runtime"]["critic_burnin_updates"] == 256

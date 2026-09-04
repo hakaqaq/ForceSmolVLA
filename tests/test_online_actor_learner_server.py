@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import io
-import json
 from pathlib import Path
 import sys
 import threading
-import time
-from types import SimpleNamespace
 
 import pytest
 import torch
@@ -14,104 +10,56 @@ import torch
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-import serve_forcerft_actor_learner as server  # noqa: E402
 from serve_forcerft_actor_learner import (  # noqa: E402
     AsyncPolicyLearnerRuntime,
     ContinuousLearner,
-    RequestHandler,
     _select_deployed_actor_for_resume,
 )
-from forcesmolvla.rft.online.actor_learner_runtime import (
-    InferencePriorityCoordinator,
-    reconcile_post_checkpoint_replay,
+from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
+    OnlineTrainingPolicy,
 )
-from forcesmolvla.rft.online.sample_credit import UpdateCreditLedger
+from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
+    InMemoryRevisionStateMachine,
+    RevisionRecord,
+    RevisionState,
+)
 
 
-class FakeMachine:
-    active_revision_id = "active-cycle10"
-    policy_epoch = 1
-
-    def __init__(self) -> None:
-        self.active = False
-        self.pending_revision_id = None
-        self.pending_model_revision = None
-
-    def begin_episode(self) -> str:
-        assert not self.active
-        self.active = True
-        return self.active_revision_id
-
-    def episode_pin(self):
-        return type("Pin", (), {"model_sha256": "model-cycle10", "policy_epoch": 1})()
-
-    def assert_episode_binding(self, revision, model, epoch) -> None:
-        assert (revision, model, epoch) == (
-            self.active_revision_id, "model-cycle10", 1,
-        )
-
-    def end_episode(self) -> None:
-        assert self.active
-        self.active = False
-
-    def register_candidate(self, revision_id, model_revision):
-        self.pending_revision_id = revision_id
-        self.pending_model_revision = model_revision
-
-    def stage(self, revision_id):
-        assert revision_id == self.pending_revision_id
-
-    def reject(self, revision_id, _reason):
-        assert revision_id == self.pending_revision_id
-        self.pending_revision_id = None
-        self.pending_model_revision = None
-
-    def activate_pending_at_episode_boundary(self):
-        assert not self.active and self.pending_revision_id is not None
-        self.active_revision_id = self.pending_revision_id
-        self.policy_epoch += 1
-        result = type("Revision", (), {
-            "revision_id": self.pending_revision_id,
-            "model_sha256": self.pending_model_revision,
-        })()
-        self.pending_revision_id = None
-        self.pending_model_revision = None
-        return result
+BASE_MODEL_ID = "a" * 64
 
 
 class FakeEngine:
     def __init__(self) -> None:
         self.metadata = {
             "service_role": "model_inference_only",
-            "model_sha256": "model-cycle10",
+            "model_sha256": BASE_MODEL_ID,
         }
         self._lock = threading.Lock()
-        self.policy = FakePolicy()
+        self.policy = torch.nn.Linear(1, 1)
+        self.residual_actor = torch.nn.Linear(1, 1)
+        torch.nn.init.zeros_(self.residual_actor.weight)
+        torch.nn.init.zeros_(self.residual_actor.bias)
+        self.reset_count = 0
+
+    def reset_residual_episode_context(self) -> None:
+        self.reset_count += 1
 
     def infer(self, request):
-        time.sleep(0.02)
         return {"request_id": request["request_id"], "actions": [[0.0] * 7] * 50}
-
-
-class FakePolicy:
-    def __init__(self) -> None:
-        self.value = 0
-
-    def state_dict(self):
-        return {"value": self.value}
-
-    def load_state_dict(self, state, strict=True):
-        assert strict is True
-        self.value = state["value"]
-
-    def eval(self):
-        return self
 
 
 class FakeLearner:
     def __init__(self) -> None:
-        self.cycle = 0
+        self.training_policy = OnlineTrainingPolicy()
         self.save_calls = 0
+        self.learner = {
+            "runtime": {
+                "phase": "joint",
+                "critic_burnin_complete": True,
+                "critic_burnin_updates": 256,
+                "active_residual_revision": "task3-residual-step-000000",
+            }
+        }
 
     def set_current_session(self, _session_id: str) -> None:
         pass
@@ -119,478 +67,136 @@ class FakeLearner:
     def clear_current_session(self) -> None:
         pass
 
+    def mark_active_residual_revision(self, revision_id: str) -> None:
+        self.learner["runtime"]["active_residual_revision"] = revision_id
+
     def save_checkpoint(self):
         self.save_calls += 1
         return None
 
-    def __call__(self, coordinator):
-        with coordinator.learner_step_slot("critic", initial_estimate_s=0.0):
-            time.sleep(0.005)
-        self.cycle += 1
-        actor = FakePolicy()
-        actor.value = self.cycle
-        return {
-            "learner_critic_steps": 2,
-            "learner_actor_steps": 1,
-            "learner_polyak_steps": 2,
-            "current_episode_sampled": False,
-            "nonfinite_count": 0,
-            "oom_count": 0,
-            "online_joint_cycle": self.cycle,
-            "actor_optimizer_steps": self.cycle,
-            "learner_actor": actor,
-            "latest_checkpoint_path": None,
-        }
-
-    def export_actor_candidate(self, actor_optimizer_steps):
-        return {
-            "revision_id": f"candidate-{actor_optimizer_steps}",
-            "model_revision": f"model-{actor_optimizer_steps}",
-            "checkpoint": Path(f"/tmp/candidate-{actor_optimizer_steps}"),
-            "actor_optimizer_steps": actor_optimizer_steps,
-        }
+    def __call__(self, _coordinator):
+        return {"waiting_for_replay": True, "phase": "joint"}
 
 
-class FailingLearner(FakeLearner):
-    def __call__(self, coordinator):
-        raise RuntimeError("learner failed after a partial cycle")
-
-
-def _runtime(
-    *, learner: FakeLearner | None = None, checkpoint_root: Path | None = None
-) -> AsyncPolicyLearnerRuntime:
+def runtime(tmp_path: Path) -> AsyncPolicyLearnerRuntime:
+    revision = "task3-residual-step-000000"
+    machine = InMemoryRevisionStateMachine(
+        RevisionRecord(revision, BASE_MODEL_ID, RevisionState.ACTIVE)
+    )
     return AsyncPolicyLearnerRuntime(
         engine=FakeEngine(),
-        machine=FakeMachine(),
+        machine=machine,
         session_id="session-1",
-        episode_id="episode_000000",
-        active_revision_id="active-cycle10",
-        active_model_revision="model-cycle10",
-        active_actor_checkpoint=Path("/tmp/active-cycle10"),
-        learner_resume_checkpoint=Path("/tmp/cycle20"),
-        online_checkpoint_root=checkpoint_root or Path("/tmp/online-checkpoints"),
-        learner_job=learner or FakeLearner(),
+        episode_id="episode-1",
+        active_revision_id=revision,
+        active_model_revision=BASE_MODEL_ID,
+        active_actor_checkpoint=tmp_path / "initial-residual",
+        learner_resume_checkpoint=tmp_path / "seed",
+        online_checkpoint_root=tmp_path / "online/checkpoints",
+        learner_job=FakeLearner(),
+        active_actor_online_cycle=0,
     )
 
 
-def _identity() -> dict[str, str]:
+def identity() -> dict[str, str]:
     return {
         "session_id": "session-1",
-        "episode_id": "episode_000000",
-        "policy_revision": "model-cycle10",
+        "episode_id": "episode-1",
+        "policy_revision": BASE_MODEL_ID,
     }
 
 
-def _write_checkpoint_metadata(path: Path, *, kind: str, checkpoint_id: str) -> None:
-    path.mkdir(parents=True)
-    (path / "metadata.json").write_text(
-        json.dumps({
-            "kind": kind,
-            "actor_directory": "actor",
-            "actor_checkpoint": {"checkpoint_id": checkpoint_id},
-        }),
-        encoding="utf-8",
-    )
-
-
-def test_online_resume_deploys_latest_published_actor_not_working_copy(
-    tmp_path: Path,
-) -> None:
-    seed = tmp_path / "stage3_seed"
-    _write_checkpoint_metadata(
-        seed, kind="stage3_safe_seed_v1", checkpoint_id="sft-seed"
-    )
-    (seed / "actor").mkdir()
-    resume = tmp_path / "online/checkpoints/online_actor_critic_cycle_000006"
-    _write_checkpoint_metadata(
-        resume,
-        kind="online_actor_critic_exact_resume",
-        checkpoint_id="working-step-6",
-    )
-    (resume / "state").mkdir()
+def test_resume_keeps_fixed_base_and_restores_active_residual(tmp_path: Path) -> None:
+    resume = tmp_path / "online/checkpoints/online_actor_critic_cycle_000010"
+    (resume / "state").mkdir(parents=True)
+    (resume / "models").mkdir()
+    base = tmp_path / "fixed-base"
     torch.save(
-        {"counters": {"actor_optimizer_steps": 6}},
-        resume / "state/runtime_state.pt",
-    )
-    candidates = resume.parent.parent / "actor_candidates"
-    for step, published in ((5, True), (10, True)):
-        candidate = candidates / f"online_actor_step_{step:06d}"
-        candidate.mkdir(parents=True)
-        (candidate / "model.safetensors").touch()
-        (candidate / "config.json").touch()
-        (candidate / "candidate.json").write_text(
-            json.dumps({
-                "published": published,
-                "state": "published",
-                "revision_id": f"actor-step-{step}",
-                "model_revision": f"model-step-{step}",
-            }),
-            encoding="utf-8",
-        )
-
-    checkpoint, revision, model, step = _select_deployed_actor_for_resume(
-        resume_checkpoint=resume,
-        stage3_seed_bundle=seed,
-    )
-
-    assert checkpoint == (candidates / "online_actor_step_000005").resolve()
-    assert (revision, model, step) == ("actor-step-5", "model-step-5", 5)
-
-
-def test_online_resume_without_published_actor_keeps_sft_seed(tmp_path: Path) -> None:
-    seed = tmp_path / "stage3_seed"
-    _write_checkpoint_metadata(
-        seed, kind="stage3_safe_seed_v1", checkpoint_id="sft-seed"
-    )
-    (seed / "actor").mkdir()
-    resume = tmp_path / "online/checkpoints/online_actor_critic_cycle_000004"
-    _write_checkpoint_metadata(
-        resume,
-        kind="online_actor_critic_exact_resume",
-        checkpoint_id="working-step-4",
-    )
-    (resume / "state").mkdir()
-    torch.save(
-        {"counters": {"actor_optimizer_steps": 4}},
-        resume / "state/runtime_state.pt",
-    )
-
-    checkpoint, revision, model, step = _select_deployed_actor_for_resume(
-        resume_checkpoint=resume,
-        stage3_seed_bundle=seed,
-    )
-
-    assert checkpoint == (seed / "actor").resolve()
-    assert (revision, model, step) == ("sft-seed", None, 0)
-
-
-def test_resume_reconciles_append_only_replay_and_credits_once() -> None:
-    credits = UpdateCreditLedger(
-        credits_per_transition=1, credits_per_joint_cycle=1,
-    )
-    checkpoint_uids = [f"checkpoint-{index:03d}" for index in range(618)]
-    post_checkpoint_uids = [f"episode-006-{index:03d}" for index in range(202)]
-    for uid in checkpoint_uids:
-        assert credits.mint_for_unique_online_transition(uid)
-    for _ in range(122):
-        credits.consume_joint_cycle()
-    rows = [
         {
-            "identity": {
-                "transition_uid": uid,
-                "episode_id": (
-                    "episode_006" if uid.startswith("episode-006-")
-                    else "checkpoint_episode"
-                ),
-            }
-        }
-        for uid in checkpoint_uids + post_checkpoint_uids
-    ]
-
-    assert reconcile_post_checkpoint_replay(credits, rows) == 202
-    assert credits.snapshot().credited_transition_count == 820
-    assert credits.snapshot().available == 698
-    assert {
-        row["identity"]["transition_uid"]
-        for row in rows if row["identity"]["episode_id"] == "episode_006"
-    } == set(post_checkpoint_uids)
-    assert reconcile_post_checkpoint_replay(credits, rows) == 0
-    assert credits.snapshot().available == 698
-
-
-def test_resume_accepts_fully_consumed_replay_credit() -> None:
-    credits = UpdateCreditLedger(
-        credits_per_transition=1, credits_per_joint_cycle=1,
+            "base_actor_checkpoint": str(base),
+            "active_residual_revision": "task3-residual-step-000010",
+            "online_joint_cycles": 10,
+        },
+        resume / "state/runtime_state.pt",
     )
-    rows = [
-        {"identity": {"transition_uid": f"transition-{index}"}}
-        for index in range(3)
-    ]
-    for row in rows:
-        credits.mint_for_unique_online_transition(
-            row["identity"]["transition_uid"]
-        )
-        credits.consume_joint_cycle()
-
-    assert credits.snapshot().available == 0
-    assert reconcile_post_checkpoint_replay(credits, rows) == 0
-
-
-def test_less_than_100_online_rows_runs_no_optimizer_step(tmp_path: Path) -> None:
-    learner = ContinuousLearner(
-        device=torch.device("cpu"),
-        resume_checkpoint=tmp_path / "resume",
-        checkpoint_root=tmp_path / "checkpoints",
-        replay_root=tmp_path / "online",
-        current_session_id=None,
-        task="ring",
-    )
-    result = learner(InferencePriorityCoordinator())
-    assert result["waiting_for_replay"] is True
-    assert result["learner_critic_steps"] == 0
-    assert result["learner_actor_steps"] == 0
-    assert result["learner_polyak_steps"] == 0
-    assert learner.learner is None
-
-
-def test_training_start_prepares_learner_on_configured_device(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    device = torch.device("cpu")
-    learner = ContinuousLearner(
-        device=device,
-        resume_checkpoint=tmp_path / "resume",
-        checkpoint_root=tmp_path / "checkpoints",
-        replay_root=tmp_path / "online",
-        current_session_id=None,
-        task="ring",
-    )
-    observed: list[torch.device] = []
-    monkeypatch.setattr(
-        server.warmup,
-        "count_sealed_autonomous_policy_transitions",
-        lambda _root: 100,
-    )
-    monkeypatch.setattr(
-        server.warmup,
-        "load_formal_online_r",
-        lambda _root: ([], [], {}, []),
-    )
-    monkeypatch.setattr(
-        server,
-        "prepare_learner",
-        lambda configured_device, *_args, **_kwargs: observed.append(
-            configured_device
-        ) or {},
+    torch.save({}, resume / "models/residual_actor.pt")
+    candidate = tmp_path / "online/actor_candidates/online_actor_step_000010"
+    candidate.mkdir(parents=True)
+    torch.save({}, candidate / "residual_actor.pt")
+    selected = _select_deployed_actor_for_resume(resume_checkpoint=resume)
+    assert selected == (
+        base.resolve(),
+        (candidate / "residual_actor.pt").resolve(),
+        "task3-residual-step-000010",
+        10,
     )
 
-    assert learner._ensure_learner() is True
-    assert observed == [device]
 
-
-def test_replay_snapshot_reloads_only_after_new_episode_seal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    replay_root = tmp_path / "online"
-    episodes = replay_root / "episodes"
-    episodes.mkdir(parents=True)
-    learner = ContinuousLearner(
-        device=torch.device("cpu"),
-        resume_checkpoint=tmp_path / "resume",
-        checkpoint_root=tmp_path / "checkpoints",
-        replay_root=replay_root,
-        current_session_id=None,
-        task="ring",
-    )
-    calls = []
-    monkeypatch.setattr(
-        server.warmup,
-        "load_formal_online_r",
-        lambda _root: calls.append(
-            tuple(sorted(path.name for path in episodes.iterdir()))
-        ) or ([], (), {}, []),
-    )
-
-    learner._load_replay_snapshot()
-    learner._load_replay_snapshot()
-    (episodes / "session-1.json").write_text("{}", encoding="utf-8")
-    learner._load_replay_snapshot()
-
-    assert calls == [(), ("session-1.json",)]
-
-
-def test_refreshed_schedule_is_prefetched_before_next_cycle(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    schedules = ([[1], [2]], [[3], [4]], [[5]], [[6]])
-    calls = []
-
-    class DemoReplay:
-        population = (0, 1, 2)
-        fm_population = (0, 1, 2)
-
-        def prefetch_joint(self, critic, actor) -> None:
-            calls.append((critic, actor))
-
-    learner = {
-        "r_rng": object(),
-        "d_rng": object(),
-        "r_replay": SimpleNamespace(macros=(0, 1, 2)),
-        "d_replay": DemoReplay(),
+def test_candidate_contains_only_residual_actor_state(tmp_path: Path) -> None:
+    learner = ContinuousLearner.__new__(ContinuousLearner)
+    learner.checkpoint_root = tmp_path / "online/checkpoints"
+    learner.learner = {
+        "residual_actor": torch.nn.Linear(2, 1),
+        "runtime": {"active_residual_revision": "task3-residual-step-000000"},
     }
-    monkeypatch.setattr(server.joint, "make_schedules", lambda *_args, **_kwargs: schedules)
-
-    server._refresh_training_schedules(learner)
-
-    assert learner["critic_r"] == schedules[0]
-    assert learner["actor_d"] == schedules[3]
-    assert calls == [(schedules[1], schedules[3])]
-
-
-def test_no_active_episode_is_never_reported_as_sampled() -> None:
-    assert server._session_was_sampled(
-        None, ["{'session_id': 'completed-episode'}"]
-    ) is False
+    candidate = learner.export_actor_candidate(10)
+    files = {
+        path.relative_to(candidate["checkpoint"]).as_posix()
+        for path in candidate["checkpoint"].rglob("*")
+        if path.is_file()
+    }
+    assert candidate["revision_id"] == "task3-residual-step-000010"
+    assert files == {"residual_actor.pt"}
 
 
-def test_append_only_replay_does_not_invalidate_cycle_completion(
+def test_step_10_candidate_activates_only_after_episode_boundary(
     tmp_path: Path,
 ) -> None:
-    replay = tmp_path / "replay"
-    replay.mkdir()
-    before = tuple(replay.iterdir())
-    (replay / "admitted-during-cycle.json").write_text("{}", encoding="utf-8")
-    assert tuple(replay.iterdir()) != before
-
-    server._validate_cycle_completion(
-        current_episode_sampled=False, nonfinite_count=0, oom_count=0
-    )
-    with pytest.raises(RuntimeError, match="LEARNER_COMPLETION_CONTRACT"):
-        server._validate_cycle_completion(
-            current_episode_sampled=True, nonfinite_count=0, oom_count=0
-        )
-
-
-def test_cycle_five_candidate_activates_only_after_episode_boundary(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch,
-) -> None:
-    learner = FakeLearner()
-    checkpoint_root = tmp_path / "online-checkpoints"
-    runtime = _runtime(learner=learner, checkpoint_root=checkpoint_root)
-    monkeypatch.setattr(
-        server,
-        "_load_actor_checkpoint",
-        lambda policy, checkpoint: setattr(
-            policy, "value", int(checkpoint.name.rsplit("-", 1)[1])
-        ),
-    )
-    runtime.start_episode(_identity())
-    runtime.infer({
-        "request_id": "request-1",
-        "provenance": {"session_id": "session-1"},
-    })
-    deadline = time.monotonic() + 2.0
-    while runtime.status()["pending_actor_revision"] is None:
-        assert time.monotonic() < deadline
-        time.sleep(0.005)
-    assert runtime.engine.policy.value == 0
-    assert runtime.status()["actor_parameter_broadcast_count"] == 0
-    runtime.abort_episode(_identity())
-    assert runtime.engine.policy.value == 5
-    assert runtime.status()["active_actor_online_cycle"] == 5
-    assert runtime.status()["actor_parameter_broadcast_count"] == 1
-    assert "[model] activated online Actor at episode boundary" in capsys.readouterr().out
-    assert not checkpoint_root.exists()
-    next_identity = {
-        **_identity(),
-        "policy_revision": "model-5",
+    service = runtime(tmp_path)
+    base_before = {
+        name: value.detach().clone()
+        for name, value in service.engine.policy.state_dict().items()
     }
-    report = runtime.checkpoint_on_operator_q(next_identity)
-    assert report["operator_q_checkpoint_path"] is None
-    runtime.stop()
-    assert learner.save_calls == 1
+    candidate = tmp_path / "candidate"
+    candidate.mkdir()
+    replacement = torch.nn.Linear(1, 1)
+    torch.nn.init.constant_(replacement.weight, 2.0)
+    torch.nn.init.constant_(replacement.bias, 3.0)
+    torch.save(replacement.state_dict(), candidate / "residual_actor.pt")
+
+    service.start_episode(identity())
+    service._stage_actor_candidate(
+        {
+            "revision_id": "task3-residual-step-000010",
+            "checkpoint": candidate,
+            "online_joint_cycle": 10,
+        }
+    )
+    assert torch.count_nonzero(service.engine.residual_actor.weight) == 0
+    assert service.active_revision_id.endswith("000000")
+    service.end_episode(identity())
+    assert torch.equal(service.engine.residual_actor.weight, replacement.weight)
+    assert torch.equal(service.engine.residual_actor.bias, replacement.bias)
+    assert service.active_revision_id.endswith("000010")
+    assert service.engine.reset_count == 1
+    assert all(
+        torch.equal(base_before[name], value)
+        for name, value in service.engine.policy.state_dict().items()
+    )
+    assert service.active_model_revision == BASE_MODEL_ID
 
 
-def test_stop_without_operator_q_does_not_save() -> None:
-    learner = FakeLearner()
-    runtime = _runtime(learner=learner)
-
-    runtime.stop()
-
-    assert learner.save_calls == 0
-
-
-def test_quiesce_and_save_waits_for_learner_and_saves_once() -> None:
-    learner = FakeLearner()
-    runtime = _runtime(learner=learner)
-
-    first = runtime.quiesce_and_save({})
-    second = runtime.quiesce_and_save({})
-
-    assert first["quiesced"] is second["quiesced"] is True
-    assert learner.save_calls == 1
-
-
-def test_failed_learner_is_not_checkpointed_on_stop() -> None:
-    learner = FailingLearner()
-    runtime = _runtime(learner=learner)
-    runtime.start_episode(_identity())
-    runtime.infer({
-        "request_id": "request-1",
-        "provenance": {"session_id": "session-1"},
-    })
-    deadline = time.monotonic() + 2.0
-    while runtime.status()["learner_state"] != "failed":
-        assert time.monotonic() < deadline
-        time.sleep(0.005)
-    runtime.abort_episode(_identity())
-    runtime.stop()
-    assert learner.save_calls == 0
-
-
-def test_runtime_pins_actor_and_runs_persistent_learner() -> None:
-    runtime = _runtime()
-    runtime.start_episode(_identity())
-    result = runtime.infer({
-        "request_id": "request-1",
-        "provenance": {"session_id": "session-1"},
-    })
-    assert result["request_id"] == "request-1"
-    deadline = time.monotonic() + 2.0
-    while runtime.status()["learner_actor_steps"] < 1:
-        assert time.monotonic() < deadline
-        time.sleep(0.005)
-    runtime.end_episode(_identity())
-    status = runtime.status()
-    assert status["actor_and_learner_concurrently_alive"] is True
-    assert status["learner_critic_steps"] == 2
-    assert status["learner_actor_steps"] == 1
-    assert status["current_episode_sampled"] is False
-    assert status["server_persistent"] is True
-    runtime.stop()
-
-
-def test_runtime_rejects_capture_and_inference_identity_mismatch() -> None:
-    runtime = _runtime()
+def test_runtime_identity_and_graceful_checkpoint(tmp_path: Path) -> None:
+    service = runtime(tmp_path)
     with pytest.raises(RuntimeError, match="CAPTURE_IDENTITY_MISMATCH"):
-        runtime.start_episode({**_identity(), "episode_id": "wrong"})
-    runtime.start_episode(_identity())
+        service.start_episode({**identity(), "episode_id": "wrong"})
+    service.start_episode(identity())
     with pytest.raises(RuntimeError, match="INFERENCE_SESSION_MISMATCH"):
-        runtime.infer({
-            "request_id": "request-1",
-            "provenance": {"session_id": "wrong"},
-        })
-    runtime.abort_episode(_identity())
-    runtime.stop()
-
-
-def test_http_runtime_endpoints_share_the_inference_runtime() -> None:
-    runtime = _runtime()
-    handler = object.__new__(RequestHandler)
-    handler.server = SimpleNamespace(engine=runtime)
-    responses: list[tuple[int, dict]] = []
-    handler._write_json = lambda code, payload: responses.append((code, payload))
-    try:
-        import json
-
-        body = json.dumps(_identity()).encode()
-        handler.path = "/runtime/episode-start"
-        handler.headers = {"Content-Length": str(len(body))}
-        handler.rfile = io.BytesIO(body)
-        handler.do_POST()
-        assert responses.pop(0)[0] == 200
-
-        infer = json.dumps({
-            "request_id": "request-http",
-            "provenance": {"session_id": "session-1"},
-        }).encode()
-        handler.path = "/infer"
-        handler.headers = {"Content-Length": str(len(infer))}
-        handler.rfile = io.BytesIO(infer)
-        handler.do_POST()
-        assert responses.pop(0) == (200, {
-            "request_id": "request-http", "actions": [[0.0] * 7] * 50,
-        })
-    finally:
-        runtime.abort_episode(_identity())
-        runtime.stop()
+        service.infer(
+            {"request_id": "bad", "provenance": {"session_id": "wrong"}}
+        )
+    service.abort_episode(identity())
+    first = service.quiesce_and_save({})
+    second = service.quiesce_and_save({})
+    assert first["quiesced"] and second["quiesced"]
+    assert service.learner_job.save_calls == 1

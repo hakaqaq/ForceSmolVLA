@@ -1,23 +1,12 @@
 from __future__ import annotations
 
 import json
-import inspect
 from pathlib import Path
 
 import numpy as np
 import pytest
-import torch
-from torch import nn
 
 from forcesmolvla.rft.online import temporal_parity as temporal_parity_module
-from forcesmolvla.rft.critic import (
-    ForceAwareMacroCritic,
-    FrozenConRFTResNet10,
-    frozen_task_feature,
-)
-from forcesmolvla.rft.losses import CriticObservation
-from forcesmolvla.rft.frozen_vlm_trainability import frozen_prefix_flow_matching_terms
-from forcesmolvla.rft.online.training_losses import compute_online_twin_q_td_loss
 from forcesmolvla.rft.online.temporal_parity import (
     ROOT,
     TemporalParityError,
@@ -28,7 +17,6 @@ from forcesmolvla.rft.online.temporal_parity import (
     validate_recorded_ack_fixture,
     validate_temporal_parity_report,
 )
-from forcesmolvla.rft.batch import build_actor_batch
 
 
 def _binding(relative: str) -> dict:
@@ -411,92 +399,3 @@ def test_recorded_gripper_identity_mismatch_fails_closed(tmp_path: Path) -> None
     fixture["reference_acks"][1]["gripper_ack_command_id"] = "wrong-command"
     with pytest.raises(TemporalParityError, match="GRIPPER_COMMAND_ID_MISMATCH"):
         run_recorded_ack_parity(fixture)
-
-
-class _NeverCalledTarget(nn.Module):
-    def forward(self, *_args):
-        raise AssertionError("terminal row called target critic")
-
-
-def test_online_td_calls_real_force_aware_macro_critic_interface() -> None:
-    feature = frozen_task_feature()
-    critic = ForceAwareMacroCritic(
-        FrozenConRFTResNet10(), FrozenConRFTResNet10(), task_feature=feature,
-    ).eval()
-    camera = torch.zeros(1, 3, 32, 32, dtype=torch.uint8)
-    observation = CriticObservation(
-        camera1=camera,
-        camera2=camera.clone(),
-        task_feature=torch.from_numpy(feature).unsqueeze(0),
-        normalized_state7=torch.zeros(1, 7),
-        normalized_wrench6=torch.zeros(1, 6),
-    )
-    result = compute_online_twin_q_td_loss(
-        q1=critic,
-        q2=critic,
-        q1_target=_NeverCalledTarget(),
-        q2_target=_NeverCalledTarget(),
-        observation=observation,
-        next_observation=observation,
-        ack_behavior_action_k7=torch.zeros(1, 3, 7),
-        behavior_mask=torch.ones(1, 3, dtype=torch.bool),
-        reward=torch.ones(1),
-        discount=torch.zeros(1),
-        terminated=torch.ones(1, dtype=torch.bool),
-        truncated=torch.zeros(1, dtype=torch.bool),
-        bootstrap_mask=torch.zeros(1, dtype=torch.bool),
-        next_policy_action_fn=lambda _observation: (_ for _ in ()).throw(AssertionError()),
-    )
-    assert result.target.tolist() == [1.0]
-    assert result.q1_value.shape == result.q2_value.shape == (1,)
-    assert torch.isfinite(result.total)
-
-
-class _Tokenizer:
-    padding_side = ""
-    truncation_side = ""
-
-    def __init__(self) -> None:
-        self.prompts = None
-
-    def __call__(self, prompts, **_kwargs):
-        self.prompts = prompts
-        return {
-            "input_ids": torch.ones(len(prompts), 48, dtype=torch.long),
-            "attention_mask": torch.ones(len(prompts), 48, dtype=torch.long),
-        }
-
-
-def test_real_phase2_actor_critic_image_range_and_task_feature_contract() -> None:
-    tokenizer = _Tokenizer()
-    policy = type("Policy", (), {})()
-    policy.model = type("Model", (), {})()
-    policy.model.vlm_with_expert = type("VLM", (), {})()
-    policy.model.vlm_with_expert.processor = type("Processor", (), {"tokenizer": tokenizer})()
-    image = np.full((3, 8, 8), 255, dtype=np.uint8)
-    task = "Pick up the purple ring and place it onto the red peg."
-    batch = build_actor_batch(policy, [{
-        "camera1": image,
-        "camera2": image,
-        "state7": np.zeros(7, dtype=np.float32),
-        "wrench6": np.zeros(6, dtype=np.float32),
-        "task": task,
-        "sample_identity": "fixture/frame=0",
-    }], torch.device("cpu"), include_action=False)
-    assert batch["observation.images.camera1"].dtype == torch.float32
-    assert batch["observation.images.camera1"].min().item() == 1.0
-    assert batch["observation.images.camera1"].max().item() == 1.0
-    assert tokenizer.prompts == [task + "\n"]
-    critic_feature = torch.from_numpy(frozen_task_feature(task))
-    assert critic_feature.dtype == torch.float32 and critic_feature.shape == (256,)
-
-
-def test_real_phase2_frozen_prefix_path_is_no_grad_detached_and_force_kv_once() -> None:
-    source = inspect.getsource(frozen_prefix_flow_matching_terms)
-    assert "with torch.no_grad():" in source
-    assert "context.prefix_out.detach()" in source
-    assert '"prefix_prefill_count": 1' in source
-    assert '"prefix_grad_enabled": False' in source
-    assert '"prefix_representation_detached": True' in source
-    assert '"prefix_cache_detached": True' in source
-    assert '"force_kv_projection_count": 1' in source

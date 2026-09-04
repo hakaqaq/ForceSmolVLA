@@ -19,10 +19,16 @@ import threading
 import time
 from typing import Any
 
+import numpy as np
 import torch
 
 from forcesmolvla.checkpoint import sha256_file
-from forcesmolvla.action_delta import ActionSafetyProfile
+from forcesmolvla.action_delta import (
+    ActionDeltaProcessor,
+    ActionSafetyProfile,
+    MODEL_GRIPPER_CANDIDATE_RANGE_M,
+    decode_binary_gripper_width,
+)
 from forcesmolvla.inference import (
     CLOCK_DOMAIN,
     HORIZON,
@@ -308,6 +314,8 @@ class InferenceEngine:
         )
         self.policy.to(self.device)
         self.policy.eval()
+        self.residual_actor: torch.nn.Module | None = None
+        self._previous_residual_wrench6: torch.Tensor | None = None
         self._lock = threading.Lock()
         artifact_manifest = json.loads(
             (self.checkpoint / "artifact_manifest.json").read_text(encoding="utf-8")
@@ -404,14 +412,66 @@ class InferenceEngine:
                 dtype=torch.bfloat16,
                 enabled=self.device.type == "cuda",
             ):
-                actions = self.policy.predict_action_chunk(
-                    batch, chunk_context=context
-                )
+                if self.residual_actor is None:
+                    base_normalized = None
+                    residual6 = None
+                    final_normalized = None
+                    actions = self.policy.predict_action_chunk(
+                        batch, chunk_context=context
+                    )
+                else:
+                    base_normalized, base_actions = self.policy._predict_action_chunks(
+                        batch, chunk_context=context
+                    )
+                    state7 = batch["observation.state"].to(torch.float32)
+                    wrench6 = batch["observation.wrench"].to(torch.float32)
+                    previous = self._previous_residual_wrench6
+                    wrench_delta6 = (
+                        torch.zeros_like(wrench6)
+                        if previous is None
+                        else wrench6 - previous
+                    )
+                    residual6 = self.residual_actor(
+                        normalized_state7=state7,
+                        normalized_wrench6=wrench6,
+                        normalized_wrench_delta6=wrench_delta6,
+                        base_action6=base_normalized[:, 0, :6],
+                    )
+                    self._previous_residual_wrench6 = wrench6.detach().clone()
+                    final_normalized = base_normalized.clone()
+                    final_normalized[..., :6] += residual6[:, None, :]
+                    if torch.count_nonzero(residual6) == 0:
+                        actions = base_actions
+                    else:
+                        normalized_numpy = (
+                            final_normalized.detach().cpu().float().numpy().astype(np.float64)
+                        )
+                        delta7 = self.runtime_artifacts.normalizer.delta_action7.inverse(
+                            normalized_numpy
+                        )
+                        delta7[..., 6] = np.clip(
+                            delta7[..., 6], *MODEL_GRIPPER_CANDIDATE_RANGE_M
+                        )
+                        delta7 = decode_binary_gripper_width(delta7)
+                        raw_state7 = (
+                            context.raw_state_snapshot.detach().cpu().numpy().astype(np.float64)
+                        )
+                        absolute7 = ActionDeltaProcessor.from_delta(delta7, raw_state7)
+                        self.policy._action_safety_profile.validate_chunk(
+                            absolute7,
+                            context.action_valid_mask.detach().cpu().numpy(),
+                            raw_state7,
+                        )
+                        valid = context.action_valid_mask.detach().cpu().numpy()[..., None]
+                        absolute7 = np.where(valid, absolute7, 0.0)
+                        actions = torch.from_numpy(np.ascontiguousarray(absolute7)).to(
+                            device=base_normalized.device, dtype=torch.float32
+                        )
         completed_ns = time.monotonic_ns()
         actions_cpu = actions[0].detach().to(torch.float32).cpu()
         if tuple(actions_cpu.shape) != (HORIZON, 7):
             raise RuntimeError(f"MODEL_ACTION_SHAPE_MISMATCH:{tuple(actions_cpu.shape)}")
-        return {
+        response = {
             "protocol_version": PROTOCOL_VERSION,
             "request_id": request["request_id"],
             "chunk_id": request["chunk_id"],
@@ -425,6 +485,17 @@ class InferenceEngine:
             "acceptance_status": "development_only",
             "formal_eligible": False,
         }
+        if base_normalized is not None:
+            response.update(
+                base_normalized_actions=base_normalized[0].detach().float().cpu().tolist(),
+                applied_residual_tcp6=residual6[0].detach().float().cpu().tolist(),
+                final_normalized_actions=final_normalized[0].detach().float().cpu().tolist(),
+            )
+        return response
+
+    def reset_residual_episode_context(self) -> None:
+        with self._lock:
+            self._previous_residual_wrench6 = None
 
 
 class RequestHandler(BaseHTTPRequestHandler):

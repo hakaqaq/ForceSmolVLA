@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import numpy as np
 import pytest
+
+from forcesmolvla.rft.online.action_representation import (
+    legacy_absolute_action7_to_rpy_xyz,
+)
 
 from forcesmolvla.rft.online.transition_authority import (
     AcceptedAck,
@@ -104,6 +109,31 @@ def test_finalize_uid_digest_and_schema_are_stable() -> None:
     tampered["outcome"]["reward"] = 1.0
     with pytest.raises(TransitionContractError, match="DIGEST_MISMATCH"):
         validate_ack_transition(tampered)
+
+
+def test_new_residual_lineage_fields_are_preserved_and_td_ignores_cameras() -> None:
+    payload = transition_payload()
+    payload.update(
+        base_normalized_action_k7=[[0.1] * 6 + [0.0] for _ in range(3)],
+        applied_residual_tcp6=[0.2] * 6,
+        final_normalized_action_k7=[[0.3] * 6 + [0.0] for _ in range(3)],
+    )
+    payload["observation"]["camera1"]["valid"] = False
+    payload["observation"]["camera2"]["valid"] = False
+    value = finalize_ack_transition(payload)
+    assert value["base_normalized_action_k7"] == payload["base_normalized_action_k7"]
+    assert value["applied_residual_tcp6"] == [0.2] * 6
+    assert value["final_normalized_action_k7"] == payload["final_normalized_action_k7"]
+
+
+def test_legacy_human_rotation_vector_is_still_converted_to_rpy() -> None:
+    actions = np.zeros((2, 7), dtype=np.float64)
+    actions[:, 3:6] = np.asarray((0.7, -0.4, 0.5))
+    converted = legacy_absolute_action7_to_rpy_xyz(actions)
+    assert converted.shape == actions.shape
+    assert not np.allclose(converted[:, 3:6], actions[:, 3:6])
+    assert np.array_equal(converted[:, :3], actions[:, :3])
+    assert np.array_equal(converted[:, 6], actions[:, 6])
 
 
 def test_human_expert_requires_ack_source_and_intervention() -> None:
