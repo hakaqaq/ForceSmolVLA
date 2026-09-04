@@ -14,7 +14,32 @@ from forcesmolvla.rft.online.actor_unlock import (
 def test_actor_stays_locked_without_manual_approval(tmp_path: Path) -> None:
     manifest = tmp_path / "actor_update_readiness.json"
     assert not actor_unlock_is_ready(
-        manifest, actor_q_valid_ack_rows=1000, critic_only_updates=1000
+        manifest,
+        actor_q_valid_ack_rows=1000,
+        critic_only_updates=1000,
+        policy=ActorUnlockPolicy(
+            minimum_critic_only_updates=256,
+            mode="manual_approval",
+        ),
+    )
+
+
+def test_offline_initialized_critic_unlocks_on_first_online_batch(
+    tmp_path: Path,
+) -> None:
+    missing_manifest = tmp_path / "actor_update_readiness.json"
+    policy = ActorUnlockPolicy(mode="offline_critic_ready")
+    assert not actor_unlock_is_ready(
+        missing_manifest,
+        actor_q_valid_ack_rows=99,
+        critic_only_updates=2,
+        policy=policy,
+    )
+    assert actor_unlock_is_ready(
+        missing_manifest,
+        actor_q_valid_ack_rows=100,
+        critic_only_updates=2,
+        policy=policy,
     )
 
 
@@ -35,10 +60,22 @@ def test_actor_unlock_requires_common_thresholds_and_same_state_audit(
         encoding="utf-8",
     )
     assert not actor_unlock_is_ready(
-        manifest, actor_q_valid_ack_rows=99, critic_only_updates=256
+        manifest,
+        actor_q_valid_ack_rows=99,
+        critic_only_updates=256,
+        policy=ActorUnlockPolicy(
+            minimum_critic_only_updates=256,
+            mode="manual_approval",
+        ),
     )
     assert actor_unlock_is_ready(
-        manifest, actor_q_valid_ack_rows=100, critic_only_updates=256
+        manifest,
+        actor_q_valid_ack_rows=100,
+        critic_only_updates=256,
+        policy=ActorUnlockPolicy(
+            minimum_critic_only_updates=256,
+            mode="manual_approval",
+        ),
     )
 
 
@@ -62,7 +99,10 @@ def test_automatic_readiness_does_not_require_manual_approval(
         manifest,
         actor_q_valid_ack_rows=100,
         critic_only_updates=256,
-        policy=ActorUnlockPolicy(mode="automatic_readiness"),
+        policy=ActorUnlockPolicy(
+            minimum_critic_only_updates=256,
+            mode="automatic_readiness",
+        ),
     )
 
 
@@ -81,7 +121,13 @@ def test_actor_readiness_modes_are_not_interchangeable(tmp_path: Path) -> None:
     )
 
     assert not actor_unlock_is_ready(
-        manifest, actor_q_valid_ack_rows=100, critic_only_updates=256
+        manifest,
+        actor_q_valid_ack_rows=100,
+        critic_only_updates=256,
+        policy=ActorUnlockPolicy(
+            minimum_critic_only_updates=256,
+            mode="manual_approval",
+        ),
     )
     with pytest.raises(ValueError, match="FORCERFT_ACTOR_READINESS_POLICY_INVALID"):
         ActorUnlockPolicy(mode="invalid")  # type: ignore[arg-type]

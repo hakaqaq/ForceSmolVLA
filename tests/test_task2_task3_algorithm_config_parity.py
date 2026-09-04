@@ -21,5 +21,5 @@ def test_task_profiles_cannot_override_algorithm_hyperparameters() -> None:
 
     assert task2["optimizer"]["actor"]["lr"] == 1.0e-6
     assert task2["q_gradient_controller"]["target_ratio"] == 0.03
-    assert task2["actor_unlock"]["minimum_critic_only_updates"] == 256
-
+    assert task2["actor_unlock"]["mode"] == "offline_critic_ready"
+    assert task2["actor_unlock"]["minimum_critic_only_updates"] == 0

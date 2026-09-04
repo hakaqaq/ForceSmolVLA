@@ -531,7 +531,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--actor-readiness-manifest", type=Path)
     parser.add_argument(
         "--actor-readiness-mode",
-        choices=("manual_approval", "automatic_readiness"),
+        choices=(
+            "offline_critic_ready",
+            "manual_approval",
+            "automatic_readiness",
+        ),
     )
     parser.add_argument("--allow-legacy-offline-fallback", action="store_true")
     parser.add_argument("--max-episodes", type=int, required=True)

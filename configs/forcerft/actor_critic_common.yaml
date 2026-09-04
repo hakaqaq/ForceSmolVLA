@@ -42,12 +42,12 @@ online_training:
   keep_latest_checkpoints: 2
 
 actor_unlock:
-  mode: manual_approval
+  mode: offline_critic_ready
   minimum_actor_q_valid_ack_rows: 100
-  minimum_critic_only_updates: 256
+  minimum_critic_only_updates: 0
   minimum_same_state_comparisons: 20
   minimum_human_gt_policy_fraction: 0.60
-  require_critic_readiness_manifest: true
+  require_critic_readiness_manifest: false
 
 optimizer:
   actor:

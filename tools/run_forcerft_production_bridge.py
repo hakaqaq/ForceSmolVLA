@@ -64,6 +64,11 @@ class _LoadedFrozenRewardDetector:
     """One loaded/JIT-compiled detector reused by a local worker process."""
 
     def __init__(self, checkpoint: Path, expected_train_state_step: int) -> None:
+        # Fail before publishing the ready socket if image decoding is missing.
+        # Otherwise the operator only discovers the broken environment after
+        # completing an entire robot episode.
+        from PIL import Image
+
         self.checkpoint = checkpoint.resolve()
         self.expected_train_state_step = int(expected_train_state_step)
         training_tool = _import_path(
@@ -98,11 +103,10 @@ class _LoadedFrozenRewardDetector:
         def infer(observations):
             return state.apply_fn({"params": state.params}, observations, train=False)
 
+        self.Image = Image
         self.jax, self.jnp, self.infer = jax, jnp, infer
 
     def run(self, request_path: Path, output_path: Path) -> None:
-        from PIL import Image
-
         request = json.loads(request_path.read_text(encoding="utf-8"))
         batches = request.get("batches", [])
         if not batches:
@@ -126,7 +130,7 @@ class _LoadedFrozenRewardDetector:
                     )
                 decoded = []
                 for path in paths:
-                    with Image.open(path) as image:
+                    with self.Image.open(path) as image:
                         decoded.append(
                             np.asarray(image.convert("RGB"), dtype=np.uint8)
                         )

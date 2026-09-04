@@ -8,14 +8,18 @@ from pathlib import Path
 from typing import Literal
 
 
-ActorReadinessMode = Literal["manual_approval", "automatic_readiness"]
+ActorReadinessMode = Literal[
+    "offline_critic_ready",
+    "manual_approval",
+    "automatic_readiness",
+]
 
 
 @dataclass(frozen=True)
 class ActorUnlockPolicy:
     minimum_actor_q_valid_ack_rows: int = 100
-    minimum_critic_only_updates: int = 256
-    mode: ActorReadinessMode = "manual_approval"
+    minimum_critic_only_updates: int = 0
+    mode: ActorReadinessMode = "offline_critic_ready"
     minimum_same_state_comparisons: int = 20
     minimum_human_gt_policy_fraction: float = 0.60
 
@@ -25,7 +29,11 @@ class ActorUnlockPolicy:
             or self.minimum_critic_only_updates < 0
             or self.minimum_same_state_comparisons < 1
             or not 0.0 <= self.minimum_human_gt_policy_fraction <= 1.0
-            or self.mode not in {"manual_approval", "automatic_readiness"}
+            or self.mode not in {
+                "offline_critic_ready",
+                "manual_approval",
+                "automatic_readiness",
+            }
         ):
             raise ValueError("FORCERFT_ACTOR_READINESS_POLICY_INVALID")
 
@@ -40,8 +48,11 @@ def actor_unlock_is_ready(
     if (
         actor_q_valid_ack_rows < policy.minimum_actor_q_valid_ack_rows
         or critic_only_updates < policy.minimum_critic_only_updates
-        or not readiness_manifest.is_file()
     ):
+        return False
+    if policy.mode == "offline_critic_ready":
+        return True
+    if not readiness_manifest.is_file():
         return False
     try:
         payload = json.loads(readiness_manifest.read_text(encoding="utf-8"))
