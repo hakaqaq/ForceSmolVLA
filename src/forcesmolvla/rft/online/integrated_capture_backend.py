@@ -53,8 +53,10 @@ def _async_runtime_identity(
     metadata: Mapping[str, Any], contract: IntegratedCaptureContract
 ) -> dict[str, Any]:
     try:
-        resume_checkpoint = Path(str(metadata["learner_resume_checkpoint"])).resolve()
         inference_actor = Path(str(metadata["checkpoint"])).resolve()
+        active_actor_checkpoint = Path(
+            str(metadata["active_actor_checkpoint"])
+        ).resolve()
     except (KeyError, TypeError, ValueError) as error:
         raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_RUNTIME_MISMATCH") from error
     if (
@@ -69,13 +71,24 @@ def _async_runtime_identity(
         or not metadata["learner_resume_checkpoint"]
         or metadata.get("server_persistent") is not True
         or metadata.get("current_episode_sampling") is not False
-        or inference_actor != resume_checkpoint / "actor"
+        or inference_actor != active_actor_checkpoint
     ):
         raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_RUNTIME_MISMATCH")
     return {
         "session_id": contract.identity.session_id,
         "episode_id": contract.identity.episode_id,
         "policy_revision": contract.identity.policy_revision,
+    }
+
+
+def _pinned_actor_seal_identity(
+    metadata: Mapping[str, Any], contract: IntegratedCaptureContract
+) -> dict[str, str]:
+    """Return the Actor identity pinned when this episode started."""
+
+    return {
+        "active_actor_revision": str(metadata["active_actor_revision"]),
+        "active_actor_model_revision": contract.identity.policy_revision,
     }
 
 
@@ -2298,12 +2311,9 @@ class IntegratedCaptureBackend:
                     "learner_resume_checkpoint": async_status[
                         "learner_resume_checkpoint"
                     ],
-                    "active_actor_revision": async_status[
-                        "active_actor_revision"
-                    ],
-                    "active_actor_model_revision": async_status[
-                        "active_actor_model_revision"
-                    ],
+                    # The runtime may activate a pending candidate at
+                    # episode-end; the seal stays bound to the Actor used.
+                    **_pinned_actor_seal_identity(metadata, contract),
                     "learner_critic_steps": int(
                         async_status["learner_critic_steps"]
                     ),
@@ -2317,6 +2327,23 @@ class IntegratedCaptureBackend:
                     ),
                     "actor_parameter_broadcast_count": int(
                         async_status.get("actor_parameter_broadcast_count", 0)
+                    ),
+                    "online_joint_cycle": int(
+                        async_status.get("online_joint_cycle", 0)
+                    ),
+                    "actor_optimizer_steps": int(
+                        async_status.get("actor_optimizer_steps", 0)
+                    ),
+                    "latest_critic_td_loss": async_status.get(
+                        "latest_critic_td_loss"
+                    ),
+                    "latest_actor_fm_loss": async_status.get(
+                        "latest_actor_fm_loss"
+                    ),
+                    "latest_min_twin_q": async_status.get("latest_min_twin_q"),
+                    "adaptive_q_eta": async_status.get("adaptive_q_eta"),
+                    "q_to_preservation_grad_ratio": async_status.get(
+                        "q_to_preservation_grad_ratio"
                     ),
                     "current_episode_sampled_by_learner": False,
                 }

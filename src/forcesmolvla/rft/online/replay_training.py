@@ -16,6 +16,10 @@ import numpy as np
 import torch
 import yaml
 
+from forcesmolvla.rft.online.action_representation import (
+    ABSOLUTE_ACTION_ROTATION_REPRESENTATION,
+    legacy_absolute_action7_to_rpy_xyz,
+)
 from forcesmolvla.rft.online.transition_authority import (
     AcceptedAck,
     AckMacro,
@@ -228,12 +232,18 @@ def _accepted_ack(row: Mapping[str, Any]) -> AcceptedAck:
             "upper_receive_monotonic_ns", pose_ack.get("receive_monotonic_ns", 0)
         )
     )
+    accepted_action = np.asarray(
+        authority["accepted_absolute_action7"], dtype=np.float64
+    )
+    representation = row.get("absolute_action_rotation_representation")
+    if representation is None and source == "human":
+        accepted_action = legacy_absolute_action7_to_rpy_xyz(accepted_action)
+    elif representation not in {None, ABSOLUTE_ACTION_ROTATION_REPRESENTATION}:
+        raise RuntimeError("FORCERFT_ONLINE_ACTION_ROTATION_REPRESENTATION_INVALID")
     return AcceptedAck(
         ack_id=str(row["identity"]["source_ack_id"]),
         receive_monotonic_ns=receive_ns,
-        accepted_absolute_action7=tuple(
-            float(value) for value in authority["accepted_absolute_action7"]
-        ),
+        accepted_absolute_action7=tuple(float(value) for value in accepted_action),
         gripper_command_id=command_id,
         gripper_ack_command_id=command_id,
         slot_owner="human_intervention" if source == "human" else "policy",
@@ -678,6 +688,13 @@ class HumanCorrectionReplay:
         macro = self.macros[index]
         row = macro.transition
         target = np.asarray(row["human_action_target_h50"], dtype=np.float64)
+        representation = row.get("absolute_action_rotation_representation")
+        if representation is None:
+            target = legacy_absolute_action7_to_rpy_xyz(target)
+        elif representation != ABSOLUTE_ACTION_ROTATION_REPRESENTATION:
+            raise RuntimeError(
+                "FORCERFT_ONLINE_ACTION_ROTATION_REPRESENTATION_INVALID"
+            )
         feature_mask = np.asarray(
             row["human_action_valid_mask_h50"], dtype=np.bool_
         )

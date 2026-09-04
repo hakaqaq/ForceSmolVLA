@@ -142,6 +142,22 @@ def _print_payload(payload: dict[str, Any], *, compact: bool) -> None:
         f"checkpoint={seal.get('online_checkpoint_path') or 'none'} "
         f"current_episode_sampled={str(bool(seal.get('current_episode_sampled_by_learner'))).lower()}"
     )
+    if seal.get("latest_critic_td_loss") is not None:
+        loss_line = (
+            "[loss] "
+            f"cycle={seal.get('online_joint_cycle')} "
+            f"actor_step={seal.get('actor_optimizer_steps')} "
+            f"critic_td={float(seal['latest_critic_td_loss']):.6g}"
+        )
+        if seal.get("latest_actor_fm_loss") is not None:
+            loss_line += (
+                f" actor_fm={float(seal['latest_actor_fm_loss']):.6g}"
+                f" min_q={float(seal['latest_min_twin_q']):.6g}"
+                f" eta={float(seal['adaptive_q_eta']):.6g}"
+                " q_grad_ratio="
+                f"{float(seal['q_to_preservation_grad_ratio']):.3%}"
+            )
+        print(loss_line)
 
 
 def _policy_execution_deployment(

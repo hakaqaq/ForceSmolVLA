@@ -62,6 +62,75 @@ def _load_actor_checkpoint(policy: Any, checkpoint: Path) -> None:
     policy.eval()
 
 
+def _select_deployed_actor_for_resume(
+    *,
+    resume_checkpoint: Path,
+    stage3_seed_bundle: Path | None,
+) -> tuple[Path, str, str | None, int]:
+    """Keep inference on the latest published Actor, not the Learner work copy."""
+
+    resume_checkpoint = resume_checkpoint.resolve()
+    metadata = json.loads(
+        (resume_checkpoint / "metadata.json").read_text(encoding="utf-8")
+    )
+    actor_directory = str(metadata.get("actor_directory", "actor"))
+    if metadata.get("kind") != "online_actor_critic_exact_resume":
+        revision_id = str(metadata.get("actor_checkpoint", {}).get("checkpoint_id", ""))
+        require(bool(revision_id), "FORCERFT_DEPLOYED_ACTOR_METADATA_INVALID")
+        return resume_checkpoint / actor_directory, revision_id, None, 0
+
+    runtime = torch.load(
+        resume_checkpoint / "state/runtime_state.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    actor_optimizer_steps = int(runtime["counters"]["actor_optimizer_steps"])
+    candidates_root = resume_checkpoint.parent.parent / "actor_candidates"
+    eligible: list[tuple[int, Path, dict[str, Any]]] = []
+    for candidate_path in candidates_root.glob("online_actor_step_*"):
+        try:
+            step = int(candidate_path.name.rsplit("_", 1)[1])
+            candidate = json.loads(
+                (candidate_path / "candidate.json").read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            continue
+        if (
+            0 < step <= actor_optimizer_steps
+            and candidate.get("published") is True
+            and candidate.get("state") == "published"
+            and isinstance(candidate.get("revision_id"), str)
+            and bool(candidate["revision_id"])
+            and isinstance(candidate.get("model_revision"), str)
+            and bool(candidate["model_revision"])
+            and (candidate_path / "model.safetensors").is_file()
+            and (candidate_path / "config.json").is_file()
+        ):
+            eligible.append((step, candidate_path.resolve(), candidate))
+    if eligible:
+        step, checkpoint, candidate = max(eligible, key=lambda item: item[0])
+        return (
+            checkpoint,
+            str(candidate["revision_id"]),
+            str(candidate["model_revision"]),
+            step,
+        )
+
+    require(
+        stage3_seed_bundle is not None,
+        "FORCERFT_STAGE3_SEED_REQUIRED_FOR_UNPUBLISHED_ACTOR_RESUME",
+    )
+    seed = stage3_seed_bundle.resolve()
+    seed_metadata = json.loads((seed / "metadata.json").read_text(encoding="utf-8"))
+    require(
+        seed_metadata.get("kind") == "stage3_safe_seed_v1",
+        "FORCERFT_STAGE3_SEED_REQUIRED_FOR_UNPUBLISHED_ACTOR_RESUME",
+    )
+    revision_id = str(seed_metadata.get("actor_checkpoint", {}).get("checkpoint_id", ""))
+    require(bool(revision_id), "FORCERFT_DEPLOYED_ACTOR_METADATA_INVALID")
+    return seed / str(seed_metadata.get("actor_directory", "actor")), revision_id, None, 0
+
+
 def _session_was_sampled(
     session_id: str | None, selected_identities: list[str]
 ) -> bool:
@@ -524,6 +593,10 @@ class ContinuousLearner:
         latest_checkpoint = None
         if self.training_policy.checkpoint_due(online_cycle + 1):
             latest_checkpoint = self.save_checkpoint()
+        latest_actor = actor_records[-1] if actor_records else None
+        latest_actor_diagnostics = (
+            latest_actor.get("diagnostics", {}) if latest_actor is not None else {}
+        )
         return {
             "learner_critic_steps": self.training_policy.critic_updates_per_cycle,
             "learner_actor_steps": len(actor_records),
@@ -536,6 +609,17 @@ class ContinuousLearner:
             "learner_actor": learner["actor"],
             "actor_updates_enabled": learner["actor_updates_enabled"],
             "critic_only_updates": learner["critic_only_updates"],
+            "latest_critic_td_loss": td_losses[-1] if td_losses else None,
+            "latest_actor_fm_loss": (
+                None if latest_actor is None else float(latest_actor["fm_loss"])
+            ),
+            "latest_min_twin_q": (
+                None if latest_actor is None else -float(latest_actor["actor_q_loss"])
+            ),
+            "adaptive_q_eta": latest_actor_diagnostics.get("adaptive_q_eta"),
+            "q_to_preservation_grad_ratio": latest_actor_diagnostics.get(
+                "q_to_fm_parameter_gradient_ratio"
+            ),
             "latest_checkpoint_path": (
                 None if latest_checkpoint is None else str(latest_checkpoint)
             ),
@@ -614,6 +698,7 @@ class AsyncPolicyLearnerRuntime:
         learner_resume_checkpoint: Path,
         online_checkpoint_root: Path,
         learner_job: ContinuousLearner,
+        active_actor_online_cycle: int | None = None,
         inference_stream: Any = None,
     ) -> None:
         self.engine = engine
@@ -640,11 +725,13 @@ class AsyncPolicyLearnerRuntime:
         self._candidate_checkpoints: dict[str, Path] = {}
         self._candidate_online_cycles: dict[str, int] = {}
         self._active_actor_online_cycle = (
-            int(self.learner_resume_checkpoint.name.rsplit("_", 1)[1])
-            if self.learner_resume_checkpoint.name.startswith(
-                "online_actor_critic_cycle_"
+            int(active_actor_online_cycle)
+            if active_actor_online_cycle is not None
+            else (
+                int(self.active_actor_checkpoint.name.rsplit("_", 1)[1])
+                if self.active_actor_checkpoint.name.startswith("online_actor_step_")
+                else 0
             )
-            else 0
         )
         self._policy = getattr(
             learner_job, "training_policy", OnlineTrainingPolicy()
@@ -728,6 +815,19 @@ class AsyncPolicyLearnerRuntime:
                 # Compatibility for existing capture summaries.
                 "actor_parameter_broadcast_count": self._broadcast_count,
                 "active_actor_online_cycle": self._active_actor_online_cycle,
+                "online_joint_cycle": int(result.get("online_joint_cycle", 0)),
+                "actor_optimizer_steps": int(result.get("actor_optimizer_steps", 0)),
+                "actor_updates_enabled": bool(
+                    result.get("actor_updates_enabled", False)
+                ),
+                "critic_only_updates": int(result.get("critic_only_updates", 0)),
+                "latest_critic_td_loss": result.get("latest_critic_td_loss"),
+                "latest_actor_fm_loss": result.get("latest_actor_fm_loss"),
+                "latest_min_twin_q": result.get("latest_min_twin_q"),
+                "adaptive_q_eta": result.get("adaptive_q_eta"),
+                "q_to_preservation_grad_ratio": result.get(
+                    "q_to_preservation_grad_ratio"
+                ),
             }
 
     def start_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -1093,7 +1193,15 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         ),
         "FORCERFT_EXACT_RESUME_CHECKPOINT_INVALID",
     )
-    actor_package = resume_checkpoint / str(checkpoint_metadata["actor_directory"])
+    (
+        actor_package,
+        active_revision_id,
+        expected_model_revision,
+        active_actor_online_cycle,
+    ) = _select_deployed_actor_for_resume(
+        resume_checkpoint=resume_checkpoint,
+        stage3_seed_bundle=getattr(args, "stage3_seed_bundle", None),
+    )
     device = torch.device("cuda:0")
     safety_config = (
         ROOT / f"configs/live_action_safety.{args.task_id}.development.yaml"
@@ -1114,8 +1222,6 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         "gripper_max_age_ms": 300.0,
         "controller_ack_timeout_ms": 20.0,
     })
-    actor_checkpoint = checkpoint_metadata.get("actor_checkpoint", {})
-    active_revision_id = str(actor_checkpoint.get("checkpoint_id", ""))
     require(
         checkpoint_kind
         in {
@@ -1127,16 +1233,24 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         and active_revision_id,
         "FORCERFT_EXACT_RESUME_METADATA_INVALID",
     )
+    require(
+        expected_model_revision in {None, engine.model_sha256},
+        "FORCERFT_DEPLOYED_ACTOR_MODEL_REVISION_MISMATCH",
+    )
+    common_config = warmup.load_common_actor_critic_config(args.task_id)
+    online_config = common_config["online_training"]
+    initial_policy_epoch = (
+        active_actor_online_cycle // int(online_config["actor_candidate_period"])
+    )
     machine = InMemoryRevisionStateMachine(
         RevisionRecord(
             active_revision_id,
             engine.model_sha256,
             RevisionState.ACTIVE,
-        )
+        ),
+        initial_epoch=initial_policy_epoch,
     )
     checkpoint_root = output_root / "online/checkpoints"
-    common_config = warmup.load_common_actor_critic_config(args.task_id)
-    online_config = common_config["online_training"]
     actor_unlock_config = common_config["actor_unlock"]
     training_policy = OnlineTrainingPolicy(
         training_starts=int(online_config["training_starts"]),
@@ -1202,6 +1316,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         learner_resume_checkpoint=resume_checkpoint,
         online_checkpoint_root=checkpoint_root,
         learner_job=learner,
+        active_actor_online_cycle=active_actor_online_cycle,
         inference_stream=torch.cuda.Stream(device=device, priority=-1),
     )
 

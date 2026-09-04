@@ -2130,6 +2130,7 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert [item["identity"]["decision_id"] for item in payloads] == [1, 2, 3]
     assert all(
         item["classification"] == "recorded_live_policy_execution_smoke"
+        and item["absolute_action_rotation_representation"] == "rpy_xyz"
         and item["eligibility"]["formal_replay"] is True
         and item["eligibility"]["real_online_r"] is True
         and item["eligibility"]["replay_membership"] == "R_online"

@@ -19,6 +19,10 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import numpy as np
 
+from forcesmolvla.rft.online.action_representation import (
+    ABSOLUTE_ACTION_ROTATION_REPRESENTATION,
+    quaternion_xyzw_to_rpy_xyz,
+)
 from forcesmolvla.raw_to_lerobot_v3 import (
     PreparedEpisode,
     RuntimeContract,
@@ -811,27 +815,24 @@ def _finite_vector(value: Any, size: int, reason: str) -> tuple[float, ...]:
     return result
 
 
-def _quaternion_to_rotvec(value: Sequence[float]) -> tuple[float, float, float]:
+def _quaternion_to_rpy_xyz(value: Sequence[float]) -> tuple[float, float, float]:
     x, y, z, w = _finite_vector(value, 4, "BRIDGE_QUATERNION_INVALID")
     norm = math.sqrt(x * x + y * y + z * z + w * w)
     if norm <= 0.0 or not math.isclose(norm, 1.0, abs_tol=1.0e-5):
         raise ProductionBridgeError("BRIDGE_QUATERNION_INVALID")
-    x, y, z, w = x / norm, y / norm, z / norm, w / norm
-    if w < 0.0:
-        x, y, z, w = -x, -y, -z, -w
-    sine = math.sqrt(x * x + y * y + z * z)
-    if sine < 1.0e-12:
-        return (0.0, 0.0, 0.0)
-    angle = 2.0 * math.atan2(sine, w)
-    scale = angle / sine
-    return (x * scale, y * scale, z * scale)
+    return tuple(
+        float(item)
+        for item in quaternion_xyzw_to_rpy_xyz(
+            np.asarray((x, y, z, w), dtype=np.float64)
+        )
+    )
 
 
 def _pose_tcp6(pose: Mapping[str, Any]) -> tuple[float, ...]:
     position = _finite_vector(
         pose.get("position_m"), 3, "BRIDGE_POSE_POSITION_INVALID"
     )
-    return position + _quaternion_to_rotvec(pose.get("quaternion_xyzw", ()))
+    return position + _quaternion_to_rpy_xyz(pose.get("quaternion_xyzw", ()))
 
 
 def _quaternion_distance(a: Sequence[float], b: Sequence[float]) -> float:
@@ -3615,7 +3616,9 @@ class ProductionBridge:
         selected_tcp6 = _pose_tcp6(applied)
         accepted_tcp6 = _pose_tcp6(accepted_pose)
         position_error = math.dist(selected_tcp6[:3], accepted_tcp6[:3])
-        rotation_error = math.dist(selected_tcp6[3:], accepted_tcp6[3:])
+        rotation_error = _quaternion_distance(
+            applied["quaternion_xyzw"], accepted_pose.get("quaternion_xyzw", ())
+        )
         if (
             position_error > self.config.pose_position_tolerance_m
             or rotation_error > self.config.pose_quaternion_tolerance_rad
@@ -4474,6 +4477,9 @@ class ProductionBridge:
         payload: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
+            "absolute_action_rotation_representation": (
+                ABSOLUTE_ACTION_ROTATION_REPRESENTATION
+            ),
             "action_source": "policy",
             "expert": False,
             "intervention": False,
@@ -4788,6 +4794,9 @@ class ProductionBridge:
         payload: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
+            "absolute_action_rotation_representation": (
+                ABSOLUTE_ACTION_ROTATION_REPRESENTATION
+            ),
             "action_source": "human",
             "expert": integrated["summary"]["operator_task_outcome"] == "success",
             "intervention": True,

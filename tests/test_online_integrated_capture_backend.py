@@ -968,6 +968,7 @@ def test_async_runtime_binding_requires_exact_capture_identity() -> None:
         "runtime_episode_id": contract.identity.episode_id,
         "active_actor_revision": "stage3-cycle10",
         "active_actor_model_revision": contract.identity.policy_revision,
+        "active_actor_checkpoint": "/tmp/cycle20/actor",
         "learner_resume_checkpoint": "/tmp/cycle20",
         "checkpoint": "/tmp/cycle20/actor",
         "learner_started": False,
@@ -990,6 +991,45 @@ def test_async_runtime_binding_requires_exact_capture_identity() -> None:
         capture_backend._async_runtime_identity(
             {**metadata, "checkpoint": "/tmp/other/actor"}, contract
         )
+
+
+def test_async_runtime_binding_accepts_activated_online_actor() -> None:
+    contract = _policy_contract()
+    active_actor = "/tmp/online/actor_candidates/online_actor_step_000005"
+    metadata = {
+        "online_actor_learner": True,
+        "runtime_session_id": contract.identity.session_id,
+        "runtime_episode_id": contract.identity.episode_id,
+        "active_actor_revision": "task3-online-actor-step-000005",
+        "active_actor_model_revision": contract.identity.policy_revision,
+        "active_actor_checkpoint": active_actor,
+        "learner_resume_checkpoint": "/tmp/stage3-seed",
+        "checkpoint": active_actor,
+        "server_persistent": True,
+        "current_episode_sampling": False,
+    }
+
+    assert capture_backend._async_runtime_identity(metadata, contract) == {
+        "session_id": contract.identity.session_id,
+        "episode_id": contract.identity.episode_id,
+        "policy_revision": contract.identity.policy_revision,
+    }
+
+
+def test_episode_seal_keeps_start_actor_when_next_actor_activates() -> None:
+    contract = _policy_contract()
+    start_metadata = {"active_actor_revision": "online-actor-step-10"}
+    post_episode_status = {"active_actor_revision": "online-actor-step-15"}
+
+    assert post_episode_status["active_actor_revision"] != start_metadata[
+        "active_actor_revision"
+    ]
+    assert capture_backend._pinned_actor_seal_identity(
+        start_metadata, contract
+    ) == {
+        "active_actor_revision": "online-actor-step-10",
+        "active_actor_model_revision": contract.identity.policy_revision,
+    }
 
 
 def test_async_runtime_completion_records_only_pending_candidate() -> None:

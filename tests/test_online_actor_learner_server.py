@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 import sys
 import threading
@@ -18,6 +19,7 @@ from serve_forcerft_actor_learner import (  # noqa: E402
     AsyncPolicyLearnerRuntime,
     ContinuousLearner,
     RequestHandler,
+    _select_deployed_actor_for_resume,
 )
 from forcesmolvla.rft.online.actor_learner_runtime import (
     InferencePriorityCoordinator,
@@ -177,6 +179,89 @@ def _identity() -> dict[str, str]:
         "episode_id": "episode_000000",
         "policy_revision": "model-cycle10",
     }
+
+
+def _write_checkpoint_metadata(path: Path, *, kind: str, checkpoint_id: str) -> None:
+    path.mkdir(parents=True)
+    (path / "metadata.json").write_text(
+        json.dumps({
+            "kind": kind,
+            "actor_directory": "actor",
+            "actor_checkpoint": {"checkpoint_id": checkpoint_id},
+        }),
+        encoding="utf-8",
+    )
+
+
+def test_online_resume_deploys_latest_published_actor_not_working_copy(
+    tmp_path: Path,
+) -> None:
+    seed = tmp_path / "stage3_seed"
+    _write_checkpoint_metadata(
+        seed, kind="stage3_safe_seed_v1", checkpoint_id="sft-seed"
+    )
+    (seed / "actor").mkdir()
+    resume = tmp_path / "online/checkpoints/online_actor_critic_cycle_000006"
+    _write_checkpoint_metadata(
+        resume,
+        kind="online_actor_critic_exact_resume",
+        checkpoint_id="working-step-6",
+    )
+    (resume / "state").mkdir()
+    torch.save(
+        {"counters": {"actor_optimizer_steps": 6}},
+        resume / "state/runtime_state.pt",
+    )
+    candidates = resume.parent.parent / "actor_candidates"
+    for step, published in ((5, True), (10, True)):
+        candidate = candidates / f"online_actor_step_{step:06d}"
+        candidate.mkdir(parents=True)
+        (candidate / "model.safetensors").touch()
+        (candidate / "config.json").touch()
+        (candidate / "candidate.json").write_text(
+            json.dumps({
+                "published": published,
+                "state": "published",
+                "revision_id": f"actor-step-{step}",
+                "model_revision": f"model-step-{step}",
+            }),
+            encoding="utf-8",
+        )
+
+    checkpoint, revision, model, step = _select_deployed_actor_for_resume(
+        resume_checkpoint=resume,
+        stage3_seed_bundle=seed,
+    )
+
+    assert checkpoint == (candidates / "online_actor_step_000005").resolve()
+    assert (revision, model, step) == ("actor-step-5", "model-step-5", 5)
+
+
+def test_online_resume_without_published_actor_keeps_sft_seed(tmp_path: Path) -> None:
+    seed = tmp_path / "stage3_seed"
+    _write_checkpoint_metadata(
+        seed, kind="stage3_safe_seed_v1", checkpoint_id="sft-seed"
+    )
+    (seed / "actor").mkdir()
+    resume = tmp_path / "online/checkpoints/online_actor_critic_cycle_000004"
+    _write_checkpoint_metadata(
+        resume,
+        kind="online_actor_critic_exact_resume",
+        checkpoint_id="working-step-4",
+    )
+    (resume / "state").mkdir()
+    torch.save(
+        {"counters": {"actor_optimizer_steps": 4}},
+        resume / "state/runtime_state.pt",
+    )
+
+    checkpoint, revision, model, step = _select_deployed_actor_for_resume(
+        resume_checkpoint=resume,
+        stage3_seed_bundle=seed,
+    )
+
+    assert checkpoint == (seed / "actor").resolve()
+    assert (revision, model, step) == ("sft-seed", None, 0)
 
 
 def test_resume_reconciles_append_only_replay_and_credits_once() -> None:

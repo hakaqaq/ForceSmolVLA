@@ -456,6 +456,10 @@ def run_loop(args: argparse.Namespace) -> int:
                 str(args.sft_reference_checkpoint),
             ]
         )
+    if getattr(args, "stage3_seed_bundle", None) is not None:
+        server_command.extend(
+            ["--stage3-seed-bundle", str(args.stage3_seed_bundle)]
+        )
     if getattr(args, "actor_readiness_manifest", None) is not None:
         server_command.extend(
             [
