@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -59,96 +60,160 @@ def _import_path(name: str, path: Path):
     return module
 
 
-def _detector_worker(request_path: Path, output_path: Path) -> None:
-    """Run one frozen reward-detector inference job and exit."""
+class _LoadedFrozenRewardDetector:
+    """One loaded/JIT-compiled detector reused by a local worker process."""
 
-    request = json.loads(request_path.read_text(encoding="utf-8"))
-    batches = request.get("batches", [])
-    if not batches:
-        raise RuntimeError("BRIDGE_DETECTOR_BATCHES_MISSING")
-    training_tool = _import_path(
-        "reward_classifier_tool", REWARD_CLASSIFIER_TOOL
-    )
-    training_tool.install_type_only_octo_shim()
-    sys.path.insert(0, str(CONRFT_RUNTIME_ROOT))
-    from flax import serialization
-    import jax
-    import jax.numpy as jnp
-    from serl_launcher.networks.reward_classifier import create_classifier
-
-    if jax.default_backend() != "gpu":
-        raise RuntimeError(f"BRIDGE_FROZEN_DETECTOR_GPU_REQUIRED:{jax.default_backend()}")
-    safe_tree, _ = training_tool.npz_encoder_tree()
-    sample = {
-        key: jnp.zeros((1, 1, *IMAGE_SHAPE), dtype=jnp.uint8)
-        for key in CAMERA_KEYS
-    }
-    with training_tool.trusted_safe_npz_pickle_bridge(safe_tree) as bridge:
-        target = create_classifier(
-            jax.random.PRNGKey(0),
-            sample,
-            list(CAMERA_KEYS),
-            pretrained_encoder_path=str(bridge),
-            n_way=2,
+    def __init__(self, checkpoint: Path, expected_train_state_step: int) -> None:
+        self.checkpoint = checkpoint.resolve()
+        self.expected_train_state_step = int(expected_train_state_step)
+        training_tool = _import_path(
+            "reward_classifier_tool", REWARD_CLASSIFIER_TOOL
         )
-    checkpoint = Path(request["checkpoint"]).expanduser().resolve()
-    state = serialization.from_bytes(target, checkpoint.read_bytes())
-    expected_step = int(request["expected_train_state_step"])
-    if int(state.step) != expected_step:
-        raise RuntimeError("BRIDGE_REWARD_DETECTOR_CHECKPOINT_STEP_DRIFT")
+        training_tool.install_type_only_octo_shim()
+        sys.path.insert(0, str(CONRFT_RUNTIME_ROOT))
+        from flax import serialization
+        import jax
+        import jax.numpy as jnp
+        from serl_launcher.networks.reward_classifier import create_classifier
 
-    @jax.jit
-    def infer(observations):
-        return state.apply_fn({"params": state.params}, observations, train=False)
-
-    logits: list[np.ndarray] = []
-    frame_count = 0
-    for batch in batches:
-        arrays = [
-            np.load(batch[name], mmap_mode="r", allow_pickle=False)
-            for name in ("camera1", "camera2")
-        ]
-        count = int(batch["count"])
-        if any(value.shape != (count, *IMAGE_SHAPE) for value in arrays):
-            raise RuntimeError("BRIDGE_FROZEN_DETECTOR_IMAGE_BATCH_INVALID")
-        observations = {
-            key: jnp.asarray(np.asarray(value))[:, None]
-            for key, value in zip(CAMERA_KEYS, arrays, strict=True)
+        if jax.default_backend() != "gpu":
+            raise RuntimeError(
+                f"BRIDGE_FROZEN_DETECTOR_GPU_REQUIRED:{jax.default_backend()}"
+            )
+        safe_tree, _ = training_tool.npz_encoder_tree()
+        sample = {
+            key: jnp.zeros((1, 1, *IMAGE_SHAPE), dtype=jnp.uint8)
+            for key in CAMERA_KEYS
         }
-        logits.append(
-            np.asarray(jax.block_until_ready(infer(observations)), dtype=np.float32)
-            .reshape(-1)
+        with training_tool.trusted_safe_npz_pickle_bridge(safe_tree) as bridge:
+            target = create_classifier(
+                jax.random.PRNGKey(0), sample, list(CAMERA_KEYS),
+                pretrained_encoder_path=str(bridge), n_way=2,
+            )
+        state = serialization.from_bytes(target, self.checkpoint.read_bytes())
+        if int(state.step) != self.expected_train_state_step:
+            raise RuntimeError("BRIDGE_REWARD_DETECTOR_CHECKPOINT_STEP_DRIFT")
+
+        @jax.jit
+        def infer(observations):
+            return state.apply_fn({"params": state.params}, observations, train=False)
+
+        self.jax, self.jnp, self.infer = jax, jnp, infer
+
+    def run(self, request_path: Path, output_path: Path) -> None:
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        batches = request.get("batches", [])
+        if not batches:
+            raise RuntimeError("BRIDGE_DETECTOR_BATCHES_MISSING")
+        if (
+            Path(request["checkpoint"]).expanduser().resolve() != self.checkpoint
+            or int(request["expected_train_state_step"])
+            != self.expected_train_state_step
+        ):
+            raise RuntimeError("BRIDGE_REWARD_DETECTOR_WORKER_IDENTITY_MISMATCH")
+        logits: list[np.ndarray] = []
+        frame_count = 0
+        for batch in batches:
+            arrays = [
+                np.load(batch[name], mmap_mode="r", allow_pickle=False)
+                for name in ("camera1", "camera2")
+            ]
+            count = int(batch["count"])
+            if any(value.shape != (count, *IMAGE_SHAPE) for value in arrays):
+                raise RuntimeError("BRIDGE_FROZEN_DETECTOR_IMAGE_BATCH_INVALID")
+            observations = {
+                key: self.jnp.asarray(np.asarray(value))[:, None]
+                for key, value in zip(CAMERA_KEYS, arrays, strict=True)
+            }
+            logits.append(np.asarray(
+                self.jax.block_until_ready(self.infer(observations)),
+                dtype=np.float32,
+            ).reshape(-1))
+            frame_count += count
+        values = np.concatenate(logits).astype(np.float64)
+        probabilities = np.where(
+            values >= 0, 1.0 / (1.0 + np.exp(-values)),
+            np.exp(values) / (1.0 + np.exp(values)),
         )
-        frame_count += count
-    values = np.concatenate(logits).astype(np.float64)
-    probabilities = np.where(
-        values >= 0,
-        1.0 / (1.0 + np.exp(-values)),
-        np.exp(values) / (1.0 + np.exp(values)),
-    )
-    if len(probabilities) != frame_count or not np.all(np.isfinite(probabilities)):
-        raise RuntimeError("BRIDGE_FROZEN_DETECTOR_OUTPUT_INVALID")
-    np.save(output_path, probabilities, allow_pickle=False)
-    print(
-        json.dumps(
-            {
-                "backend": jax.default_backend(),
-                "frames": len(probabilities),
-                "optimizer_updates": 0,
-                "train_state_step": int(state.step),
-            },
-            sort_keys=True,
+        if len(probabilities) != frame_count or not np.all(np.isfinite(probabilities)):
+            raise RuntimeError("BRIDGE_FROZEN_DETECTOR_OUTPUT_INVALID")
+        np.save(output_path, probabilities, allow_pickle=False)
+        print(json.dumps({
+            "backend": self.jax.default_backend(), "frames": len(probabilities),
+            "optimizer_updates": 0,
+            "train_state_step": self.expected_train_state_step,
+        }, sort_keys=True), flush=True)
+
+
+def _detector_worker(request_path: Path, output_path: Path) -> None:
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    _LoadedFrozenRewardDetector(
+        Path(request["checkpoint"]), int(request["expected_train_state_step"])
+    ).run(request_path, output_path)
+
+
+def _serve_detector_worker(
+    socket_path: Path, checkpoint: Path, expected_train_state_step: int
+) -> None:
+    worker = _LoadedFrozenRewardDetector(checkpoint, expected_train_state_step)
+    socket_path.unlink(missing_ok=True)
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+        listener.bind(str(socket_path))
+        listener.listen(1)
+        print(json.dumps({
+            "status": "BRIDGE_REWARD_DETECTOR_WORKER_READY",
+            "socket": str(socket_path),
+        }, sort_keys=True), flush=True)
+        try:
+            while True:
+                connection, _ = listener.accept()
+                with connection, connection.makefile("rwb") as stream:
+                    payload = json.loads(stream.readline())
+                    if payload.get("shutdown") is True:
+                        stream.write(b'{"ok":true}\n')
+                        stream.flush()
+                        return
+                    try:
+                        worker.run(Path(payload["request"]), Path(payload["output"]))
+                        response = {"ok": True}
+                    except Exception as error:
+                        response = {
+                            "ok": False,
+                            "error": f"{type(error).__name__}:{error}",
+                        }
+                    stream.write((json.dumps(response) + "\n").encode("utf-8"))
+                    stream.flush()
+        finally:
+            socket_path.unlink(missing_ok=True)
+
+
+def _request_detector_worker(
+    socket_path: Path, request_path: Path, output_path: Path
+) -> None:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(300.0)
+        connection.connect(str(socket_path))
+        with connection.makefile("rwb") as stream:
+            stream.write((json.dumps({
+                "request": str(request_path), "output": str(output_path),
+            }) + "\n").encode("utf-8"))
+            stream.flush()
+            response = json.loads(stream.readline())
+    if response.get("ok") is not True:
+        raise RuntimeError(
+            f"BRIDGE_REWARD_DETECTOR_WORKER_FAILED:{response.get('error')}"
         )
-    )
 
 
 class OneShotFrozenRewardDetector:
     def __init__(
-        self, checkpoint: Path, detector_id: str, expected_train_state_step: int
+        self, checkpoint: Path, detector_id: str, expected_train_state_step: int,
+        *, worker_socket: Path | None = None,
     ) -> None:
         self.checkpoint = checkpoint
         self.detector_id = detector_id
         self.expected_train_state_step = int(expected_train_state_step)
+        self.worker_socket = worker_socket
 
     def __call__(self, prepared):
         from forcesmolvla.rft.online.production_bridge import FrozenDetectorScores
@@ -196,26 +261,21 @@ class OneShotFrozenRewardDetector:
                 ),
                 encoding="utf-8",
             )
-            environment = os.environ.copy()
-            environment["PYTHONPATH"] = str(ROOT / "src")
-            subprocess.run(
-                [
-                    shutil.which("conda") or "conda",
-                    "run",
-                    "--no-capture-output",
-                    "-n",
-                    "conrft_reward",
-                    "python",
-                    str(Path(__file__).resolve()),
-                    "--detector-worker-request",
-                    str(request),
-                    "--detector-worker-output",
-                    str(output),
-                ],
-                cwd=ROOT,
-                env=environment,
-                check=True,
-            )
+            if self.worker_socket is not None:
+                _request_detector_worker(self.worker_socket, request, output)
+            else:
+                environment = os.environ.copy()
+                environment["PYTHONPATH"] = str(ROOT / "src")
+                subprocess.run(
+                    [
+                        shutil.which("conda") or "conda", "run",
+                        "--no-capture-output", "-n", "conrft_reward", "python",
+                        str(Path(__file__).resolve()),
+                        "--detector-worker-request", str(request),
+                        "--detector-worker-output", str(output),
+                    ],
+                    cwd=ROOT, env=environment, check=True,
+                )
             probabilities = np.load(output, allow_pickle=False)
         return FrozenDetectorScores(
             probabilities=tuple(float(value) for value in probabilities),
@@ -250,6 +310,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--detector-worker-request", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--detector-worker-output", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--detector-worker-socket", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--serve-detector-worker", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
@@ -273,6 +335,26 @@ def main(argv: list[str] | None = None) -> int:
         if args.detector_worker_output is None:
             raise SystemExit("--detector-worker-output is required")
         _detector_worker(args.detector_worker_request, args.detector_worker_output)
+        return 0
+    if args.serve_detector_worker:
+        if args.detector_worker_socket is None or args.output_root is None:
+            raise SystemExit(
+                "--detector-worker-socket and --output-root are required"
+            )
+        reward_transition_config = (
+            args.reward_transition_config
+            or ROOT / "configs/tasks" / args.task_id
+            / "forcerft_offline_reward_transitions.json"
+        ).resolve()
+        reward_transition_spec = json.loads(
+            reward_transition_config.read_text(encoding="utf-8")
+        )
+        _serve_detector_worker(
+            args.detector_worker_socket.resolve(),
+            args.output_root.resolve()
+            / "reward_classifier/checkpoints/best/best_checkpoint.msgpack",
+            int(reward_transition_spec["classifier_train_state_step"]),
+        )
         return 0
     from forcesmolvla.rft.online.production_bridge import (
         ProductionBridge,
@@ -333,6 +415,7 @@ def main(argv: list[str] | None = None) -> int:
                     reward_detector_checkpoint,
                     detector_id,
                     detector_train_state_step,
+                    worker_socket=args.detector_worker_socket,
                 ),
                 parent_binding_path=actor_checkpoint,
                 detector_config_path=reward_transition_config,

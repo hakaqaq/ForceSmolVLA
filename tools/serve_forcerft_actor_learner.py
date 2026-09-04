@@ -11,7 +11,6 @@ from pathlib import Path
 import random
 import sys
 import threading
-import time
 from typing import Any, Mapping
 
 import numpy as np
@@ -568,7 +567,7 @@ class AsyncPolicyLearnerRuntime:
             "checkpoint_period": self._policy.checkpoint_period,
             "keep_latest_checkpoints": self._policy.keep_latest_checkpoints,
             "actor_readiness_mode": self.learner_job.actor_unlock_policy.mode,
-            "save_checkpoint_on_graceful_exit": False,
+            "save_checkpoint_on_graceful_exit": True,
             "save_checkpoint_on_operator_q": True,
             "runtime_session_id": self.session_id,
             "runtime_episode_id": self.episode_id,
@@ -1049,6 +1048,12 @@ def main() -> int:
         pass
     finally:
         runtime.stop()
+        if runtime.status()["learner_state"] != "failed":
+            checkpoint = runtime.learner_job.save_checkpoint()
+            print(
+                f"[learner] graceful-exit checkpoint={checkpoint or 'none'}",
+                flush=True,
+            )
         server.server_close()
     return 0
 

@@ -320,6 +320,7 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
             "model_python": Path("python"), "formal_r_root": Path("r"),
             "task_id": "task3", "output_root": Path("outputs/task3"),
             "deployed_actor_checkpoint": Path("checkpoints/task3/actor"),
+            "detector_worker_socket": Path("/tmp/task3-detector.sock"),
         })(),
         Path("episode"),
         outcome="success",
@@ -333,6 +334,9 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     assert admission_commands[0][
         admission_commands[0].index("--deployed-actor-checkpoint") + 1
     ] == "checkpoints/task3/actor"
+    assert admission_commands[0][
+        admission_commands[0].index("--detector-worker-socket") + 1
+    ] == "/tmp/task3-detector.sock"
 
 
 def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatch) -> None:
@@ -420,6 +424,11 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
         lambda *_args, **_kwargs: type("Selected", (), {"path": resume})(),
     )
     monkeypatch.setattr(loop.subprocess, "Popen", lambda *_args, **_kwargs: Process())
+    monkeypatch.setattr(
+        loop, "_start_detector_worker",
+        lambda _args: (Process(), None, tmp_path / "detector.sock"),
+    )
+    monkeypatch.setattr(loop, "_stop_detector_worker", lambda *_args: None)
     monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
         "server_persistent": True,
         "learner_resume_checkpoint": str(resume.resolve()),
@@ -470,6 +479,11 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
         "Popen",
         lambda command, **_kwargs: commands.append(command) or Process(),
     )
+    monkeypatch.setattr(
+        loop, "_start_detector_worker",
+        lambda _args: (Process(), None, tmp_path / "detector.sock"),
+    )
+    monkeypatch.setattr(loop, "_stop_detector_worker", lambda *_args: None)
     monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
         "server_persistent": True,
         "learner_resume_checkpoint": str(resume.resolve()),

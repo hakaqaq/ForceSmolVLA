@@ -9,8 +9,10 @@ import os
 from pathlib import Path
 import signal
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any, Callable, Mapping
 from urllib.error import URLError
@@ -87,13 +89,18 @@ def _report(command: list[str]) -> dict[str, Any]:
 def _admit(args: argparse.Namespace, episode: Path, *, outcome: str) -> bool:
     """Materialize the sealed episode and append it exactly once to Online-R."""
 
-    report = _report([
+    command = [
         str(args.model_python), str(ROOT / "tools/run_forcerft_production_bridge.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
         "--episode", str(episode), "--state-root", str(args.formal_r_root),
         "--deployed-actor-checkpoint", str(args.deployed_actor_checkpoint),
         "--operator-task-outcome", outcome, "--admit-formal-online-r",
-    ])
+    ]
+    detector_socket = getattr(args, "detector_worker_socket", None)
+    if detector_socket is not None:
+        command.extend(["--detector-worker-socket", str(detector_socket)])
+    started = time.monotonic()
+    report = _report(command)
     if report.get("status") == "FORMAL_ONLINE_R_REJECTED":
         print(
             f"[admission] status={report['status']} "
@@ -109,7 +116,8 @@ def _admit(args: argparse.Namespace, episode: Path, *, outcome: str) -> bool:
         f"accepted={report.get('accepted_unique_r_transition_count')} "
         f"human_expert={report.get('human_override_replay_count')} "
         f"total={report.get('total_unique_r_transition_count')} "
-        f"training_started={str(bool(report.get('training_starts_reached'))).lower()}"
+        f"training_started={str(bool(report.get('training_starts_reached'))).lower()} "
+        f"elapsed={time.monotonic() - started:.1f}s"
     )
     return True
 
@@ -163,7 +171,7 @@ def _wait_json(
 
 
 def _stop_server(process: subprocess.Popen[Any]) -> None:
-    """Let the server finish its current optimizer step without saving."""
+    """Let the server finish its current optimizer step and exact-resume save."""
 
     if process.poll() is not None:
         return
@@ -173,6 +181,57 @@ def _stop_server(process: subprocess.Popen[Any]) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=10)
+
+
+def _start_detector_worker(
+    args: argparse.Namespace,
+) -> tuple[subprocess.Popen[Any], tempfile.TemporaryDirectory[str], Path]:
+    directory = tempfile.TemporaryDirectory(prefix="forcerft-reward-worker-")
+    socket_path = Path(directory.name) / "detector.sock"
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(ROOT / "src")
+    environment.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+    process = subprocess.Popen([
+        shutil.which("conda") or "conda", "run", "--no-capture-output",
+        "-n", "conrft_reward", "python",
+        str(ROOT / "tools/run_forcerft_production_bridge.py"),
+        "--task-id", args.task_id, "--output-root", str(args.output_root),
+        "--detector-worker-socket", str(socket_path), "--serve-detector-worker",
+    ], cwd=ROOT, env=environment)
+    deadline = time.monotonic() + args.server_start_timeout
+    while not socket_path.exists():
+        if process.poll() is not None:
+            directory.cleanup()
+            raise ContinuousLoopError("FORCERFT_REWARD_DETECTOR_WORKER_EXITED")
+        if time.monotonic() >= deadline:
+            process.terminate()
+            process.wait(timeout=10)
+            directory.cleanup()
+            raise ContinuousLoopError("FORCERFT_REWARD_DETECTOR_WORKER_TIMEOUT")
+        time.sleep(0.1)
+    print(f"[reward] persistent detector ready socket={socket_path}")
+    return process, directory, socket_path
+
+
+def _stop_detector_worker(
+    process: subprocess.Popen[Any], socket_path: Path
+) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(5.0)
+            connection.connect(str(socket_path))
+            connection.sendall(b'{"shutdown":true}\n')
+            connection.recv(1024)
+        process.wait(timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=10)
 
 
 def _next_capture_index(root_prefix: Path) -> int:
@@ -355,6 +414,7 @@ def run_loop(args: argparse.Namespace) -> int:
     if getattr(args, "allow_legacy_offline_fallback", False):
         server_command.append("--allow-legacy-offline-fallback")
     server = subprocess.Popen(server_command, cwd=ROOT, env=os.environ.copy())
+    detector_process = detector_directory = detector_socket = None
     completed = 0
     try:
         metadata = _wait_json(
@@ -370,6 +430,10 @@ def run_loop(args: argparse.Namespace) -> int:
         model_revision = str(metadata.get("active_actor_model_revision", ""))
         policy_epoch = int(metadata.get("policy_epoch", -1))
         require(model_revision and policy_epoch >= 0, "FORCERFT_ONLINE_SERVER_METADATA_INVALID")
+        detector_process, detector_directory, detector_socket = (
+            _start_detector_worker(args)
+        )
+        args.detector_worker_socket = detector_socket
         args.root_prefix.mkdir(parents=True, exist_ok=True)
         index = _next_capture_index(args.root_prefix)
         while completed < args.max_episodes:
@@ -386,6 +450,10 @@ def run_loop(args: argparse.Namespace) -> int:
             if result is True:
                 completed += 1
     finally:
+        if detector_process is not None and detector_socket is not None:
+            _stop_detector_worker(detector_process, detector_socket)
+        if detector_directory is not None:
+            detector_directory.cleanup()
         _stop_server(server)
     return completed
 
