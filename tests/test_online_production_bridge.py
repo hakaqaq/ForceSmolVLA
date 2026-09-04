@@ -2036,6 +2036,42 @@ def test_policy_execution_recovers_held_gripper_when_pending_goal_finishes_durin
     assert report.candidate_count == 2
 
 
+def test_policy_execution_recovers_held_gripper_when_goal_finishes_after_takeover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    _replace_post_takeover_gripper_command_with_held(episode)
+    target_path = episode / "streams/gripper_target.jsonl"
+    status_path = episode / "streams/gripper_goal_status.jsonl"
+    targets = [json.loads(line) for line in target_path.read_text().splitlines()]
+    statuses = [json.loads(line) for line in status_path.read_text().splitlines()]
+    targets[0].update(
+        started_monotonic_ns=1_190_000_000,
+        accepted_monotonic_ns=1_195_000_000,
+    )
+    statuses[0].update(
+        accepted_monotonic_ns=1_195_000_000,
+        finished_monotonic_ns=1_260_000_000,
+    )
+    _write_jsonl(target_path, targets)
+    _write_jsonl(status_path, statuses)
+    monkeypatch.setattr(
+        bridge_module,
+        "_prepare_native_episode",
+        lambda path: _fake_materialization(path).prepared,
+    )
+
+    report = _bridge(tmp_path / "dry-run-state").process_episode(
+        episode,
+        dry_run=True,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "DRY_RUN_READY"
+    assert report.candidate_count == 2
+
+
 def _admission_prepared(episode: Path) -> PreparedEpisode:
     prepared = _fake_materialization(episode).prepared
     prepared.tuple_host_ns[:] -= 20_000_000

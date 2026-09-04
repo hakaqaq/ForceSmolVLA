@@ -2221,7 +2221,11 @@ class ProductionBridge:
                     "origin_action_goal_id": target["action_goal_id"],
                     "terminal_outcome": outcome,
                     "generation": generation_mapping(
-                        generation_at(int(target["accepted_monotonic_ns"]))
+                        # The held state becomes authoritative only when the
+                        # gripper command reaches a terminal outcome.  A goal
+                        # accepted before a takeover can finish afterwards and
+                        # must then seed the new generation, not the stale one.
+                        generation_at(int(status["finished_monotonic_ns"]))
                     ),
                 }
             )
