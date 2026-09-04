@@ -14,8 +14,8 @@
     "detector_input_rate_hz": 30,
     "latch_after_trigger": true,
     "post_trigger_frames": "excluded",
-    "probability_threshold": 0.76,
-    "required_consecutive_frames": 3,
+    "probability_threshold": 0.9,
+    "required_consecutive_frames": 2,
     "reward_mode": "sparse_binary_terminal",
     "trigger_backfilled_to_streak_start": false,
     "trigger_timestamp": "current_confirming_frame"
