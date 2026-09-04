@@ -498,6 +498,17 @@ class InMemoryRevisionStateMachine:
     def activate_pending(self, boundary: QuiescentBoundary) -> RevisionRecord:
         self._require_recovered_reset()
         boundary.validate_for_activation()
+        return self.activate_pending_at_episode_boundary()
+
+    def activate_pending_at_episode_boundary(self) -> RevisionRecord:
+        """Activate a staged revision once no episode is pinned.
+
+        The integrated online loop already owns the robot/capture boundary.  It
+        does not need the older P0A robot-home witness used by the standalone
+        publication tool.
+        """
+
+        self._require_recovered_reset()
         if self.episode_revision_id is not None:
             raise RuntimeError("ONLINE_REPLAY_REVISION_ACTIVATION_DURING_EPISODE")
         if self.pending_revision_id is None:

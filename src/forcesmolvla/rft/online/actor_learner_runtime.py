@@ -42,7 +42,8 @@ class OnlineTrainingPolicy:
     critic_updates_per_cycle: int = 2
     actor_updates_per_cycle: int = 1
     target_polyak_updates_per_cycle: int = 2
-    actor_parameter_broadcast_period: int = 5
+    max_joint_cycles_per_admitted_episode: int = 5
+    actor_candidate_period: int = 5
     checkpoint_period: int = 50
     keep_latest_checkpoints: int = 2
 
@@ -56,7 +57,8 @@ class OnlineTrainingPolicy:
             and self.actor_updates_per_cycle >= 0
             and self.target_polyak_updates_per_cycle
             == self.critic_updates_per_cycle
-            and self.actor_parameter_broadcast_period >= 1
+            and self.max_joint_cycles_per_admitted_episode >= 1
+            and self.actor_candidate_period >= 1
             and self.checkpoint_period >= 1
             and self.keep_latest_checkpoints >= 1,
             "FORCERFT_ONLINE_TRAINING_POLICY_INVALID",
@@ -65,8 +67,21 @@ class OnlineTrainingPolicy:
     def training_ready(self, online_transition_count: int) -> bool:
         return online_transition_count >= self.training_starts
 
-    def broadcast_due(self, completed_cycle: int) -> bool:
-        return completed_cycle > 0 and completed_cycle % self.actor_parameter_broadcast_period == 0
+    def candidate_due(self, completed_actor_steps: int) -> bool:
+        return (
+            completed_actor_steps > 0
+            and completed_actor_steps % self.actor_candidate_period == 0
+        )
+
+    def joint_cycle_budget(self, admitted_episode_count: int) -> int:
+        require(
+            admitted_episode_count >= 0,
+            "FORCERFT_ONLINE_ADMITTED_EPISODE_COUNT_INVALID",
+        )
+        return (
+            admitted_episode_count
+            * self.max_joint_cycles_per_admitted_episode
+        )
 
     def checkpoint_due(self, completed_cycle: int) -> bool:
         return completed_cycle > 0 and completed_cycle % self.checkpoint_period == 0
@@ -151,6 +166,19 @@ def exact_resume_checkpoint_is_recoverable(
         counters = runtime["counters"]
         joint_cycles = int(counters["joint_cycles"])
         online_cycles = int(runtime.get("online_joint_cycles", 0))
+        schedule = metadata.get("online_training_schedule", {})
+        critic_updates_per_cycle = int(
+            schedule.get("critic_updates_per_cycle", 2)
+        )
+        actor_updates_per_cycle = int(
+            schedule.get("actor_updates_per_cycle", 1)
+        )
+        target_updates_per_cycle = int(
+            schedule.get(
+                "target_polyak_updates_per_cycle",
+                critic_updates_per_cycle,
+            )
+        )
         if expected_kind == "stage3_safe_seed_v1":
             return bool(
                 int(counters["joint_cycles"]) == 0
@@ -158,9 +186,15 @@ def exact_resume_checkpoint_is_recoverable(
                 and int(actor_scheduler["last_epoch"]) == 0
             )
         counters_match = (
-            int(counters["critic_optimizer_steps"]) == joint_cycles * 2
-            and 0 <= int(counters["actor_optimizer_steps"]) <= joint_cycles
-            and int(counters["target_polyak_steps"]) == joint_cycles * 2
+            critic_updates_per_cycle >= 1
+            and actor_updates_per_cycle >= 0
+            and target_updates_per_cycle >= 1
+            and int(counters["critic_optimizer_steps"])
+            == joint_cycles * critic_updates_per_cycle
+            and 0 <= int(counters["actor_optimizer_steps"])
+            <= joint_cycles * actor_updates_per_cycle
+            and int(counters["target_polyak_steps"])
+            == joint_cycles * target_updates_per_cycle
             and int(actor_scheduler["last_epoch"])
             == int(counters["actor_optimizer_steps"])
         )
@@ -249,13 +283,6 @@ def retain_latest_online_checkpoints(checkpoint_root: Path, *, keep: int = 2) ->
     return tuple(path for _cycle, path in checkpoints[-keep:])
 
 
-def broadcast_actor_parameters(learner_actor: torch.nn.Module, inference_actor: torch.nn.Module) -> None:
-    """Atomically copy the completed Learner Actor state in memory."""
-
-    inference_actor.load_state_dict(learner_actor.state_dict(), strict=True)
-    inference_actor.eval()
-
-
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AsyncRuntimeError(message)
@@ -278,7 +305,9 @@ def reconcile_post_checkpoint_replay(credits: Any, all_r: Sequence[dict]) -> int
     minted = sum(credits.mint_for_unique_online_transition(uid) for uid in uids)
     snapshot = credits.snapshot()
     require(
-        snapshot.credited_transition_count == len(uids) and snapshot.available > 0,
+        snapshot.credited_transition_count == len(uids)
+        and 0 <= snapshot.consumed <= snapshot.minted
+        and snapshot.available == snapshot.minted - snapshot.consumed,
         "ONLINE_REPLAY_ASYNC_REPLAY_OR_CREDIT_MISMATCH",
     )
     return minted
@@ -401,10 +430,15 @@ def prepare_learner(
     joint_cycles = int(counters["joint_cycles"])
     online_cycles = int(runtime.get("online_joint_cycles", 0))
     actor_optimizer_steps = int(counters["actor_optimizer_steps"])
+    online_training = config["online_training"]
     require(
-        int(counters["critic_optimizer_steps"]) == joint_cycles * 2
-        and 0 <= actor_optimizer_steps <= joint_cycles
-        and int(counters["target_polyak_steps"]) == joint_cycles * 2
+        int(counters["critic_optimizer_steps"])
+        == joint_cycles * int(online_training["critic_updates_per_cycle"])
+        and 0 <= actor_optimizer_steps
+        <= joint_cycles * int(online_training["actor_updates_per_cycle"])
+        and int(counters["target_polyak_steps"])
+        == joint_cycles
+        * int(online_training["target_polyak_updates_per_cycle"])
         and critic_optimizer.state
         and actor_optimizer_state_is_valid_for_resume(
             actor_optimizer, actor_optimizer_steps
@@ -527,8 +561,13 @@ def prepare_learner(
             target_polyak_updates_per_cycle=int(
                 config["online_training"]["target_polyak_updates_per_cycle"]
             ),
-            actor_parameter_broadcast_period=int(
-                config["online_training"]["actor_parameter_broadcast_period"]
+            max_joint_cycles_per_admitted_episode=int(
+                config["online_training"][
+                    "max_joint_cycles_per_admitted_episode"
+                ]
+            ),
+            actor_candidate_period=int(
+                config["online_training"]["actor_candidate_period"]
             ),
             checkpoint_period=int(
                 config["online_training"]["checkpoint_period"]
@@ -623,6 +662,7 @@ class InferencePriorityCoordinator:
         *,
         initial_estimate_s: float = 0.45,
         coverage_reserve_s: float = 0.10,
+        episode_idle_required: bool = False,
     ) -> Iterator[None]:
         if initial_estimate_s < 0 or coverage_reserve_s < 0:
             raise ValueError("ONLINE_REPLAY_ASYNC_LEARNER_ESTIMATE_INVALID")
@@ -639,6 +679,10 @@ class InferencePriorityCoordinator:
                 return (
                     self._owner is None
                     and self._inference_waiters == 0
+                    and (
+                        not episode_idle_required
+                        or not self._actor_window_active
+                    )
                     and (
                         not self._actor_window_active
                         or coverage >= estimate + coverage_reserve_s

@@ -36,7 +36,8 @@ online_training:
   critic_updates_per_cycle: 2
   actor_updates_per_cycle: 1
   target_polyak_updates_per_cycle: 2
-  actor_parameter_broadcast_period: 5
+  max_joint_cycles_per_admitted_episode: 5
+  actor_candidate_period: 5
   checkpoint_period: 50
   keep_latest_checkpoints: 2
 

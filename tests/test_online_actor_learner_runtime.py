@@ -40,7 +40,14 @@ EXACT_RESUME_FILES = (
 )
 
 
-def _exact_checkpoint(path: Path, kind: str, *, compatible: bool = True) -> None:
+def _exact_checkpoint(
+    path: Path,
+    kind: str,
+    *,
+    compatible: bool = True,
+    critic_updates_per_cycle: int = 2,
+    actor_updates_per_cycle: int = 1,
+) -> None:
     path.mkdir(parents=True)
     metadata = {
         "complete": True, "kind": kind, "actor_directory": "actor",
@@ -49,6 +56,11 @@ def _exact_checkpoint(path: Path, kind: str, *, compatible: bool = True) -> None
         metadata["critic_action_contract_version"] = (
             CRITIC_ACTION_CONTRACT.version
         )
+        metadata["online_training_schedule"] = {
+            "critic_updates_per_cycle": critic_updates_per_cycle,
+            "actor_updates_per_cycle": actor_updates_per_cycle,
+            "target_polyak_updates_per_cycle": critic_updates_per_cycle,
+        }
     (path / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
     for relative in EXACT_RESUME_FILES:
         target = path / relative
@@ -64,13 +76,13 @@ def _exact_checkpoint(path: Path, kind: str, *, compatible: bool = True) -> None
         "online_joint_cycles": online_cycles,
         "counters": {
             "joint_cycles": joint_cycles,
-            "critic_optimizer_steps": joint_cycles * 2,
-            "actor_optimizer_steps": joint_cycles,
-            "target_polyak_steps": joint_cycles * 2,
+            "critic_optimizer_steps": joint_cycles * critic_updates_per_cycle,
+            "actor_optimizer_steps": joint_cycles * actor_updates_per_cycle,
+            "target_polyak_steps": joint_cycles * critic_updates_per_cycle,
         },
     }, path / "state/runtime_state.pt")
     torch.save(
-        {"last_epoch": joint_cycles},
+        {"last_epoch": joint_cycles * actor_updates_per_cycle},
         path / "optimizers/actor_scheduler_state.pt",
     )
 
@@ -108,7 +120,7 @@ def test_fixed_online_training_schedule_and_checkpoint_retention(tmp_path) -> No
     policy = OnlineTrainingPolicy()
     assert not policy.training_ready(99)
     assert policy.training_ready(100)
-    assert policy.broadcast_due(5) and not policy.broadcast_due(6)
+    assert policy.candidate_due(5) and not policy.candidate_due(6)
     assert policy.checkpoint_due(50) and not policy.checkpoint_due(55)
     for cycle in (50, 100, 107):
         online_checkpoint_path(tmp_path, cycle).mkdir()
@@ -128,14 +140,25 @@ def test_online_schedule_accepts_experiment_values_with_valid_ranges() -> None:
         critic_updates_per_cycle=3,
         actor_updates_per_cycle=2,
         target_polyak_updates_per_cycle=3,
-        actor_parameter_broadcast_period=10,
+        actor_candidate_period=10,
         checkpoint_period=20,
         keep_latest_checkpoints=4,
     )
 
     assert policy.training_ready(64)
-    assert policy.broadcast_due(10)
+    assert policy.candidate_due(10)
     assert policy.checkpoint_due(20)
+
+
+def test_online_training_budget_is_episode_bounded() -> None:
+    policy = OnlineTrainingPolicy(max_joint_cycles_per_admitted_episode=5)
+
+    assert policy.joint_cycle_budget(0) == 0
+    assert policy.joint_cycle_budget(3) == 15
+    with pytest.raises(
+        RuntimeError, match="FORCERFT_ONLINE_ADMITTED_EPISODE_COUNT_INVALID"
+    ):
+        policy.joint_cycle_budget(-1)
 
 
 def test_critic_only_checkpoint_allows_empty_actor_optimizer_state() -> None:
@@ -171,6 +194,23 @@ def test_resume_selection_prefers_latest_recoverable_online(tmp_path) -> None:
     )
     assert selected.path == cycle_50.resolve()
     assert selected.kind == "online_actor_critic_exact_resume"
+
+
+def test_resume_validation_uses_saved_nondefault_schedule(tmp_path) -> None:
+    checkpoint = online_checkpoint_path(
+        tmp_path / "online/checkpoints", 12
+    )
+    _exact_checkpoint(
+        checkpoint,
+        "online_actor_critic_exact_resume",
+        critic_updates_per_cycle=3,
+        actor_updates_per_cycle=2,
+    )
+
+    selected = select_resume_or_seed_checkpoint(
+        tmp_path, configured_seed_bundle=None
+    )
+    assert selected.path == checkpoint.resolve()
 
 
 def test_prepare_learner_uses_exact_resume_loader_signature(tmp_path) -> None:
@@ -333,6 +373,29 @@ def test_learner_waits_for_action_coverage() -> None:
     thread.join(timeout=1)
     coordinator.end_actor_window()
     assert coordinator.slowest_learner_microstep is not None
+
+
+def test_actor_optimization_waits_until_episode_is_idle() -> None:
+    coordinator = InferencePriorityCoordinator()
+    acquired = threading.Event()
+    coordinator.begin_actor_window(10.0)
+
+    def actor_update() -> None:
+        with coordinator.learner_step_slot(
+            "actor_microbatch",
+            initial_estimate_s=0.0,
+            coverage_reserve_s=0.0,
+            episode_idle_required=True,
+        ):
+            acquired.set()
+
+    thread = threading.Thread(target=actor_update)
+    thread.start()
+    time.sleep(0.02)
+    assert not acquired.is_set()
+    coordinator.end_actor_window()
+    assert acquired.wait(timeout=1)
+    thread.join(timeout=1)
 
 
 def test_takeover_rejects_old_result_and_prefills_fresh_generation() -> None:

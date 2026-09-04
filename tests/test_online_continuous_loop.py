@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import os
 import sys
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 
@@ -12,6 +14,37 @@ sys.path.insert(0, str(ROOT / "tools"))
 import run_forcerft_online_loop as loop  # noqa: E402
 import run_forcerft_integrated_capture as capture  # noqa: E402
 import run_forcerft_production_bridge as bridge_tool  # noqa: E402
+
+
+def test_reward_worker_request_passes_image_paths_without_temporary_frame_arrays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    camera1 = [tmp_path / f"external-{index}.jpg" for index in range(3)]
+    camera2 = [tmp_path / f"wrist-{index}.jpg" for index in range(3)]
+    detector = bridge_tool.OneShotFrozenRewardDetector(
+        tmp_path / "reward.msgpack",
+        "task-reward-v1",
+        120,
+        worker_socket=tmp_path / "reward.sock",
+    )
+
+    def fake_request(_socket: Path, request: Path, output: Path) -> None:
+        payload = bridge_tool.json.loads(request.read_text(encoding="utf-8"))
+        assert payload["batches"] == [{
+            "count": 3,
+            "camera1_paths": [str(path) for path in camera1],
+            "camera2_paths": [str(path) for path in camera2],
+        }]
+        assert not list(request.parent.glob("camera*.npy"))
+        np.save(output, np.asarray([0.1, 0.2, 0.3]), allow_pickle=False)
+
+    monkeypatch.setattr(bridge_tool, "_request_detector_worker", fake_request)
+    scores = detector(SimpleNamespace(
+        camera1_paths=camera1,
+        camera2_paths=camera2,
+    ))
+
+    assert scores.probabilities == pytest.approx((0.1, 0.2, 0.3))
 
 
 def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> None:
@@ -412,6 +445,7 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     resume = tmp_path / "resume"
+    (resume / "actor").mkdir(parents=True)
     results = iter((None, True, False))
     indices: list[int] = []
 
@@ -433,6 +467,7 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
         "server_persistent": True,
         "learner_resume_checkpoint": str(resume.resolve()),
         "active_actor_model_revision": "model",
+        "active_actor_checkpoint": str((resume / "actor").resolve()),
         "policy_epoch": 0,
     })
     monkeypatch.setattr(
@@ -440,7 +475,7 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
         "_run_episode",
         lambda _args, index, **_kwargs: indices.append(index) or next(results),
     )
-    monkeypatch.setattr(loop, "_stop_server", lambda _process: None)
+    monkeypatch.setattr(loop, "_stop_server", lambda *_args, **_kwargs: None)
     args = type("Args", (), {
         "allow_development_policy_execution_smoke": True,
         "output_root": tmp_path,
@@ -464,6 +499,7 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     resume = tmp_path / "online/checkpoints/online_actor_critic_cycle_000100"
+    (resume / "actor").mkdir(parents=True)
     commands: list[list[str]] = []
 
     class Process:
@@ -488,10 +524,11 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
         "server_persistent": True,
         "learner_resume_checkpoint": str(resume.resolve()),
         "active_actor_model_revision": "model",
+        "active_actor_checkpoint": str((resume / "actor").resolve()),
         "policy_epoch": 0,
     })
     monkeypatch.setattr(loop, "_run_episode", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(loop, "_stop_server", lambda _process: None)
+    monkeypatch.setattr(loop, "_stop_server", lambda *_args, **_kwargs: None)
     args = type("Args", (), {
         "allow_development_policy_execution_smoke": True,
         "output_root": tmp_path,
@@ -576,7 +613,7 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
             self.signal = signal
 
         def wait(self, timeout):
-            assert timeout == 60
+            assert timeout == 300
             return 0
 
         def kill(self):

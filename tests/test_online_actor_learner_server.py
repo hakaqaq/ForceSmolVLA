@@ -32,6 +32,8 @@ class FakeMachine:
 
     def __init__(self) -> None:
         self.active = False
+        self.pending_revision_id = None
+        self.pending_model_revision = None
 
     def begin_episode(self) -> str:
         assert not self.active
@@ -50,14 +52,37 @@ class FakeMachine:
         assert self.active
         self.active = False
 
+    def register_candidate(self, revision_id, model_revision):
+        self.pending_revision_id = revision_id
+        self.pending_model_revision = model_revision
+
+    def stage(self, revision_id):
+        assert revision_id == self.pending_revision_id
+
+    def reject(self, revision_id, _reason):
+        assert revision_id == self.pending_revision_id
+        self.pending_revision_id = None
+        self.pending_model_revision = None
+
+    def activate_pending_at_episode_boundary(self):
+        assert not self.active and self.pending_revision_id is not None
+        self.active_revision_id = self.pending_revision_id
+        self.policy_epoch += 1
+        result = type("Revision", (), {
+            "revision_id": self.pending_revision_id,
+            "model_sha256": self.pending_model_revision,
+        })()
+        self.pending_revision_id = None
+        self.pending_model_revision = None
+        return result
+
 
 class FakeEngine:
-    metadata = {
-        "service_role": "model_inference_only",
-        "model_sha256": "model-cycle10",
-    }
-
     def __init__(self) -> None:
+        self.metadata = {
+            "service_role": "model_inference_only",
+            "model_sha256": "model-cycle10",
+        }
         self._lock = threading.Lock()
         self.policy = FakePolicy()
 
@@ -110,8 +135,17 @@ class FakeLearner:
             "nonfinite_count": 0,
             "oom_count": 0,
             "online_joint_cycle": self.cycle,
+            "actor_optimizer_steps": self.cycle,
             "learner_actor": actor,
             "latest_checkpoint_path": None,
+        }
+
+    def export_actor_candidate(self, actor_optimizer_steps):
+        return {
+            "revision_id": f"candidate-{actor_optimizer_steps}",
+            "model_revision": f"model-{actor_optimizer_steps}",
+            "checkpoint": Path(f"/tmp/candidate-{actor_optimizer_steps}"),
+            "actor_optimizer_steps": actor_optimizer_steps,
         }
 
 
@@ -130,6 +164,7 @@ def _runtime(
         episode_id="episode_000000",
         active_revision_id="active-cycle10",
         active_model_revision="model-cycle10",
+        active_actor_checkpoint=Path("/tmp/active-cycle10"),
         learner_resume_checkpoint=Path("/tmp/cycle20"),
         online_checkpoint_root=checkpoint_root or Path("/tmp/online-checkpoints"),
         learner_job=learner or FakeLearner(),
@@ -176,6 +211,24 @@ def test_resume_reconciles_append_only_replay_and_credits_once() -> None:
     } == set(post_checkpoint_uids)
     assert reconcile_post_checkpoint_replay(credits, rows) == 0
     assert credits.snapshot().available == 698
+
+
+def test_resume_accepts_fully_consumed_replay_credit() -> None:
+    credits = UpdateCreditLedger(
+        credits_per_transition=1, credits_per_joint_cycle=1,
+    )
+    rows = [
+        {"identity": {"transition_uid": f"transition-{index}"}}
+        for index in range(3)
+    ]
+    for row in rows:
+        credits.mint_for_unique_online_transition(
+            row["identity"]["transition_uid"]
+        )
+        credits.consume_joint_cycle()
+
+    assert credits.snapshot().available == 0
+    assert reconcile_post_checkpoint_replay(credits, rows) == 0
 
 
 def test_less_than_100_online_rows_runs_no_optimizer_step(tmp_path: Path) -> None:
@@ -230,6 +283,37 @@ def test_training_start_prepares_learner_on_configured_device(
     assert observed == [device]
 
 
+def test_replay_snapshot_reloads_only_after_new_episode_seal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    replay_root = tmp_path / "online"
+    episodes = replay_root / "episodes"
+    episodes.mkdir(parents=True)
+    learner = ContinuousLearner(
+        device=torch.device("cpu"),
+        resume_checkpoint=tmp_path / "resume",
+        checkpoint_root=tmp_path / "checkpoints",
+        replay_root=replay_root,
+        current_session_id=None,
+        task="ring",
+    )
+    calls = []
+    monkeypatch.setattr(
+        server.warmup,
+        "load_formal_online_r",
+        lambda _root: calls.append(
+            tuple(sorted(path.name for path in episodes.iterdir()))
+        ) or ([], (), {}, []),
+    )
+
+    learner._load_replay_snapshot()
+    learner._load_replay_snapshot()
+    (episodes / "session-1.json").write_text("{}", encoding="utf-8")
+    learner._load_replay_snapshot()
+
+    assert calls == [(), ("session-1.json",)]
+
+
 def test_refreshed_schedule_is_prefetched_before_next_cycle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -282,27 +366,41 @@ def test_append_only_replay_does_not_invalidate_cycle_completion(
         )
 
 
-def test_cycle_five_broadcast_is_memory_only_and_only_operator_q_saves(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+def test_cycle_five_candidate_activates_only_after_episode_boundary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch,
 ) -> None:
     learner = FakeLearner()
     checkpoint_root = tmp_path / "online-checkpoints"
     runtime = _runtime(learner=learner, checkpoint_root=checkpoint_root)
+    monkeypatch.setattr(
+        server,
+        "_load_actor_checkpoint",
+        lambda policy, checkpoint: setattr(
+            policy, "value", int(checkpoint.name.rsplit("-", 1)[1])
+        ),
+    )
     runtime.start_episode(_identity())
     runtime.infer({
         "request_id": "request-1",
         "provenance": {"session_id": "session-1"},
     })
     deadline = time.monotonic() + 2.0
-    while runtime.status()["actor_parameter_broadcast_count"] < 1:
+    while runtime.status()["pending_actor_revision"] is None:
         assert time.monotonic() < deadline
         time.sleep(0.005)
-    assert runtime.engine.policy.value >= 5
-    assert runtime.status()["active_actor_online_cycle"] >= 5
-    assert "[model] deployed online Actor cycle=" in capsys.readouterr().out
-    assert not checkpoint_root.exists()
+    assert runtime.engine.policy.value == 0
+    assert runtime.status()["actor_parameter_broadcast_count"] == 0
     runtime.abort_episode(_identity())
-    report = runtime.checkpoint_on_operator_q(_identity())
+    assert runtime.engine.policy.value == 5
+    assert runtime.status()["active_actor_online_cycle"] == 5
+    assert runtime.status()["actor_parameter_broadcast_count"] == 1
+    assert "[model] activated online Actor at episode boundary" in capsys.readouterr().out
+    assert not checkpoint_root.exists()
+    next_identity = {
+        **_identity(),
+        "policy_revision": "model-5",
+    }
+    report = runtime.checkpoint_on_operator_q(next_identity)
     assert report["operator_q_checkpoint_path"] is None
     runtime.stop()
     assert learner.save_calls == 1
@@ -315,6 +413,17 @@ def test_stop_without_operator_q_does_not_save() -> None:
     runtime.stop()
 
     assert learner.save_calls == 0
+
+
+def test_quiesce_and_save_waits_for_learner_and_saves_once() -> None:
+    learner = FakeLearner()
+    runtime = _runtime(learner=learner)
+
+    first = runtime.quiesce_and_save({})
+    second = runtime.quiesce_and_save({})
+
+    assert first["quiesced"] is second["quiesced"] is True
+    assert learner.save_calls == 1
 
 
 def test_failed_learner_is_not_checkpointed_on_stop() -> None:

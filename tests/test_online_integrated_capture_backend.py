@@ -894,7 +894,7 @@ def test_valid_stalled_close_updates_toggle_authority() -> None:
     assert authority.authority_closed is True
 
 
-def test_stale_or_unknown_feedback_suppresses_takeover_gripper_goal() -> None:
+def test_stale_or_unknown_feedback_keeps_takeover_toggle_pending() -> None:
     authority = _toggle_authority()
     authority.observe_feedback(0.085, 100)
     assert authority.next_target_closed(
@@ -912,8 +912,10 @@ def test_stale_or_unknown_feedback_suppresses_takeover_gripper_goal() -> None:
         source.index("def _control_worker")
     ]
     assert "def _sync_gripper_toggle_for_takeover" in controller
-    assert "Robotiq toggle inhibited" in controller
-    assert "_send_gripper_goal(\n                    not logical_target" in controller
+    assert "_pending_takeover_gripper_toggle" in controller
+    assert "Robotiq toggle pending" in controller
+    assert "_human_gripper_lease_active" in controller
+    assert 'not logical_target, "SpaceMouse side button"' in controller
 
 
 def test_integrated_cli_passes_shadow_runtime_binding_without_launch(

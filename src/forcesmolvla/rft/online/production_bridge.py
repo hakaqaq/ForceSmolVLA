@@ -5421,20 +5421,22 @@ class ProductionBridge:
             self.state_root / "episodes" / f"{episode_key}.json",
             episode_manifest,
         )
-        replay_envelopes = [
+        # Episode seals are the commit boundary and contain incremental counts.
+        # Reading one small file per episode avoids reparsing every historical
+        # transition after each new admission.
+        committed_episodes = [
             json.loads(path.read_text(encoding="utf-8"))
-            for path in (self.state_root / "replay").glob("*.json")
+            for path in (self.state_root / "episodes").glob("*.json")
         ]
-        total_unique = len(replay_envelopes)
+        total_unique = sum(
+            int(item["accepted_unique_r_transition_count"])
+            for item in committed_episodes
+            if item.get("status") == "SEALED_COMMITTED"
+        )
         total_unique_policy = sum(
-            envelope["payload"].get(
-                "action_source",
-                envelope["payload"]
-                .get("action_authority", {})
-                .get("executed_action_source"),
-            )
-            == "policy"
-            for envelope in replay_envelopes
+            int(item["autonomous_policy_replay_count"])
+            for item in committed_episodes
+            if item.get("status") == "SEALED_COMMITTED"
         )
         return FormalOnlineRAdmissionReport(
             status="FORMAL_ONLINE_R_ADMITTED",

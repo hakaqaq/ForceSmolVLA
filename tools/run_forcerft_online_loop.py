@@ -86,14 +86,22 @@ def _report(command: list[str]) -> dict[str, Any]:
     raise ContinuousLoopError("FORCERFT_ONLINE_COMMAND_REPORT_INVALID")
 
 
-def _admit(args: argparse.Namespace, episode: Path, *, outcome: str) -> bool:
+def _admit(
+    args: argparse.Namespace,
+    episode: Path,
+    *,
+    outcome: str,
+    actor_checkpoint: Path | None = None,
+) -> bool:
     """Materialize the sealed episode and append it exactly once to Online-R."""
 
     command = [
         str(args.model_python), str(ROOT / "tools/run_forcerft_production_bridge.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
         "--episode", str(episode), "--state-root", str(args.formal_r_root),
-        "--deployed-actor-checkpoint", str(args.deployed_actor_checkpoint),
+        "--deployed-actor-checkpoint", str(
+            actor_checkpoint or args.deployed_actor_checkpoint
+        ),
         "--operator-task-outcome", outcome, "--admit-formal-online-r",
     ]
     detector_socket = getattr(args, "detector_worker_socket", None)
@@ -127,22 +135,29 @@ def _finish_episode(
     *,
     episode: Path,
     outcome: str,
+    actor_checkpoint: Path | None = None,
 ) -> bool:
     require(
         outcome in {"success", "failure"},
         "FORCERFT_ONLINE_OPERATOR_OUTCOME_INVALID",
     )
-    return _admit(args, episode, outcome=outcome)
+    if actor_checkpoint is None:
+        return _admit(args, episode, outcome=outcome)
+    return _admit(
+        args, episode, outcome=outcome, actor_checkpoint=actor_checkpoint
+    )
 
 
-def _post_json(url: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+def _post_json(
+    url: str, payload: Mapping[str, Any], *, timeout: float = 10.0
+) -> dict[str, Any]:
     request = Request(
         url,
         data=json.dumps(dict(payload)).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(request, timeout=10.0) as response:
+    with urlopen(request, timeout=timeout) as response:
         value = json.loads(response.read())
     require(isinstance(value, dict), "FORCERFT_ONLINE_SERVER_RESPONSE_INVALID")
     return value
@@ -170,14 +185,30 @@ def _wait_json(
     raise ContinuousLoopError(f"FORCERFT_ONLINE_SERVER_TIMEOUT:{last_error}")
 
 
-def _stop_server(process: subprocess.Popen[Any]) -> None:
-    """Let the server finish its current optimizer step and exact-resume save."""
+def _stop_server(
+    process: subprocess.Popen[Any], *, policy_port: int | None = None
+) -> None:
+    """Quiesce and save before asking the persistent server to exit."""
 
     if process.poll() is not None:
         return
+    if policy_port is not None:
+        try:
+            report = _post_json(
+                f"http://127.0.0.1:{policy_port}/runtime/quiesce-and-save",
+                {"reason": "online_loop_shutdown"},
+                timeout=300.0,
+            )
+            require(
+                report.get("quiesced") is True,
+                "FORCERFT_ONLINE_SERVER_QUIESCE_FAILED",
+            )
+        except (OSError, URLError, ContinuousLoopError, ValueError):
+            # SIGINT remains the recovery path if the local HTTP server is gone.
+            pass
     process.send_signal(signal.SIGINT)
     try:
-        process.wait(timeout=60)
+        process.wait(timeout=300)
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=10)
@@ -275,19 +306,28 @@ def _run_episode(
     index: int,
     *,
     server: subprocess.Popen[Any],
-    model_revision: str,
-    policy_epoch: int,
+    model_revision: str | None = None,
+    policy_epoch: int | None = None,
 ) -> bool | None:
     root = (args.root_prefix / f"{index:03d}").resolve()
     session_id = f"{args.root_prefix.name}_{index:03d}"
     require(not root.exists(), "FORCERFT_ONLINE_CAPTURE_ROOT_EXISTS")
-    identity = {
+    prepare_identity = {
         "session_id": session_id,
         "episode_id": EPISODE_ID,
-        "policy_revision": model_revision,
     }
     metadata = _post_json(
-        f"http://127.0.0.1:{args.policy_port}/runtime/prepare-episode", identity,
+        f"http://127.0.0.1:{args.policy_port}/runtime/prepare-episode",
+        prepare_identity,
+    )
+    compatibility_identity = model_revision is not None and policy_epoch is not None
+    model_revision = str(
+        metadata.get("active_actor_model_revision", model_revision or "")
+    )
+    policy_epoch = int(metadata.get("policy_epoch", policy_epoch or 0))
+    actor_checkpoint_value = str(metadata.get("active_actor_checkpoint", ""))
+    actor_checkpoint = (
+        Path(actor_checkpoint_value).resolve() if actor_checkpoint_value else None
     )
     require(
         metadata.get("runtime_session_id") == session_id
@@ -295,6 +335,19 @@ def _run_episode(
         and metadata.get("server_persistent") is True,
         "FORCERFT_ONLINE_SERVER_IDENTITY_MISMATCH",
     )
+    require(
+        model_revision
+        and policy_epoch >= 0
+        and (
+            compatibility_identity
+            or actor_checkpoint is not None and actor_checkpoint.is_dir()
+        ),
+        "FORCERFT_ONLINE_SERVER_IDENTITY_MISMATCH",
+    )
+    identity = {
+        **prepare_identity,
+        "policy_revision": model_revision,
+    }
     try:
         _run([
             str(args.robot_python), str(ROOT / "tools/run_forcerft_integrated_capture.py"),
@@ -360,7 +413,10 @@ def _run_episode(
         print(f"[learner] operator-q checkpoint={checkpoint or 'none'}")
         return False
     if not _finish_episode(
-        args, episode=root / "episodes" / EPISODE_ID, outcome=outcome,
+        args,
+        episode=root / "episodes" / EPISODE_ID,
+        outcome=outcome,
+        actor_checkpoint=actor_checkpoint,
     ):
         print(f"[episode] rejected session={session_id}; continuing with next capture")
         return None
@@ -427,9 +483,16 @@ def run_loop(args: argparse.Namespace) -> int:
             metadata.get("learner_resume_checkpoint") == str(resume.resolve()),
             "FORCERFT_ONLINE_RESUME_CHECKPOINT_MISMATCH",
         )
-        model_revision = str(metadata.get("active_actor_model_revision", ""))
-        policy_epoch = int(metadata.get("policy_epoch", -1))
-        require(model_revision and policy_epoch >= 0, "FORCERFT_ONLINE_SERVER_METADATA_INVALID")
+        active_actor_checkpoint = str(
+            metadata.get("active_actor_checkpoint", "")
+        )
+        require(
+            str(metadata.get("active_actor_model_revision", ""))
+            and int(metadata.get("policy_epoch", -1)) >= 0
+            and active_actor_checkpoint
+            and Path(active_actor_checkpoint).is_dir(),
+            "FORCERFT_ONLINE_SERVER_METADATA_INVALID",
+        )
         detector_process, detector_directory, detector_socket = (
             _start_detector_worker(args)
         )
@@ -441,8 +504,6 @@ def run_loop(args: argparse.Namespace) -> int:
                 args,
                 index,
                 server=server,
-                model_revision=model_revision,
-                policy_epoch=policy_epoch,
             )
             index += 1
             if result is False:
@@ -454,7 +515,7 @@ def run_loop(args: argparse.Namespace) -> int:
             _stop_detector_worker(detector_process, detector_socket)
         if detector_directory is not None:
             detector_directory.cleanup()
-        _stop_server(server)
+        _stop_server(server, policy_port=args.policy_port)
     return completed
 
 

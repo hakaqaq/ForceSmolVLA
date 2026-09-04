@@ -101,6 +101,8 @@ class _LoadedFrozenRewardDetector:
         self.jax, self.jnp, self.infer = jax, jnp, infer
 
     def run(self, request_path: Path, output_path: Path) -> None:
+        from PIL import Image
+
         request = json.loads(request_path.read_text(encoding="utf-8"))
         batches = request.get("batches", [])
         if not batches:
@@ -114,11 +116,21 @@ class _LoadedFrozenRewardDetector:
         logits: list[np.ndarray] = []
         frame_count = 0
         for batch in batches:
-            arrays = [
-                np.load(batch[name], mmap_mode="r", allow_pickle=False)
-                for name in ("camera1", "camera2")
-            ]
             count = int(batch["count"])
+            arrays = []
+            for name in ("camera1", "camera2"):
+                paths = batch.get(f"{name}_paths")
+                if not isinstance(paths, list) or len(paths) != count:
+                    raise RuntimeError(
+                        "BRIDGE_FROZEN_DETECTOR_IMAGE_PATH_BATCH_INVALID"
+                    )
+                decoded = []
+                for path in paths:
+                    with Image.open(path) as image:
+                        decoded.append(
+                            np.asarray(image.convert("RGB"), dtype=np.uint8)
+                        )
+                arrays.append(np.ascontiguousarray(decoded))
             if any(value.shape != (count, *IMAGE_SHAPE) for value in arrays):
                 raise RuntimeError("BRIDGE_FROZEN_DETECTOR_IMAGE_BATCH_INVALID")
             observations = {
@@ -217,7 +229,6 @@ class OneShotFrozenRewardDetector:
 
     def __call__(self, prepared):
         from forcesmolvla.rft.online.production_bridge import FrozenDetectorScores
-        from PIL import Image
 
         with tempfile.TemporaryDirectory(prefix="online-frozen-detector-") as directory:
             root = Path(directory)
@@ -234,22 +245,7 @@ class OneShotFrozenRewardDetector:
                 for name, paths in zip(
                     ("camera1", "camera2"), paths_by_camera, strict=True
                 ):
-                    decoded = []
-                    for path in paths:
-                        with Image.open(path) as image:
-                            rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
-                        if rgb.shape != IMAGE_SHAPE:
-                            raise RuntimeError(
-                                "BRIDGE_FROZEN_DETECTOR_IMAGE_SHAPE_INVALID"
-                            )
-                        decoded.append(rgb)
-                    batch_path = root / f"{name}_{start:06d}.npy"
-                    np.save(
-                        batch_path,
-                        np.ascontiguousarray(decoded),
-                        allow_pickle=False,
-                    )
-                    batch[name] = str(batch_path)
+                    batch[f"{name}_paths"] = [str(path) for path in paths]
                 batches.append(batch)
             request.write_text(
                 json.dumps(
