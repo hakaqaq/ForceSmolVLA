@@ -20,6 +20,7 @@ from forcesmolvla.rft.online.actor_learner_runtime import (
     OnlineTrainingPolicy,
     PinnedEpisode,
     TakeoverWindow,
+    actor_optimizer_state_is_valid_for_resume,
     prepare_learner,
     run_concurrent_window,
     run_timed_actor,
@@ -135,6 +136,18 @@ def test_online_schedule_accepts_experiment_values_with_valid_ranges() -> None:
     assert policy.training_ready(64)
     assert policy.broadcast_due(10)
     assert policy.checkpoint_due(20)
+
+
+def test_critic_only_checkpoint_allows_empty_actor_optimizer_state() -> None:
+    parameter = torch.nn.Parameter(torch.zeros(()))
+    optimizer = torch.optim.AdamW([parameter])
+
+    assert actor_optimizer_state_is_valid_for_resume(optimizer, 0)
+    assert not actor_optimizer_state_is_valid_for_resume(optimizer, 1)
+
+    parameter.grad = torch.ones_like(parameter)
+    optimizer.step()
+    assert actor_optimizer_state_is_valid_for_resume(optimizer, 1)
 
 
 def test_resume_selection_prefers_latest_recoverable_online(tmp_path) -> None:

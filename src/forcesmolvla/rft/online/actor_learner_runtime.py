@@ -261,6 +261,15 @@ def require(condition: bool, message: str) -> None:
         raise AsyncRuntimeError(message)
 
 
+def actor_optimizer_state_is_valid_for_resume(
+    actor_optimizer: torch.optim.Optimizer,
+    actor_optimizer_steps: int,
+) -> bool:
+    """A Critic-only checkpoint legitimately has no Actor optimizer state."""
+
+    return actor_optimizer_steps == 0 or bool(actor_optimizer.state)
+
+
 def reconcile_post_checkpoint_replay(credits: Any, all_r: Sequence[dict]) -> int:
     """Mint credit exactly once for live replay UIDs admitted after checkpoint."""
 
@@ -392,13 +401,14 @@ def prepare_learner(
     joint_cycles = int(counters["joint_cycles"])
     online_cycles = int(runtime.get("online_joint_cycles", 0))
     actor_optimizer_steps = int(counters["actor_optimizer_steps"])
-    safe_seed = metadata.get("kind") == "stage3_safe_seed_v1"
     require(
         int(counters["critic_optimizer_steps"]) == joint_cycles * 2
         and 0 <= actor_optimizer_steps <= joint_cycles
         and int(counters["target_polyak_steps"]) == joint_cycles * 2
         and critic_optimizer.state
-        and (safe_seed or bool(actor_optimizer.state))
+        and actor_optimizer_state_is_valid_for_resume(
+            actor_optimizer, actor_optimizer_steps
+        )
         and actor_scheduler.last_epoch == actor_optimizer_steps,
         "ONLINE_REPLAY_ASYNC_LEARNER_EXACT_RESUME_INVALID",
     )
