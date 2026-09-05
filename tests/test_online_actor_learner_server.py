@@ -16,12 +16,19 @@ from serve_forcerft_residual_actor_critic import (  # noqa: E402
     _select_deployed_actor_for_resume,
 )
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+    ONLINE_ADAPTATION_DIRECTORY_NAME,
     ResidualActorCriticSchedule,
+)
+from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
+    CANDIDATE_CHECKPOINT_KIND,
 )
 from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
     RevisionRecord,
     RevisionState,
+)
+from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
+    ONLINE_SEMANTICS_VERSION,
 )
 
 
@@ -35,6 +42,7 @@ class FakeEngine:
             "model_sha256": BASE_MODEL_ID,
         }
         self._lock = threading.Lock()
+        self._residual_lock = threading.Lock()
         self.policy = torch.nn.Linear(1, 1)
         self.residual_actor = torch.nn.Linear(1, 1)
         torch.nn.init.zeros_(self.residual_actor.weight)
@@ -225,7 +233,8 @@ def runtime(tmp_path: Path) -> AsyncResidualActorCriticRuntime:
         active_actor_checkpoint=tmp_path / "initial-residual",
         learner_resume_checkpoint=tmp_path / "seed",
         online_checkpoint_root=tmp_path
-        / "online_ack_residual/training_checkpoints",
+        / ONLINE_ADAPTATION_DIRECTORY_NAME
+        / "training_checkpoints",
         learner_job=FakeLearner(),
         active_actor_online_cycle=0,
     )
@@ -246,7 +255,8 @@ def drain_runtime(tmp_path: Path, learner: FakeLearner) -> AsyncResidualActorCri
         active_actor_checkpoint=tmp_path / "initial-residual",
         learner_resume_checkpoint=tmp_path / "seed",
         online_checkpoint_root=tmp_path
-        / "online_ack_residual/training_checkpoints",
+        / ONLINE_ADAPTATION_DIRECTORY_NAME
+        / "training_checkpoints",
         learner_job=learner,
         active_actor_online_cycle=0,
     )
@@ -263,7 +273,8 @@ def identity() -> dict[str, str]:
 def test_resume_keeps_fixed_base_and_restores_active_residual(tmp_path: Path) -> None:
     resume = (
         tmp_path
-        / "online_ack_residual/training_checkpoints"
+        / ONLINE_ADAPTATION_DIRECTORY_NAME
+        / "training_checkpoints"
         / "residual_actor_critic_cycle_000010"
     )
     (resume / "state").mkdir(parents=True)
@@ -281,15 +292,23 @@ def test_resume_keeps_fixed_base_and_restores_active_residual(tmp_path: Path) ->
     torch.save({}, resume / "models/residual_actor.pt")
     candidate = (
         tmp_path
-        / "online_ack_residual/policy_candidates/task3-ack-residual-test"
+        / ONLINE_ADAPTATION_DIRECTORY_NAME
+        / "policy_candidates/task3-ack-residual-test"
         / "residual_actor_step_000010"
     )
     candidate.mkdir(parents=True)
     torch.save({}, candidate / "residual_actor.pt")
+    torch.save(
+        {
+            "checkpoint_kind": CANDIDATE_CHECKPOINT_KIND,
+            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+        },
+        candidate / "candidate_state.pt",
+    )
     selected = _select_deployed_actor_for_resume(resume_checkpoint=resume)
     assert selected == (
         base.resolve(),
-        (candidate / "residual_actor.pt").resolve(),
+        candidate.resolve(),
         "task3-residual-policy-step-000010",
         10,
     )
@@ -298,7 +317,7 @@ def test_resume_keeps_fixed_base_and_restores_active_residual(tmp_path: Path) ->
 def test_candidate_contains_only_residual_actor_state(tmp_path: Path) -> None:
     learner = ResidualActorCriticLearner.__new__(ResidualActorCriticLearner)
     learner.checkpoint_root = (
-        tmp_path / "online_ack_residual/training_checkpoints"
+        tmp_path / ONLINE_ADAPTATION_DIRECTORY_NAME / "training_checkpoints"
     )
     learner.learner = {
         "residual_actor": torch.nn.Linear(2, 1),
@@ -314,14 +333,16 @@ def test_candidate_contains_only_residual_actor_state(tmp_path: Path) -> None:
         if path.is_file()
     }
     assert candidate["revision_id"] == "task3-residual-policy-step-000010"
-    assert files == {"residual_actor.pt"}
+    assert files == {"residual_actor.pt", "candidate_state.pt"}
     with pytest.raises(RuntimeError, match="CANDIDATE_PATH_COLLISION"):
         learner.export_actor_candidate(10)
 
 
 def test_unchanged_residual_actor_does_not_publish_candidate(tmp_path: Path) -> None:
     learner = ResidualActorCriticLearner.__new__(ResidualActorCriticLearner)
-    learner.checkpoint_root = tmp_path / "online_ack_residual/training_checkpoints"
+    learner.checkpoint_root = (
+        tmp_path / ONLINE_ADAPTATION_DIRECTORY_NAME / "training_checkpoints"
+    )
     actor = torch.nn.Linear(2, 1)
     active = torch.nn.Linear(2, 1)
     active.load_state_dict(actor.state_dict())
@@ -352,6 +373,13 @@ def test_step_10_candidate_activates_only_after_episode_boundary(
     torch.nn.init.constant_(replacement.weight, 2.0)
     torch.nn.init.constant_(replacement.bias, 3.0)
     torch.save(replacement.state_dict(), candidate / "residual_actor.pt")
+    torch.save(
+        {
+            "checkpoint_kind": CANDIDATE_CHECKPOINT_KIND,
+            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+        },
+        candidate / "candidate_state.pt",
+    )
 
     service.start_episode(identity())
     service._stage_actor_candidate(

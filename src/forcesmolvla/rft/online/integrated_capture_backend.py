@@ -32,6 +32,10 @@ from forcesmolvla.rft.online.integrated_capture import (
     RECORDER_ENTRY,
 )
 from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority, UPPER_CLOCK_DOMAIN
+from forcesmolvla.rft.online.action_representation import (
+    quaternion_xyzw_to_rpy_xyz,
+)
+from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
 
 
 SHADOW_BACKEND_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
@@ -480,6 +484,37 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
 
         def _fail_shadow(self, reason: str, error: Exception) -> None:
             self.shadow_error = f"{reason}:{type(error).__name__}:{error}"
+
+        def residual_decision_snapshot(self) -> dict[str, Any]:
+            """Capture one camera-free, internally consistent dispatch snapshot."""
+
+            with self._lock:
+                if not self.ready_unlocked():
+                    raise RuntimeError(self.sensor_error or "observation is incomplete")
+                _pose_source, pose_receive, position, _quaternion = self.pose_history[-1]
+                state7 = deploy.np.concatenate(
+                    (position.copy(), self.rpy.copy(), [float(self.gripper_width_m)])
+                )
+                wrench6 = self.filtered_wrench.copy()
+                wrench_receive = int(self.filtered_wrench_receive_ns)
+                filter_generation = int(self.filter_generation)
+            decision_ns = time.monotonic_ns()
+            if (decision_ns - int(pose_receive)) / 1.0e6 > float(
+                self.args.measured_pose_age_limit_ms
+            ):
+                raise RuntimeError("STATE_POSE_AGE_EXCEEDED")
+            if (decision_ns - wrench_receive) / 1.0e6 > float(
+                deploy.LIVE_WRENCH_MAX_AGE_MS
+            ):
+                raise RuntimeError("WRENCH_AGE_EXCEEDED")
+            return {
+                "decision_monotonic_ns": decision_ns,
+                "state7": state7.tolist(),
+                "wrench6": wrench6.tolist(),
+                "pose_receive_monotonic_ns": int(pose_receive),
+                "wrench_receive_monotonic_ns": wrench_receive,
+                "filter_generation": filter_generation,
+            }
 
         def _safe_action_callback(self, message: Any) -> None:
             super()._safe_action_callback(message)
@@ -1828,6 +1863,16 @@ class IntegratedCaptureBackend:
         current_chunk: dict[str, Any] | None = None
         human_takeover_active = False
         native_episode_missing_since: float | None = None
+        previous_residual_decision_wrench: Any = None
+        previous_residual_decision_ns: int | None = None
+        previous_residual_generation: tuple[int, int] | None = None
+
+        def reset_residual_decision_history() -> None:
+            nonlocal previous_residual_decision_wrench
+            nonlocal previous_residual_decision_ns, previous_residual_generation
+            previous_residual_decision_wrench = None
+            previous_residual_decision_ns = None
+            previous_residual_generation = None
 
         def capture_observation() -> None:
             nonlocal current_request, current_observation
@@ -1866,6 +1911,8 @@ class IntegratedCaptureBackend:
         def consume_interventions() -> None:
             nonlocal current_chunk, current_request, current_observation
             nonlocal human_takeover_active
+            nonlocal previous_residual_decision_wrench
+            nonlocal previous_residual_decision_ns, previous_residual_generation
             for audit in observation.policy_audit_snapshot():
                 payload = audit["payload"]
                 decision_id = int(payload.get("decision_id", -1))
@@ -1880,6 +1927,8 @@ class IntegratedCaptureBackend:
                     "intervention_start", "human_action", "intervention_end"
                 }:
                     continue
+                if event == "intervention_start":
+                    reset_residual_decision_history()
                 old_chunk_id = (
                     None if current_chunk is None else current_chunk["result"]["chunk_id"]
                 )
@@ -1895,6 +1944,43 @@ class IntegratedCaptureBackend:
                 intervention["invalidated_chunk_id"] = (
                     old_chunk_id if event == "intervention_start" else None
                 )
+                if event in {"intervention_start", "human_action"}:
+                    snapshot = observation.residual_decision_snapshot()
+                    generation = (
+                        int(intervention["policy_epoch"]),
+                        int(intervention["takeover_generation"]),
+                    )
+                    decision_ns = int(snapshot["decision_monotonic_ns"])
+                    wrench = deploy.np.asarray(
+                        snapshot["wrench6"], dtype=deploy.np.float64
+                    )
+                    interval_ns = (
+                        0
+                        if previous_residual_decision_ns is None
+                        or previous_residual_generation != generation
+                        else decision_ns - previous_residual_decision_ns
+                    )
+                    wrench_delta = (
+                        deploy.np.zeros(6, dtype=deploy.np.float64)
+                        if interval_ns <= 0
+                        else (wrench - previous_residual_decision_wrench)
+                        * (100_000_000.0 / interval_ns)
+                    )
+                    intervention["residual_decision_context"] = {
+                        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+                        "valid_for_residual_training": True,
+                        "invalid_reason": None,
+                        "decision_monotonic_ns": decision_ns,
+                        "state7_absolute": list(snapshot["state7"]),
+                        "wrench6_calibrated_tcp": list(snapshot["wrench6"]),
+                        "wrench_delta6_calibrated_tcp_100ms": (
+                            wrench_delta.tolist()
+                        ),
+                        "wrench_delta_interval_ns": interval_ns,
+                    }
+                    previous_residual_decision_wrench = wrench.copy()
+                    previous_residual_decision_ns = decision_ns
+                    previous_residual_generation = generation
                 store.append("policy_execute_intervention.jsonl", intervention)
                 if event == "intervention_start":
                     human_takeover_active = True
@@ -1904,6 +1990,7 @@ class IntegratedCaptureBackend:
                     current_observation = None
                 elif event == "intervention_end":
                     human_takeover_active = False
+                    reset_residual_decision_history()
 
         def yield_to_human_gripper() -> None:
             nonlocal current_chunk, current_request, current_observation
@@ -1911,6 +1998,7 @@ class IntegratedCaptureBackend:
             current_chunk = None
             current_request = None
             current_observation = None
+            reset_residual_decision_history()
 
         capture_observation()
         submit_current_request()
@@ -2093,7 +2181,7 @@ class IntegratedCaptureBackend:
                     )
                 selection_ns = time.monotonic_ns()
                 try:
-                    action_index, target = _selected_chunk_action(
+                    action_index, frozen_base_target = _selected_chunk_action(
                         current_chunk["actions"],
                         t_ref_ns=int(current_chunk["result"]["t_ref_ns"]),
                         fps=int(metadata["fps"]),
@@ -2102,6 +2190,96 @@ class IntegratedCaptureBackend:
                 except IntegratedCaptureError as error:
                     if str(error) != "POLICY_EXECUTE_CHUNK_EXPIRED":
                         raise
+                    current_chunk = None
+                    continue
+                dispatch_generation = (
+                    int(lineage["policy_epoch"]),
+                    int(lineage["takeover_generation"]),
+                )
+                snapshot = observation.residual_decision_snapshot()
+                decision_ns = int(snapshot["decision_monotonic_ns"])
+                decision_wrench = deploy.np.asarray(
+                    snapshot["wrench6"], dtype=deploy.np.float64
+                )
+                interval_ns = (
+                    0
+                    if previous_residual_decision_ns is None
+                    or previous_residual_generation != dispatch_generation
+                    else decision_ns - previous_residual_decision_ns
+                )
+                wrench_delta = (
+                    deploy.np.zeros(6, dtype=deploy.np.float64)
+                    if interval_ns <= 0
+                    else (
+                        decision_wrench - previous_residual_decision_wrench
+                    )
+                    * (100_000_000.0 / interval_ns)
+                )
+                result_base_absolute = current_chunk["result"].get(
+                    "base_actions_absolute7"
+                )
+                base_evidence_valid = bool(
+                    isinstance(result_base_absolute, list)
+                    and len(result_base_absolute) == 50
+                    and deploy.np.array_equal(
+                        deploy.np.asarray(
+                            result_base_absolute[action_index],
+                            dtype=deploy.np.float64,
+                        ),
+                        deploy.np.asarray(
+                            frozen_base_target, dtype=deploy.np.float64
+                        ),
+                    )
+                )
+                residual_result = None
+                residual_invalid_reason = None
+                if base_evidence_valid:
+                    residual_result = client._request(
+                        "POST",
+                        "/residual-decision",
+                        {
+                            "session_id": contract.identity.session_id,
+                            "decision_monotonic_ns": decision_ns,
+                            "state7": snapshot["state7"],
+                            "wrench6": snapshot["wrench6"],
+                            "wrench_delta6": wrench_delta.tolist(),
+                            "base_absolute_action7": result_base_absolute[
+                                action_index
+                            ],
+                        },
+                    )
+                    if (
+                        residual_result.get("online_semantics_version")
+                        != ONLINE_SEMANTICS_VERSION
+                        or residual_result.get("decision_monotonic_ns")
+                        != decision_ns
+                        or residual_result.get("active_residual_policy_revision")
+                        != metadata.get("active_actor_revision")
+                        or int(residual_result.get("policy_epoch", -1))
+                        != int(lineage["policy_epoch"])
+                        or residual_result.get("base_absolute_action7")
+                        != result_base_absolute[action_index]
+                    ):
+                        raise IntegratedCaptureError(
+                            "POLICY_EXECUTE_RESIDUAL_DECISION_IDENTITY_MISMATCH"
+                        )
+                    target = deploy.np.asarray(
+                        residual_result["composed_absolute_action7"],
+                        dtype=deploy.np.float64,
+                    )
+                else:
+                    target = deploy.np.asarray(
+                        frozen_base_target, dtype=deploy.np.float64
+                    )
+                    residual_invalid_reason = "frozen_absolute_base_missing"
+                consume_interventions()
+                if not _policy_context_is_current(
+                    ledger,
+                    current_observation,
+                    policy_epoch=dispatch_generation[0],
+                    takeover_generation=dispatch_generation[1],
+                    human_takeover_active=human_takeover_active,
+                ):
                     current_chunk = None
                     continue
                 position, quaternion = observation.pose()
@@ -2125,10 +2303,6 @@ class IntegratedCaptureBackend:
                 try:
                     dispatch_observation_id = str(
                         current_observation["observation_id"]
-                    )
-                    dispatch_generation = (
-                        int(lineage["policy_epoch"]),
-                        int(lineage["takeover_generation"]),
                     )
                     sequence = observation.publish_policy_action(
                         normalized,
@@ -2185,6 +2359,50 @@ class IntegratedCaptureBackend:
                     raise IntegratedCaptureError(
                         "POLICY_EXECUTE_ARBITRATION_ACCEPTANCE_INVALID"
                     )
+                if residual_result is not None:
+                    previous_residual_decision_wrench = decision_wrench.copy()
+                    previous_residual_decision_ns = decision_ns
+                    previous_residual_generation = dispatch_generation
+                decision_context = {
+                    "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+                    "valid_for_residual_training": residual_result is not None,
+                    "invalid_reason": residual_invalid_reason,
+                    "decision_monotonic_ns": decision_ns,
+                    "state7_absolute": list(snapshot["state7"]),
+                    "wrench6_calibrated_tcp": list(snapshot["wrench6"]),
+                    "wrench_delta6_calibrated_tcp_100ms": wrench_delta.tolist(),
+                    "wrench_delta_interval_ns": interval_ns,
+                    "base_absolute_action7": (
+                        None
+                        if residual_result is None
+                        else residual_result["base_absolute_action7"]
+                    ),
+                    "normalized_state7": (
+                        None
+                        if residual_result is None
+                        else residual_result["normalized_state7"]
+                    ),
+                    "normalized_wrench6": (
+                        None
+                        if residual_result is None
+                        else residual_result["normalized_wrench6"]
+                    ),
+                    "normalized_wrench_delta6": (
+                        None
+                        if residual_result is None
+                        else residual_result["normalized_wrench_delta6"]
+                    ),
+                    "base_normalized_action6": (
+                        None
+                        if residual_result is None
+                        else residual_result["base_normalized_action7"][:6]
+                    ),
+                    "normalizer_manifest_sha256": (
+                        None
+                        if residual_result is None
+                        else residual_result["normalizer_manifest_sha256"]
+                    ),
+                }
                 selection = {
                     **lineage,
                     "sequence": sequence,
@@ -2193,48 +2411,24 @@ class IntegratedCaptureBackend:
                     "selected_post_adapter_absolute7": target.tolist(),
                     "normalized_action7": normalized.tolist(),
                     "base_normalized_action7": (
-                        result_base[action_index]
-                        if (
-                            isinstance(
-                                result_base := current_chunk["result"].get(
-                                    "base_normalized_actions"
-                                ),
-                                list,
-                            )
-                            and len(result_base) == 50
-                        )
-                        else normalized.tolist()
+                        None
+                        if residual_result is None
+                        else residual_result["base_normalized_action7"]
                     ),
-                    "base_absolute_action7": (
-                        result_base_absolute[action_index]
-                        if (
-                            isinstance(
-                                result_base_absolute := current_chunk["result"].get(
-                                    "base_actions_absolute7"
-                                ),
-                                list,
-                            )
-                            and len(result_base_absolute) == 50
-                        )
-                        else None
-                    ),
+                    "base_absolute_action7": decision_context[
+                        "base_absolute_action7"
+                    ],
                     "applied_residual_tcp6": (
-                        current_chunk["result"].get("applied_residual_tcp6")
-                        or [0.0] * 6
+                        None
+                        if residual_result is None
+                        else residual_result["applied_residual_tcp6"]
                     ),
                     "composed_normalized_action7": (
-                        result_composed[action_index]
-                        if (
-                            isinstance(
-                                result_composed := current_chunk["result"].get(
-                                    "composed_normalized_actions"
-                                ),
-                                list,
-                            )
-                            and len(result_composed) == 50
-                        )
-                        else normalized.tolist()
+                        None
+                        if residual_result is None
+                        else residual_result["composed_normalized_action7"]
                     ),
+                    "residual_decision_context": decision_context,
                 }
                 audited_decision = dict(decision)
                 audited_decision["forcesmolvla_chunk_selection"] = selection
@@ -2282,6 +2476,29 @@ class IntegratedCaptureBackend:
                 store.append(
                     "policy_execute_gripper_authority.jsonl", gripper_authority
                 )
+                accepted_pose = pose_ack.get("accepted_pose", {})
+                accepted_position = deploy.np.asarray(
+                    accepted_pose.get("position_m"), dtype=deploy.np.float64
+                )
+                accepted_quaternion = deploy.np.asarray(
+                    accepted_pose.get("quaternion_xyzw"), dtype=deploy.np.float64
+                )
+                if (
+                    accepted_position.shape != (3,)
+                    or accepted_quaternion.shape != (4,)
+                    or not deploy.np.isfinite(accepted_position).all()
+                    or not deploy.np.isfinite(accepted_quaternion).all()
+                ):
+                    raise IntegratedCaptureError(
+                        "POLICY_EXECUTE_ACCEPTED_POSE_INVALID"
+                    )
+                accepted_absolute7 = deploy.np.concatenate(
+                    (
+                        accepted_position,
+                        quaternion_xyzw_to_rpy_xyz(accepted_quaternion),
+                        [float(gripper_authority["requested_width_m"])],
+                    )
+                )
                 previous_observation = current_observation
                 capture_observation()
                 transition = ledger.record_actual_action_ack(
@@ -2297,7 +2514,7 @@ class IntegratedCaptureBackend:
                     actual_action_source="policy",
                     policy_result_id=str(lineage["result_id"]),
                     proposal_id=str(lineage["proposal_id"]),
-                    accepted_absolute7=target.tolist(),
+                    accepted_absolute7=accepted_absolute7.tolist(),
                 )
                 transition.update(
                     {

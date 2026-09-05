@@ -18,8 +18,15 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from forcesmolvla.rft.critic import build_twin_q  # noqa: E402
+from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+    ONLINE_ADAPTATION_DIRECTORY_NAME,
+)
 from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
+    BOOTSTRAP_CHECKPOINT_KIND,
     save_residual_actor_critic_checkpoint,
+)
+from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
+    ONLINE_SEMANTICS_VERSION,
 )
 from forcesmolvla.rft.residual_actor import make_residual_actor_pair  # noqa: E402
 
@@ -39,6 +46,23 @@ def _load_base_actor(checkpoint: Path) -> torch.nn.Module:
     )
 
 
+def _normalizer_parameters_match(
+    *, dataset_root: Path, frozen_base_policy_checkpoint: Path
+) -> bool:
+    from forcesmolvla.training_data import (
+        load_checkpoint_runtime_artifacts,
+        load_normalizer_manifest,
+    )
+
+    dataset_normalizer = load_normalizer_manifest(
+        dataset_root / "normalizer_manifest.json"
+    )
+    base_runtime = load_checkpoint_runtime_artifacts(
+        frozen_base_policy_checkpoint
+    )
+    return dataset_normalizer.manifest() == base_runtime.normalizer.manifest()
+
+
 def build_online_residual_bootstrap(
     *,
     task_id: str,
@@ -48,8 +72,13 @@ def build_online_residual_bootstrap(
     checkpoint: Path,
     online_residual_config: Path,
 ) -> Path:
-    del output_root, dataset_root  # retained CLI path bindings; no demo replay is read.
+    del output_root  # retained CLI path binding; no replay is read.
     frozen_base_policy_checkpoint = Path(frozen_base_policy_checkpoint).resolve()
+    if not _normalizer_parameters_match(
+        dataset_root=Path(dataset_root).resolve(),
+        frozen_base_policy_checkpoint=frozen_base_policy_checkpoint,
+    ):
+        raise RuntimeError("FORCERFT_BOOTSTRAP_NORMALIZER_MISMATCH")
     config = yaml.safe_load(
         Path(online_residual_config).read_text(encoding="utf-8")
     )
@@ -81,13 +110,15 @@ def build_online_residual_bootstrap(
         lr=float(config["optimizer"]["twin_q"]["lr"]),
     )
     runtime_state = {
+        "checkpoint_kind": BOOTSTRAP_CHECKPOINT_KIND,
+        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "frozen_base_policy_checkpoint": str(frozen_base_policy_checkpoint),
         "residual_actor_critic_cycles": 0,
         "learner_state": "ack_replay_collection",
         "ack_critic_warmup_complete": False,
         "ack_critic_warmup_steps": 0,
         "active_residual_policy_revision": f"{task_id}-residual-policy-step-000000",
-        "online_adaptation_id": f"{task_id}-ack-residual-{time.time_ns()}",
+        "online_adaptation_id": f"{task_id}-ack-dispatch-residual-{time.time_ns()}",
         "counters": {
             "twin_q_optimizer_steps": 0,
             "residual_actor_optimizer_steps": 0,
@@ -138,7 +169,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if args.checkpoint is None:
         args.checkpoint = (
             args.output_root
-            / "online_ack_residual/bootstrap_checkpoints"
+            / ONLINE_ADAPTATION_DIRECTORY_NAME
+            / "bootstrap_checkpoints"
             / BOOTSTRAP_DIRECTORY_NAME
         )
     return args

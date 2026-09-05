@@ -16,9 +16,11 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (
 )
 from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (
     RESIDUAL_ACTOR_CRITIC_CHECKPOINT_FILES,
+    TRAINING_CHECKPOINT_KIND,
     residual_actor_critic_checkpoint_is_recoverable,
     save_residual_actor_critic_checkpoint,
 )
+from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
 from forcesmolvla.rft.residual_actor import make_residual_actor_pair
 
 
@@ -38,6 +40,8 @@ def test_residual_checkpoint_restores_learner_state_and_warmup_progress(
         (*q1.parameters(), *q2.parameters()), lr=3e-4
     )
     runtime = {
+        "checkpoint_kind": TRAINING_CHECKPOINT_KIND,
+        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "frozen_base_policy_checkpoint": "/fixed/base",
         "learner_state": "ack_critic_warmup",
         "ack_critic_warmup_complete": False,
@@ -82,6 +86,12 @@ def test_residual_checkpoint_restores_learner_state_and_warmup_progress(
     )
 
     assert residual_actor_critic_checkpoint_is_recoverable(checkpoint)
+    assert residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=TRAINING_CHECKPOINT_KIND
+    )
+    assert not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind="online_residual_bootstrap"
+    )
     assert {
         path.relative_to(checkpoint).as_posix()
         for path in checkpoint.rglob("*")
@@ -143,6 +153,8 @@ def test_exact_resume_rejects_current_yaml_algorithm_drift(
             (*q1.parameters(), *q2.parameters()), lr=3e-4
         ),
         runtime_state={
+            "checkpoint_kind": TRAINING_CHECKPOINT_KIND,
+            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
             "frozen_base_policy_checkpoint": "/fixed/base",
             "learner_state": "ack_replay_collection",
             "ack_critic_warmup_complete": False,
@@ -187,3 +199,26 @@ def test_exact_resume_rejects_current_yaml_algorithm_drift(
     )
     assert restored["training_policy"].admitted_rows_per_cycle == 64
     assert restored["residual_actor"].max_normalized_residual == 0.5
+
+    state_path = checkpoint / "state/runtime_state.pt"
+    original = torch.load(state_path, map_location="cpu", weights_only=False)
+    incompatible = deepcopy(original)
+    incompatible["online_semantics_version"] = "old-semantics"
+    torch.save(incompatible, state_path)
+    assert not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=TRAINING_CHECKPOINT_KIND
+    )
+
+    missing_counter = deepcopy(original)
+    del missing_counter["counters"]["residual_actor_update_attempts"]
+    torch.save(missing_counter, state_path)
+    assert not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=TRAINING_CHECKPOINT_KIND
+    )
+
+    inconsistent = deepcopy(original)
+    inconsistent["counters"]["residual_actor_update_attempts"] = 1
+    torch.save(inconsistent, state_path)
+    assert not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=TRAINING_CHECKPOINT_KIND
+    )

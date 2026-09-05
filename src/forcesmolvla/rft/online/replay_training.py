@@ -25,10 +25,13 @@ from forcesmolvla.rft.online.transition_authority import (
     AcceptedAck,
     AckMacro,
     ActorQEligibility,
+    DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
+    ONLINE_SEMANTICS_VERSION,
     TransitionContractError,
     build_ack_behavior_macro,
     derive_actor_q_eligibility,
     normalized_ack_behavior_action,
+    normalized_behavior_residual,
 )
 from forcesmolvla.rft.critic_action_adapter_v2 import (
     CRITIC_ACTION_CONTRACT,
@@ -300,12 +303,126 @@ def build_ack_macros(
 ) -> tuple[ProductionAckMacro, ...]:
     """Build 100 ms K=3 behavior macros from real ACKs on the 30 Hz grid."""
 
-    groups: dict[tuple[object, ...], list[Mapping[str, Any]]] = {}
+    macros: list[ProductionAckMacro] = []
+    legacy_rows: list[Mapping[str, Any]] = []
     for row in rows:
         if row.get("policy_lineage", {}).get("proposal", {}).get(
             "invalidated_by_takeover"
         ) is True:
             continue
+        if row.get("online_semantics_version") == ONLINE_SEMANTICS_VERSION:
+            persisted = row.get("critic_action_contract", {})
+            if (
+                persisted.get("contract_version")
+                != DISPATCH_DECISION_CRITIC_CONTRACT_VERSION
+            ):
+                raise RuntimeError(
+                    "FORCERFT_ONLINE_REPLAY_DISPATCH_CONTRACT_MISMATCH"
+                )
+            accepted = np.asarray(
+                row.get("accepted_absolute_action_k7"), dtype=np.float64
+            )
+            mask = tuple(bool(value) for value in persisted.get("behavior_mask", ()))
+            if (
+                accepted.shape != (3, 7)
+                or not np.isfinite(accepted).all()
+                or mask != (True, True, True)
+            ):
+                raise RuntimeError(
+                    "FORCERFT_ONLINE_REPLAY_DISPATCH_ACTION_INVALID"
+                )
+            behavior = AckMacro(
+                grid_monotonic_ns=tuple(
+                    int(value) for value in persisted["grid_timestamp_ns"]
+                ),
+                ack_ids=tuple(str(value) for value in persisted["source_ack_ids"]),
+                gripper_command_ids=tuple(
+                    str(value)
+                    for value in persisted.get(
+                        "gripper_command_ids",
+                        [
+                            row["action_authority"]["gripper_terminal_provenance"][
+                                "origin_action_goal_id"
+                            ]
+                        ]
+                        * 3,
+                    )
+                ),
+                gripper_ack_command_ids=tuple(
+                    str(value)
+                    for value in persisted.get(
+                        "gripper_ack_command_ids",
+                        [
+                            row["action_authority"]["gripper_terminal_provenance"][
+                                "origin_action_goal_id"
+                            ]
+                        ]
+                        * 3,
+                    )
+                ),
+                accepted_absolute_action_k7=accepted,
+                slot_owner=(
+                    ("policy",) * 3
+                    if row["action_source"] == "policy"
+                    else ("human_intervention",) * 3
+                ),
+                workspace_clip_flags=tuple(
+                    bool(row["action_authority"]["safety_arbitration"].get(
+                        "workspace_clipped", False
+                    ))
+                    for _ in range(3)
+                ),
+                behavior_mask=mask,
+                source_command_ids=tuple(
+                    str(value) for value in persisted["source_command_ids"]
+                ),
+                source_dispatch_sequences=tuple(
+                    int(value)
+                    for value in persisted["source_dispatch_sequences"]
+                ),
+                source_model_indices=tuple(
+                    int(value) for value in persisted["source_model_indices"]
+                ),
+                chunk_ids=tuple(
+                    str(value) for value in persisted["source_chunk_ids"]
+                ),
+                controller_authorities=tuple(
+                    str(persisted["controller_authority"]) for _ in range(3)
+                ),
+                contract_version=DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
+                next_timestamp_ns=int(persisted["next_timestamp_ns"]),
+                macro_duration_ns=int(persisted["macro_duration_ns"]),
+            )
+            eligibility = derive_actor_q_eligibility(
+                macro=behavior,
+                action_source=str(row["action_source"]),
+                quarantined=False,
+                observation_valid=True,
+                next_observation_valid=True,
+            )
+            macros.append(
+                ProductionAckMacro(
+                    transition=row,
+                    behavior=behavior,
+                    next_grid_monotonic_ns=behavior.next_timestamp_ns,
+                    ack_provenance=tuple(
+                        {
+                            "ack_id": behavior.ack_ids[index],
+                            "source_command_id": behavior.source_command_ids[index],
+                            "dispatch_sequence": behavior.source_dispatch_sequences[index],
+                            "action_index": behavior.source_model_indices[index],
+                            "chunk_id": behavior.chunk_ids[index],
+                        }
+                        for index in range(3)
+                    ),
+                    actor_q_eligibility=eligibility,
+                )
+            )
+            continue
+        legacy_rows.append(row)
+
+    groups: dict[tuple[object, ...], list[Mapping[str, Any]]] = {}
+    for row in legacy_rows:
         ack = _accepted_ack(row)
         key = (
             ack.episode_id,
@@ -319,7 +436,6 @@ def build_ack_macros(
         )
         groups.setdefault(key, []).append(row)
 
-    macros: list[ProductionAckMacro] = []
     for group_rows in groups.values():
         ordered = sorted(
             group_rows, key=lambda row: _accepted_ack(row).receive_monotonic_ns
@@ -466,6 +582,11 @@ def _validated_formal_row(
     require(
         str(row["identity"]["episode_id"]) == episode_id,
         "FORCERFT_ONLINE_REPLAY_EPISODE_ID_MISMATCH",
+    )
+    require(
+        row.get("schema_version") == ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION
+        and row.get("online_semantics_version") == ONLINE_SEMANTICS_VERSION,
+        "FORCERFT_ONLINE_REPLAY_SEMANTICS_MISMATCH",
     )
     source = row.get(
         "action_source",
@@ -660,6 +781,10 @@ def count_sealed_critic_td_valid_transitions(root: Path) -> int:
         count += bool(
             row.get("classification")
             == "recorded_live_policy_execution_smoke"
+            and row.get("schema_version")
+            == ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION
+            and row.get("online_semantics_version")
+            == ONLINE_SEMANTICS_VERSION
             and source in {"policy", "human"}
             and row.get("action_authority", {}).get("executed_action_source")
             == source
@@ -933,213 +1058,201 @@ class OnlineResidualReplay:
         )
         return state, wrench
 
-    def _behavior_action(self, macro: ProductionAckMacro) -> np.ndarray:
-        state = self._raw_state(macro.transition["observation"])
-        action = normalized_ack_behavior_action(
-            macro.behavior,
-            anchor_state7=state,
-            normalize_delta7=self.normalizer.delta_action7.apply,
-        ).astype(np.float32)
-        return action
-
-    def _base_action(
-        self,
-        row: Mapping[str, Any],
-        behavior: np.ndarray,
-        anchor_state7: np.ndarray,
-    ) -> tuple[np.ndarray, bool]:
-        if row.get("action_source") == "human":
-            absolute = np.asarray(
-                row.get("pre_takeover_base_absolute_action7"),
-                dtype=np.float64,
-            )
-            valid = bool(
-                row.get("human_residual_valid") is True
-                and absolute.shape == (7,)
-                and np.isfinite(absolute).all()
-            )
-            if valid:
-                absolute_k7 = np.repeat(absolute[None, :], 3, axis=0)
-                delta_k7 = ActionDeltaProcessor.to_delta(
-                    absolute_k7, anchor_state7
-                )
-                normalized = self.normalizer.delta_action7.apply(
-                    delta_k7
-                ).astype(np.float32)
-                return normalized, True
-            return behavior.copy(), False
-        schema_version = str(row.get("schema_version", ""))
-        if schema_version not in SUPPORTED_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS:
-            return behavior.copy(), False
-        raw_base = row.get("base_normalized_action_k7")
-        try:
-            base = (
-                np.empty(0, dtype=np.float32)
-                if raw_base is None
-                else np.asarray(raw_base, dtype=np.float32)
-            )
-        except (TypeError, ValueError):
-            base = np.empty(0, dtype=np.float32)
-        if base.shape != (3, 7) or not np.isfinite(base).all():
-            return behavior.copy(), bool(
-                schema_version in LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS
-            )
-        return base, True
-
-    @staticmethod
-    def _wrench_delta_100ms(
-        current: np.ndarray,
-        previous: np.ndarray | None,
-        interval_ns: int,
-    ) -> np.ndarray:
-        if previous is None or interval_ns <= 0:
-            return np.zeros(6, dtype=np.float32)
-        return ((current - previous) * (100_000_000.0 / interval_ns)).astype(
-            np.float32
+    def _decision_features(
+        self, context: Mapping[str, Any]
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        require(
+            context.get("online_semantics_version") == ONLINE_SEMANTICS_VERSION
+            and context.get("valid_for_residual_training") is True,
+            "FORCERFT_ONLINE_REPLAY_DECISION_CONTEXT_INVALID",
         )
+        raw_state = np.asarray(context.get("state7_absolute"), dtype=np.float64)
+        raw_wrench = np.asarray(
+            context.get("wrench6_calibrated_tcp"), dtype=np.float64
+        )
+        raw_wrench_delta = np.asarray(
+            context.get("wrench_delta6_calibrated_tcp_100ms"),
+            dtype=np.float64,
+        )
+        base_absolute = np.asarray(
+            context.get("base_absolute_action7"), dtype=np.float64
+        )
+        require(
+            raw_state.shape == (7,)
+            and raw_wrench.shape == (6,)
+            and raw_wrench_delta.shape == (6,)
+            and base_absolute.shape == (7,)
+            and np.isfinite(raw_state).all()
+            and np.isfinite(raw_wrench).all()
+            and np.isfinite(raw_wrench_delta).all()
+            and np.isfinite(base_absolute).all(),
+            "FORCERFT_ONLINE_REPLAY_DECISION_FEATURE_INVALID",
+        )
+        state = self.normalizer.state7.apply(raw_state).astype(np.float32)
+        wrench = self.normalizer.wrench6.apply(raw_wrench).astype(np.float32)
+        wrench_std = np.asarray(self.normalizer.wrench6.std, dtype=np.float64)
+        require(
+            wrench_std.shape == (6,)
+            and np.isfinite(wrench_std).all()
+            and np.all(wrench_std > 0.0),
+            "FORCERFT_ONLINE_REPLAY_WRENCH_NORMALIZER_INVALID",
+        )
+        wrench_delta = (raw_wrench_delta / wrench_std).astype(np.float32)
+        base, _accepted, _residual = normalized_behavior_residual(
+            base_absolute_k7=base_absolute[None, :],
+            accepted_absolute_k7=base_absolute[None, :],
+            decision_state7=raw_state,
+            normalize_delta7=self.normalizer.delta_action7.apply,
+            valid_mask=np.ones(1, dtype=np.bool_),
+        )
+        expected = {
+            "normalized_state7": state,
+            "normalized_wrench6": wrench,
+            "normalized_wrench_delta6": wrench_delta,
+            "base_normalized_action6": base[0, :6],
+        }
+        for name, value in expected.items():
+            persisted = context.get(name)
+            if persisted is not None:
+                candidate = np.asarray(persisted, dtype=np.float32)
+                require(
+                    candidate.shape == value.shape
+                    and np.allclose(candidate, value, rtol=1.0e-5, atol=1.0e-6),
+                    "FORCERFT_ONLINE_REPLAY_NORMALIZER_CONTEXT_MISMATCH",
+                )
+        return state, wrench, wrench_delta, base[0]
 
     def _materialize_all(
         self, macros: tuple[ProductionAckMacro, ...]
     ) -> list[dict[str, Any]]:
-        grouped: dict[str, list[ProductionAckMacro]] = {}
-        for macro in macros:
-            grouped.setdefault(
-                str(macro.transition["identity"]["episode_id"]), []
-            ).append(macro)
         result: list[dict[str, Any]] = []
-        for episode_macros in grouped.values():
-            ordered = sorted(
-                episode_macros,
-                key=lambda macro: int(
-                    macro.transition["observation"][
-                        "materialized_timestamp_monotonic_ns"
-                    ]
-                ),
+        ordered = sorted(
+            macros,
+            key=lambda macro: int(
+                macro.transition.get("residual_decision_context", {}).get(
+                    "decision_monotonic_ns", 0
+                )
+            ),
+        )
+        for macro in ordered:
+            row = macro.transition
+            context = row.get("residual_decision_context")
+            raw_base = (
+                context.get("base_absolute_action7")
+                if isinstance(context, Mapping)
+                else None
             )
-            base_by_timestamp: dict[int, tuple[np.ndarray, bool]] = {}
-            mask_by_timestamp: dict[int, np.ndarray] = {}
-            behavior_by_id: dict[int, np.ndarray] = {}
-            for macro in ordered:
-                behavior = self._behavior_action(macro)
-                behavior_by_id[id(macro)] = behavior
-                anchor_state = self._raw_state(macro.transition["observation"])
-                base_by_timestamp[
-                    int(
-                        macro.transition["observation"][
-                            "materialized_timestamp_monotonic_ns"
-                        ]
-                    )
-                ] = self._base_action(
-                    macro.transition, behavior, anchor_state
-                )
-                mask_by_timestamp[
-                    int(
-                        macro.transition["observation"][
-                            "materialized_timestamp_monotonic_ns"
-                        ]
-                    )
-                ] = np.asarray(macro.behavior.behavior_mask, dtype=np.bool_)
-            previous_wrench: np.ndarray | None = None
-            previous_timestamp: int | None = None
-            for macro in ordered:
-                row = macro.transition
-                timestamp = int(
-                    row["observation"]["materialized_timestamp_monotonic_ns"]
-                )
-                state, wrench = self._normalized_observation(row["observation"])
+            try:
+                base_evidence = np.asarray(raw_base, dtype=np.float64)
+            except (TypeError, ValueError):
+                base_evidence = np.empty(0, dtype=np.float64)
+            if (
+                row.get("online_semantics_version") != ONLINE_SEMANTICS_VERSION
+                or not isinstance(context, Mapping)
+                or context.get("valid_for_residual_training") is not True
+                or base_evidence.shape != (7,)
+                or not np.isfinite(base_evidence).all()
+            ):
+                self.quarantined_current_schema_rows += 1
+                continue
+            state, wrench, wrench_delta, base_one = self._decision_features(
+                context
+            )
+            base_absolute = np.asarray(
+                row.get("base_absolute_action_k7"), dtype=np.float64
+            )
+            accepted_absolute = np.asarray(
+                row.get("accepted_absolute_action_k7"), dtype=np.float64
+            )
+            mask = np.asarray(macro.behavior.behavior_mask, dtype=np.bool_)
+            require(
+                base_absolute.shape == (3, 7)
+                and np.allclose(base_absolute, base_absolute[0])
+                and np.allclose(base_absolute[0], context["base_absolute_action7"]),
+                "FORCERFT_ONLINE_REPLAY_FROZEN_BASE_EVIDENCE_INVALID",
+            )
+            base, _accepted, residual = normalized_behavior_residual(
+                base_absolute_k7=base_absolute,
+                accepted_absolute_k7=accepted_absolute,
+                decision_state7=np.asarray(context["state7_absolute"], dtype=np.float64),
+                normalize_delta7=self.normalizer.delta_action7.apply,
+                valid_mask=mask,
+            )
+            require(
+                np.allclose(base[0], base_one, rtol=1.0e-5, atol=1.0e-6),
+                "FORCERFT_ONLINE_REPLAY_BASE_CONTEXT_MISMATCH",
+            )
+            outcome = row["outcome"]
+            terminal_boundary = bool(
+                outcome["terminated"] or outcome["truncated"]
+            )
+            next_context = row.get("next_residual_decision_context")
+            if next_context is None:
+                if not terminal_boundary:
+                    self.next_base_missing_rows += 1
+                    continue
                 next_state, next_wrench = self._normalized_observation(
                     row["next_observation"]
                 )
-                behavior = behavior_by_id[id(macro)]
-                base, base_valid = self._base_action(
-                    row, behavior, self._raw_state(row["observation"])
+                next_wrench_delta = np.zeros(6, dtype=np.float32)
+                next_base = base.copy()
+                next_base_valid = False
+            else:
+                require(
+                    not terminal_boundary and isinstance(next_context, Mapping),
+                    "FORCERFT_ONLINE_REPLAY_DECISION_SUCCESSOR_INVALID",
                 )
-                if row.get("action_source") == "policy" and not base_valid:
-                    self.quarantined_current_schema_rows += 1
-                    previous_wrench = wrench
-                    previous_timestamp = timestamp
-                    continue
-                mask = np.asarray(macro.behavior.behavior_mask, dtype=np.bool_)
-                residual = (behavior[..., :6] - base[..., :6]).astype(np.float32)
-                residual[~mask] = 0.0
-                next_timestamp = int(
-                    row["next_observation"][
-                        "materialized_timestamp_monotonic_ns"
-                    ]
-                )
-                next_entry = base_by_timestamp.get(next_timestamp)
-                next_base_valid = bool(
-                    next_entry is not None and next_entry[1]
-                )
-                outcome = row["outcome"]
-                terminal_boundary = bool(
-                    outcome["terminated"] or outcome["truncated"]
-                )
-                if not next_base_valid and not terminal_boundary:
-                    self.next_base_missing_rows += 1
-                    previous_wrench = wrench
-                    previous_timestamp = timestamp
-                    continue
-                next_base = (
-                    base.copy()
-                    if next_entry is None
-                    else next_entry[0].copy()
-                )
-                next_mask = mask_by_timestamp.get(next_timestamp, mask).copy()
-                human_valid = bool(
-                    row.get("action_source") == "human"
-                    and row.get("human_residual_valid") is True
-                    and base_valid
-                )
-                human_target = (
-                    behavior[0, :6] - base[0, :6]
-                    if human_valid
-                    else np.zeros(6, dtype=np.float32)
-                )
-                interval_ns = (
-                    0
-                    if previous_timestamp is None
-                    else timestamp - previous_timestamp
-                )
-                next_interval_ns = next_timestamp - timestamp
-                result.append(
-                    {
-                        "state7": state,
-                        "wrench6": wrench,
-                        "wrench_delta6": self._wrench_delta_100ms(
-                            wrench, previous_wrench, interval_ns
-                        ),
-                        "wrench_delta_interval_ns": interval_ns,
-                        "base_action_k6": base[..., :6],
-                        "behavior_residual_k6": residual,
-                        "action_mask": mask,
-                        "next_state7": next_state,
-                        "next_wrench6": next_wrench,
-                        "next_wrench_delta6": self._wrench_delta_100ms(
-                            next_wrench, wrench, next_interval_ns
-                        ),
-                        "next_wrench_delta_interval_ns": next_interval_ns,
-                        "next_base_action_k6": next_base[..., :6],
-                        "next_action_mask": next_mask,
-                        "next_base_valid": next_base_valid,
-                        "reward": float(row["outcome"]["reward"]),
-                        "terminated": bool(row["outcome"]["terminated"]),
-                        "truncated": bool(row["outcome"]["truncated"]),
-                        "actor_q_valid": bool(
-                            row.get("eligibility", {}).get(
-                                "actor_q_valid", macro.actor_q_eligibility.valid
-                            )
-                        ),
-                        "human_residual_target6": np.asarray(
-                            human_target, dtype=np.float32
-                        ),
-                        "human_residual_valid": human_valid,
-                        "action_source": str(row["action_source"]),
-                        "episode_id": str(row["identity"]["episode_id"]),
-                    }
-                )
-                previous_wrench = wrench
-                previous_timestamp = timestamp
+                (
+                    next_state,
+                    next_wrench,
+                    next_wrench_delta,
+                    next_base_one,
+                ) = self._decision_features(next_context)
+                next_base = np.repeat(next_base_one[None, :], 3, axis=0)
+                next_base_valid = True
+            human_valid = bool(
+                row.get("action_source") == "human"
+                and row.get("human_residual_valid") is True
+            )
+            result.append(
+                {
+                    "state7": state,
+                    "wrench6": wrench,
+                    "wrench_delta6": wrench_delta,
+                    "wrench_delta_interval_ns": int(
+                        context.get("wrench_delta_interval_ns", 0)
+                    ),
+                    "base_action_k6": base[..., :6],
+                    "behavior_residual_k6": residual,
+                    "action_mask": mask,
+                    "next_state7": next_state,
+                    "next_wrench6": next_wrench,
+                    "next_wrench_delta6": next_wrench_delta,
+                    "next_wrench_delta_interval_ns": (
+                        0
+                        if next_context is None
+                        else int(next_context.get("wrench_delta_interval_ns", 0))
+                    ),
+                    "next_base_action_k6": next_base[..., :6],
+                    "next_action_mask": np.ones(3, dtype=np.bool_),
+                    "next_base_valid": next_base_valid,
+                    "reward": float(outcome["reward"]),
+                    "terminated": bool(outcome["terminated"]),
+                    "truncated": bool(outcome["truncated"]),
+                    "actor_q_valid": bool(
+                        row.get("action_source") == "policy"
+                        and macro.actor_q_eligibility.valid
+                    ),
+                    "human_residual_target6": (
+                        residual[0].copy()
+                        if human_valid
+                        else np.zeros(6, dtype=np.float32)
+                    ),
+                    "human_residual_valid": human_valid,
+                    "action_source": str(row["action_source"]),
+                    "episode_id": str(row["identity"]["episode_id"]),
+                }
+            )
         return result
 
     def _batch(self, indices: torch.Tensor, device: torch.device) -> ResidualTransitionBatch:

@@ -25,6 +25,7 @@ for path in (SRC, ROOT / "tools"):
 from forcesmolvla.rft.online import replay_training as warmup  # noqa: E402
 import serve_policy  # noqa: E402
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+    ONLINE_ADAPTATION_DIRECTORY_NAME,
     ResidualActorCriticSchedule,
     exact_resume_checkpoint_is_recoverable,
     training_checkpoint_path,
@@ -44,6 +45,8 @@ from forcesmolvla.rft.critic import (  # noqa: E402
 )
 from forcesmolvla.rft.residual_actor import WristWrenchResidualActor  # noqa: E402
 from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
+    CANDIDATE_CHECKPOINT_KIND,
+    TRAINING_CHECKPOINT_KIND,
     save_residual_actor_critic_checkpoint,
 )
 from forcesmolvla.rft.online.training_losses import (  # noqa: E402
@@ -54,6 +57,9 @@ from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
     RevisionRecord,
     RevisionState,
+)
+from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
+    ONLINE_SEMANTICS_VERSION,
 )
 
 
@@ -67,6 +73,21 @@ def require(condition: bool, message: str) -> None:
 
 def _load_residual_checkpoint(policy: Any, checkpoint: Path) -> None:
     path = checkpoint if checkpoint.is_file() else checkpoint / "residual_actor.pt"
+    if checkpoint.is_dir():
+        metadata_path = checkpoint / "candidate_state.pt"
+        require(
+            metadata_path.is_file(),
+            "FORCERFT_RESIDUAL_CANDIDATE_METADATA_MISSING",
+        )
+        metadata = torch.load(
+            metadata_path, map_location="cpu", weights_only=False
+        )
+        require(
+            metadata.get("checkpoint_kind") == CANDIDATE_CHECKPOINT_KIND
+            and metadata.get("online_semantics_version")
+            == ONLINE_SEMANTICS_VERSION,
+            "FORCERFT_RESIDUAL_CANDIDATE_SEMANTICS_MISMATCH",
+        )
     policy.load_state_dict(
         torch.load(path, map_location=next(policy.parameters()).device, weights_only=True),
         strict=True,
@@ -98,10 +119,11 @@ def _select_deployed_actor_for_resume(
         / online_adaptation_id
         / f"residual_actor_step_{actor_step:06d}"
     )
-    residual = candidate / "residual_actor.pt"
+    residual = candidate
     if actor_step > 0:
         require(
-            residual.is_file(),
+            (residual / "residual_actor.pt").is_file()
+            and (residual / "candidate_state.pt").is_file(),
             "FORCERFT_ACTIVE_RESIDUAL_CANDIDATE_MISSING",
         )
     else:
@@ -810,6 +832,13 @@ class ResidualActorCriticLearner:
             ) from error
         path = destination / "residual_actor.pt"
         torch.save(self.learner["residual_actor"].state_dict(), path)
+        torch.save(
+            {
+                "checkpoint_kind": CANDIDATE_CHECKPOINT_KIND,
+                "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+            },
+            destination / "candidate_state.pt",
+        )
         return {
             "revision_id": revision_id,
             "checkpoint": destination.resolve(),
@@ -823,6 +852,8 @@ class ResidualActorCriticLearner:
         learner = self.learner
         completed = int(learner["runtime"]["residual_actor_critic_cycles"])
         target = training_checkpoint_path(self.checkpoint_root, completed)
+        runtime_state = dict(learner["runtime"])
+        runtime_state["checkpoint_kind"] = TRAINING_CHECKPOINT_KIND
         save_residual_actor_critic_checkpoint(
             target,
             residual_actor=learner["residual_actor"],
@@ -833,7 +864,7 @@ class ResidualActorCriticLearner:
             q2_target=learner["q2_target"],
             residual_actor_optimizer=learner["residual_actor_optimizer"],
             critic_optimizer=learner["critic_optimizer"],
-            runtime_state=learner["runtime"],
+            runtime_state=runtime_state,
             config=learner["config"],
         )
         retain_latest_training_checkpoints(
@@ -1247,7 +1278,7 @@ class AsyncResidualActorCriticRuntime:
             return
         checkpoint = self._candidate_checkpoints[pending]
         activated = self.machine.activate_pending_at_episode_boundary()
-        with self.engine._lock:
+        with self.engine._residual_lock:
             _load_residual_checkpoint(self.engine.residual_actor, checkpoint)
         self.engine.reset_residual_episode_context()
         self.active_revision_id = activated.revision_id
@@ -1303,7 +1334,7 @@ class AsyncResidualActorCriticRuntime:
                             int(result.get("learner_actor_steps", 0)) > 0
                             and self._policy.candidate_due(residual_actor_optimizer_steps)
                         ):
-                            with self.engine._lock:
+                            with self.engine._residual_lock:
                                 candidate = self.learner_job.export_actor_candidate(
                                     residual_actor_optimizer_steps,
                                     active_residual_actor=self.engine.residual_actor,
@@ -1375,6 +1406,19 @@ class AsyncResidualActorCriticRuntime:
         with self._lock:
             self._inference_request_count += 1
         self.coordinator.update_action_coverage(0.8)
+        return result
+
+    def residual_decision(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Run the small CPU Actor without waiting for frozen-VLA inference."""
+
+        require(self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_INACTIVE")
+        require(
+            request.get("session_id") == self.session_id,
+            "ONLINE_REPLAY_ASYNC_RESIDUAL_SESSION_MISMATCH",
+        )
+        result = self.engine.residual_decision(request)
+        result["active_residual_policy_revision"] = self.active_revision_id
+        result["policy_epoch"] = int(self.machine.policy_epoch)
         return result
 
     def end_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -1762,6 +1806,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task", required=True)
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--dataset-root", type=Path)
+    parser.add_argument("--ack-replay-root", type=Path)
     parser.add_argument("--safety-config", type=Path)
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--episode-id", required=True)
@@ -1797,6 +1842,13 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
     dataset_root = resolve_task_dataset_root(
         ROOT, task_id=args.task_id, dataset_root=args.dataset_root
     )
+    args.ack_replay_root = (
+        output_root
+        / ONLINE_ADAPTATION_DIRECTORY_NAME
+        / "formal_replay"
+        if args.ack_replay_root is None
+        else args.ack_replay_root.resolve()
+    )
     warmup.configure_task_paths(
         task_id=args.task_id,
         dataset_root=dataset_root,
@@ -1814,11 +1866,12 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         checkpoint_kind = selected.kind
     else:
         resume_checkpoint = args.learner_resume_checkpoint.resolve()
-        checkpoint_kind = (
-            "online_residual_bootstrap"
-            if resume_checkpoint.parent.name == "bootstrap_checkpoints"
-            else "residual_actor_critic_training"
+        checkpoint_state = torch.load(
+            resume_checkpoint / "state/runtime_state.pt",
+            map_location="cpu",
+            weights_only=False,
         )
+        checkpoint_kind = str(checkpoint_state.get("checkpoint_kind", ""))
     require(
         exact_resume_checkpoint_is_recoverable(
             resume_checkpoint, expected_kind=checkpoint_kind
@@ -1860,6 +1913,16 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         "controller_ack_timeout_ms": 20.0,
     })
     engine.policy.eval().requires_grad_(False)
+    from forcesmolvla.training_data import load_normalizer_manifest
+
+    replay_normalizer = load_normalizer_manifest(
+        dataset_root / "normalizer_manifest.json"
+    )
+    require(
+        replay_normalizer.manifest()
+        == engine.runtime_artifacts.normalizer.manifest(),
+        "FORCERFT_EXACT_RESUME_NORMALIZER_MISMATCH",
+    )
     require(
         active_revision_id
         and not any(parameter.requires_grad for parameter in engine.policy.parameters()),
@@ -1881,12 +1944,16 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         ),
         initial_epoch=initial_policy_epoch,
     )
-    checkpoint_root = output_root / "online_ack_residual/training_checkpoints"
+    checkpoint_root = (
+        output_root
+        / ONLINE_ADAPTATION_DIRECTORY_NAME
+        / "training_checkpoints"
+    )
     learner = ResidualActorCriticLearner(
         device=device,
         resume_checkpoint=resume_checkpoint,
         checkpoint_root=checkpoint_root,
-        replay_root=output_root / "online",
+        replay_root=args.ack_replay_root,
         current_session_id=args.session_id,
         task=args.task.strip(),
         normalizer_path=dataset_root / "normalizer_manifest.json",
@@ -1896,8 +1963,9 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         max_normalized_residual=float(
             checkpoint_config["wrist_wrench_residual_actor"]["max_normalized_residual"]
         ),
-    ).to(device)
+    ).to("cpu")
     engine.residual_actor.eval().requires_grad_(False)
+    engine.metadata["online_semantics_version"] = ONLINE_SEMANTICS_VERSION
     if active_actor_steps > 0:
         _load_residual_checkpoint(engine.residual_actor, residual_checkpoint)
     return AsyncResidualActorCriticRuntime(

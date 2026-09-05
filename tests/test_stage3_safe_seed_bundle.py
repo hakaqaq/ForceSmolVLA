@@ -3,7 +3,9 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
+import pytest
 import torch
 
 
@@ -25,11 +27,46 @@ class TinyBaseActor(torch.nn.Module):
         self.weight = torch.nn.Parameter(torch.ones(()))
 
 
+def test_online_residual_bootstrap_rejects_normalizer_parameter_drift(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from forcesmolvla import training_data
+
+    class Normalizer:
+        def __init__(self, std: float) -> None:
+            self.std = std
+
+        def manifest(self) -> dict:
+            return {"delta_action7": {"mean": [0.0] * 7, "std": [self.std] * 7}}
+
+    monkeypatch.setattr(
+        training_data, "load_normalizer_manifest", lambda _path: Normalizer(1.0)
+    )
+    monkeypatch.setattr(
+        training_data,
+        "load_checkpoint_runtime_artifacts",
+        lambda _path: SimpleNamespace(normalizer=Normalizer(2.0)),
+    )
+    with pytest.raises(RuntimeError, match="BOOTSTRAP_NORMALIZER_MISMATCH"):
+        seed_tool.build_online_residual_bootstrap(
+            task_id="task3",
+            output_root=tmp_path / "outputs/task3",
+            dataset_root=tmp_path / "datasets/task3_lerobotv3",
+            frozen_base_policy_checkpoint=tmp_path / "sft-base",
+            checkpoint=tmp_path / "bootstrap",
+            online_residual_config=ROOT
+            / "configs/forcerft/online_ack_residual_actor_critic.yaml",
+        )
+
+
 def test_online_residual_bootstrap_needs_no_critic_parent_and_starts_zero(
     tmp_path: Path, monkeypatch,
 ) -> None:
     base = TinyBaseActor()
     monkeypatch.setattr(seed_tool, "_load_base_actor", lambda _path: base)
+    monkeypatch.setattr(
+        seed_tool, "_normalizer_parameters_match", lambda **_kwargs: True
+    )
     checkpoint = tmp_path / seed_tool.BOOTSTRAP_DIRECTORY_NAME
     result = seed_tool.build_online_residual_bootstrap(
         task_id="task3",
@@ -77,7 +114,9 @@ def test_online_residual_bootstrap_needs_no_critic_parent_and_starts_zero(
     runtime = learner["runtime"]
     assert runtime["learner_state"] == "ack_replay_collection"
     assert runtime["ack_critic_warmup_complete"] is False
-    assert runtime["online_adaptation_id"].startswith("task3-ack-residual-")
+    assert runtime["online_adaptation_id"].startswith(
+        "task3-ack-dispatch-residual-"
+    )
     assert runtime["counters"] == {
         "twin_q_optimizer_steps": 0,
         "residual_actor_optimizer_steps": 0,

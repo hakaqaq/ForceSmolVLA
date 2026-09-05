@@ -10,6 +10,8 @@ from typing import Any, Mapping
 import torch
 import yaml
 
+from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
+
 
 class OnlineCheckpointSchemaError(ValueError):
     pass
@@ -28,8 +30,21 @@ RESIDUAL_ACTOR_CRITIC_CHECKPOINT_FILES = (
     "state/config.yaml",
 )
 
+BOOTSTRAP_CHECKPOINT_KIND = "online_residual_bootstrap"
+TRAINING_CHECKPOINT_KIND = "residual_actor_critic_training"
+CANDIDATE_CHECKPOINT_KIND = "residual_actor_candidate"
+CHECKPOINT_KINDS = {BOOTSTRAP_CHECKPOINT_KIND, TRAINING_CHECKPOINT_KIND}
 
-def residual_actor_critic_checkpoint_is_recoverable(checkpoint: Path) -> bool:
+
+def _nonnegative_int(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
+def residual_actor_critic_checkpoint_is_recoverable(
+    checkpoint: Path,
+    *,
+    expected_kind: str | None = None,
+) -> bool:
     checkpoint = Path(checkpoint)
     if not checkpoint.is_dir() or not all(
         (checkpoint / relative).is_file()
@@ -43,30 +58,28 @@ def residual_actor_critic_checkpoint_is_recoverable(checkpoint: Path) -> bool:
             weights_only=False,
         )
         counters = state["counters"]
-        applied_actor_steps = int(counters["residual_actor_optimizer_steps"])
-        actor_update_attempts = int(
-            counters.get("residual_actor_update_attempts", applied_actor_steps)
-        )
-        skipped_actor_updates = int(
-            counters.get(
-                "residual_actor_updates_skipped_no_gradient",
-                actor_update_attempts - applied_actor_steps,
-            )
-        )
+        applied_actor_steps = counters["residual_actor_optimizer_steps"]
+        actor_update_attempts = counters["residual_actor_update_attempts"]
+        skipped_actor_updates = counters[
+            "residual_actor_updates_skipped_no_gradient"
+        ]
         replay = state["replay"]
         loaded_episode_keys = replay.get("loaded_episode_keys", [])
         per_episode_counts = replay.get("per_episode_critic_row_counts", {})
         admission_cycle_budgets = replay.get("admission_cycle_budgets", {})
         return bool(
-            state["learner_state"]
+            state.get("checkpoint_kind") in CHECKPOINT_KINDS
+            and (expected_kind is None or state["checkpoint_kind"] == expected_kind)
+            and state.get("online_semantics_version") == ONLINE_SEMANTICS_VERSION
+            and state["learner_state"]
             in {
                 "ack_replay_collection",
                 "ack_critic_warmup",
                 "residual_actor_critic_training",
             }
             and isinstance(state["ack_critic_warmup_complete"], bool)
-            and int(state.get("ack_critic_warmup_steps", 0)) >= 0
-            and int(state["residual_actor_critic_cycles"]) >= 0
+            and _nonnegative_int(state.get("ack_critic_warmup_steps"))
+            and _nonnegative_int(state["residual_actor_critic_cycles"])
             and isinstance(state["frozen_base_policy_checkpoint"], str)
             and bool(state["frozen_base_policy_checkpoint"])
             and isinstance(state["active_residual_policy_revision"], str)
@@ -74,18 +87,19 @@ def residual_actor_critic_checkpoint_is_recoverable(checkpoint: Path) -> bool:
             and isinstance(state["online_adaptation_id"], str)
             and bool(state["online_adaptation_id"])
             and all(
-                int(counters[name]) >= 0
+                _nonnegative_int(counters[name])
                 for name in (
                     "twin_q_optimizer_steps",
                     "residual_actor_optimizer_steps",
+                    "residual_actor_update_attempts",
+                    "residual_actor_updates_skipped_no_gradient",
                     "twin_q_target_update_steps",
                 )
             )
             and actor_update_attempts
             == applied_actor_steps + skipped_actor_updates
-            and skipped_actor_updates >= 0
             and all(
-                int(replay[name]) >= 0
+                _nonnegative_int(replay[name])
                 for name in (
                     "critic_td_valid_rows",
                     "actor_q_valid_rows",
@@ -102,17 +116,17 @@ def residual_actor_critic_checkpoint_is_recoverable(checkpoint: Path) -> bool:
             and all(
                 isinstance(key, str)
                 and key
-                and int(value) >= 0
+                and _nonnegative_int(value)
                 for key, value in per_episode_counts.items()
             )
             and isinstance(admission_cycle_budgets, dict)
             and all(
                 isinstance(key, str)
                 and key
-                and int(value) >= 0
+                and _nonnegative_int(value)
                 for key, value in admission_cycle_budgets.items()
             )
-            and int(replay.get("replay_generation", 0)) >= 0
+            and _nonnegative_int(replay.get("replay_generation", 0))
         )
     except (KeyError, OSError, RuntimeError, TypeError, ValueError):
         return False
@@ -135,7 +149,14 @@ def save_residual_actor_critic_checkpoint(
     """Atomically save only the final residual training state."""
 
     checkpoint = Path(checkpoint).resolve()
-    if checkpoint.exists() and not residual_actor_critic_checkpoint_is_recoverable(checkpoint):
+    expected_kind = runtime_state.get("checkpoint_kind")
+    if expected_kind not in CHECKPOINT_KINDS:
+        raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_KIND_INVALID")
+    if runtime_state.get("online_semantics_version") != ONLINE_SEMANTICS_VERSION:
+        raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_SEMANTICS_INVALID")
+    if checkpoint.exists() and not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=expected_kind
+    ):
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_DESTINATION_EXISTS")
     temporary = checkpoint.with_name(f".{checkpoint.name}.writing-{os.getpid()}")
     if temporary.exists():
@@ -184,7 +205,9 @@ def save_residual_actor_critic_checkpoint(
         if temporary.exists():
             shutil.rmtree(temporary)
         raise
-    if not residual_actor_critic_checkpoint_is_recoverable(checkpoint):
+    if not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=str(expected_kind)
+    ):
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_WRITE_INCOMPLETE")
     return checkpoint
 
@@ -201,8 +224,11 @@ def load_residual_actor_critic_checkpoint(
     residual_actor_optimizer: torch.optim.Optimizer | None = None,
     critic_optimizer: torch.optim.Optimizer | None = None,
     device: torch.device | str = "cpu",
+    expected_kind: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    if not residual_actor_critic_checkpoint_is_recoverable(checkpoint):
+    if not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=expected_kind
+    ):
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_INCOMPLETE")
     checkpoint = Path(checkpoint)
     modules = {

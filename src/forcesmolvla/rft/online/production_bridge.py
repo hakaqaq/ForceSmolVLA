@@ -57,6 +57,8 @@ from forcesmolvla.rft.critic_action_adapter_v2 import (
 from forcesmolvla.rft.online.transition_authority import (
     AcceptedAck,
     AckMacro,
+    DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
+    ONLINE_SEMANTICS_VERSION,
     TransitionContractError,
     build_ack_behavior_macro,
 )
@@ -140,6 +142,28 @@ def _pre_intervention_policy_boundary_decisions(
                 )
             )
     return boundaries
+
+
+def _is_exact_real_decision_successor(
+    action_source: str,
+    current: Mapping[str, Any],
+    successor: Mapping[str, Any],
+) -> bool:
+    """Use persisted dispatch identities, not timestamp proximity, for TD links."""
+
+    if action_source == "policy":
+        return bool(
+            current.get("next_observation_id")
+            and successor.get("current_observation_id")
+            == current.get("next_observation_id")
+            and int(successor["selection"]["sequence"])
+            > int(current["selection"]["sequence"])
+        )
+    if action_source == "human":
+        return int(successor["source_sequence"]) == int(
+            current["source_sequence"]
+        ) + 1
+    return False
 
 
 def _policy_command_effective_phase_is_constant(
@@ -247,7 +271,12 @@ def _critic_contract_payload(
 ) -> dict[str, Any]:
     return {
         "contract_version": macro.contract_version,
-        "anchor_semantics": "controller-accepted-command-effective",
+        "anchor_semantics": (
+            "residual-dispatch-decision"
+            if macro.contract_version
+            == DISPATCH_DECISION_CRITIC_CONTRACT_VERSION
+            else "controller-accepted-command-effective"
+        ),
         "episode_id": episode_id,
         "transition_id": transition_id,
         "action_source": action_source,
@@ -684,6 +713,8 @@ class FormalOnlineRAdmissionReport:
     observation_warmup_excluded_count: int
     command_effective_phase_quarantined_count: int
     command_effective_phase_quarantined_ratio: float
+    residual_semantics_quarantined_count: int
+    residual_semantics_quarantine_reasons: Mapping[str, int]
     wal_written_count: int
     outbox_written_count: int
     replay_written_count: int
@@ -1787,9 +1818,34 @@ class ProductionBridge:
                         f"BRIDGE_POLICY_EXECUTION_TRANSITION_LINEAGE_MISMATCH:{field}"
                     )
             selected = proposal["actions_absolute7"][action_index]
+            residual_context = selection.get("residual_decision_context")
+            context_declared = bool(
+                isinstance(residual_context, Mapping)
+                and residual_context.get("online_semantics_version")
+                == ONLINE_SEMANTICS_VERSION
+            )
+            context_valid = bool(
+                context_declared
+                and residual_context.get("valid_for_residual_training") is True
+                and selection.get("base_absolute_action7") == selected
+                and residual_context.get("base_absolute_action7") == selected
+            )
+            context_quarantined = bool(
+                not isinstance(residual_context, Mapping)
+                or (
+                    context_declared
+                    and residual_context.get("valid_for_residual_training") is False
+                    and isinstance(residual_context.get("invalid_reason"), str)
+                    and bool(residual_context.get("invalid_reason"))
+                    and selection.get("base_absolute_action7") is None
+                )
+            )
             if (
-                selection.get("selected_post_adapter_absolute7") != selected
-                or transition.get("accepted_absolute7") != selected
+                not (context_valid or context_quarantined)
+                or (
+                    isinstance(residual_context, Mapping)
+                    and int(residual_context.get("decision_monotonic_ns", 0)) <= 0
+                )
                 or int(gripper.get("action_index", -1)) != action_index
                 or gripper.get("requested_state") not in {"OPEN", "CLOSED"}
                 or float(gripper.get("requested_width_m", -1.0))
@@ -4370,6 +4426,55 @@ class ProductionBridge:
             "normalization": "deferred_to_frozen_replay_adapter",
         }
 
+    def _formal_online_r_decision_observation(
+        self,
+        *,
+        episode_dir: Path,
+        episode_id: str,
+        prepared: PreparedEpisode,
+        context: Mapping[str, Any],
+        observation_id: str,
+    ) -> dict[str, Any]:
+        if (
+            context.get("online_semantics_version") != ONLINE_SEMANTICS_VERSION
+            or context.get("valid_for_residual_training") is not True
+        ):
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_RESIDUAL_DECISION_CONTEXT_INVALID"
+            )
+        decision_ns = int(context.get("decision_monotonic_ns", 0))
+        frame = bisect_right(prepared.tuple_host_ns, decision_ns) - 1
+        if frame < 0:
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_RESIDUAL_DECISION_OBSERVATION_MISSING"
+            )
+        observation = self._formal_online_r_prepared_observation(
+            episode_dir=episode_dir,
+            episode_id=episode_id,
+            prepared=prepared,
+            frame=frame,
+            observation_id=observation_id,
+        )
+        state = _finite_vector(
+            context.get("state7_absolute"),
+            7,
+            "BRIDGE_FORMAL_R_RESIDUAL_DECISION_STATE_INVALID",
+        )
+        wrench = _finite_vector(
+            context.get("wrench6_calibrated_tcp"),
+            6,
+            "BRIDGE_FORMAL_R_RESIDUAL_DECISION_WRENCH_INVALID",
+        )
+        observation.update(
+            source_t_ref_monotonic_ns=decision_ns,
+            materialized_timestamp_monotonic_ns=decision_ns,
+            materialization_age_ms=0.0,
+            state7_absolute=list(state),
+            wrench6_calibrated_tcp=list(wrench),
+            normalization="saved_residual_decision_context",
+        )
+        return observation
+
     def _formal_online_r_transition(
         self,
         *,
@@ -4379,6 +4484,7 @@ class ProductionBridge:
         integrated: Mapping[str, Any],
         source: Mapping[str, Any],
         policy_sources: Sequence[Mapping[str, Any]],
+        next_decision_context: Mapping[str, Any] | None,
         terminal: bool,
         truncated: bool,
         boundary_timestamp_ns: int | None = None,
@@ -4422,23 +4528,41 @@ class ProductionBridge:
             raise ProductionBridgeError(
                 "BRIDGE_FORMAL_R_ACTION7_AUTHORITY_INCOMPLETE"
             )
-        ack_ns = int(pose_ack.get("upper_receive_monotonic_ns", 0))
-        anchor_frame = bisect_left(prepared.tuple_host_ns, ack_ns)
-        if anchor_frame < 0 or anchor_frame >= len(prepared.tuple_host_ns):
+        decision_context = source.get("selection", {}).get(
+            "residual_decision_context"
+        )
+        if not isinstance(decision_context, Mapping):
             raise ProductionBridgeError(
-                "BRIDGE_FORMAL_R_COMMAND_EFFECTIVE_ANCHOR_MISSING"
+                "BRIDGE_FORMAL_R_RESIDUAL_DECISION_CONTEXT_MISSING"
             )
-        observation = self._formal_online_r_prepared_observation(
+        observation = self._formal_online_r_decision_observation(
             episode_dir=episode_dir,
             episode_id=episode_id,
             prepared=prepared,
-            frame=anchor_frame,
-            observation_id=(
-                f"{episode_id}:policy-effective:{sequence}:frame:{anchor_frame}"
-            ),
+            context=decision_context,
+            observation_id=f"{episode_id}:policy-decision:{sequence}",
         )
-        nominal_next_frame = anchor_frame + CRITIC_ACTION_CONTRACT.critic_slots
-        if terminal:
+        if next_decision_context is not None:
+            materialized_next = self._formal_online_r_decision_observation(
+                episode_dir=episode_dir,
+                episode_id=episode_id,
+                prepared=prepared,
+                context=next_decision_context,
+                observation_id=f"{episode_id}:decision-successor:{sequence}",
+            )
+        elif truncated and boundary_timestamp_ns is not None:
+            boundary_frame = min(
+                bisect_left(prepared.tuple_host_ns, int(boundary_timestamp_ns)),
+                len(prepared.tuple_host_ns) - 1,
+            )
+            materialized_next = self._formal_online_r_prepared_observation(
+                episode_dir=episode_dir,
+                episode_id=episode_id,
+                prepared=prepared,
+                frame=boundary_frame,
+                observation_id=f"{episode_id}:policy-boundary:{sequence}",
+            )
+        elif terminal:
             terminal_source = integrated["observations"].get(
                 str(integrated["summary"]["terminal_observation_id"])
             )
@@ -4452,32 +4576,11 @@ class ProductionBridge:
                 source=terminal_source,
                 prepared=prepared,
             )
-            terminal_frame = int(terminal_observation["materialized_frame"])
-            next_frame = (
-                min(nominal_next_frame, terminal_frame)
-                if integrated["summary"]["operator_task_outcome"] == "failure"
-                else terminal_frame
-            )
-        elif truncated and boundary_timestamp_ns is not None:
-            next_frame = min(
-                nominal_next_frame,
-                bisect_left(prepared.tuple_host_ns, int(boundary_timestamp_ns)),
-            )
+            materialized_next = terminal_observation
         else:
-            next_frame = nominal_next_frame
-        if not anchor_frame < next_frame <= nominal_next_frame:
             raise ProductionBridgeError(
-                "BRIDGE_FORMAL_R_POLICY_MACRO_BOUNDARY_INVALID"
+                "BRIDGE_FORMAL_R_POLICY_DECISION_SUCCESSOR_MISSING"
             )
-        materialized_next = self._formal_online_r_prepared_observation(
-            episode_dir=episode_dir,
-            episode_id=episode_id,
-            prepared=prepared,
-            frame=next_frame,
-            observation_id=(
-                f"{episode_id}:policy-macro-next:{sequence}:frame:{next_frame}"
-            ),
-        )
         if (
             materialized_next["source_t_ref_monotonic_ns"]
             <= observation["source_t_ref_monotonic_ns"]
@@ -4500,6 +4603,7 @@ class ProductionBridge:
         }
         payload: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
+            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
             "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
             "absolute_action_rotation_representation": (
                 ABSOLUTE_ACTION_ROTATION_REPRESENTATION
@@ -4541,6 +4645,21 @@ class ProductionBridge:
             },
             "observation": observation,
             "next_observation": materialized_next,
+            "residual_decision_context": dict(decision_context),
+            "next_residual_decision_context": (
+                None
+                if next_decision_context is None
+                else dict(next_decision_context)
+            ),
+            "decision_interval": {
+                "start_monotonic_ns": int(
+                    decision_context["decision_monotonic_ns"]
+                ),
+                "end_monotonic_ns": int(
+                    materialized_next["materialized_timestamp_monotonic_ns"]
+                ),
+                "discount_semantics": "per_real_residual_decision_transition",
+            },
             "outcome": _formal_online_r_outcome(
                 terminal=terminal,
                 truncated=truncated,
@@ -4577,88 +4696,38 @@ class ProductionBridge:
             f"{episode_id}:policy:{generation['takeover_generation']}:"
             f"{generation['reset_generation']}:{source['policy_revision']}"
         )
-        acknowledgements = []
-        for candidate in policy_sources:
-            candidate_generation = {
-                field: int(candidate[field])
-                for field in (
-                    "policy_epoch", "reset_generation", "takeover_generation"
-                )
-            }
-            if candidate_generation != generation:
-                continue
-            candidate_sequence = int(candidate["selection"]["sequence"])
-            candidate_gripper = integrated["gripper_origins"].get(
-                candidate_sequence
-            )
-            if not isinstance(candidate_gripper, Mapping):
-                continue
-            candidate_ack = candidate["pose_ack"]
-            acknowledgements.append(
-                AcceptedAck(
-                    ack_id=str(candidate["ack_id"]),
-                    receive_monotonic_ns=int(
-                        candidate_ack["upper_receive_monotonic_ns"]
-                    ),
-                    accepted_absolute_action7=tuple(
-                        float(value) for value in candidate["accepted_absolute7"]
-                    ),
-                    gripper_command_id=str(
-                        candidate_gripper["origin_action_goal_id"]
-                    ),
-                    gripper_ack_command_id=str(
-                        candidate_gripper["origin_action_goal_id"]
-                    ),
-                    slot_owner="policy",
-                    accepted_action_source="policy",
-                    intervention=False,
-                    workspace_clipped=bool(
-                        candidate["safety_arbitration"].get(
-                            "workspace_clipped", False
-                        )
-                    ),
-                    source_command_id=str(
-                        candidate_ack.get(
-                            "command_id", candidate_ack["request_stamp_ns"]
-                        )
-                    ),
-                    source_dispatch_sequence=candidate_sequence,
-                    source_model_index=int(
-                        candidate["selection"]["action_index"]
-                    ),
-                    episode_id=episode_id,
-                    policy_revision=str(candidate["policy_revision"]),
-                    takeover_generation=generation["takeover_generation"],
-                    reset_generation=generation["reset_generation"],
-                    chunk_id=str(candidate["selection"]["chunk_id"]),
-                    chunk_compatibility_key=compatibility,
-                    clock_domain=self.config.clock_domain_id,
-                    controller_authority="fr3-reference-controller",
-                )
-            )
-        try:
-            behavior_macro = build_ack_behavior_macro(
-                accepted_ack_stream=sorted(
-                    acknowledgements,
-                    key=lambda ack: ack.receive_monotonic_ns,
-                ),
-                anchor_timestamp_ns=int(
-                    observation["materialized_timestamp_monotonic_ns"]
-                ),
-                action_source="policy",
-                contract=CRITIC_ACTION_CONTRACT,
-                max_ack_age_ms=CRITIC_ACTION_CONTRACT.max_ack_age_ms,
-                boundary_timestamp_ns=(
-                    int(materialized_next["materialized_timestamp_monotonic_ns"])
-                    if terminal or truncated
-                    else None
-                ),
-                required_anchor_ack_id=str(source["ack_id"]),
-            )
-        except (TransitionContractError, ValueError) as error:
+        decision_ns = int(decision_context["decision_monotonic_ns"])
+        end_ns = int(payload["decision_interval"]["end_monotonic_ns"])
+        if end_ns <= decision_ns:
             raise ProductionBridgeError(
-                f"BRIDGE_FORMAL_R_POLICY_CRITIC_ACTION_INVALID:{error}"
-            ) from error
+                "BRIDGE_FORMAL_R_POLICY_DECISION_INTERVAL_INVALID"
+            )
+        grid, _nominal_next = build_critic_transition_grid(decision_ns)
+        behavior_macro = AckMacro(
+            grid_monotonic_ns=grid,
+            ack_ids=(str(source["ack_id"]),) * 3,
+            gripper_command_ids=(command_id,) * 3,
+            gripper_ack_command_ids=(command_id,) * 3,
+            accepted_absolute_action_k7=np.repeat(
+                np.asarray(action7, dtype=np.float64)[None, :], 3, axis=0
+            ),
+            slot_owner=("policy",) * 3,
+            workspace_clip_flags=(
+                bool(source["safety_arbitration"].get("workspace_clipped", False)),
+            )
+            * 3,
+            source_command_ids=(
+                str(pose_ack.get("command_id", pose_ack["request_stamp_ns"])),
+            )
+            * 3,
+            source_dispatch_sequences=(sequence,) * 3,
+            source_model_indices=(int(source["selection"]["action_index"]),) * 3,
+            chunk_ids=(str(source["selection"]["chunk_id"]),) * 3,
+            controller_authorities=("fr3-reference-controller",) * 3,
+            contract_version=DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
+            next_timestamp_ns=end_ns,
+            macro_duration_ns=end_ns - decision_ns,
+        )
         payload["critic_action_contract"] = _critic_contract_payload(
             behavior_macro,
             episode_id=episode_id,
@@ -4678,6 +4747,7 @@ class ProductionBridge:
             if isinstance(candidate.get("selection"), Mapping)
         }
         base_k7: list[list[float]] = []
+        base_absolute_k7: list[list[float]] = []
         composed_k7: list[list[float]] = []
         for valid, dispatch_sequence in zip(
             behavior_macro.behavior_mask,
@@ -4686,6 +4756,7 @@ class ProductionBridge:
         ):
             if not valid:
                 base_k7.append([0.0] * 7)
+                base_absolute_k7.append([0.0] * 7)
                 composed_k7.append([0.0] * 7)
                 continue
             candidate = policy_by_sequence.get(int(dispatch_sequence))
@@ -4695,24 +4766,28 @@ class ProductionBridge:
                 )
             selection = candidate["selection"]
             composed_action = _finite_vector(
-                selection.get(
-                    "composed_normalized_action7",
-                    selection.get("normalized_action7"),
-                ),
+                selection.get("composed_normalized_action7"),
                 7,
                 "BRIDGE_FORMAL_R_COMPOSED_NORMALIZED_ACTION_INVALID",
             )
             base_action = _finite_vector(
-                selection.get("base_normalized_action7", composed_action),
+                selection.get("base_normalized_action7"),
                 7,
                 "BRIDGE_FORMAL_R_BASE_NORMALIZED_ACTION_INVALID",
             )
+            base_absolute = _finite_vector(
+                selection.get("base_absolute_action7"),
+                7,
+                "BRIDGE_FORMAL_R_BASE_ABSOLUTE_ACTION_INVALID",
+            )
             base_k7.append(list(base_action))
+            base_absolute_k7.append(list(base_absolute))
             composed_k7.append(list(composed_action))
         payload["base_normalized_action_k7"] = base_k7
+        payload["base_absolute_action_k7"] = base_absolute_k7
         payload["applied_residual_tcp6"] = list(
             _finite_vector(
-                source["selection"].get("applied_residual_tcp6", [0.0] * 6),
+                source["selection"].get("applied_residual_tcp6"),
                 6,
                 "BRIDGE_FORMAL_R_APPLIED_RESIDUAL_INVALID",
             )
@@ -4739,6 +4814,56 @@ class ProductionBridge:
         }
         return payload
 
+    @staticmethod
+    def _human_pre_takeover_base_absolute(
+        *,
+        integrated: Mapping[str, Any],
+        source: Mapping[str, Any],
+    ) -> list[float] | None:
+        """Return the last evidenced frozen-base target before this takeover."""
+
+        generation = dict(source["generation"])
+        takeover_start = next(
+            (
+                item
+                for item in integrated.get("takeover_starts", ())
+                if int(item.get("takeover_generation", -1))
+                == int(generation["takeover_generation"])
+                and int(item.get("reset_generation", -1))
+                == int(generation["reset_generation"])
+            ),
+            None,
+        )
+        if takeover_start is None:
+            return None
+        start_ns = int(takeover_start["receive_monotonic_ns"])
+        candidates = [
+            item
+            for item in integrated.get("transitions", ())
+            if int(item.get("receive_monotonic_ns", 0)) < start_ns
+            and int(item.get("takeover_generation", -1))
+            == int(generation["takeover_generation"]) - 1
+            and int(item.get("reset_generation", -1))
+            == int(generation["reset_generation"])
+            and isinstance(item.get("selection"), Mapping)
+        ]
+        if not candidates:
+            return None
+        value = max(
+            candidates,
+            key=lambda item: int(item["receive_monotonic_ns"]),
+        )["selection"].get("base_absolute_action7")
+        try:
+            return list(
+                _finite_vector(
+                    value,
+                    7,
+                    "BRIDGE_FORMAL_R_PRE_TAKEOVER_BASE_ABSOLUTE_INVALID",
+                )
+            )
+        except ProductionBridgeError:
+            return None
+
     def _formal_online_human_transition(
         self,
         *,
@@ -4748,27 +4873,60 @@ class ProductionBridge:
         integrated: Mapping[str, Any],
         source: Mapping[str, Any],
         human_sources: Sequence[Mapping[str, Any]],
+        next_decision_context: Mapping[str, Any] | None,
         terminal: bool,
         truncated: bool = False,
         boundary_timestamp_ns: int | None = None,
     ) -> dict[str, Any]:
         prepared = integrated["prepared"]
-        ack_ns = int(source["pose_ack"]["upper_receive_monotonic_ns"])
-        anchor = bisect_left(prepared.tuple_host_ns, ack_ns)
-        nominal_next = anchor + CRITIC_ACTION_CONTRACT.critic_slots
-        if anchor < 0 or anchor >= len(prepared.tuple_host_ns):
+        decision_context_source = source.get("intervention", {}).get(
+            "residual_decision_context"
+        )
+        pre_takeover_absolute = self._human_pre_takeover_base_absolute(
+            integrated=integrated,
+            source=source,
+        )
+        if (
+            not isinstance(decision_context_source, Mapping)
+            or pre_takeover_absolute is None
+        ):
             raise ProductionBridgeError(
-                "BRIDGE_FORMAL_R_HUMAN_OBSERVATION_INCOMPLETE"
+                "BRIDGE_FORMAL_R_HUMAN_DECISION_CONTEXT_MISSING"
             )
+        decision_context = dict(decision_context_source)
+        decision_context["base_absolute_action7"] = list(
+            pre_takeover_absolute
+        )
         sequence = int(source["source_sequence"])
-        observation = self._formal_online_r_prepared_observation(
+        observation = self._formal_online_r_decision_observation(
             episode_dir=episode_dir,
             episode_id=episode_id,
             prepared=prepared,
-            frame=anchor,
+            context=decision_context,
             observation_id=f"{episode_id}:human-anchor:{sequence}",
         )
-        if terminal:
+        anchor = int(observation["materialized_frame"])
+        if next_decision_context is not None:
+            materialized_next = self._formal_online_r_decision_observation(
+                episode_dir=episode_dir,
+                episode_id=episode_id,
+                prepared=prepared,
+                context=next_decision_context,
+                observation_id=f"{episode_id}:human-successor:{sequence}",
+            )
+        elif truncated and boundary_timestamp_ns is not None:
+            boundary_frame = min(
+                bisect_left(prepared.tuple_host_ns, int(boundary_timestamp_ns)),
+                len(prepared.tuple_host_ns) - 1,
+            )
+            materialized_next = self._formal_online_r_prepared_observation(
+                episode_dir=episode_dir,
+                episode_id=episode_id,
+                prepared=prepared,
+                frame=boundary_frame,
+                observation_id=f"{episode_id}:human-boundary:{sequence}",
+            )
+        elif terminal:
             terminal_source = integrated["observations"].get(
                 str(integrated["summary"]["terminal_observation_id"])
             )
@@ -4782,46 +4940,10 @@ class ProductionBridge:
                 source=terminal_source,
                 prepared=prepared,
             )
-            terminal_frame = int(terminal_observation["materialized_frame"])
-            if integrated["summary"]["operator_task_outcome"] == "failure":
-                materialized_next = self._formal_online_r_prepared_observation(
-                    episode_dir=episode_dir,
-                    episode_id=episode_id,
-                    prepared=prepared,
-                    frame=min(nominal_next, terminal_frame),
-                    observation_id=f"{episode_id}:human-next:{sequence}",
-                )
-            else:
-                materialized_next = terminal_observation
+            materialized_next = terminal_observation
         else:
-            next_frame = (
-                min(
-                    nominal_next,
-                    bisect_left(
-                        prepared.tuple_host_ns, int(boundary_timestamp_ns)
-                    ),
-                )
-                if truncated and boundary_timestamp_ns is not None
-                else nominal_next
-            )
-            if not anchor < next_frame <= nominal_next:
-                raise ProductionBridgeError(
-                    "BRIDGE_FORMAL_R_HUMAN_MACRO_BOUNDARY_INVALID"
-                )
-            materialized_next = self._formal_online_r_prepared_observation(
-                episode_dir=episode_dir,
-                episode_id=episode_id,
-                prepared=prepared,
-                frame=next_frame,
-                observation_id=f"{episode_id}:human-next:{sequence}",
-            )
-        if not (
-            anchor
-            < int(materialized_next["materialized_frame"])
-            <= nominal_next
-        ):
             raise ProductionBridgeError(
-                "BRIDGE_FORMAL_R_HUMAN_MACRO_BOUNDARY_INVALID"
+                "BRIDGE_FORMAL_R_HUMAN_DECISION_SUCCESSOR_MISSING"
             )
         if (
             materialized_next["source_t_ref_monotonic_ns"]
@@ -4866,6 +4988,7 @@ class ProductionBridge:
         )
         payload: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
+            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
             "classification": POLICY_EXECUTION_SMOKE_CLASSIFICATION,
             "absolute_action_rotation_representation": (
                 ABSOLUTE_ACTION_ROTATION_REPRESENTATION
@@ -4906,6 +5029,21 @@ class ProductionBridge:
             },
             "observation": observation,
             "next_observation": materialized_next,
+            "residual_decision_context": decision_context,
+            "next_residual_decision_context": (
+                None
+                if next_decision_context is None
+                else dict(next_decision_context)
+            ),
+            "decision_interval": {
+                "start_monotonic_ns": int(
+                    decision_context["decision_monotonic_ns"]
+                ),
+                "end_monotonic_ns": int(
+                    materialized_next["materialized_timestamp_monotonic_ns"]
+                ),
+                "discount_semantics": "per_real_residual_decision_transition",
+            },
             "outcome": _formal_online_r_outcome(
                 terminal=terminal,
                 truncated=truncated,
@@ -4961,71 +5099,43 @@ class ProductionBridge:
                 key=lambda state: int(state["terminal_finished_monotonic_ns"]),
             )
 
-        acknowledgements = []
-        for command in human_sources:
-            if command["generation"] != generation:
-                continue
-            origin = gripper_origin_for(command)
-            command_ack = command["pose_ack"]
-            acknowledgements.append(
-                AcceptedAck(
-                    ack_id=(
-                        f"reference-ack:{int(command_ack['request_sequence'])}:"
-                        f"{int(command_ack['request_stamp_ns'])}"
-                    ),
-                    receive_monotonic_ns=int(
-                        command_ack["upper_receive_monotonic_ns"]
-                    ),
-                    accepted_absolute_action7=tuple(
-                        float(value) for value in command["accepted_absolute7"]
-                    ),
-                    gripper_command_id=str(origin["origin_action_goal_id"]),
-                    gripper_ack_command_id=str(origin["origin_action_goal_id"]),
-                    slot_owner="human_intervention",
-                    accepted_action_source="human",
-                    intervention=True,
-                    workspace_clipped=bool(
-                        any(command["safe_action"].get("workspace_clipped", ()))
-                    ),
-                    source_command_id=str(command_ack["command_id"]),
-                    source_dispatch_sequence=int(command["source_sequence"]),
-                    source_model_index=-1,
-                    episode_id=episode_id,
-                    policy_revision=str(integrated["summary"]["policy_revision"]),
-                    takeover_generation=generation["takeover_generation"],
-                    reset_generation=generation["reset_generation"],
-                    chunk_id=f"human-generation-{generation['takeover_generation']}",
-                    chunk_compatibility_key=generation_key,
-                    clock_domain=self.config.clock_domain_id,
-                    controller_authority="fr3-reference-controller",
-                )
-            )
-        try:
-            behavior_macro = build_ack_behavior_macro(
-                accepted_ack_stream=sorted(
-                    acknowledgements,
-                    key=lambda ack: ack.receive_monotonic_ns,
-                ),
-                anchor_timestamp_ns=int(
-                    observation["materialized_timestamp_monotonic_ns"]
-                ),
-                action_source="human",
-                contract=CRITIC_ACTION_CONTRACT,
-                max_ack_age_ms=CRITIC_ACTION_CONTRACT.max_ack_age_ms,
-                boundary_timestamp_ns=(
-                    int(materialized_next["materialized_timestamp_monotonic_ns"])
-                    if terminal or truncated
-                    else None
-                ),
-            )
-        except (TransitionContractError, ValueError) as error:
-            raise ProductionBridgeError(
-                f"BRIDGE_FORMAL_R_HUMAN_CRITIC_ACTION_INVALID:{error}"
-            ) from error
         origin = gripper_origin_for(source)
+        decision_ns = int(decision_context["decision_monotonic_ns"])
+        end_ns = int(payload["decision_interval"]["end_monotonic_ns"])
+        if end_ns <= decision_ns:
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_HUMAN_DECISION_INTERVAL_INVALID"
+            )
+        grid, _nominal_next = build_critic_transition_grid(decision_ns)
+        command_id = str(origin["origin_action_goal_id"])
+        behavior_macro = AckMacro(
+            grid_monotonic_ns=grid,
+            ack_ids=(ack_id,) * 3,
+            gripper_command_ids=(command_id,) * 3,
+            gripper_ack_command_ids=(command_id,) * 3,
+            accepted_absolute_action_k7=np.repeat(
+                np.asarray(action7, dtype=np.float64)[None, :], 3, axis=0
+            ),
+            slot_owner=("human_intervention",) * 3,
+            workspace_clip_flags=(
+                bool(any(source["safe_action"].get("workspace_clipped", ()))),
+            )
+            * 3,
+            source_command_ids=(str(source["pose_ack"]["command_id"]),) * 3,
+            source_dispatch_sequences=(sequence,) * 3,
+            source_model_indices=(-1,) * 3,
+            chunk_ids=(
+                f"human-generation-{generation['takeover_generation']}",
+            )
+            * 3,
+            controller_authorities=("fr3-reference-controller",) * 3,
+            contract_version=DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
+            next_timestamp_ns=end_ns,
+            macro_duration_ns=end_ns - decision_ns,
+        )
         payload["action_authority"]["gripper"].update(
-            command_id=str(origin["origin_action_goal_id"]),
-            source_command_id=str(origin["origin_action_goal_id"]),
+            command_id=command_id,
+            source_command_id=command_id,
         )
         payload["action_authority"]["gripper_terminal_provenance"] = dict(origin)
         payload["critic_action_contract"] = _critic_contract_payload(
@@ -5041,62 +5151,18 @@ class ProductionBridge:
             chunk_compatibility_key=generation_key,
             discount=float(payload["outcome"]["discount"]),
         )
-        takeover_start = next(
-            (
-                item
-                for item in integrated.get("takeover_starts", ())
-                if self._policy_execution_generation(item, item)
-                == (
-                    int(generation["policy_epoch"]),
-                    int(generation["reset_generation"]),
-                    int(generation["takeover_generation"]),
-                )
-            ),
-            None,
+        payload["human_residual_valid"] = True
+        payload["pre_takeover_base_absolute_action7"] = list(
+            pre_takeover_absolute
         )
-        pre_takeover = None
-        pre_takeover_absolute = None
-        if takeover_start is not None:
-            start_ns = int(takeover_start["receive_monotonic_ns"])
-            candidates = [
-                item
-                for item in integrated.get("transitions", ())
-                if int(item.get("receive_monotonic_ns", 0)) < start_ns
-                and int(item.get("takeover_generation", -1))
-                == int(generation["takeover_generation"]) - 1
-                and isinstance(item.get("selection"), Mapping)
-            ]
-            if candidates:
-                prior = max(
-                    candidates,
-                    key=lambda item: int(item["receive_monotonic_ns"]),
-                )["selection"]
-                candidate = prior.get("base_normalized_action7")
-                absolute_candidate = prior.get("base_absolute_action7")
-                try:
-                    pre_takeover = list(
-                        _finite_vector(
-                            candidate,
-                            7,
-                            "BRIDGE_FORMAL_R_PRE_TAKEOVER_BASE_INVALID",
-                        )
-                    )
-                    pre_takeover_absolute = list(
-                        _finite_vector(
-                            absolute_candidate,
-                            7,
-                            "BRIDGE_FORMAL_R_PRE_TAKEOVER_BASE_ABSOLUTE_INVALID",
-                        )
-                    )
-                except ProductionBridgeError:
-                    pre_takeover = None
-                    pre_takeover_absolute = None
-        payload["human_residual_valid"] = (
-            pre_takeover is not None and pre_takeover_absolute is not None
+        payload["base_absolute_action_k7"] = np.repeat(
+            np.asarray(pre_takeover_absolute, dtype=np.float64)[None, :],
+            3,
+            axis=0,
+        ).tolist()
+        payload["accepted_absolute_action_k7"] = (
+            behavior_macro.accepted_absolute_action_k7.tolist()
         )
-        if payload["human_residual_valid"]:
-            payload["pre_takeover_base_normalized_action7"] = pre_takeover
-            payload["pre_takeover_base_absolute_action7"] = pre_takeover_absolute
         stable = {
             "schema_version": SCHEMA_VERSION,
             "episode_id": episode_id,
@@ -5197,6 +5263,7 @@ class ProductionBridge:
         first_materialized_ns = int(integrated["prepared"].tuple_host_ns[0])
         replay_sources: list[Mapping[str, Any]] = []
         observation_warmup_excluded_count = 0
+        residual_semantics_quarantine_reasons: dict[str, int] = {}
         for source in source_transitions:
             current = integrated["observations"].get(
                 str(source.get("current_observation_id", ""))
@@ -5212,6 +5279,25 @@ class ProductionBridge:
                 )
             if int(current.get("t_ref_ns", 0)) < first_materialized_ns:
                 observation_warmup_excluded_count += 1
+                continue
+            context = source.get("selection", {}).get(
+                "residual_decision_context"
+            )
+            if (
+                not isinstance(context, Mapping)
+                or context.get("online_semantics_version")
+                != ONLINE_SEMANTICS_VERSION
+                or context.get("valid_for_residual_training") is not True
+                or context.get("base_absolute_action7") is None
+            ):
+                reason = (
+                    str(context.get("invalid_reason", "decision_context_missing"))
+                    if isinstance(context, Mapping)
+                    else "decision_context_missing"
+                )
+                residual_semantics_quarantine_reasons[reason] = (
+                    residual_semantics_quarantine_reasons.get(reason, 0) + 1
+                )
                 continue
             replay_sources.append(source)
         human_sources = sorted(
@@ -5254,25 +5340,8 @@ class ProductionBridge:
             )
             < terminal_frame
         ]
-        policy_phase_candidate_count = len(replay_sources)
-        replay_sources = [
-            source
-            for source in replay_sources
-            if _policy_command_effective_phase_is_constant(
-                source,
-                replay_sources,
-                integrated["prepared"].tuple_host_ns,
-            )
-        ]
-        command_effective_phase_quarantined_count = (
-            policy_phase_candidate_count - len(replay_sources)
-        )
-        command_effective_phase_quarantined_ratio = (
-            command_effective_phase_quarantined_count
-            / policy_phase_candidate_count
-            if policy_phase_candidate_count
-            else 0.0
-        )
+        command_effective_phase_quarantined_count = 0
+        command_effective_phase_quarantined_ratio = 0.0
         human_sources = [
             source
             for source in human_sources
@@ -5282,15 +5351,70 @@ class ProductionBridge:
             )
             < terminal_frame
         ]
+        eligible_human_sources: list[Mapping[str, Any]] = []
+        for source in human_sources:
+            context = source.get("intervention", {}).get(
+                "residual_decision_context"
+            )
+            base = self._human_pre_takeover_base_absolute(
+                integrated=integrated,
+                source=source,
+            )
+            if (
+                not isinstance(context, Mapping)
+                or context.get("online_semantics_version")
+                != ONLINE_SEMANTICS_VERSION
+                or context.get("valid_for_residual_training") is not True
+                or base is None
+            ):
+                reason = (
+                    "human_pre_takeover_base_missing"
+                    if base is None
+                    else "human_decision_context_missing"
+                )
+                residual_semantics_quarantine_reasons[reason] = (
+                    residual_semantics_quarantine_reasons.get(reason, 0) + 1
+                )
+                continue
+            eligible_human_sources.append(source)
+        human_sources = eligible_human_sources
         if not replay_sources and not human_sources:
             raise ProductionBridgeError(
                 "BRIDGE_FORMAL_R_NO_CAUSAL_CALIBRATED_TRANSITIONS"
             )
         terminal_id = str(summary["terminal_observation_id"])
+        def decision_context(
+            action_source: str, source: Mapping[str, Any]
+        ) -> dict[str, Any]:
+            if action_source == "policy":
+                return dict(source["selection"]["residual_decision_context"])
+            context = dict(
+                source["intervention"]["residual_decision_context"]
+            )
+            context["base_absolute_action7"] = (
+                self._human_pre_takeover_base_absolute(
+                    integrated=integrated,
+                    source=source,
+                )
+            )
+            return context
+
+        def source_generation(
+            action_source: str, source: Mapping[str, Any]
+        ) -> tuple[int, int, int]:
+            value = source if action_source == "policy" else source["generation"]
+            return (
+                int(value["policy_epoch"]),
+                int(value["reset_generation"]),
+                int(value["takeover_generation"]),
+            )
+
         combined_sources = sorted(
             [("policy", source) for source in replay_sources]
             + [("human", source) for source in human_sources],
-            key=lambda item: int(item[1].get("receive_monotonic_ns", 0)),
+            key=lambda item: int(
+                decision_context(*item)["decision_monotonic_ns"]
+            ),
         )
         task = str(result.get("task", start.get("task", "")))
         truncated_policy_decisions = _pre_intervention_policy_boundary_decisions(
@@ -5355,6 +5479,9 @@ class ProductionBridge:
         transitions = []
         for index, (action_source, source) in enumerate(combined_sources):
             terminal = index == len(combined_sources) - 1
+            successor = (
+                None if terminal else combined_sources[index + 1]
+            )
             truncated = (
                 action_source == "policy"
                 and (
@@ -5379,6 +5506,36 @@ class ProductionBridge:
             )
             if action_source == "human" and boundary_ns is not None:
                 truncated = True
+            if successor is not None:
+                next_source_kind, next_source = successor
+                current_generation = source_generation(action_source, source)
+                next_generation = source_generation(
+                    next_source_kind, next_source
+                )
+                same_control_segment = (
+                    action_source == next_source_kind
+                    and current_generation == next_generation
+                )
+                if same_control_segment and not _is_exact_real_decision_successor(
+                    action_source, source, next_source
+                ):
+                    residual_semantics_quarantine_reasons[
+                        "decision_successor_identity_missing"
+                    ] = (
+                        residual_semantics_quarantine_reasons.get(
+                            "decision_successor_identity_missing", 0
+                        )
+                        + 1
+                    )
+                    continue
+                if not same_control_segment:
+                    # A source/generation change is a credit boundary, not a TD
+                    # successor.  The first decision after the boundary starts a
+                    # new chain with its own saved decision context.
+                    truncated = True
+                    boundary_ns = int(
+                        decision_context(*successor)["decision_monotonic_ns"]
+                    )
             if terminal and truncated:
                 raise ProductionBridgeError(
                     "BRIDGE_FORMAL_R_TERMINAL_AND_TRUNCATED"
@@ -5391,6 +5548,11 @@ class ProductionBridge:
                     integrated=integrated,
                     source=source,
                     policy_sources=replay_sources,
+                    next_decision_context=(
+                        None
+                        if terminal or truncated
+                        else decision_context(*successor)
+                    ),
                     terminal=terminal,
                     truncated=truncated,
                     boundary_timestamp_ns=boundary_ns,
@@ -5403,6 +5565,11 @@ class ProductionBridge:
                     integrated=integrated,
                     source=source,
                     human_sources=human_sources,
+                    next_decision_context=(
+                        None
+                        if terminal or truncated
+                        else decision_context(*successor)
+                    ),
                     terminal=terminal,
                     truncated=truncated,
                     boundary_timestamp_ns=boundary_ns,
@@ -5421,6 +5588,9 @@ class ProductionBridge:
             item["action_source"] == "human" for item in transitions
         )
         policy_replay_count = len(transitions) - human_replay_count
+        residual_semantics_quarantined_count = sum(
+            residual_semantics_quarantine_reasons.values()
+        )
         if invalidated_replay_count:
             raise ProductionBridgeError(
                 "BRIDGE_FORMAL_R_INVALIDATED_PROPOSAL_SELECTED"
@@ -5464,6 +5634,12 @@ class ProductionBridge:
             ),
             "command_effective_phase_quarantined_ratio": (
                 command_effective_phase_quarantined_ratio
+            ),
+            "residual_semantics_quarantined_count": (
+                residual_semantics_quarantined_count
+            ),
+            "residual_semantics_quarantine_reasons": dict(
+                residual_semantics_quarantine_reasons
             ),
             "transitions": [
                 {
@@ -5556,6 +5732,12 @@ class ProductionBridge:
             "command_effective_phase_quarantined_ratio": (
                 command_effective_phase_quarantined_ratio
             ),
+            "residual_semantics_quarantined_count": (
+                residual_semantics_quarantined_count
+            ),
+            "residual_semantics_quarantine_reasons": dict(
+                residual_semantics_quarantine_reasons
+            ),
             "learner_started": False,
             "actor_updates": 0,
             "critic_updates": 0,
@@ -5607,6 +5789,12 @@ class ProductionBridge:
             ),
             command_effective_phase_quarantined_ratio=(
                 command_effective_phase_quarantined_ratio
+            ),
+            residual_semantics_quarantined_count=(
+                residual_semantics_quarantined_count
+            ),
+            residual_semantics_quarantine_reasons=dict(
+                residual_semantics_quarantine_reasons
             ),
             wal_written_count=wal_written,
             outbox_written_count=outbox_written,

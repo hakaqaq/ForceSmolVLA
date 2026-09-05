@@ -39,6 +39,10 @@ from forcesmolvla.inference import (
 from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
 from forcesmolvla.rules import load_and_validate_rulespec
 from forcesmolvla.training_data import load_checkpoint_runtime_artifacts
+from forcesmolvla.rft.online.transition_authority import (
+    ONLINE_SEMANTICS_VERSION,
+    normalized_behavior_residual,
+)
 
 
 MAX_REQUEST_BYTES = 6 * 1024 * 1024
@@ -315,9 +319,9 @@ class InferenceEngine:
         self.policy.to(self.device)
         self.policy.eval()
         self.residual_actor: torch.nn.Module | None = None
-        self._previous_residual_wrench6: torch.Tensor | None = None
-        self._previous_residual_t_ref_ns: int | None = None
-        self._lock = threading.Lock()
+        self._base_lock = threading.Lock()
+        self._residual_lock = threading.Lock()
+        self._lock = self._base_lock
         artifact_manifest = json.loads(
             (self.checkpoint / "artifact_manifest.json").read_text(encoding="utf-8")
         )
@@ -415,67 +419,13 @@ class InferenceEngine:
             ):
                 if self.residual_actor is None:
                     base_normalized = None
-                    residual6 = None
-                    composed_normalized = None
                     actions = self.policy.predict_action_chunk(
                         batch, chunk_context=context
                     )
                 else:
-                    base_normalized, base_actions = self.policy._predict_action_chunks(
+                    base_normalized, actions = self.policy._predict_action_chunks(
                         batch, chunk_context=context
                     )
-                    state7 = batch["observation.state"].to(torch.float32)
-                    wrench6 = batch["observation.wrench"].to(torch.float32)
-                    previous = self._previous_residual_wrench6
-                    previous_t_ref_ns = self._previous_residual_t_ref_ns
-                    current_t_ref_ns = int(request["provenance"]["t_ref_ns"])
-                    interval_ns = (
-                        0
-                        if previous is None or previous_t_ref_ns is None
-                        else current_t_ref_ns - previous_t_ref_ns
-                    )
-                    wrench_delta6 = (
-                        torch.zeros_like(wrench6)
-                        if interval_ns <= 0
-                        else (wrench6 - previous) * (100_000_000.0 / interval_ns)
-                    )
-                    residual6 = self.residual_actor(
-                        normalized_state7=state7,
-                        normalized_wrench6=wrench6,
-                        normalized_wrench_delta6=wrench_delta6,
-                        base_action6=base_normalized[:, 0, :6],
-                    )
-                    self._previous_residual_wrench6 = wrench6.detach().clone()
-                    self._previous_residual_t_ref_ns = current_t_ref_ns
-                    composed_normalized = base_normalized.clone()
-                    composed_normalized[..., :6] += residual6[:, None, :]
-                    if torch.count_nonzero(residual6) == 0:
-                        actions = base_actions
-                    else:
-                        normalized_numpy = (
-                            composed_normalized.detach().cpu().float().numpy().astype(np.float64)
-                        )
-                        delta7 = self.runtime_artifacts.normalizer.delta_action7.inverse(
-                            normalized_numpy
-                        )
-                        delta7[..., 6] = np.clip(
-                            delta7[..., 6], *MODEL_GRIPPER_CANDIDATE_RANGE_M
-                        )
-                        delta7 = decode_binary_gripper_width(delta7)
-                        raw_state7 = (
-                            context.raw_state_snapshot.detach().cpu().numpy().astype(np.float64)
-                        )
-                        absolute7 = ActionDeltaProcessor.from_delta(delta7, raw_state7)
-                        self.policy._action_safety_profile.validate_chunk(
-                            absolute7,
-                            context.action_valid_mask.detach().cpu().numpy(),
-                            raw_state7,
-                        )
-                        valid = context.action_valid_mask.detach().cpu().numpy()[..., None]
-                        absolute7 = np.where(valid, absolute7, 0.0)
-                        actions = torch.from_numpy(np.ascontiguousarray(absolute7)).to(
-                            device=base_normalized.device, dtype=torch.float32
-                        )
         completed_ns = time.monotonic_ns()
         actions_cpu = actions[0].detach().to(torch.float32).cpu()
         if tuple(actions_cpu.shape) != (HORIZON, 7):
@@ -497,18 +447,94 @@ class InferenceEngine:
         if base_normalized is not None:
             response.update(
                 base_normalized_actions=base_normalized[0].detach().float().cpu().tolist(),
-                base_actions_absolute7=base_actions[0].detach().float().cpu().tolist(),
-                applied_residual_tcp6=residual6[0].detach().float().cpu().tolist(),
-                composed_normalized_actions=composed_normalized[0].detach().float().cpu().tolist(),
-                residual_wrench_delta_interval_ns=interval_ns,
-                residual_wrench_delta_reference_ns=100_000_000,
+                base_actions_absolute7=actions[0].detach().float().cpu().tolist(),
             )
         return response
 
+    def residual_decision(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Apply the episode-pinned residual Actor to one selected dispatch slot."""
+
+        if self.residual_actor is None:
+            raise RuntimeError("RESIDUAL_DECISION_ACTOR_UNAVAILABLE")
+        state = np.asarray(request.get("state7"), dtype=np.float64)
+        wrench = np.asarray(request.get("wrench6"), dtype=np.float64)
+        wrench_delta = np.asarray(request.get("wrench_delta6"), dtype=np.float64)
+        base_absolute = np.asarray(
+            request.get("base_absolute_action7"), dtype=np.float64
+        )
+        decision_ns = request.get("decision_monotonic_ns")
+        if (
+            state.shape != (7,)
+            or wrench.shape != (6,)
+            or wrench_delta.shape != (6,)
+            or base_absolute.shape != (7,)
+            or not all(
+                np.isfinite(value).all()
+                for value in (state, wrench, wrench_delta, base_absolute)
+            )
+            or isinstance(decision_ns, bool)
+            or not isinstance(decision_ns, int)
+            or decision_ns <= 0
+        ):
+            raise ValueError("RESIDUAL_DECISION_CONTEXT_INVALID")
+        normalizer = self.runtime_artifacts.normalizer
+        base_normalized, _accepted, _zero = normalized_behavior_residual(
+            base_absolute_k7=base_absolute[None, :],
+            accepted_absolute_k7=base_absolute[None, :],
+            decision_state7=state,
+            normalize_delta7=normalizer.delta_action7.apply,
+            valid_mask=np.ones(1, dtype=np.bool_),
+        )
+        normalized_state = normalizer.state7.apply(state).astype(np.float32)
+        normalized_wrench = normalizer.wrench6.apply(wrench).astype(np.float32)
+        normalized_wrench_delta = (
+            wrench_delta / normalizer.wrench6.std
+        ).astype(np.float32)
+        actor_device = next(self.residual_actor.parameters()).device
+        with self._residual_lock, torch.no_grad():
+            residual = self.residual_actor(
+                normalized_state7=torch.from_numpy(normalized_state[None]).to(actor_device),
+                normalized_wrench6=torch.from_numpy(normalized_wrench[None]).to(actor_device),
+                normalized_wrench_delta6=torch.from_numpy(
+                    normalized_wrench_delta[None]
+                ).to(actor_device),
+                base_action6=torch.from_numpy(base_normalized[:, :6]).to(actor_device),
+            )[0].detach().float().cpu().numpy()
+        composed_normalized = base_normalized.copy()
+        composed_normalized[0, :6] += residual
+        composed_delta = normalizer.delta_action7.inverse(composed_normalized)
+        composed_delta[..., 6] = np.clip(
+            composed_delta[..., 6], *MODEL_GRIPPER_CANDIDATE_RANGE_M
+        )
+        composed_delta = decode_binary_gripper_width(composed_delta)
+        composed_absolute = ActionDeltaProcessor.from_delta(
+            composed_delta, state
+        )[0]
+        composed_absolute[6] = base_absolute[6]
+        self.policy._action_safety_profile.validate_chunk(
+            composed_absolute[None, None, :],
+            np.ones((1, 1), dtype=np.bool_),
+            state[None, :],
+        )
+        return {
+            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+            "decision_monotonic_ns": decision_ns,
+            "normalizer_manifest_sha256": (
+                self.runtime_artifacts.normalizer_manifest_sha256
+            ),
+            "normalized_state7": normalized_state.tolist(),
+            "normalized_wrench6": normalized_wrench.tolist(),
+            "normalized_wrench_delta6": normalized_wrench_delta.tolist(),
+            "base_normalized_action7": base_normalized[0].tolist(),
+            "base_absolute_action7": base_absolute.tolist(),
+            "applied_residual_tcp6": residual.tolist(),
+            "composed_normalized_action7": composed_normalized[0].tolist(),
+            "composed_absolute_action7": composed_absolute.tolist(),
+        }
+
     def reset_residual_episode_context(self) -> None:
-        with self._lock:
-            self._previous_residual_wrench6 = None
-            self._previous_residual_t_ref_ns = None
+        # Dispatch owns wrench history; the inference copy is intentionally stateless.
+        return None
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -536,7 +562,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._write_json(404, {"error": "NOT_FOUND"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/infer":
+        if self.path not in {"/infer", "/residual-decision"}:
             self._write_json(404, {"error": "NOT_FOUND"})
             return
         try:
@@ -546,7 +572,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise ValueError("INFERENCE_REQUEST_MUST_BE_OBJECT")
-            self._write_json(200, self.engine.infer(payload))
+            method = (
+                self.engine.infer
+                if self.path == "/infer"
+                else self.engine.residual_decision
+            )
+            self._write_json(200, method(payload))
         except Exception as error:
             self._write_json(
                 422,

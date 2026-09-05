@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 import sys
+import threading
 from types import SimpleNamespace
 
 import numpy as np
@@ -28,6 +29,9 @@ from forcesmolvla.rft.online.replay_training import (
 from forcesmolvla.rft.online.transition_authority import (
     AckMacro,
     ActorQEligibility,
+    DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
+    ONLINE_SEMANTICS_VERSION,
+    normalized_behavior_residual,
 )
 from forcesmolvla.rft.critic import (
     RESIDUAL_ACTION_OFFSET,
@@ -76,8 +80,31 @@ class ScalarResidualActor(torch.nn.Module):
 
 
 class IdentityTransform:
+    def __init__(self, width: int) -> None:
+        self.mean = np.zeros(width, dtype=np.float64)
+        self.std = np.ones(width, dtype=np.float64)
+
     def apply(self, value):
         return np.asarray(value)
+
+    def inverse(self, value):
+        return np.asarray(value)
+
+
+def decision_context(
+    *, timestamp_ns: int, base_absolute: object
+) -> dict[str, object]:
+    return {
+        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+        "valid_for_residual_training": True,
+        "invalid_reason": None,
+        "decision_monotonic_ns": timestamp_ns,
+        "state7_absolute": [0.0] * 7,
+        "wrench6_calibrated_tcp": [0.0] * 6,
+        "wrench_delta6_calibrated_tcp_100ms": [0.0] * 6,
+        "wrench_delta_interval_ns": 0,
+        "base_absolute_action7": base_absolute,
+    }
 
 
 def human_replay(*, terminated: bool = True) -> OnlineResidualReplay:
@@ -103,8 +130,12 @@ def human_replay(*, terminated: bool = True) -> OnlineResidualReplay:
         accepted_absolute_action_k7=accepted,
         slot_owner=("human_intervention",) * 3,
         workspace_clip_flags=(False,) * 3,
+        contract_version=DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
     )
+    base = [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     transition = {
+        "schema_version": ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "identity": {"episode_id": "human-episode"},
         "action_source": "human",
         "observation": observation,
@@ -116,15 +147,15 @@ def human_replay(*, terminated: bool = True) -> OnlineResidualReplay:
         },
         "eligibility": {"actor_q_valid": True},
         "human_residual_valid": True,
-        "pre_takeover_base_absolute_action7": [
-            0.1,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        ],
+        "pre_takeover_base_absolute_action7": base,
+        "base_absolute_action_k7": np.repeat(
+            np.asarray(base)[None, :], 3, axis=0
+        ).tolist(),
+        "accepted_absolute_action_k7": accepted.tolist(),
+        "residual_decision_context": decision_context(
+            timestamp_ns=1_000_000_000, base_absolute=base
+        ),
+        "next_residual_decision_context": None,
     }
     macro = ProductionAckMacro(
         transition=transition,
@@ -134,9 +165,9 @@ def human_replay(*, terminated: bool = True) -> OnlineResidualReplay:
         actor_q_eligibility=ActorQEligibility(True, "valid"),
     )
     normalizer = SimpleNamespace(
-        state7=IdentityTransform(),
-        wrench6=IdentityTransform(),
-        delta_action7=IdentityTransform(),
+        state7=IdentityTransform(7),
+        wrench6=IdentityTransform(6),
+        delta_action7=IdentityTransform(7),
     )
     return OnlineResidualReplay((macro,), normalizer)
 
@@ -152,6 +183,11 @@ def policy_replay(*, schema_version: str, base_action: object) -> OnlineResidual
     )
     transition = {
         "schema_version": schema_version,
+        "online_semantics_version": (
+            ONLINE_SEMANTICS_VERSION
+            if schema_version == ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION
+            else None
+        ),
         "identity": {"episode_id": "policy-episode"},
         "action_source": "policy",
         "observation": observation,
@@ -161,9 +197,21 @@ def policy_replay(*, schema_version: str, base_action: object) -> OnlineResidual
         },
         "outcome": {"reward": 0.0, "terminated": True, "truncated": False},
         "eligibility": {"actor_q_valid": True},
+        "accepted_absolute_action_k7": accepted.tolist(),
+        "next_residual_decision_context": None,
     }
     if base_action is not None:
-        transition["base_normalized_action_k7"] = base_action
+        base_absolute = np.asarray(base_action, dtype=np.float64)[0].tolist()
+        transition["base_absolute_action_k7"] = np.repeat(
+            np.asarray(base_absolute)[None, :], 3, axis=0
+        ).tolist()
+        transition["residual_decision_context"] = decision_context(
+            timestamp_ns=1_000_000_000,
+            base_absolute=base_absolute,
+        )
+    else:
+        transition["controller_normalized_action_k7"] = accepted.tolist()
+        transition["composed_normalized_action_k7"] = accepted.tolist()
     macro = ProductionAckMacro(
         transition=transition,
         behavior=AckMacro(
@@ -174,15 +222,16 @@ def policy_replay(*, schema_version: str, base_action: object) -> OnlineResidual
             accepted_absolute_action_k7=accepted,
             slot_owner=("policy",) * 3,
             workspace_clip_flags=(False,) * 3,
+            contract_version=DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
         ),
         next_grid_monotonic_ns=1_100_000_000,
         ack_provenance=(),
         actor_q_eligibility=ActorQEligibility(True, "valid"),
     )
     normalizer = SimpleNamespace(
-        state7=IdentityTransform(),
-        wrench6=IdentityTransform(),
-        delta_action7=IdentityTransform(),
+        state7=IdentityTransform(7),
+        wrench6=IdentityTransform(6),
+        delta_action7=IdentityTransform(7),
     )
     return OnlineResidualReplay((macro,), normalizer)
 
@@ -282,6 +331,187 @@ def test_valid_human_residual_reaches_critic_and_unlocks_action_columns() -> Non
     assert not torch.equal(before, after)
 
 
+def test_same_decision_anchor_removes_motion_from_behavior_residual() -> None:
+    class Affine:
+        def __init__(self) -> None:
+            self.mean = np.asarray([0.3] * 7)
+            self.std = np.asarray([2.0] * 7)
+
+        def apply(self, value):
+            return (np.asarray(value) - self.mean) / self.std
+
+    decision_state = np.asarray([0.002, 0.0, 0.0, 0.1, -0.2, 0.3, 0.085])
+    base = np.repeat(
+        np.asarray([[0.010, 0.0, 0.0, 0.1, -0.2, 0.3, 0.085]]),
+        3,
+        axis=0,
+    )
+    base_normalized, accepted_normalized, residual = normalized_behavior_residual(
+        base_absolute_k7=base,
+        accepted_absolute_k7=base.copy(),
+        decision_state7=decision_state,
+        normalize_delta7=Affine().apply,
+        valid_mask=np.ones(3, dtype=np.bool_),
+    )
+    assert np.array_equal(base_normalized, accepted_normalized)
+    assert np.count_nonzero(residual) == 0
+
+    controller_accepted = base.copy()
+    controller_accepted[:, 0] += 0.004
+    _base, _accepted, controller_residual = normalized_behavior_residual(
+        base_absolute_k7=base,
+        accepted_absolute_k7=controller_accepted,
+        decision_state7=decision_state,
+        normalize_delta7=Affine().apply,
+        valid_mask=np.ones(3, dtype=np.bool_),
+    )
+    assert np.allclose(controller_residual[:, 0], 0.002)
+
+
+def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step() -> None:
+    class RecordingActor(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.marker = torch.nn.Parameter(torch.zeros(()))
+            self.inputs = None
+
+        def forward(self, **kwargs):
+            self.inputs = {
+                name: value.detach().cpu().clone() for name, value in kwargs.items()
+            }
+            return torch.full((1, 6), 0.01)
+
+    class Safety:
+        @staticmethod
+        def validate_chunk(*_args):
+            return None
+
+    normalizer = SimpleNamespace(
+        state7=IdentityTransform(7),
+        wrench6=IdentityTransform(6),
+        delta_action7=IdentityTransform(7),
+    )
+    engine = object.__new__(learner_server.serve_policy.InferenceEngine)
+    engine.residual_actor = RecordingActor()
+    engine._residual_lock = threading.Lock()
+    engine.runtime_artifacts = SimpleNamespace(
+        normalizer=normalizer,
+        normalizer_manifest_sha256="existing-manifest-id",
+    )
+    engine.policy = SimpleNamespace(_action_safety_profile=Safety())
+    state = [0.1, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085]
+    chunk = [
+        [0.11, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085],
+        [0.12, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085],
+        [0.13, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085],
+    ]
+    response = engine.residual_decision(
+        {
+            "decision_monotonic_ns": 1_000_000_000,
+            "state7": state,
+            "wrench6": [1.0] * 6,
+            "wrench_delta6": [5.0] * 6,
+            "base_absolute_action7": chunk[2],
+        }
+    )
+    assert np.allclose(
+        engine.residual_actor.inputs["base_action6"][0].numpy(),
+        [0.03, 0.0, 0.0, 0.0, 0.0, 0.0],
+    )
+    assert np.array_equal(
+        engine.residual_actor.inputs["normalized_wrench_delta6"][0].numpy(),
+        np.full(6, 5.0, dtype=np.float32),
+    )
+
+    current_context = {
+        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+        "valid_for_residual_training": True,
+        "invalid_reason": None,
+        "decision_monotonic_ns": 1_000_000_000,
+        "state7_absolute": state,
+        "wrench6_calibrated_tcp": [1.0] * 6,
+        "wrench_delta6_calibrated_tcp_100ms": [5.0] * 6,
+        "wrench_delta_interval_ns": 80_000_000,
+        "base_absolute_action7": chunk[2],
+        "normalized_state7": response["normalized_state7"],
+        "normalized_wrench6": response["normalized_wrench6"],
+        "normalized_wrench_delta6": response["normalized_wrench_delta6"],
+        "base_normalized_action6": response["base_normalized_action7"][:6],
+    }
+    next_base = [0.14, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085]
+    next_context = {
+        **current_context,
+        "decision_monotonic_ns": 1_400_000_000,
+        "wrench6_calibrated_tcp": [2.0] * 6,
+        "wrench_delta6_calibrated_tcp_100ms": [7.0] * 6,
+        "wrench_delta_interval_ns": 400_000_000,
+        "base_absolute_action7": next_base,
+        "normalized_wrench6": [2.0] * 6,
+        "normalized_wrench_delta6": [7.0] * 6,
+        "base_normalized_action6": [0.04, 0.0, 0.0, 0.0, 0.0, 0.0],
+    }
+    accepted = np.repeat(
+        np.asarray(response["composed_absolute_action7"])[None, :], 3, axis=0
+    )
+    behavior = AckMacro(
+        grid_monotonic_ns=(1_000_000_000, 1_033_333_333, 1_066_666_667),
+        ack_ids=("ack",) * 3,
+        gripper_command_ids=("gripper",) * 3,
+        gripper_ack_command_ids=("gripper",) * 3,
+        accepted_absolute_action_k7=accepted,
+        slot_owner=("policy",) * 3,
+        workspace_clip_flags=(False,) * 3,
+        source_command_ids=("command",) * 3,
+        source_dispatch_sequences=(9,) * 3,
+        source_model_indices=(2,) * 3,
+        chunk_ids=("chunk",) * 3,
+        controller_authorities=("controller",) * 3,
+        contract_version=DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
+        next_timestamp_ns=1_400_000_000,
+        macro_duration_ns=400_000_000,
+    )
+    transition = {
+        "schema_version": ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+        "identity": {"episode_id": "dispatch-episode"},
+        "action_source": "policy",
+        "observation": {
+            "state7_absolute": state,
+            "wrench6_calibrated_tcp": [1.0] * 6,
+        },
+        "next_observation": {
+            "state7_absolute": state,
+            "wrench6_calibrated_tcp": [2.0] * 6,
+        },
+        "outcome": {"reward": 0.0, "terminated": False, "truncated": False},
+        "base_absolute_action_k7": np.repeat(
+            np.asarray(chunk[2])[None, :], 3, axis=0
+        ).tolist(),
+        "accepted_absolute_action_k7": accepted.tolist(),
+        "residual_decision_context": current_context,
+        "next_residual_decision_context": next_context,
+        "human_residual_valid": False,
+    }
+    replay = OnlineResidualReplay(
+        (
+            ProductionAckMacro(
+                transition=transition,
+                behavior=behavior,
+                next_grid_monotonic_ns=1_400_000_000,
+                ack_provenance=(),
+                actor_q_eligibility=ActorQEligibility(True, "valid"),
+            ),
+        ),
+        normalizer,
+    )
+    assert replay.critic_td_valid_rows == 1
+    row = replay.rows[0]
+    assert np.array_equal(row["wrench_delta6"], np.full(6, 5.0))
+    assert np.array_equal(row["next_wrench_delta6"], np.full(6, 7.0))
+    assert np.allclose(row["behavior_residual_k6"], 0.01)
+    assert row["next_base_valid"] is True
+
+
 def test_policy_value_sampling_excludes_human_and_missing_next_base() -> None:
     replay = human_replay()
     assert replay.sample(
@@ -300,12 +530,12 @@ def test_policy_value_sampling_excludes_human_and_missing_next_base() -> None:
     assert missing_next_base.next_base_missing_rows == 1
 
 
-def test_only_explicit_legacy_policy_rows_fallback_to_zero_residual() -> None:
+def test_missing_or_legacy_policy_base_is_not_a_valid_dispatch_row() -> None:
     legacy_schema = next(iter(LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS))
     legacy = policy_replay(schema_version=legacy_schema, base_action=None)
-    assert legacy.critic_td_valid_rows == 1
+    assert legacy.critic_td_valid_rows == 0
     assert legacy.nonzero_behavior_residual_rows == 0
-    assert legacy.quarantined_current_schema_rows == 0
+    assert legacy.quarantined_current_schema_rows == 1
 
     missing_current = policy_replay(
         schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
@@ -734,8 +964,11 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
 def test_157_zero_residual_cycles_do_not_advance_actor_optimizer_or_candidate(
     monkeypatch,
 ) -> None:
-    legacy_schema = next(iter(LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS))
-    replay = policy_replay(schema_version=legacy_schema, base_action=None)
+    accepted = [[0.2, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0]] * 3
+    replay = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=accepted,
+    )
     replay.rows = replay.rows * 100
     learner = actor_update_test_learner()
     learner._joint_cycle_budget = 157
@@ -819,3 +1052,12 @@ def test_candidate_waits_for_ten_effective_human_residual_actor_updates(
     assert candidate is not None
     assert candidate["revision_id"].endswith("000010")
     assert (candidate["checkpoint"] / "residual_actor.pt").is_file()
+    candidate_state = torch.load(
+        candidate["checkpoint"] / "candidate_state.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    assert candidate_state == {
+        "checkpoint_kind": learner_server.CANDIDATE_CHECKPOINT_KIND,
+        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+    }

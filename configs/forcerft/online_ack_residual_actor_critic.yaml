@@ -39,6 +39,8 @@ optimizer:
   twin_q_polyak_tau: 0.005
 
 objective:
+  # Discount per real dispatch-to-successor decision transition. K=3 remains
+  # the accepted-command ZOH encoding, not a fixed 100 ms transition clock.
   command_macro_discount: 0.99
   value_objective_weight: 1.0
   residual_magnitude_penalty_weight: 0.01

@@ -25,6 +25,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+    ONLINE_ADAPTATION_DIRECTORY_NAME,
     select_resume_or_bootstrap_checkpoint,
 )
 
@@ -509,6 +510,13 @@ def run_loop(args: argparse.Namespace) -> int:
         args.allow_development_policy_execution_smoke,
         "FORCERFT_ONLINE_ROBOT_EXECUTION_FLAG_REQUIRED",
     )
+    ack_replay_root = getattr(
+        args,
+        "ack_replay_root",
+        args.output_root
+        / ONLINE_ADAPTATION_DIRECTORY_NAME
+        / "formal_replay",
+    )
     resume = select_resume_or_bootstrap_checkpoint(
         args.output_root,
         configured_bootstrap_checkpoint=getattr(args, "online_residual_bootstrap_checkpoint", None),
@@ -518,6 +526,7 @@ def run_loop(args: argparse.Namespace) -> int:
         "--task-id", args.task_id, "--output-root", str(args.output_root),
         "--task", args.task,
         "--dataset-root", str(args.dataset_root),
+        "--ack-replay-root", str(ack_replay_root),
         "--session-id", "waiting-for-episode", "--episode-id", EPISODE_ID,
         "--learner-resume-checkpoint", str(resume),
         "--allow-development-policy-execution-smoke",
@@ -640,7 +649,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if args.safety_config is not None:
         args.safety_config = args.safety_config.resolve()
     args.ack_replay_root = (
-        args.output_root / "online"
+        args.output_root
+        / ONLINE_ADAPTATION_DIRECTORY_NAME
+        / "formal_replay"
         if args.ack_replay_root is None else args.ack_replay_root.resolve()
     )
     return args

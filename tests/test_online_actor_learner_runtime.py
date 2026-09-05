@@ -9,6 +9,7 @@ import yaml
 from forcesmolvla.rft.critic import build_twin_q, state_exact
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
+    ONLINE_ADAPTATION_DIRECTORY_NAME,
     ResidualActorCriticSchedule,
     training_checkpoint_path,
     prepare_learner,
@@ -16,15 +17,23 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     select_resume_or_bootstrap_checkpoint,
 )
 from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (
+    BOOTSTRAP_CHECKPOINT_KIND,
+    TRAINING_CHECKPOINT_KIND,
     save_residual_actor_critic_checkpoint,
 )
+from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
 from forcesmolvla.rft.residual_actor import make_residual_actor_pair
 
 
 ROOT = Path(__file__).parents[1]
 
 
-def write_checkpoint(path: Path, *, learner_state: str = "ack_replay_collection") -> Path:
+def write_checkpoint(
+    path: Path,
+    *,
+    learner_state: str = "ack_replay_collection",
+    checkpoint_kind: str = TRAINING_CHECKPOINT_KIND,
+) -> Path:
     config = yaml.safe_load(
         (ROOT / "configs/forcerft/online_ack_residual_actor_critic.yaml").read_text()
     )
@@ -36,6 +45,8 @@ def write_checkpoint(path: Path, *, learner_state: str = "ack_replay_collection"
     )
     warmup = 256 if learner_state == "residual_actor_critic_training" else 0
     runtime = {
+        "checkpoint_kind": checkpoint_kind,
+        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "frozen_base_policy_checkpoint": "/fixed/base",
         "learner_state": learner_state,
         "ack_critic_warmup_complete": learner_state == "residual_actor_critic_training",
@@ -46,6 +57,8 @@ def write_checkpoint(path: Path, *, learner_state: str = "ack_replay_collection"
         "counters": {
             "twin_q_optimizer_steps": warmup,
             "residual_actor_optimizer_steps": 0,
+            "residual_actor_update_attempts": 0,
+            "residual_actor_updates_skipped_no_gradient": 0,
             "twin_q_target_update_steps": warmup,
         },
         "replay": {
@@ -83,7 +96,9 @@ def test_final_online_policy_has_fixed_schedule_and_bounded_admission_budget() -
 
 def test_resume_selection_prefers_latest_final_checkpoint(tmp_path: Path) -> None:
     root = tmp_path / "outputs/task3"
-    checkpoint_root = root / "online_ack_residual/training_checkpoints"
+    checkpoint_root = (
+        root / ONLINE_ADAPTATION_DIRECTORY_NAME / "training_checkpoints"
+    )
     first = write_checkpoint(training_checkpoint_path(checkpoint_root, 2))
     latest = write_checkpoint(training_checkpoint_path(checkpoint_root, 7))
     incomplete = training_checkpoint_path(checkpoint_root, 9)
@@ -98,7 +113,8 @@ def test_resume_selection_prefers_latest_final_checkpoint(tmp_path: Path) -> Non
 
 def test_seed_is_used_without_offline_critic_fallback(tmp_path: Path) -> None:
     seed = write_checkpoint(
-        tmp_path / "base_policy_zero_residual_random_twin_q"
+        tmp_path / "base_policy_zero_residual_random_twin_q",
+        checkpoint_kind=BOOTSTRAP_CHECKPOINT_KIND,
     )
     selected = select_resume_or_bootstrap_checkpoint(
         tmp_path / "empty-output", configured_bootstrap_checkpoint=seed

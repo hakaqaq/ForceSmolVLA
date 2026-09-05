@@ -38,10 +38,59 @@ SLOT_OWNERS = {
     "offline_demonstration",
 }
 ACTOR_Q_ELIGIBILITY_CONTRACT = "ack_actor_q_v1"
+ONLINE_SEMANTICS_VERSION = "forcesmolvla_ack_residual_dispatch.v1"
+DISPATCH_DECISION_CRITIC_CONTRACT_VERSION = (
+    "critic-action-contract-v4-dispatch-decision-zoh-k3"
+)
 
 
 class TransitionContractError(ValueError):
     pass
+
+
+def normalized_behavior_residual(
+    *,
+    base_absolute_k7: np.ndarray,
+    accepted_absolute_k7: np.ndarray,
+    decision_state7: np.ndarray,
+    normalize_delta7: Callable[[np.ndarray], np.ndarray],
+    valid_mask: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Put base and ACK actions in one decision-anchor coordinate system."""
+
+    base_absolute = np.asarray(base_absolute_k7, dtype=np.float64)
+    accepted_absolute = np.asarray(accepted_absolute_k7, dtype=np.float64)
+    mask = np.asarray(valid_mask, dtype=np.bool_)
+    if (
+        base_absolute.ndim != 2
+        or base_absolute.shape[1:] != (7,)
+        or accepted_absolute.shape != base_absolute.shape
+        or mask.shape != base_absolute.shape[:1]
+        or not np.isfinite(base_absolute).all()
+        or not np.isfinite(accepted_absolute).all()
+    ):
+        raise TransitionContractError("ONLINE_REPLAY_RESIDUAL_ACTION_SHAPE_INVALID")
+    state = np.asarray(decision_state7, dtype=np.float64)
+    if state.shape != (7,) or not np.isfinite(state).all() or not mask.any():
+        raise TransitionContractError("ONLINE_REPLAY_RESIDUAL_DECISION_STATE_INVALID")
+    base = np.asarray(
+        normalize_delta7(ActionDeltaProcessor.to_delta(base_absolute, state)),
+        dtype=np.float32,
+    )
+    accepted = np.asarray(
+        normalize_delta7(ActionDeltaProcessor.to_delta(accepted_absolute, state)),
+        dtype=np.float32,
+    )
+    if (
+        base.shape != base_absolute.shape
+        or accepted.shape != base_absolute.shape
+        or not np.isfinite(base).all()
+        or not np.isfinite(accepted).all()
+    ):
+        raise TransitionContractError("ONLINE_REPLAY_RESIDUAL_NORMALIZATION_INVALID")
+    residual = (accepted[..., :6] - base[..., :6]).astype(np.float32)
+    residual[~mask] = 0.0
+    return base, accepted, residual
 
 
 @dataclass(frozen=True)
@@ -161,13 +210,20 @@ def derive_actor_q_eligibility(
         return reject("offline_demonstration_not_ack_deployment_semantics")
     if action_source not in {"policy", "human"}:
         return reject("action_source_not_actor_q_learnable")
-    if macro.contract_version != CRITIC_ACTION_CONTRACT.version:
+    dispatch_semantics = (
+        macro.contract_version == DISPATCH_DECISION_CRITIC_CONTRACT_VERSION
+    )
+    if not dispatch_semantics and macro.contract_version != CRITIC_ACTION_CONTRACT.version:
         return reject("critic_action_contract_mismatch")
     if tuple(macro.behavior_mask) != (True, True, True):
         return reject("partial_macro")
-    if duration_tolerance_ns < 0 or abs(
-        macro.macro_duration_ns - CRITIC_ACTION_CONTRACT.macro_duration_ns
-    ) > duration_tolerance_ns:
+    if not dispatch_semantics and (
+        duration_tolerance_ns < 0
+        or abs(
+            macro.macro_duration_ns - CRITIC_ACTION_CONTRACT.macro_duration_ns
+        )
+        > duration_tolerance_ns
+    ):
         return reject("macro_duration_mismatch")
     if any(macro.workspace_clip_flags):
         return reject("workspace_clipped")

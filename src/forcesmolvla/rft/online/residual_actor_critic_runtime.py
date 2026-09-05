@@ -15,6 +15,8 @@ from typing import Any, Callable, Iterator, Mapping, Sequence
 import numpy as np
 import torch
 
+ONLINE_ADAPTATION_DIRECTORY_NAME = "online_ack_residual_dispatch"
+
 
 class AsyncRuntimeError(RuntimeError):
     pass
@@ -146,7 +148,9 @@ def exact_resume_checkpoint_is_recoverable(
 
     if expected_kind not in {"online_residual_bootstrap", "residual_actor_critic_training"}:
         return False
-    return residual_actor_critic_checkpoint_is_recoverable(checkpoint)
+    return residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=expected_kind
+    )
 
 
 def select_resume_or_bootstrap_checkpoint(
@@ -157,7 +161,9 @@ def select_resume_or_bootstrap_checkpoint(
     """Choose online exact-resume, then the explicit bootstrap, else fail closed."""
 
     online_root = (
-        output_root.resolve() / "online_ack_residual/training_checkpoints"
+        output_root.resolve()
+        / ONLINE_ADAPTATION_DIRECTORY_NAME
+        / "training_checkpoints"
     )
     candidates: list[tuple[int, Path]] = []
     for path in online_root.glob("residual_actor_critic_cycle_*"):
@@ -171,6 +177,12 @@ def select_resume_or_bootstrap_checkpoint(
             path, expected_kind="residual_actor_critic_training"
         ):
             candidates.append((cycle, path.resolve()))
+        else:
+            print(
+                "[training-checkpoint] skipped incompatible "
+                f"checkpoint={path}",
+                flush=True,
+            )
     if candidates:
         return SelectedCheckpoint(
             path=max(candidates)[1],
@@ -329,20 +341,14 @@ def prepare_learner(
         residual_actor_optimizer=residual_actor_optimizer,
         critic_optimizer=critic_optimizer,
         device=device,
+        expected_kind=None,
     )
     require(config == loaded_config, "FORCERFT_CHECKPOINT_CONFIG_DRIFT")
     counters = runtime["counters"]
     applied_actor_steps = int(counters["residual_actor_optimizer_steps"])
-    actor_update_attempts = int(
-        counters.setdefault(
-            "residual_actor_update_attempts", applied_actor_steps
-        )
-    )
+    actor_update_attempts = int(counters["residual_actor_update_attempts"])
     skipped_actor_updates = int(
-        counters.setdefault(
-            "residual_actor_updates_skipped_no_gradient",
-            actor_update_attempts - applied_actor_steps,
-        )
+        counters["residual_actor_updates_skipped_no_gradient"]
     )
     require(
         actor_update_attempts

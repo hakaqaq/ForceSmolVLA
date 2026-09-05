@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -16,6 +17,7 @@ from forcesmolvla.rft.detector_reward_transitions import (
 )
 from forcesmolvla.rft.online.gripper_authority import GripperGeneration
 from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority
+from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
 from forcesmolvla.rft.online.production_bridge import (
     BridgeConfig,
     BridgeDigestCollisionError,
@@ -34,6 +36,44 @@ CONFIG = ROOT / "configs/online_replay_production_bridge.v1.development.yaml"
 REAL_EPISODE = Path(
     "/home/rlc123/fr3_client_ws/datasets/task2/episodes/episode_000018"
 )
+
+
+def test_dispatch_successor_requires_persisted_identity_link() -> None:
+    current_policy = {
+        "next_observation_id": "observation-2",
+        "selection": {"sequence": 4},
+    }
+    assert bridge_module._is_exact_real_decision_successor(
+        "policy",
+        current_policy,
+        {
+            "current_observation_id": "observation-2",
+            "selection": {"sequence": 7},
+        },
+    )
+    assert not bridge_module._is_exact_real_decision_successor(
+        "policy",
+        current_policy,
+        {
+            "current_observation_id": "observation-nearby-but-unlinked",
+            "selection": {"sequence": 5},
+        },
+    )
+    assert bridge_module._is_exact_real_decision_successor(
+        "human", {"source_sequence": 10}, {"source_sequence": 11}
+    )
+    assert not bridge_module._is_exact_real_decision_successor(
+        "human", {"source_sequence": 10}, {"source_sequence": 12}
+    )
+
+
+class _Affine:
+    def __init__(self, mean: list[float], std: list[float]) -> None:
+        self.mean = np.asarray(mean, dtype=np.float64)
+        self.std = np.asarray(std, dtype=np.float64)
+
+    def apply(self, value):
+        return (np.asarray(value) - self.mean) / self.std
 
 
 def _write_json(path: Path, value: dict) -> None:
@@ -645,6 +685,23 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
             "sequence": sequence,
             "normalized_action7": [0.0] * 7,
             "selected_post_adapter_absolute7": selected_action7,
+            "base_normalized_action7": [0.0] * 7,
+            "base_absolute_action7": selected_action7,
+            "applied_residual_tcp6": [0.0] * 6,
+            "composed_normalized_action7": [0.0] * 7,
+            "residual_decision_context": {
+                "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+                "valid_for_residual_training": True,
+                "invalid_reason": None,
+                "decision_monotonic_ns": lineage["t_ref_ns"] + 6_000_000,
+                "state7_absolute": selected_action7,
+                "wrench6_calibrated_tcp": [
+                    float(sequence + index) for index in range(6)
+                ],
+                "wrench_delta6_calibrated_tcp_100ms": [0.0] * 6,
+                "wrench_delta_interval_ns": 0,
+                "base_absolute_action7": selected_action7,
+            },
         }
         requested_rows[sequence]["source"] = "policy"
         ack_rows[sequence]["payload"]["request_frame_id"] = "fr3_link0"
@@ -949,6 +1006,16 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
             "invalidated_chunk_id": "live-request-a",
             "old_policy_chunk_invalidated": True,
             "safe_action": takeover_safe,
+            "residual_decision_context": {
+                "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+                "valid_for_residual_training": True,
+                "invalid_reason": None,
+                "decision_monotonic_ns": 1_202_000_000,
+                "state7_absolute": selected_action7,
+                "wrench6_calibrated_tcp": [3.0] * 6,
+                "wrench_delta6_calibrated_tcp_100ms": [0.0] * 6,
+                "wrench_delta_interval_ns": 0,
+            },
         },
         {
             "schema": "forcesmolvla-stage3-integrated-capture-v1",
@@ -2163,6 +2230,16 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     )
     assert len(policy_rows) + len(human_rows) == 3
     assert policy_macros
+    residual_replay = replay_training.OnlineResidualReplay(
+        (*policy_macros, *replay_training.build_ack_macros(human_rows)),
+        SimpleNamespace(
+            state7=_Affine([0.1] * 7, [2.0] * 7),
+            wrench6=_Affine([1.0] * 6, [4.0] * 6),
+            delta_action7=_Affine([0.2] * 7, [5.0] * 7),
+        ),
+    )
+    assert residual_replay.critic_td_valid_rows == 3
+    assert residual_replay.nonzero_behavior_residual_rows == 0
     assert set(source_episodes) == {report.episode_id}
     assert report.policy_execution_smoke_bridge == "PASS"
     assert report.accepted_unique_r_transition_count == 3
@@ -2232,13 +2309,9 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert "policy_lineage" not in human
     assert isinstance(human["human_residual_valid"], bool)
     assert human["human_residual_valid"] is (
-        "pre_takeover_base_normalized_action7" in human
-        and "pre_takeover_base_absolute_action7" in human
+        "pre_takeover_base_absolute_action7" in human
     )
     if human["human_residual_valid"]:
-        assert np.asarray(
-            human["pre_takeover_base_normalized_action7"]
-        ).shape == (7,)
         assert np.asarray(
             human["pre_takeover_base_absolute_action7"]
         ).shape == (7,)
@@ -2253,6 +2326,15 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert [item["outcome"]["truncated"] for item in payloads] == [True, True, False]
     assert [item["outcome"]["bootstrap_mask"] for item in payloads] == [0.0, 0.0, 0.0]
     assert [item["outcome"]["discount"] for item in payloads] == [0.0, 0.0, 0.0]
+    assert all(
+        np.count_nonzero(
+            item["residual_decision_context"][
+                "wrench_delta6_calibrated_tcp_100ms"
+            ]
+        )
+        == 0
+        for item in payloads
+    )
     assert all(
         item["policy_lineage"]["proposal"]["invalidated_by_takeover"] is False
         for item in policy_payloads
