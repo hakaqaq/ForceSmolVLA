@@ -331,6 +331,24 @@ def prepare_learner(
         device=device,
     )
     require(config == loaded_config, "FORCERFT_CHECKPOINT_CONFIG_DRIFT")
+    counters = runtime["counters"]
+    applied_actor_steps = int(counters["residual_actor_optimizer_steps"])
+    actor_update_attempts = int(
+        counters.setdefault(
+            "residual_actor_update_attempts", applied_actor_steps
+        )
+    )
+    skipped_actor_updates = int(
+        counters.setdefault(
+            "residual_actor_updates_skipped_no_gradient",
+            actor_update_attempts - applied_actor_steps,
+        )
+    )
+    require(
+        actor_update_attempts
+        == applied_actor_steps + skipped_actor_updates,
+        "FORCERFT_RESIDUAL_ACTOR_UPDATE_COUNTER_MISMATCH",
+    )
     completed_warmup = int(runtime.get("ack_critic_warmup_steps", 0))
     expected_warmup = int(config["ack_critic_warmup"]["optimizer_steps"])
     require(

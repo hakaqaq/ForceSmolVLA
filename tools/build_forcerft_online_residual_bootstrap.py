@@ -91,6 +91,8 @@ def build_online_residual_bootstrap(
         "counters": {
             "twin_q_optimizer_steps": 0,
             "residual_actor_optimizer_steps": 0,
+            "residual_actor_update_attempts": 0,
+            "residual_actor_updates_skipped_no_gradient": 0,
             "twin_q_target_update_steps": 0,
         },
         "replay": {

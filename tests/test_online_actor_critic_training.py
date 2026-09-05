@@ -13,7 +13,10 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import serve_forcerft_residual_actor_critic as learner_server  # noqa: E402
 
-from forcesmolvla.rft.online.residual_actor_critic_runtime import ResidualActorCriticSchedule
+from forcesmolvla.rft.online.residual_actor_critic_runtime import (
+    InferencePriorityCoordinator,
+    ResidualActorCriticSchedule,
+)
 from forcesmolvla.rft.online.replay_training import (
     ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
     LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS,
@@ -35,6 +38,7 @@ from forcesmolvla.rft.online.training_losses import (
     residual_actor_loss,
     residual_critic_loss,
 )
+from forcesmolvla.rft.residual_actor import make_residual_actor_pair
 
 
 class ConstantQ(torch.nn.Module):
@@ -428,6 +432,8 @@ def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
             "counters": {
                 "twin_q_optimizer_steps": warmup_updates,
                 "residual_actor_optimizer_steps": 0,
+                "residual_actor_update_attempts": 0,
+                "residual_actor_updates_skipped_no_gradient": 0,
                 "twin_q_target_update_steps": warmup_updates,
             },
             "replay": {
@@ -548,6 +554,8 @@ def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
     assert learner.learner["runtime"]["counters"] == {
         "twin_q_optimizer_steps": 0,
         "residual_actor_optimizer_steps": 0,
+        "residual_actor_update_attempts": 0,
+        "residual_actor_updates_skipped_no_gradient": 0,
         "twin_q_target_update_steps": 0,
     }
     assert all(
@@ -637,7 +645,14 @@ def test_residual_training_cycle_is_exactly_two_critic_and_one_actor(
         learner,
         "_actor_update",
         lambda _coordinator, _replay: actor_calls.append(1)
-        or {"total": 0.1, "value": -0.2},
+        or {
+            "total": 0.1,
+            "value": -0.2,
+            "applied": True,
+            "skip_reason": None,
+            "grad_norm": 1.0,
+            "support_available": True,
+        },
     )
     result = learner(object())
     assert critic_calls == [False, False]
@@ -645,3 +660,162 @@ def test_residual_training_cycle_is_exactly_two_critic_and_one_actor(
     assert result["learner_critic_steps"] == 2
     assert result["learner_actor_steps"] == 1
     assert result["residual_actor_critic_cycle"] == 1
+
+
+def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
+    learner = learner_server.ResidualActorCriticLearner.__new__(
+        learner_server.ResidualActorCriticLearner
+    )
+    actor, actor_target = make_residual_actor_pair(hidden_dim=16)
+    q1, q2, _q1_target, _q2_target = build_twin_q(hidden_dim=16, seed=17)
+    learner.device = torch.device("cpu")
+    learner.training_policy = ResidualActorCriticSchedule(
+        residual_policy_value_batch_size=8,
+        human_residual_imitation_batch_size=8,
+        training_checkpoint_interval_cycles=1_000,
+        checkpoint_on_warmup_complete=False,
+        checkpoint_on_candidate_activation=False,
+    )
+    learner.latest_residual_actor_output_norm = 0.0
+    learner.latest_actor_update_ms = 0.0
+    learner.latest_critic_update_ms = 0.0
+    learner.latest_cycle_ms = 0.0
+    learner.latest_replay_refresh_ms = 0.0
+    learner.nonzero_behavior_residual_rows = 0
+    learner._joint_cycle_budget = 0
+    learner._expected_admission_id = None
+    learner._admission_progress = {}
+    learner.learner = {
+        "residual_actor": actor,
+        "residual_actor_target": actor_target,
+        "q1": q1,
+        "q2": q2,
+        "residual_actor_optimizer": torch.optim.Adam(
+            actor.parameters(), lr=1.0e-4
+        ),
+        "config": {
+            "environment": {"random_seed": 4404},
+            "optimizer": {
+                "residual_actor": {"grad_clip_norm": 1.0},
+                "twin_q_polyak_tau": 0.005,
+            },
+            "objective": {
+                "value_objective_weight": 1.0,
+                "residual_magnitude_penalty_weight": 0.01,
+                "human_residual_imitation_weight": 1.0,
+            },
+        },
+        "runtime": {
+            "learner_state": "residual_actor_critic_training",
+            "ack_critic_warmup_complete": True,
+            "ack_critic_warmup_steps": 256,
+            "residual_actor_critic_cycles": 0,
+            "active_residual_policy_revision": (
+                "task3-residual-policy-step-000000"
+            ),
+            "online_adaptation_id": "task3-ack-residual-gradient-test",
+            "counters": {
+                "twin_q_optimizer_steps": 256,
+                "residual_actor_optimizer_steps": 0,
+                "residual_actor_update_attempts": 0,
+                "residual_actor_updates_skipped_no_gradient": 0,
+                "twin_q_target_update_steps": 256,
+            },
+            "replay": {
+                "critic_td_valid_rows": 100,
+                "actor_q_valid_rows": 100,
+                "human_residual_valid_rows": 0,
+            },
+        },
+    }
+    return learner
+
+
+def test_157_zero_residual_cycles_do_not_advance_actor_optimizer_or_candidate(
+    monkeypatch,
+) -> None:
+    legacy_schema = next(iter(LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS))
+    replay = policy_replay(schema_version=legacy_schema, base_action=None)
+    replay.rows = replay.rows * 100
+    learner = actor_update_test_learner()
+    learner._joint_cycle_budget = 157
+    monkeypatch.setattr(learner, "_refresh_replay", lambda: replay)
+
+    def critic_update(_coordinator, _replay, *, warmup):
+        assert warmup is False
+        counters = learner.learner["runtime"]["counters"]
+        counters["twin_q_optimizer_steps"] += 1
+        counters["twin_q_target_update_steps"] += 1
+        return 0.25
+
+    monkeypatch.setattr(learner, "_critic_update", critic_update)
+    actor_before = {
+        name: value.detach().clone()
+        for name, value in learner.learner["residual_actor"].state_dict().items()
+    }
+    target_before = {
+        name: value.detach().clone()
+        for name, value in learner.learner[
+            "residual_actor_target"
+        ].state_dict().items()
+    }
+    coordinator = InferencePriorityCoordinator()
+    for _ in range(157):
+        result = learner(coordinator)
+        assert result["actor_update_attempted"] is True
+        assert result["actor_update_applied"] is False
+        assert result["actor_update_skip_reason"] == "no_effective_gradient"
+        assert result["actor_grad_norm"] == 0.0
+
+    runtime = learner.learner["runtime"]
+    assert runtime["residual_actor_critic_cycles"] == 157
+    assert runtime["counters"] == {
+        "twin_q_optimizer_steps": 570,
+        "residual_actor_optimizer_steps": 0,
+        "residual_actor_update_attempts": 157,
+        "residual_actor_updates_skipped_no_gradient": 157,
+        "twin_q_target_update_steps": 570,
+    }
+    assert learner.learner["residual_actor_optimizer"].state == {}
+    assert not learner.training_policy.candidate_due(0)
+    assert all(
+        torch.equal(actor_before[name], value)
+        for name, value in learner.learner[
+            "residual_actor"
+        ].state_dict().items()
+    )
+    assert all(
+        torch.equal(target_before[name], value)
+        for name, value in learner.learner[
+            "residual_actor_target"
+        ].state_dict().items()
+    )
+
+
+def test_candidate_waits_for_ten_effective_human_residual_actor_updates(
+    tmp_path: Path,
+) -> None:
+    learner = actor_update_test_learner()
+    counters = learner.learner["runtime"]["counters"]
+    counters["residual_actor_update_attempts"] = 157
+    counters["residual_actor_updates_skipped_no_gradient"] = 157
+    learner.checkpoint_root = tmp_path / "training_checkpoints"
+    replay = human_replay()
+    coordinator = InferencePriorityCoordinator()
+
+    for expected_step in range(1, 11):
+        metrics = learner._actor_update(coordinator, replay)
+        assert metrics["applied"] is True
+        assert metrics["grad_norm"] > 0.0
+        assert counters["residual_actor_optimizer_steps"] == expected_step
+        assert learner.training_policy.candidate_due(expected_step) is (
+            expected_step == 10
+        )
+
+    assert counters["residual_actor_update_attempts"] == 167
+    assert counters["residual_actor_updates_skipped_no_gradient"] == 157
+    assert learner.learner["residual_actor_optimizer"].state
+    candidate = learner.export_actor_candidate(10)
+    assert candidate is not None
+    assert candidate["revision_id"].endswith("000010")
+    assert (candidate["checkpoint"] / "residual_actor.pt").is_file()

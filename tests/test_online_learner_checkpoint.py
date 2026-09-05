@@ -48,6 +48,8 @@ def test_residual_checkpoint_restores_learner_state_and_warmup_progress(
         "counters": {
             "twin_q_optimizer_steps": 137,
             "residual_actor_optimizer_steps": 0,
+            "residual_actor_update_attempts": 0,
+            "residual_actor_updates_skipped_no_gradient": 0,
             "twin_q_target_update_steps": 137,
         },
         "replay": {
@@ -151,6 +153,8 @@ def test_exact_resume_rejects_current_yaml_algorithm_drift(
             "counters": {
                 "twin_q_optimizer_steps": 0,
                 "residual_actor_optimizer_steps": 0,
+                "residual_actor_update_attempts": 0,
+                "residual_actor_updates_skipped_no_gradient": 0,
                 "twin_q_target_update_steps": 0,
             },
             "replay": {

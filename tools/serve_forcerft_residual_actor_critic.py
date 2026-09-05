@@ -57,6 +57,9 @@ from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
 )
 
 
+ACTOR_GRAD_EPSILON = 1.0e-12
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise RuntimeError(message)
@@ -483,7 +486,7 @@ class ResidualActorCriticLearner:
         self,
         coordinator: InferencePriorityCoordinator,
         replay: warmup.OnlineResidualReplay,
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         started = time.perf_counter()
         learner = self.learner
         counters = learner["runtime"]["counters"]
@@ -539,22 +542,48 @@ class ResidualActorCriticLearner:
                     ),
                 )
                 losses.total.backward()
-                torch.nn.utils.clip_grad_norm_(
+                actor_grad_norm_tensor = torch.nn.utils.clip_grad_norm_(
                     learner["residual_actor"].parameters(),
                     float(
                         learner["config"]["optimizer"]["residual_actor"]["grad_clip_norm"]
                     ),
                 )
-                optimizer.step()
+                require(
+                    bool(torch.isfinite(actor_grad_norm_tensor).item()),
+                    "FORCERFT_ACTOR_GRADIENT_NONFINITE",
+                )
+                actor_grad_norm = float(actor_grad_norm_tensor.detach().cpu())
+                support_available = bool(
+                    replay.human_residual_valid_rows > 0
+                    or self._critic_residual_column_norm() > ACTOR_GRAD_EPSILON
+                )
+                actor_update_applied = bool(
+                    support_available and actor_grad_norm > ACTOR_GRAD_EPSILON
+                )
+                if actor_update_applied:
+                    optimizer.step()
+                else:
+                    optimizer.zero_grad(set_to_none=True)
             finally:
                 for parameter in critic_parameters:
                     parameter.requires_grad_(True)
-            polyak_update(
-                learner["residual_actor"],
-                learner["residual_actor_target"],
-                float(learner["config"]["optimizer"]["twin_q_polyak_tau"]),
-            )
-        counters["residual_actor_optimizer_steps"] = step + 1
+            if actor_update_applied:
+                polyak_update(
+                    learner["residual_actor"],
+                    learner["residual_actor_target"],
+                    float(learner["config"]["optimizer"]["twin_q_polyak_tau"]),
+                )
+        attempts = int(counters.get("residual_actor_update_attempts", step)) + 1
+        counters["residual_actor_update_attempts"] = attempts
+        if actor_update_applied:
+            counters["residual_actor_optimizer_steps"] = step + 1
+        else:
+            counters["residual_actor_updates_skipped_no_gradient"] = int(
+                counters.get(
+                    "residual_actor_updates_skipped_no_gradient",
+                    attempts - 1 - step,
+                )
+            ) + 1
         self.latest_residual_actor_output_norm = float(losses.output_norm.detach())
         self.latest_actor_update_ms = (
             time.perf_counter() - started
@@ -565,6 +594,33 @@ class ResidualActorCriticLearner:
             "residual": float(losses.residual.detach()),
             "human": float(losses.human.detach()),
             "output_norm": self.latest_residual_actor_output_norm,
+            "attempted": True,
+            "applied": actor_update_applied,
+            "skip_reason": (
+                None if actor_update_applied else "no_effective_gradient"
+            ),
+            "grad_norm": actor_grad_norm,
+            "support_available": support_available,
+        }
+
+    def _actor_counter_metrics(self) -> dict[str, int]:
+        counters = self.learner["runtime"]["counters"]
+        applied = int(counters["residual_actor_optimizer_steps"])
+        attempts = int(counters.get("residual_actor_update_attempts", applied))
+        skipped = int(
+            counters.get(
+                "residual_actor_updates_skipped_no_gradient",
+                attempts - applied,
+            )
+        )
+        require(
+            attempts == applied + skipped,
+            "FORCERFT_RESIDUAL_ACTOR_UPDATE_COUNTER_MISMATCH",
+        )
+        return {
+            "residual_actor_optimizer_steps": applied,
+            "residual_actor_update_attempts": attempts,
+            "residual_actor_updates_skipped_no_gradient": skipped,
         }
 
     def __call__(
@@ -586,6 +642,7 @@ class ResidualActorCriticLearner:
                 "current_episode_sampled": False,
                 "nonfinite_count": 0,
                 "oom_count": 0,
+                **self._actor_counter_metrics(),
                 **self._latest_budget_metrics(),
             }
         if runtime["learner_state"] in {"ack_replay_collection", "ack_critic_warmup"}:
@@ -626,9 +683,7 @@ class ResidualActorCriticLearner:
                 "learner_actor_steps": 0,
                 "learner_polyak_steps": len(losses),
                 "residual_actor_critic_cycle": int(runtime["residual_actor_critic_cycles"]),
-                "residual_actor_optimizer_steps": int(
-                    runtime["counters"]["residual_actor_optimizer_steps"]
-                ),
+                **self._actor_counter_metrics(),
                 "latest_critic_td_loss": losses[-1] if losses else None,
                 "nonzero_behavior_residual_rows": int(
                     getattr(self, "nonzero_behavior_residual_rows", 0)
@@ -670,6 +725,7 @@ class ResidualActorCriticLearner:
                 "current_episode_sampled": False,
                 "nonfinite_count": 0,
                 "oom_count": 0,
+                **self._actor_counter_metrics(),
                 **self._latest_budget_metrics(),
             }
 
@@ -689,15 +745,19 @@ class ResidualActorCriticLearner:
             "waiting_for_replay": False,
             "learner_state": "residual_actor_critic_training",
             "learner_critic_steps": self.training_policy.twin_q_updates_per_cycle,
-            "learner_actor_steps": 1,
+            "learner_actor_steps": int(actor_metrics["applied"]),
+            "learner_actor_update_attempts": 1,
             "learner_polyak_steps": self.training_policy.twin_q_updates_per_cycle,
             "current_episode_sampled": False,
             "nonfinite_count": 0,
             "oom_count": 0,
             "residual_actor_critic_cycle": cycle + 1,
-            "residual_actor_optimizer_steps": int(
-                runtime["counters"]["residual_actor_optimizer_steps"]
-            ),
+            **self._actor_counter_metrics(),
+            "actor_update_attempted": True,
+            "actor_update_applied": bool(actor_metrics["applied"]),
+            "actor_update_skip_reason": actor_metrics["skip_reason"],
+            "actor_grad_norm": actor_metrics["grad_norm"],
+            "actor_support_available": actor_metrics["support_available"],
             "latest_critic_td_loss": critic_losses[-1],
             "latest_actor_loss": actor_metrics["total"],
             "latest_min_twin_q": -actor_metrics["value"],
@@ -868,6 +928,45 @@ class AsyncResidualActorCriticRuntime:
         self._recovery_preflight = recovery
         self._learner_result.update(recovery)
 
+    def _residual_actor_update_counters(self) -> dict[str, int]:
+        counters = (
+            getattr(self.learner_job, "learner", {})
+            .get("runtime", {})
+            .get("counters", {})
+        )
+        applied = int(
+            counters.get(
+                "residual_actor_optimizer_steps",
+                self._learner_result.get("residual_actor_optimizer_steps", 0),
+            )
+        )
+        attempts = int(
+            counters.get(
+                "residual_actor_update_attempts",
+                self._learner_result.get(
+                    "residual_actor_update_attempts", applied
+                ),
+            )
+        )
+        skipped = int(
+            counters.get(
+                "residual_actor_updates_skipped_no_gradient",
+                self._learner_result.get(
+                    "residual_actor_updates_skipped_no_gradient",
+                    attempts - applied,
+                ),
+            )
+        )
+        require(
+            attempts == applied + skipped,
+            "FORCERFT_RESIDUAL_ACTOR_UPDATE_COUNTER_MISMATCH",
+        )
+        return {
+            "residual_actor_optimizer_steps": applied,
+            "residual_actor_update_attempts": attempts,
+            "residual_actor_updates_skipped_no_gradient": skipped,
+        }
+
     @property
     def metadata(self) -> dict[str, Any]:
         learner_runtime = getattr(self.learner_job, "learner", {}).get(
@@ -918,6 +1017,7 @@ class AsyncResidualActorCriticRuntime:
     def status(self) -> dict[str, Any]:
         with self._lock:
             result = dict(self._learner_result)
+            actor_counters = self._residual_actor_update_counters()
             learner_runtime = getattr(self.learner_job, "learner", {}).get(
                 "runtime", {}
             )
@@ -969,8 +1069,19 @@ class AsyncResidualActorCriticRuntime:
                 "actor_parameter_broadcast_count": self._broadcast_count,
                 "active_actor_online_cycle": self._active_actor_online_cycle,
                 "residual_actor_critic_cycle": int(result.get("residual_actor_critic_cycle", 0)),
-                "residual_actor_optimizer_steps": int(
-                    result.get("residual_actor_optimizer_steps", 0)
+                **actor_counters,
+                "actor_update_attempted": bool(
+                    result.get("actor_update_attempted", False)
+                ),
+                "actor_update_applied": bool(
+                    result.get("actor_update_applied", False)
+                ),
+                "actor_update_skip_reason": result.get(
+                    "actor_update_skip_reason"
+                ),
+                "actor_grad_norm": result.get("actor_grad_norm"),
+                "actor_support_available": bool(
+                    result.get("actor_support_available", False)
                 ),
                 "learner_state": result.get(
                     "learner_state", learner_runtime.get("learner_state", "ack_replay_collection")
@@ -1208,9 +1319,9 @@ class AsyncResidualActorCriticRuntime:
                                 candidate["residual_actor_critic_cycle"] = cycle
                                 self._stage_actor_candidate(candidate)
                         label = (
-                            "critic-warmup"
-                            if int(result.get("learner_actor_steps", 0)) == 0
-                            else "residual-training"
+                            "residual-training"
+                            if result.get("actor_update_attempted")
+                            else "critic-warmup"
                         )
                         print(
                             f"[{label}] "
@@ -1220,6 +1331,12 @@ class AsyncResidualActorCriticRuntime:
                             f"{result.get('human_residual_valid_rows', 0)} "
                             f"critic_residual_column_norm="
                             f"{result.get('critic_residual_column_norm')} "
+                            f"actor_grad_norm="
+                            f"{result.get('actor_grad_norm')} "
+                            f"actor_update_applied="
+                            f"{result.get('actor_update_applied')} "
+                            f"actor_update_skip_reason="
+                            f"{result.get('actor_update_skip_reason')} "
                             f"residual_actor_output_norm="
                             f"{result.get('residual_actor_output_norm', 0.0)}",
                             flush=True,
@@ -1313,6 +1430,7 @@ class AsyncResidualActorCriticRuntime:
                 "FORCERFT_TRAINING_DRAIN_STATE_INVALID",
             )
             self._drain_in_progress = True
+            actor_counters_before = self._residual_actor_update_counters()
         try:
             self.learner_job.expect_admission(admission_id)
             self._start_learner()
@@ -1339,6 +1457,25 @@ class AsyncResidualActorCriticRuntime:
                         self._drain_in_progress = False
                         self._lock.notify_all()
                         budget = int(progress["computed_cycle_budget"])
+                        actor_counters_after = (
+                            self._residual_actor_update_counters()
+                        )
+                        actor_attempts = (
+                            actor_counters_after[
+                                "residual_actor_update_attempts"
+                            ]
+                            - actor_counters_before[
+                                "residual_actor_update_attempts"
+                            ]
+                        )
+                        actor_updates = (
+                            actor_counters_after[
+                                "residual_actor_optimizer_steps"
+                            ]
+                            - actor_counters_before[
+                                "residual_actor_optimizer_steps"
+                            ]
+                        )
                         return {
                             "status": "TRAINING_BUDGET_DRAINED",
                             "admission_id": admission_id,
@@ -1351,9 +1488,10 @@ class AsyncResidualActorCriticRuntime:
                             "twin_q_updates": (
                                 budget * self._policy.twin_q_updates_per_cycle
                             ),
-                            "residual_actor_updates": (
-                                budget
-                                * self._policy.residual_actor_updates_per_cycle
+                            "residual_actor_update_attempts": actor_attempts,
+                            "residual_actor_updates": actor_updates,
+                            "residual_actor_updates_skipped_no_gradient": (
+                                actor_attempts - actor_updates
                             ),
                             "warmup_steps_completed": int(
                                 getattr(self.learner_job, "learner", {})
@@ -1432,6 +1570,7 @@ class AsyncResidualActorCriticRuntime:
                 "FORCERFT_OUTSTANDING_TRAINING_DRAIN_STATE_INVALID",
             )
             self._drain_in_progress = True
+            actor_counters_before = self._residual_actor_update_counters()
         try:
             self._start_learner()
             with self._lock:
@@ -1454,6 +1593,25 @@ class AsyncResidualActorCriticRuntime:
                         self._recovery_preflight = dict(progress)
                         self._drain_in_progress = False
                         self._lock.notify_all()
+                        actor_counters_after = (
+                            self._residual_actor_update_counters()
+                        )
+                        actor_attempts = (
+                            actor_counters_after[
+                                "residual_actor_update_attempts"
+                            ]
+                            - actor_counters_before[
+                                "residual_actor_update_attempts"
+                            ]
+                        )
+                        actor_updates = (
+                            actor_counters_after[
+                                "residual_actor_optimizer_steps"
+                            ]
+                            - actor_counters_before[
+                                "residual_actor_optimizer_steps"
+                            ]
+                        )
                         return {
                             "status": "OUTSTANDING_TRAINING_BUDGET_DRAINED",
                             **progress,
@@ -1462,9 +1620,10 @@ class AsyncResidualActorCriticRuntime:
                                 cycles_to_drain
                                 * self._policy.twin_q_updates_per_cycle
                             ),
-                            "residual_actor_updates": (
-                                cycles_to_drain
-                                * self._policy.residual_actor_updates_per_cycle
+                            "residual_actor_update_attempts": actor_attempts,
+                            "residual_actor_updates": actor_updates,
+                            "residual_actor_updates_skipped_no_gradient": (
+                                actor_attempts - actor_updates
                             ),
                             "budget_drain_elapsed_ms": elapsed_ms,
                         }

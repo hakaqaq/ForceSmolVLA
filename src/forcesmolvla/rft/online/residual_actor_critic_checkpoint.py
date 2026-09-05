@@ -43,6 +43,16 @@ def residual_actor_critic_checkpoint_is_recoverable(checkpoint: Path) -> bool:
             weights_only=False,
         )
         counters = state["counters"]
+        applied_actor_steps = int(counters["residual_actor_optimizer_steps"])
+        actor_update_attempts = int(
+            counters.get("residual_actor_update_attempts", applied_actor_steps)
+        )
+        skipped_actor_updates = int(
+            counters.get(
+                "residual_actor_updates_skipped_no_gradient",
+                actor_update_attempts - applied_actor_steps,
+            )
+        )
         replay = state["replay"]
         loaded_episode_keys = replay.get("loaded_episode_keys", [])
         per_episode_counts = replay.get("per_episode_critic_row_counts", {})
@@ -71,6 +81,9 @@ def residual_actor_critic_checkpoint_is_recoverable(checkpoint: Path) -> bool:
                     "twin_q_target_update_steps",
                 )
             )
+            and actor_update_attempts
+            == applied_actor_steps + skipped_actor_updates
+            and skipped_actor_updates >= 0
             and all(
                 int(replay[name]) >= 0
                 for name in (

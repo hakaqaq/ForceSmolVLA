@@ -59,6 +59,11 @@ class FakeLearner:
                 "ack_critic_warmup_steps": 256,
                 "active_residual_policy_revision": "task3-residual-policy-step-000000",
                 "online_adaptation_id": "task3-ack-residual-test",
+                "counters": {
+                    "residual_actor_optimizer_steps": 0,
+                    "residual_actor_update_attempts": 0,
+                    "residual_actor_updates_skipped_no_gradient": 0,
+                },
             }
         }
 
@@ -80,9 +85,15 @@ class FakeLearner:
 
 
 class DrainLearner(FakeLearner):
-    def __init__(self, *, cycle_budget: int = 7) -> None:
+    def __init__(
+        self,
+        *,
+        cycle_budget: int = 7,
+        actor_updates_applied: bool = True,
+    ) -> None:
         super().__init__()
         self.cycle_budget = cycle_budget
+        self.actor_updates_applied = actor_updates_applied
         self.completed_cycles = 0
         self.expected_admission_id: str | None = None
         self.latest_replay_refresh_ms = 4.0
@@ -108,19 +119,43 @@ class DrainLearner(FakeLearner):
 
     def __call__(self, _coordinator):
         if self.expected_admission_id is None or self.completed_cycles >= self.cycle_budget:
+            counters = self.learner["runtime"]["counters"]
             return {
                 "waiting_for_replay": True,
                 "learner_state": "residual_actor_critic_training",
                 "residual_actor_critic_cycle": self.completed_cycles,
-                "residual_actor_optimizer_steps": self.completed_cycles,
+                "residual_actor_optimizer_steps": counters[
+                    "residual_actor_optimizer_steps"
+                ],
             }
         self.completed_cycles += 1
+        counters = self.learner["runtime"]["counters"]
+        counters["residual_actor_update_attempts"] += 1
+        if self.actor_updates_applied:
+            counters["residual_actor_optimizer_steps"] += 1
+        else:
+            counters["residual_actor_updates_skipped_no_gradient"] += 1
         return {
             "waiting_for_replay": False,
             "learner_state": "residual_actor_critic_training",
             "residual_actor_critic_cycle": self.completed_cycles,
-            "residual_actor_optimizer_steps": self.completed_cycles,
-            "learner_actor_steps": 1,
+            "residual_actor_optimizer_steps": counters[
+                "residual_actor_optimizer_steps"
+            ],
+            "residual_actor_update_attempts": counters[
+                "residual_actor_update_attempts"
+            ],
+            "residual_actor_updates_skipped_no_gradient": counters[
+                "residual_actor_updates_skipped_no_gradient"
+            ],
+            "learner_actor_steps": int(self.actor_updates_applied),
+            "actor_update_attempted": True,
+            "actor_update_applied": self.actor_updates_applied,
+            "actor_update_skip_reason": (
+                None
+                if self.actor_updates_applied
+                else "no_effective_gradient"
+            ),
         }
 
 
@@ -134,6 +169,9 @@ class RecoveryDrainLearner(DrainLearner):
         super().__init__(cycle_budget=7)
         self.completed_cycles = 3
         self.learner["runtime"]["residual_actor_critic_cycles"] = 3
+        counters = self.learner["runtime"]["counters"]
+        counters["residual_actor_optimizer_steps"] = 3
+        counters["residual_actor_update_attempts"] = 3
 
     def outstanding_budget_status(self):
         return {
@@ -160,6 +198,9 @@ class RecoveryDrainLearner(DrainLearner):
         self.learner["runtime"][
             "residual_actor_critic_cycles"
         ] = self.completed_cycles
+        counters = self.learner["runtime"]["counters"]
+        counters["residual_actor_optimizer_steps"] += 1
+        counters["residual_actor_update_attempts"] += 1
         return {
             "waiting_for_replay": False,
             "learner_state": "residual_actor_critic_training",
@@ -415,6 +456,36 @@ def test_restart_recovers_and_drains_remaining_episode_budget(
         )
         assert prepared["runtime_session_id"] == "session-2"
         assert prepared["runtime_episode_id"] == "episode-2"
+    finally:
+        service.stop()
+
+
+def test_zero_gradient_drain_reports_attempts_without_actor_updates(
+    tmp_path: Path,
+) -> None:
+    service = drain_runtime(
+        tmp_path,
+        DrainLearner(cycle_budget=2, actor_updates_applied=False),
+    )
+    try:
+        service.start_episode(identity())
+        service.end_episode(identity())
+        result = service.drain_admission_budget(
+            {
+                "session_id": "session-1",
+                "episode_id": "episode-1",
+                "admission_id": "admission-1",
+                "timeout_seconds": 2.0,
+            }
+        )
+        assert result["residual_actor_update_attempts"] == 2
+        assert result["residual_actor_updates"] == 0
+        assert result["residual_actor_updates_skipped_no_gradient"] == 2
+        status = service.status()
+        assert status["residual_actor_optimizer_steps"] == 0
+        assert status["residual_actor_update_attempts"] == 2
+        assert status["residual_actor_updates_skipped_no_gradient"] == 2
+        assert status["actor_candidate_count"] == 0
     finally:
         service.stop()
 
