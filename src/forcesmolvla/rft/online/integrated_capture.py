@@ -17,7 +17,11 @@ from forcesmolvla.rft.online.policy_lineage import (
 )
 
 
-INTEGRATED_CAPTURE_SCHEMA = "forcesmolvla-stage3-integrated-capture-v1"
+INTEGRATED_CAPTURE_SCHEMA = "forcesmolvla_ack_residual_integrated_capture.v2"
+LEGACY_INTEGRATED_CAPTURE_SCHEMA = "forcesmolvla-stage3-integrated-capture-v1"
+INTEGRATED_CAPTURE_SCHEMAS = frozenset(
+    {INTEGRATED_CAPTURE_SCHEMA, LEGACY_INTEGRATED_CAPTURE_SCHEMA}
+)
 RECORDER_CONTROL_CHAIN = "franky_native_hilserl_cartesian_impedance"
 NONEXECUTING_POLICY_REJECTIONS = frozenset(
     {

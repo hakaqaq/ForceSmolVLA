@@ -10,9 +10,11 @@ from forcesmolvla.rft.online.action_representation import (
 )
 
 from forcesmolvla.rft.online.transition_authority import (
+    ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
     AcceptedAck,
     TransitionContractError,
     canonical_payload_sha256,
+    compute_transition_uid,
     finalize_ack_transition,
     validate_ack_transition,
     validate_reward_terminal,
@@ -57,6 +59,10 @@ def transition_payload(*, owner: str = "policy", macro_index: int = 0) -> dict:
             "deployment_binding_sha256": SHA, "source_tree_sha256": SHA,
         },
         "observation": observation(f"obs-{macro_index}"),
+        "base_normalized_action_k7": [[0.0] * 7 for _ in range(3)],
+        "applied_residual_tcp6": [0.0] * 6,
+        "composed_normalized_action_k7": [[0.0] * 7 for _ in range(3)],
+        "accepted_absolute_action_k7": [[0.0] * 7 for _ in range(3)],
         "next_observation": observation(f"next-{macro_index}", timestamp=200),
         "policy_proposal": {
             "revision_id": "revision-1", "model_sha256": SHA, "policy_epoch": 0,
@@ -102,6 +108,7 @@ def transition_payload(*, owner: str = "policy", macro_index: int = 0) -> dict:
 
 def test_finalize_uid_digest_and_schema_are_stable() -> None:
     value = finalize_ack_transition(transition_payload())
+    assert value["schema_version"] == ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION
     assert len(value["identity"]["transition_uid"]) == 64
     assert value["integrity"]["canonical_payload_sha256"] == canonical_payload_sha256(value)
     assert validate_ack_transition(value) == value
@@ -109,6 +116,28 @@ def test_finalize_uid_digest_and_schema_are_stable() -> None:
     tampered["outcome"]["reward"] = 1.0
     with pytest.raises(TransitionContractError, match="DIGEST_MISMATCH"):
         validate_ack_transition(tampered)
+
+
+def test_reader_accepts_v1_but_v2_writer_requires_residual_lineage() -> None:
+    legacy = finalize_ack_transition(transition_payload())
+    legacy["schema_version"] = "forcesmolvla_stage3_ack_transition.v1"
+    for field in (
+        "base_normalized_action_k7",
+        "applied_residual_tcp6",
+        "composed_normalized_action_k7",
+        "accepted_absolute_action_k7",
+    ):
+        legacy.pop(field)
+    legacy["identity"]["transition_uid"] = compute_transition_uid(legacy)
+    legacy["integrity"]["canonical_payload_sha256"] = canonical_payload_sha256(
+        legacy
+    )
+    assert validate_ack_transition(legacy) == legacy
+
+    current_missing_base = transition_payload()
+    current_missing_base.pop("base_normalized_action_k7")
+    with pytest.raises(TransitionContractError, match="TRANSITION_SCHEMA"):
+        finalize_ack_transition(current_missing_base)
 
 
 def test_new_residual_lineage_fields_are_preserved_and_td_ignores_cameras() -> None:

@@ -23,7 +23,8 @@ CONFIG_PATHS = {
     "publication": ROOT / "configs/online_replay_policy_revision.v1.development.json",
 }
 SCHEMA_PATHS = {
-    "transition": ROOT / "schemas/stage3_ack_transition.v1.schema.json",
+    "transition": ROOT / "schemas/ack_residual_transition.v2.schema.json",
+    "transition_legacy_v1": ROOT / "schemas/stage3_ack_transition.v1.schema.json",
     "checkpoint": ROOT / "schemas/stage3_online_checkpoint.v1.schema.json",
 }
 

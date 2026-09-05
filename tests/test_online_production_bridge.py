@@ -2170,7 +2170,8 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     )
     assert [item["identity"]["decision_id"] for item in payloads] == [1, 2, 3]
     assert all(
-        item["classification"] == "recorded_live_policy_execution_smoke"
+        item["schema_version"] == "forcesmolvla_ack_residual_transition.v2"
+        and item["classification"] == "recorded_live_policy_execution_smoke"
         and item["absolute_action_rotation_representation"] == "rpy_xyz"
         and item["eligibility"]["formal_replay"] is True
         and item["eligibility"]["real_online_r"] is True
@@ -2235,6 +2236,10 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
         for item in policy_payloads
     )
     admission = json.loads(next((state / "admissions").glob("*.json")).read_text())
+    assert (
+        admission["schema_version"]
+        == "forcesmolvla_ack_residual_production_bridge_report.v2"
+    )
     assert admission["source_episode_semantics"] == {
         "formal_replay": False,
         "real_online_r": False,
@@ -2245,6 +2250,10 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
         "real_online_r": True,
     }
     episode_seal = json.loads(next((state / "episodes").glob("*.json")).read_text())
+    assert (
+        episode_seal["schema_version"]
+        == "forcesmolvla_ack_residual_production_bridge_report.v2"
+    )
     assert episode_seal["accepted_unique_r_transition_count"] == 3
     assert episode_seal["human_override_replay_count"] == 1
     assert episode_seal["learner_started"] is False

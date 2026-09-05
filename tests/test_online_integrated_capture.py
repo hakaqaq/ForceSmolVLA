@@ -9,6 +9,7 @@ import pytest
 
 from forcesmolvla.rft.online.integrated_capture import (
     CaptureBackendCapabilities,
+    INTEGRATED_CAPTURE_SCHEMA,
     IntegratedCaptureError,
     IntegratedCaptureLedger,
     RECORDER_CONTROL_CHAIN,
@@ -114,12 +115,13 @@ def _observation(ledger: IntegratedCaptureLedger) -> None:
         "measured_tcp_pose", "wrench_notch_sensor", "gripper_state",
         "external_camera", "wrist_camera",
     )
-    ledger.record_observation(
+    record = ledger.record_observation(
         observation_id="observation-1",
         t_ref_ns=1_000_000_000,
         stream_timestamps_ns={name: 999_000_000 for name in names},
         stream_ids={name: f"{name}:record-1" for name in names},
     )
+    assert record["schema"] == INTEGRATED_CAPTURE_SCHEMA
 
 
 def _request() -> dict:
@@ -283,6 +285,7 @@ def test_shadow_proposal_cannot_be_bound_to_human_ack_or_real_online_r() -> None
         sealed_monotonic_ns=1_030_000_000,
         terminal_observation_id="observation-1",
     )
+    assert seal["schema"] == "forcesmolvla_ack_residual_integrated_capture.v2"
     assert seal["shadow_proposals_executed"] is False
     assert seal["formal_replay"] is False
     assert seal["real_online_r"] is False

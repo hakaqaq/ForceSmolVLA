@@ -15,6 +15,8 @@ import serve_forcerft_residual_actor_critic as learner_server  # noqa: E402
 
 from forcesmolvla.rft.online.residual_actor_critic_runtime import ResidualActorCriticSchedule
 from forcesmolvla.rft.online.replay_training import (
+    ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+    LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS,
     OnlineResidualReplay,
     ProductionAckMacro,
     algorithm_hyperparameters,
@@ -123,6 +125,52 @@ def human_replay(*, terminated: bool = True) -> OnlineResidualReplay:
     macro = ProductionAckMacro(
         transition=transition,
         behavior=behavior,
+        next_grid_monotonic_ns=1_100_000_000,
+        ack_provenance=(),
+        actor_q_eligibility=ActorQEligibility(True, "valid"),
+    )
+    normalizer = SimpleNamespace(
+        state7=IdentityTransform(),
+        wrench6=IdentityTransform(),
+        delta_action7=IdentityTransform(),
+    )
+    return OnlineResidualReplay((macro,), normalizer)
+
+
+def policy_replay(*, schema_version: str, base_action: object) -> OnlineResidualReplay:
+    observation = {
+        "state7_absolute": [0.0] * 7,
+        "wrench6_calibrated_tcp": [0.0] * 6,
+        "materialized_timestamp_monotonic_ns": 1_000_000_000,
+    }
+    accepted = np.repeat(
+        np.asarray([[0.2, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0]]), 3, axis=0
+    )
+    transition = {
+        "schema_version": schema_version,
+        "identity": {"episode_id": "policy-episode"},
+        "action_source": "policy",
+        "observation": observation,
+        "next_observation": {
+            **observation,
+            "materialized_timestamp_monotonic_ns": 1_100_000_000,
+        },
+        "outcome": {"reward": 0.0, "terminated": True, "truncated": False},
+        "eligibility": {"actor_q_valid": True},
+    }
+    if base_action is not None:
+        transition["base_normalized_action_k7"] = base_action
+    macro = ProductionAckMacro(
+        transition=transition,
+        behavior=AckMacro(
+            grid_monotonic_ns=(1_000_000_000, 1_033_333_333, 1_066_666_667),
+            ack_ids=("a", "a", "a"),
+            gripper_command_ids=("g", "g", "g"),
+            gripper_ack_command_ids=("g", "g", "g"),
+            accepted_absolute_action_k7=accepted,
+            slot_owner=("policy",) * 3,
+            workspace_clip_flags=(False,) * 3,
+        ),
         next_grid_monotonic_ns=1_100_000_000,
         ack_provenance=(),
         actor_q_eligibility=ActorQEligibility(True, "valid"),
@@ -246,6 +294,35 @@ def test_policy_value_sampling_excludes_human_and_missing_next_base() -> None:
     missing_next_base = human_replay(terminated=False)
     assert missing_next_base.rows == ()
     assert missing_next_base.next_base_missing_rows == 1
+
+
+def test_only_explicit_legacy_policy_rows_fallback_to_zero_residual() -> None:
+    legacy_schema = next(iter(LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS))
+    legacy = policy_replay(schema_version=legacy_schema, base_action=None)
+    assert legacy.critic_td_valid_rows == 1
+    assert legacy.nonzero_behavior_residual_rows == 0
+    assert legacy.quarantined_current_schema_rows == 0
+
+    missing_current = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=None,
+    )
+    assert missing_current.rows == ()
+    assert missing_current.quarantined_current_schema_rows == 1
+
+    corrupted_current = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=[[float("nan")] * 7 for _ in range(3)],
+    )
+    assert corrupted_current.rows == ()
+    assert corrupted_current.quarantined_current_schema_rows == 1
+
+    current = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=[[0.0] * 7 for _ in range(3)],
+    )
+    assert current.critic_td_valid_rows == 1
+    assert current.nonzero_behavior_residual_rows == 1
 
 
 def test_online_schedule_is_2q_1actor_and_episode_bounded() -> None:

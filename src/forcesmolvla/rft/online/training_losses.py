@@ -16,6 +16,7 @@ class ResidualActorLoss:
     value: Tensor
     residual: Tensor
     human: Tensor
+    output_norm: Tensor
     actor_q_valid_count: int
     human_residual_valid_count: int
 
@@ -101,6 +102,7 @@ def residual_actor_loss(
 
     zero = next(residual_actor.parameters()).sum() * 0.0
     candidate_residual6 = None
+    output_norm = zero
     valid_count = 0
     value = residual = zero
     if policy_batch is not None:
@@ -135,6 +137,7 @@ def residual_actor_loss(
                 ),
             ).mean()
         residual = candidate_residual6.square().mean()
+        output_norm = candidate_residual6.norm(dim=-1).mean()
 
     human_count = 0
     human = zero
@@ -156,6 +159,7 @@ def residual_actor_loss(
             )
             if candidate_residual6 is None:
                 residual = human_prediction.square().mean()
+                output_norm = human_prediction.norm(dim=-1).mean()
     total = (
         float(actor_q_weight) * value
         + float(residual_l2_weight) * residual
@@ -168,6 +172,7 @@ def residual_actor_loss(
         value,
         residual,
         human,
+        output_norm,
         valid_count,
         human_count,
     )

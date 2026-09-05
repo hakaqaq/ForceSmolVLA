@@ -50,6 +50,16 @@ DATASET = ROOT / "datasets/task2_lerobotv3"
 REWARD_TRANSITION_ROOT = ROOT / "datasets/task2_forcerft_offline_reward_transitions"
 RANDOM_SEED = 4404
 TASK = "Pick up the purple ring and place it onto the red peg."
+ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION = "forcesmolvla_ack_residual_transition.v2"
+LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS = frozenset(
+    {"forcesmolvla_stage3_production_bridge_transition.v1"}
+)
+SUPPORTED_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS = frozenset(
+    {
+        ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        *LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS,
+    }
+)
 
 
 def load_common_actor_critic_config(task_id: str | None = None) -> dict[str, Any]:
@@ -764,6 +774,7 @@ class OnlineResidualReplay:
     def __init__(self, macros: Iterable[ProductionAckMacro], normalizer) -> None:
         self.normalizer = normalizer
         self.next_base_missing_rows = 0
+        self.quarantined_current_schema_rows = 0
         self.rows = tuple(self._materialize_all(tuple(macros)))
 
     @staticmethod
@@ -835,9 +846,22 @@ class OnlineResidualReplay:
                 ).astype(np.float32)
                 return normalized, True
             return behavior.copy(), False
-        base = np.asarray(row.get("base_normalized_action_k7"), dtype=np.float32)
+        schema_version = str(row.get("schema_version", ""))
+        if schema_version not in SUPPORTED_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS:
+            return behavior.copy(), False
+        raw_base = row.get("base_normalized_action_k7")
+        try:
+            base = (
+                np.empty(0, dtype=np.float32)
+                if raw_base is None
+                else np.asarray(raw_base, dtype=np.float32)
+            )
+        except (TypeError, ValueError):
+            base = np.empty(0, dtype=np.float32)
         if base.shape != (3, 7) or not np.isfinite(base).all():
-            return behavior.copy(), True
+            return behavior.copy(), bool(
+                schema_version in LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS
+            )
         return base, True
 
     @staticmethod
@@ -908,6 +932,11 @@ class OnlineResidualReplay:
                 base, base_valid = self._base_action(
                     row, behavior, self._raw_state(row["observation"])
                 )
+                if row.get("action_source") == "policy" and not base_valid:
+                    self.quarantined_current_schema_rows += 1
+                    previous_wrench = wrench
+                    previous_timestamp = timestamp
+                    continue
                 mask = np.asarray(macro.behavior.behavior_mask, dtype=np.bool_)
                 residual = (behavior[..., :6] - base[..., :6]).astype(np.float32)
                 residual[~mask] = 0.0
@@ -1079,6 +1108,13 @@ class OnlineResidualReplay:
     @property
     def human_residual_valid_rows(self) -> int:
         return sum(int(row["human_residual_valid"]) for row in self.rows)
+
+    @property
+    def nonzero_behavior_residual_rows(self) -> int:
+        return sum(
+            int(np.any(np.abs(row["behavior_residual_k6"]) > 1.0e-8))
+            for row in self.rows
+        )
 
     @property
     def critic_rows_per_episode(self) -> tuple[int, ...]:

@@ -1,10 +1,9 @@
 # ForceSmolVLA
 
-**Release status: `v2.1.1` — development Stage-2 frozen-backbone,
-value-guided force-action refinement plus local artifact-retention cleanup.** Stage-1 remains the full-model
-force-conditioned behavior adaptation parent. See
-[`PHASE2_RELEASE.md`](PHASE2_RELEASE.md) for the exact development scope,
-limitations, evidence, and GitHub exclusions.
+**Current production path: frozen ForceSmolVLA base policy with real-ACK Critic
+warm-up and wrist-wrench residual Actor–Critic adaptation.** Numbered Stage-1/
+Stage-2 releases are retained only as historical offline baselines; see
+[`PHASE2_RELEASE.md`](PHASE2_RELEASE.md) for that archived development scope.
 
 独立工程根目录：`/home/rlc123/ForceSmolVLA`  
 独立 Conda 环境：`/home/rlc123/anaconda3/envs/forcesmolvla`

@@ -167,6 +167,25 @@ def test_candidate_contains_only_residual_actor_state(tmp_path: Path) -> None:
         learner.export_actor_candidate(10)
 
 
+def test_unchanged_residual_actor_does_not_publish_candidate(tmp_path: Path) -> None:
+    learner = ResidualActorCriticLearner.__new__(ResidualActorCriticLearner)
+    learner.checkpoint_root = tmp_path / "online_ack_residual/training_checkpoints"
+    actor = torch.nn.Linear(2, 1)
+    active = torch.nn.Linear(2, 1)
+    active.load_state_dict(actor.state_dict())
+    learner.learner = {
+        "residual_actor": actor,
+        "runtime": {
+            "active_residual_policy_revision": "task3-residual-policy-step-000000",
+            "online_adaptation_id": "task3-ack-residual-test",
+        },
+    }
+    assert learner.export_actor_candidate(
+        10, active_residual_actor=active
+    ) is None
+    assert not (learner.checkpoint_root.parent / "policy_candidates").exists()
+
+
 def test_step_10_candidate_activates_only_after_episode_boundary(
     tmp_path: Path,
 ) -> None:

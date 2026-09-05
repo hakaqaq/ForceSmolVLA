@@ -23,7 +23,16 @@ from forcesmolvla.temporal import select_latest_causal
 
 
 ROOT = Path(__file__).parents[4]
-SCHEMA_PATH = ROOT / "schemas/stage3_ack_transition.v1.schema.json"
+LEGACY_ACK_TRANSITION_SCHEMA_VERSION = "forcesmolvla_stage3_ack_transition.v1"
+ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION = "forcesmolvla_ack_residual_transition.v2"
+SCHEMA_PATHS = {
+    LEGACY_ACK_TRANSITION_SCHEMA_VERSION: (
+        ROOT / "schemas/stage3_ack_transition.v1.schema.json"
+    ),
+    ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION: (
+        ROOT / "schemas/ack_residual_transition.v2.schema.json"
+    ),
+}
 SLOT_OWNERS = {
     "policy", "human_intervention", "human_release_hold", "safety_hold",
     "offline_demonstration",
@@ -479,8 +488,14 @@ def validate_reward_terminal(payload: Mapping, *, gamma_decision: float = 0.99) 
         raise TransitionContractError("ONLINE_REPLAY_NONTERMINAL_NEXT_OBSERVATION_INVALID")
 
 
-def _schema() -> dict:
-    return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+def _schema(schema_version: object) -> dict:
+    try:
+        path = SCHEMA_PATHS[str(schema_version)]
+    except KeyError as error:
+        raise TransitionContractError(
+            "ONLINE_REPLAY_TRANSITION_SCHEMA_VERSION_UNSUPPORTED"
+        ) from error
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _derive_payload_actor_q_eligibility(value: Mapping) -> ActorQEligibility:
@@ -521,7 +536,7 @@ def _derive_payload_actor_q_eligibility(value: Mapping) -> ActorQEligibility:
 def validate_ack_transition(payload: Mapping) -> dict:
     value = deepcopy(dict(payload))
     errors = sorted(
-        Draft202012Validator(_schema()).iter_errors(value),
+        Draft202012Validator(_schema(value.get("schema_version"))).iter_errors(value),
         key=lambda error: tuple(str(item) for item in error.absolute_path),
     )
     if errors:
@@ -596,6 +611,7 @@ def validate_ack_transition(payload: Mapping) -> dict:
 
 def finalize_ack_transition(payload_without_integrity: Mapping) -> dict:
     value = deepcopy(dict(payload_without_integrity))
+    value["schema_version"] = ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION
     eligibility = _derive_payload_actor_q_eligibility(value)
     value["eligibility"].update(
         actor_q_valid=eligibility.valid,

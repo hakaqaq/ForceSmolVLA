@@ -46,7 +46,10 @@ from forcesmolvla.rft.online.gripper_authority import (
     close_full_action7_authority,
 )
 from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority, POLICY_LINEAGE_SCHEMA
-from forcesmolvla.rft.online.integrated_capture import NONEXECUTING_POLICY_REJECTIONS
+from forcesmolvla.rft.online.integrated_capture import (
+    INTEGRATED_CAPTURE_SCHEMAS,
+    NONEXECUTING_POLICY_REJECTIONS,
+)
 from forcesmolvla.rft.critic_action_adapter_v2 import (
     CRITIC_ACTION_CONTRACT,
     build_critic_transition_grid,
@@ -59,9 +62,9 @@ from forcesmolvla.rft.online.transition_authority import (
 )
 
 
-SCHEMA_VERSION = "forcesmolvla_stage3_production_bridge_transition.v1"
-REPORT_VERSION = "forcesmolvla_stage3_production_bridge_report.v1"
-INTEGRATED_CAPTURE_SCHEMA = "forcesmolvla-stage3-integrated-capture-v1"
+SCHEMA_VERSION = "forcesmolvla_ack_residual_transition.v2"
+LEGACY_SCHEMA_VERSION = "forcesmolvla_stage3_production_bridge_transition.v1"
+REPORT_VERSION = "forcesmolvla_ack_residual_production_bridge_report.v2"
 INTEGRATED_SHADOW_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
 INTEGRATED_POLICY_EXECUTION_SCHEMA = (
     "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
@@ -1198,7 +1201,7 @@ class ProductionBridge:
         if (
             manifest.get("schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
             or not isinstance(contract, Mapping)
-            or contract.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+            or contract.get("schema") not in INTEGRATED_CAPTURE_SCHEMAS
             or not isinstance(identity, Mapping)
             or identity.get("episode_id") != episode_dir.name
             or identity.get("clock_domain_id") != UPPER_CLOCK
@@ -1324,7 +1327,7 @@ class ProductionBridge:
             stream_ids = observation.get("stream_ids")
             t_ref = int(observation.get("t_ref_ns", 0))
             if (
-                observation.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+                observation.get("schema") not in INTEGRATED_CAPTURE_SCHEMAS
                 or observation_id != f"{episode_dir.name}:observation:{index:06d}"
                 or observation_id in observation_by_id
                 or t_ref <= previous_t_ref
@@ -1859,7 +1862,7 @@ class ProductionBridge:
                 else {}
             )
             if (
-                intervention.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+                intervention.get("schema") not in INTEGRATED_CAPTURE_SCHEMAS
                 or intervention.get("actual_action_source") != "human"
                 or intervention.get("policy_execution") is not True
                 or event not in {"intervention_start", "human_action", "intervention_end"}
@@ -2553,7 +2556,7 @@ class ProductionBridge:
             ),
         )
         if (
-            seal.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+            seal.get("schema") not in INTEGRATED_CAPTURE_SCHEMAS
             or seal.get("backend_schema") != INTEGRATED_POLICY_EXECUTION_SCHEMA
             or seal.get("technical_seal") != "complete"
             or seal.get("actual_action_source") != "policy"
@@ -2769,7 +2772,7 @@ class ProductionBridge:
         if (
             manifest.get("schema") != INTEGRATED_SHADOW_SCHEMA
             or not isinstance(contract, Mapping)
-            or contract.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+            or contract.get("schema") not in INTEGRATED_CAPTURE_SCHEMAS
             or not isinstance(identity, Mapping)
             or identity.get("episode_id") != episode_dir.name
             or identity.get("clock_domain_id") != UPPER_CLOCK
@@ -2851,7 +2854,7 @@ class ProductionBridge:
             self._validate_shadow_identity(observation, identity)
             observation_id = str(observation.get("observation_id", ""))
             if (
-                observation.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+                observation.get("schema") not in INTEGRATED_CAPTURE_SCHEMAS
                 or observation_id
                 != f"{episode_dir.name}:observation:{index:06d}"
                 or observation_id in observation_by_id
@@ -3109,7 +3112,7 @@ class ProductionBridge:
             int(observations[-1].get("t_ref_ns", 0)),
         )
         if (
-            seal.get("schema") != INTEGRATED_CAPTURE_SCHEMA
+            seal.get("schema") not in INTEGRATED_CAPTURE_SCHEMAS
             or seal.get("backend_schema") != INTEGRATED_SHADOW_SCHEMA
             or seal.get("actual_action_source") != "human"
             or seal.get("policy_inference") is not True
@@ -5424,6 +5427,7 @@ class ProductionBridge:
 
         admission_relative = f"admissions/{episode_key}.json"
         admission_record = {
+            "schema_version": REPORT_VERSION,
             "kind": "formal_online_r_admission",
             "episode_id": episode_id,
             "source_episode": str(episode_dir.resolve()),
@@ -5527,6 +5531,7 @@ class ProductionBridge:
                 idempotent += 1
 
         episode_manifest = {
+            "schema_version": REPORT_VERSION,
             "kind": "formal_online_r_episode_seal",
             "episode_id": episode_id,
             "status": "SEALED_COMMITTED",

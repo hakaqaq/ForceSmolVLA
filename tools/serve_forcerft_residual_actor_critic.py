@@ -34,7 +34,11 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E40
     prepare_learner,
     select_resume_or_bootstrap_checkpoint,
 )
-from forcesmolvla.rft.critic import polyak_update  # noqa: E402
+from forcesmolvla.rft.critic import (  # noqa: E402
+    RESIDUAL_ACTION_OFFSET,
+    RESIDUAL_ACTION_WIDTH,
+    polyak_update,
+)
 from forcesmolvla.rft.residual_actor import WristWrenchResidualActor  # noqa: E402
 from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
     save_residual_actor_critic_checkpoint,
@@ -162,6 +166,9 @@ class ResidualActorCriticLearner:
         self.unique_r_count = 0
         self.r_macro_count = 0
         self.next_base_missing_rows = 0
+        self.quarantined_current_schema_rows = 0
+        self.nonzero_behavior_residual_rows = 0
+        self.latest_residual_actor_output_norm = 0.0
         self._replay_signature: tuple[str, ...] | None = None
         self._replay_snapshot: tuple[Any, ...] | None = None
         self._materialized_replay_signature: tuple[str, ...] | None = None
@@ -214,6 +221,12 @@ class ResidualActorCriticLearner:
         self.unique_r_count = len(all_r) + len(human_rows)
         self.r_macro_count = len(macros)
         self.next_base_missing_rows = self.replay.next_base_missing_rows
+        self.quarantined_current_schema_rows = (
+            self.replay.quarantined_current_schema_rows
+        )
+        self.nonzero_behavior_residual_rows = (
+            self.replay.nonzero_behavior_residual_rows
+        )
         runtime_replay = self.learner["runtime"]["replay"]
         runtime_replay.update(
             critic_td_valid_rows=self.replay.critic_td_valid_rows,
@@ -221,6 +234,22 @@ class ResidualActorCriticLearner:
             human_residual_valid_rows=self.replay.human_residual_valid_rows,
         )
         return self.replay
+
+    def _critic_residual_column_norm(self) -> float:
+        if not all(name in self.learner for name in ("q1", "q2")):
+            return 0.0
+        columns = []
+        for name in ("q1", "q2"):
+            first_layer = self.learner[name].layers[0]
+            columns.append(
+                first_layer.weight[
+                    :,
+                    RESIDUAL_ACTION_OFFSET : (
+                        RESIDUAL_ACTION_OFFSET + RESIDUAL_ACTION_WIDTH
+                    ),
+                ].detach().flatten()
+            )
+        return float(torch.cat(columns).norm().cpu())
 
     def _critic_update(
         self,
@@ -344,11 +373,13 @@ class ResidualActorCriticLearner:
                 float(learner["config"]["optimizer"]["twin_q_polyak_tau"]),
             )
         counters["residual_actor_optimizer_steps"] = step + 1
+        self.latest_residual_actor_output_norm = float(losses.output_norm.detach())
         return {
             "total": float(losses.total.detach()),
             "value": float(losses.value.detach()),
             "residual": float(losses.residual.detach()),
             "human": float(losses.human.detach()),
+            "output_norm": self.latest_residual_actor_output_norm,
         }
 
     def __call__(
@@ -427,6 +458,16 @@ class ResidualActorCriticLearner:
                     runtime["counters"]["residual_actor_optimizer_steps"]
                 ),
                 "latest_critic_td_loss": losses[-1] if losses else None,
+                "nonzero_behavior_residual_rows": int(
+                    getattr(self, "nonzero_behavior_residual_rows", 0)
+                ),
+                "human_residual_valid_rows": int(
+                    getattr(replay, "human_residual_valid_rows", 0)
+                ),
+                "critic_residual_column_norm": self._critic_residual_column_norm(),
+                "residual_actor_output_norm": float(
+                    getattr(self, "latest_residual_actor_output_norm", 0.0)
+                ),
                 "current_episode_sampled": False,
                 "nonfinite_count": 0,
                 "oom_count": 0,
@@ -481,12 +522,36 @@ class ResidualActorCriticLearner:
             "latest_critic_td_loss": critic_losses[-1],
             "latest_actor_loss": actor_metrics["total"],
             "latest_min_twin_q": -actor_metrics["value"],
+            "nonzero_behavior_residual_rows": int(
+                getattr(self, "nonzero_behavior_residual_rows", 0)
+            ),
+            "human_residual_valid_rows": int(
+                getattr(replay, "human_residual_valid_rows", 0)
+            ),
+            "critic_residual_column_norm": self._critic_residual_column_norm(),
+            "residual_actor_output_norm": actor_metrics.get(
+                "output_norm",
+                float(getattr(self, "latest_residual_actor_output_norm", 0.0)),
+            ),
             "latest_checkpoint_path": (
                 None if latest_checkpoint is None else str(latest_checkpoint)
             ),
         }
 
-    def export_actor_candidate(self, residual_actor_optimizer_steps: int) -> dict[str, Any]:
+    def export_actor_candidate(
+        self,
+        residual_actor_optimizer_steps: int,
+        *,
+        active_residual_actor: torch.nn.Module | None = None,
+    ) -> dict[str, Any] | None:
+        if active_residual_actor is not None:
+            candidate_state = self.learner["residual_actor"].state_dict()
+            active_state = active_residual_actor.state_dict()
+            if candidate_state.keys() == active_state.keys() and all(
+                torch.equal(candidate_state[name].detach().cpu(), value.detach().cpu())
+                for name, value in active_state.items()
+            ):
+                return None
         runtime = self.learner["runtime"]
         current = str(runtime["active_residual_policy_revision"])
         task_id = current.split("-residual-policy-step-", 1)[0]
@@ -703,6 +768,37 @@ class AsyncResidualActorCriticRuntime:
                 "latest_critic_td_loss": result.get("latest_critic_td_loss"),
                 "latest_actor_loss": result.get("latest_actor_loss"),
                 "latest_min_twin_q": result.get("latest_min_twin_q"),
+                "nonzero_behavior_residual_rows": int(
+                    result.get(
+                        "nonzero_behavior_residual_rows",
+                        getattr(
+                            self.learner_job,
+                            "nonzero_behavior_residual_rows",
+                            0,
+                        ),
+                    )
+                ),
+                "human_residual_valid_rows": int(
+                    result.get(
+                        "human_residual_valid_rows",
+                        learner_runtime.get("replay", {}).get(
+                            "human_residual_valid_rows", 0
+                        ),
+                    )
+                ),
+                "critic_residual_column_norm": result.get(
+                    "critic_residual_column_norm"
+                ),
+                "residual_actor_output_norm": result.get(
+                    "residual_actor_output_norm", 0.0
+                ),
+                "quarantined_current_schema_rows": int(
+                    getattr(
+                        self.learner_job,
+                        "quarantined_current_schema_rows",
+                        0,
+                    )
+                ),
                 "next_base_missing_rows": int(
                     getattr(self.learner_job, "next_base_missing_rows", 0)
                 ),
@@ -817,11 +913,38 @@ class AsyncResidualActorCriticRuntime:
                             int(result.get("learner_actor_steps", 0)) > 0
                             and self._policy.candidate_due(residual_actor_optimizer_steps)
                         ):
-                            candidate = self.learner_job.export_actor_candidate(
-                                residual_actor_optimizer_steps
-                            )
-                            candidate["residual_actor_critic_cycle"] = cycle
-                            self._stage_actor_candidate(candidate)
+                            with self.engine._lock:
+                                candidate = self.learner_job.export_actor_candidate(
+                                    residual_actor_optimizer_steps,
+                                    active_residual_actor=self.engine.residual_actor,
+                                )
+                            if candidate is None:
+                                result["candidate_skipped_unchanged"] = True
+                                print(
+                                    "[residual-candidate] skipped unchanged "
+                                    f"actor_step={residual_actor_optimizer_steps}",
+                                    flush=True,
+                                )
+                            else:
+                                candidate["residual_actor_critic_cycle"] = cycle
+                                self._stage_actor_candidate(candidate)
+                        label = (
+                            "critic-warmup"
+                            if int(result.get("learner_actor_steps", 0)) == 0
+                            else "residual-training"
+                        )
+                        print(
+                            f"[{label}] "
+                            f"nonzero_behavior_residual_rows="
+                            f"{result.get('nonzero_behavior_residual_rows', 0)} "
+                            f"human_residual_valid_rows="
+                            f"{result.get('human_residual_valid_rows', 0)} "
+                            f"critic_residual_column_norm="
+                            f"{result.get('critic_residual_column_norm')} "
+                            f"residual_actor_output_norm="
+                            f"{result.get('residual_actor_output_norm', 0.0)}",
+                            flush=True,
+                        )
                         result.pop("learner_actor", None)
                         with self._lock:
                             self._learner_result = result
