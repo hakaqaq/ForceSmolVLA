@@ -316,6 +316,7 @@ class InferenceEngine:
         self.policy.eval()
         self.residual_actor: torch.nn.Module | None = None
         self._previous_residual_wrench6: torch.Tensor | None = None
+        self._previous_residual_t_ref_ns: int | None = None
         self._lock = threading.Lock()
         artifact_manifest = json.loads(
             (self.checkpoint / "artifact_manifest.json").read_text(encoding="utf-8")
@@ -415,7 +416,7 @@ class InferenceEngine:
                 if self.residual_actor is None:
                     base_normalized = None
                     residual6 = None
-                    final_normalized = None
+                    composed_normalized = None
                     actions = self.policy.predict_action_chunk(
                         batch, chunk_context=context
                     )
@@ -426,10 +427,17 @@ class InferenceEngine:
                     state7 = batch["observation.state"].to(torch.float32)
                     wrench6 = batch["observation.wrench"].to(torch.float32)
                     previous = self._previous_residual_wrench6
+                    previous_t_ref_ns = self._previous_residual_t_ref_ns
+                    current_t_ref_ns = int(request["provenance"]["t_ref_ns"])
+                    interval_ns = (
+                        0
+                        if previous is None or previous_t_ref_ns is None
+                        else current_t_ref_ns - previous_t_ref_ns
+                    )
                     wrench_delta6 = (
                         torch.zeros_like(wrench6)
-                        if previous is None
-                        else wrench6 - previous
+                        if interval_ns <= 0
+                        else (wrench6 - previous) * (100_000_000.0 / interval_ns)
                     )
                     residual6 = self.residual_actor(
                         normalized_state7=state7,
@@ -438,13 +446,14 @@ class InferenceEngine:
                         base_action6=base_normalized[:, 0, :6],
                     )
                     self._previous_residual_wrench6 = wrench6.detach().clone()
-                    final_normalized = base_normalized.clone()
-                    final_normalized[..., :6] += residual6[:, None, :]
+                    self._previous_residual_t_ref_ns = current_t_ref_ns
+                    composed_normalized = base_normalized.clone()
+                    composed_normalized[..., :6] += residual6[:, None, :]
                     if torch.count_nonzero(residual6) == 0:
                         actions = base_actions
                     else:
                         normalized_numpy = (
-                            final_normalized.detach().cpu().float().numpy().astype(np.float64)
+                            composed_normalized.detach().cpu().float().numpy().astype(np.float64)
                         )
                         delta7 = self.runtime_artifacts.normalizer.delta_action7.inverse(
                             normalized_numpy
@@ -488,14 +497,18 @@ class InferenceEngine:
         if base_normalized is not None:
             response.update(
                 base_normalized_actions=base_normalized[0].detach().float().cpu().tolist(),
+                base_actions_absolute7=base_actions[0].detach().float().cpu().tolist(),
                 applied_residual_tcp6=residual6[0].detach().float().cpu().tolist(),
-                final_normalized_actions=final_normalized[0].detach().float().cpu().tolist(),
+                composed_normalized_actions=composed_normalized[0].detach().float().cpu().tolist(),
+                residual_wrench_delta_interval_ns=interval_ns,
+                residual_wrench_delta_reference_ns=100_000_000,
             )
         return response
 
     def reset_residual_episode_context(self) -> None:
         with self._lock:
             self._previous_residual_wrench6 = None
+            self._previous_residual_t_ref_ns = None
 
 
 class RequestHandler(BaseHTTPRequestHandler):

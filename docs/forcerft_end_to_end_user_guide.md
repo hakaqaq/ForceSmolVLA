@@ -6,13 +6,10 @@
 ForceSmolVLA SFT
 → 人工奖励标注
 → 奖励分类器训练
-→ 离线 reward/terminal 物化
-→ 离线 Twin-Q Critic warmup
-→ Frozen-VLM Actor/Critic 离线联合训练
-→ 完整 offline exact-resume checkpoint
-→ HIL 在线采集
-→ Online-R 达到 100 条
-→ Actor/Learner 异步持续联合训练
+→ 构建 frozen base policy + zero wrist-wrench residual actor + random Twin-Q bootstrap
+→ 收集真实 sealed ACK replay
+→ 达到 100 条合法 ACK 后执行 256-step ACK Critic warm-up
+→ 每 cycle 进行 2 Twin-Q + 1 wrist-wrench residual Actor 在线训练
 ```
 
 ## 1. 目录与环境
@@ -22,10 +19,9 @@ export FORCESMOLVLA_ROOT=/home/rlc123/ForceSmolVLA
 export FR3_WS=/home/rlc123/fr3_client_ws
 export TASK_ID=task2
 export TASK_OUTPUT_ROOT="$FORCESMOLVLA_ROOT/outputs/$TASK_ID"
-export ONLINE_CAPTURE_PREFIX="$FORCESMOLVLA_ROOT/datasets/${TASK_ID}_forcerft_online"
+export ONLINE_CAPTURE_ROOT="$FORCESMOLVLA_ROOT/datasets/${TASK_ID}_forcerft_online"
 export RAW_ROOT="$FR3_WS/datasets/$TASK_ID"
 export LEROBOT_DATASET="$FORCESMOLVLA_ROOT/datasets/${TASK_ID}_lerobotv3"
-export OFFLINE_REPLAY="$FORCESMOLVLA_ROOT/datasets/${TASK_ID}_forcerft_offline_reward_transitions"
 export MODEL_PYTHON=/home/rlc123/anaconda3/envs/forcesmolvla/bin/python
 export ROBOT_PYTHON="$FR3_WS/.venv/bin/python"
 ```
@@ -39,7 +35,7 @@ source "$FR3_WS/.venv/bin/activate"
 export ROS_DOMAIN_ID=30 ROS_LOCALHOST_ONLY=0
 ```
 
-目录规则固定为：原始转换数据使用 `datasets/{task_id}_lerobotv3`，离线奖励转移数据使用 `datasets/{task_id}_forcerft_offline_reward_transitions`，训练产物使用 `outputs/{task_id}`，任务配置使用 `configs/tasks/{task_id}`。CLI 均接受 `--task-id` 和显式路径覆盖参数。
+目录规则固定为：原始转换数据使用 `datasets/{task_id}_lerobotv3`，训练产物使用 `outputs/{task_id}`，任务配置使用 `configs/forcerft/tasks/{task_id}.yaml`。CLI 均接受 `--task-id` 和显式路径覆盖参数。
 
 ## 2. 原生数据采集
 
@@ -122,42 +118,44 @@ production detector checkpoint 固定在：
 outputs/{task_id}/reward_classifier/checkpoints/best/best_checkpoint.msgpack
 ```
 
-## 6. 离线 reward/terminal 物化
+## 6. 历史离线 reward/terminal 物化（不属于当前生产训练链）
 
 ```bash
 "$MODEL_PYTHON" tools/materialize_reward_transitions.py \
   build --task-id "$TASK_ID" \
   --config "configs/tasks/$TASK_ID/forcerft_offline_reward_transitions.json" \
   --dataset-root "$LEROBOT_DATASET" \
-  --reward-transition-root "$OFFLINE_REPLAY"
+  --reward-transition-root \
+    "$FORCESMOLVLA_ROOT/datasets/${TASK_ID}_forcerft_offline_reward_transitions"
 ```
 
-物化必须保持 episode/frame/transition 对齐，输出 reward、terminal、observation/next-observation 引用及 detector provenance。它不是在线 admission，不写 online WAL/outbox。
+该产物只保留给旧方法实验对照，不用于 ACK-aligned residual Twin-Q、Residual Actor、Actor-Q 更新或 online replay 混合。当前生产训练链不执行本节命令。
 
-## 7. 构建 Stage-3 seed
+## 7. 构建 online ACK-residual bootstrap checkpoint
 
 ```bash
-"$MODEL_PYTHON" tools/build_forcerft_stage3_seed_bundle.py \
+"$MODEL_PYTHON" tools/build_forcerft_online_residual_bootstrap.py \
   --task-id "$TASK_ID" --output-root "$TASK_OUTPUT_ROOT" \
   --dataset-root "$LEROBOT_DATASET" \
-  --base-actor-checkpoint "outputs/$TASK_ID/sft/checkpoints/forcesmolvla_sft_step_010000"
+  --frozen-base-policy-checkpoint \
+    "outputs/$TASK_ID/sft/checkpoints/forcesmolvla_sft_step_010000"
 ```
 
 输出：
 
 ```text
-outputs/{task_id}/stage3_seed/checkpoints/stage3_base_actor_residual_q_cycle_000000
+outputs/{task_id}/online_ack_residual/bootstrap_checkpoints/base_policy_zero_residual_random_twin_q
 ```
 
-seed 保存冻结 base Actor 的路径、严格零输出 residual Actor、随机低维 Twin-Q、targets、两个 optimizer 与运行计数；不读取 demonstration 或旧 offline Critic checkpoint。
+bootstrap checkpoint 保存 frozen base policy 的路径、严格零输出 wrist-wrench residual Actor、随机 ACK-aligned residual Twin-Q、targets、两个 optimizer 与运行计数；不读取 demonstration 或旧 offline Critic checkpoint。
 
-## 8. 真实 ACK warm-up 与在线联合训练
+## 8. 真实 ACK Critic warm-up 与 Residual Actor–Critic 训练
 
-online Learner 在前 100 条正式 sealed ACK transition 期间保持 Actor/Critic 不更新；达到 100 条后在同一进程内执行一次 256-step Critic burn-in，然后自动进入每 cycle `2 Critic + 1 residual Actor`。训练只读取低维 state/wrench/base/residual/ACK 数据，不运行第二份 base Actor、Flow sampler 或图像 Critic。
+Learner 状态依次为 `ack_replay_collection → ack_critic_warmup → residual_actor_critic_training`。前 100 条正式 sealed ACK transition 期间 Actor/Twin-Q 均不更新；达到阈值后在同一进程执行一次 256-step Twin-Q warm-up，然后每 cycle 固定执行 `2 Twin-Q + 1 wrist-wrench residual Actor`。训练只读取低维 state/wrench/base/residual/ACK 数据，不运行第二份 base policy、Flow sampler 或图像 Critic。
 
 ## 9. HIL 与 online replay
 
-`tools/serve_forcerft_actor_learner.py` 是唯一 GPU owner；`tools/run_forcerft_integrated_capture.py` 是唯一机器人控制链。控制仍保持 H50、10 Hz、low-watermark inference、takeover generation、stale result rejection、Pose ACK 和 gripper authority。
+`tools/serve_forcerft_residual_actor_critic.py` 是唯一 GPU owner；`tools/run_forcerft_integrated_capture.py` 是唯一机器人控制链。控制仍保持 H50、10 Hz、low-watermark inference、takeover generation、stale result rejection、Pose ACK 和 gripper authority。
 若 inference 期间 wrench causal filter 因源间隙重置并切换 generation，旧 request/result 和未执行 chunk 会被作废；等待现有 250-sample warmup 完成后，同一 episode 使用 fresh observation 重新 inference，恢复等待期间不生成 transition。
 
 episode seal 后，操作者输入 success/failure。技术记录完整的 success 与 failure episode 都通过 production bridge 的同一次 admission 调用物化 TD transition，并 append 到：
@@ -182,7 +180,10 @@ task2 封口物化在 30 Hz 因果网格上允许双相机样本年龄不超过 
   --output-root "$TASK_OUTPUT_ROOT" \
   --dataset-root "$LEROBOT_DATASET" \
   --max-episodes 100 \
-  --root-prefix "$ONLINE_CAPTURE_PREFIX" \
+  --capture-output-root "$ONLINE_CAPTURE_ROOT" \
+  --ack-replay-root "$TASK_OUTPUT_ROOT/online" \
+  --online-residual-bootstrap-checkpoint \
+    "$TASK_OUTPUT_ROOT/online_ack_residual/bootstrap_checkpoints/base_policy_zero_residual_random_twin_q" \
   --task "Pick up the purple ring and place it onto the red peg." \
   --episode-time 120 \
   --tool-profile onrobot_robotiq \
@@ -195,27 +196,27 @@ task2 封口物化在 30 Hz 因果网格上允许双相机样本年龄不超过 
 
 在线 native episode 固定保存在 ForceSmolVLA 数据目录下，例如第一个 session 为
 `/home/rlc123/ForceSmolVLA/datasets/{task_id}_forcerft_online_001`；不写入
-`/home/rlc123/fr3_client_ws/datasets`。省略 `--root-prefix` 时也使用这一仓库内默认前缀。
+`/home/rlc123/fr3_client_ws/datasets`。省略 `--capture-output-root` 时也使用这一仓库内默认目录。
 
-Unified server 每次启动恢复一个 residual Actor/Twin-Q checkpoint，并跨 episode 常驻。`training_starts=100` 统计 success 与 failure episode 中全部正式 `critic_td_valid` ACK（policy 与 human）；达到阈值后一次性完成 256 个 Critic step，再自动进入 joint。joint 每 cycle 固定为 2 Critic + 2 Q-target Polyak + 1 residual Actor，不读取 demonstration、图像或 Flow/SFT reference。
+Unified server 每次启动恢复一个 residual Actor/Twin-Q checkpoint，并跨 episode 常驻。`minimum_ack_transitions=100` 统计 success 与 failure episode 中全部正式 `critic_td_valid` ACK（policy 与 human）；达到阈值后一次性完成 256 个 Twin-Q optimizer step，再自动进入 `residual_actor_critic_training`。每 cycle 固定为 2 Twin-Q + 2 target Polyak + 1 residual Actor，不读取 demonstration、图像或 Flow/SFT reference。
 因此 async capture manifest 中 `learner_started=false`（未达 100 条）和 `learner_started=true`（已达 100 条）都是合法状态；两种情况下 `current_episode_sampled_by_learner` 都必须为 `false`。
 
 canonical online loop 在每个 episode 后只打印两行 capture/learner 摘要和一行 admission 摘要；完整 contract、stream quality 与 episode seal 继续保存在 session 文件中，不在终端重复展开。
 
-启动时先选择 `outputs/{task_id}/online/checkpoints/` 中 cycle 最大且结构完整的 residual exact-resume checkpoint；没有可恢复的 online checkpoint 时只接受显式 `--stage3-seed-bundle`。冻结的 base Actor 始终从 checkpoint 中记录的 `base_actor_checkpoint` 加载，整个 online session 不变。
+启动时先选择 `outputs/{task_id}/online_ack_residual/training_checkpoints/` 中 cycle 最大且结构完整的 exact-resume checkpoint；没有可恢复 checkpoint 时只接受显式 `--online-residual-bootstrap-checkpoint`。frozen base policy 始终从 checkpoint 的 `frozen_base_policy_checkpoint` 加载，整个 online session 不变。
 
 `--allow-development-policy-execution-smoke` 是已有的显式机器人执行开关；它不选择模型，也不触发 publication、activation、candidate、profile 或 binding 流程。力限、takeover generation、stale-result rejection、ACK 和 recorder 单控制链保持不变。
 
 在线推理只对反归一化后的 gripper candidate 做有限值饱和：低于 `-0.01 m` 按闭合端处理，高于 `0.095 m` 按打开端处理，二值判定阈值保持 `0.0425 m`，随后只输出精确的 `0.0 m` 或 `0.085 m`。`NaN/Inf` 继续拒绝；TCP6、力限和 action normalizer 不做裁剪或改写。
 
-每累计 10 个真实 residual Actor optimizer step 生成只含 `residual_actor.pt` 的 candidate，并只在下一 episode boundary 生效。每 50 joint cycles 保存 residual/Twin-Q exact-resume checkpoint：
+每累计 10 个真实 residual Actor optimizer step 生成只含 `residual_actor.pt` 的 lineage-isolated candidate，并只在下一 episode boundary 生效。每 50 residual Actor–Critic cycles 保存 exact-resume checkpoint：
 
 ```text
-outputs/{task_id}/online/checkpoints/online_actor_critic_cycle_000050
-outputs/{task_id}/online/checkpoints/online_actor_critic_cycle_000100
+outputs/{task_id}/online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000050
+outputs/{task_id}/online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000100
 ```
 
-只保留最新两个 checkpoint。每个新 admission 的 joint-cycle 预算为 `min(10, max(1, ceil(new_critic_td_valid_rows / 64)))`；256-step burn-in 不消耗该预算。
+只保留最新两个 checkpoint。每个新 admission 的 residual Actor–Critic cycle 预算为 `min(10, max(1, ceil(new_critic_td_valid_rows / 64)))`；256-step Critic warm-up 不消耗该预算。
 
 正常停止使用 recorder 的 `q`。系统停止新 learner cycle，等待正在进行的 optimizer step 完成，并保存最后完成 cycle；若该 cycle 恰好是 50 的倍数，只保存一次。Learner 异常失败时不保存可能只完成部分 optimizer step 的 checkpoint，也不修改原始 episode或把未封口 episode 加入 replay。
 采集途中若因控制器、通信或进程错误退出，canonical online-loop 会自动删除本次未封口 session root 及 `.inprogress` 内容，不保留半条 episode。已存在 technical seal 的 session 不自动删除，即使后续 admission 失败，也保留供修复后重试。

@@ -1,4 +1,4 @@
-"""Compact checkpoints for the online residual Actor and Twin-Q."""
+"""Compact checkpoints for ACK-residual Actor-Critic training."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ class OnlineCheckpointSchemaError(ValueError):
     pass
 
 
-RESIDUAL_CHECKPOINT_FILES = (
+RESIDUAL_ACTOR_CRITIC_CHECKPOINT_FILES = (
     "models/residual_actor.pt",
     "models/residual_actor_target.pt",
     "models/q1.pt",
@@ -29,11 +29,11 @@ RESIDUAL_CHECKPOINT_FILES = (
 )
 
 
-def residual_checkpoint_is_recoverable(checkpoint: Path) -> bool:
+def residual_actor_critic_checkpoint_is_recoverable(checkpoint: Path) -> bool:
     checkpoint = Path(checkpoint)
     if not checkpoint.is_dir() or not all(
         (checkpoint / relative).is_file()
-        for relative in RESIDUAL_CHECKPOINT_FILES
+        for relative in RESIDUAL_ACTOR_CRITIC_CHECKPOINT_FILES
     ):
         return False
     try:
@@ -45,20 +45,27 @@ def residual_checkpoint_is_recoverable(checkpoint: Path) -> bool:
         counters = state["counters"]
         replay = state["replay"]
         return bool(
-            state["phase"] in {"collecting", "critic_burnin", "joint"}
-            and isinstance(state["critic_burnin_complete"], bool)
-            and int(state.get("critic_burnin_updates", 0)) >= 0
-            and int(state["online_joint_cycles"]) >= 0
-            and isinstance(state["base_actor_checkpoint"], str)
-            and bool(state["base_actor_checkpoint"])
-            and isinstance(state["active_residual_revision"], str)
-            and bool(state["active_residual_revision"])
+            state["learner_state"]
+            in {
+                "ack_replay_collection",
+                "ack_critic_warmup",
+                "residual_actor_critic_training",
+            }
+            and isinstance(state["ack_critic_warmup_complete"], bool)
+            and int(state.get("ack_critic_warmup_steps", 0)) >= 0
+            and int(state["residual_actor_critic_cycles"]) >= 0
+            and isinstance(state["frozen_base_policy_checkpoint"], str)
+            and bool(state["frozen_base_policy_checkpoint"])
+            and isinstance(state["active_residual_policy_revision"], str)
+            and bool(state["active_residual_policy_revision"])
+            and isinstance(state["online_adaptation_id"], str)
+            and bool(state["online_adaptation_id"])
             and all(
                 int(counters[name]) >= 0
                 for name in (
-                    "critic_optimizer_steps",
-                    "actor_optimizer_steps",
-                    "target_polyak_steps",
+                    "twin_q_optimizer_steps",
+                    "residual_actor_optimizer_steps",
+                    "twin_q_target_update_steps",
                 )
             )
             and all(
@@ -74,7 +81,7 @@ def residual_checkpoint_is_recoverable(checkpoint: Path) -> bool:
         return False
 
 
-def save_residual_checkpoint(
+def save_residual_actor_critic_checkpoint(
     checkpoint: Path,
     *,
     residual_actor: torch.nn.Module,
@@ -91,7 +98,7 @@ def save_residual_checkpoint(
     """Atomically save only the final residual training state."""
 
     checkpoint = Path(checkpoint).resolve()
-    if checkpoint.exists() and not residual_checkpoint_is_recoverable(checkpoint):
+    if checkpoint.exists() and not residual_actor_critic_checkpoint_is_recoverable(checkpoint):
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_DESTINATION_EXISTS")
     temporary = checkpoint.with_name(f".{checkpoint.name}.writing-{os.getpid()}")
     if temporary.exists():
@@ -140,12 +147,12 @@ def save_residual_checkpoint(
         if temporary.exists():
             shutil.rmtree(temporary)
         raise
-    if not residual_checkpoint_is_recoverable(checkpoint):
+    if not residual_actor_critic_checkpoint_is_recoverable(checkpoint):
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_WRITE_INCOMPLETE")
     return checkpoint
 
 
-def load_residual_checkpoint(
+def load_residual_actor_critic_checkpoint(
     checkpoint: Path,
     *,
     residual_actor: torch.nn.Module,
@@ -158,7 +165,7 @@ def load_residual_checkpoint(
     critic_optimizer: torch.optim.Optimizer | None = None,
     device: torch.device | str = "cpu",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    if not residual_checkpoint_is_recoverable(checkpoint):
+    if not residual_actor_critic_checkpoint_is_recoverable(checkpoint):
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_INCOMPLETE")
     checkpoint = Path(checkpoint)
     modules = {

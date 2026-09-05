@@ -5,17 +5,29 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 
+import numpy as np
 import torch
 
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-import serve_forcerft_actor_learner as learner_server  # noqa: E402
+import serve_forcerft_residual_actor_critic as learner_server  # noqa: E402
 
-from forcesmolvla.rft.online.actor_learner_runtime import OnlineTrainingPolicy
+from forcesmolvla.rft.online.residual_actor_critic_runtime import ResidualActorCriticSchedule
 from forcesmolvla.rft.online.replay_training import (
+    OnlineResidualReplay,
+    ProductionAckMacro,
     algorithm_hyperparameters,
     load_common_actor_critic_config,
+)
+from forcesmolvla.rft.online.transition_authority import (
+    AckMacro,
+    ActorQEligibility,
+)
+from forcesmolvla.rft.critic import (
+    RESIDUAL_ACTION_OFFSET,
+    RESIDUAL_ACTION_WIDTH,
+    build_twin_q,
 )
 from forcesmolvla.rft.online.training_losses import (
     residual_actor_loss,
@@ -57,6 +69,72 @@ class ScalarResidualActor(torch.nn.Module):
         return self.value.expand(batch, 6)
 
 
+class IdentityTransform:
+    def apply(self, value):
+        return np.asarray(value)
+
+
+def human_replay(*, terminated: bool = True) -> OnlineResidualReplay:
+    observation = {
+        "state7_absolute": [0.0] * 7,
+        "wrench6_calibrated_tcp": [0.0] * 6,
+        "materialized_timestamp_monotonic_ns": 1_000_000_000,
+    }
+    next_observation = {
+        **observation,
+        "materialized_timestamp_monotonic_ns": 1_100_000_000,
+    }
+    accepted = np.repeat(
+        np.asarray([[0.2, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0]]),
+        3,
+        axis=0,
+    )
+    behavior = AckMacro(
+        grid_monotonic_ns=(1_000_000_000, 1_033_333_333, 1_066_666_667),
+        ack_ids=("a", "a", "a"),
+        gripper_command_ids=("g", "g", "g"),
+        gripper_ack_command_ids=("g", "g", "g"),
+        accepted_absolute_action_k7=accepted,
+        slot_owner=("human_intervention",) * 3,
+        workspace_clip_flags=(False,) * 3,
+    )
+    transition = {
+        "identity": {"episode_id": "human-episode"},
+        "action_source": "human",
+        "observation": observation,
+        "next_observation": next_observation,
+        "outcome": {
+            "reward": 1.0,
+            "terminated": terminated,
+            "truncated": False,
+        },
+        "eligibility": {"actor_q_valid": True},
+        "human_residual_valid": True,
+        "pre_takeover_base_absolute_action7": [
+            0.1,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ],
+    }
+    macro = ProductionAckMacro(
+        transition=transition,
+        behavior=behavior,
+        next_grid_monotonic_ns=1_100_000_000,
+        ack_provenance=(),
+        actor_q_eligibility=ActorQEligibility(True, "valid"),
+    )
+    normalizer = SimpleNamespace(
+        state7=IdentityTransform(),
+        wrench6=IdentityTransform(),
+        delta_action7=IdentityTransform(),
+    )
+    return OnlineResidualReplay((macro,), normalizer)
+
+
 def batch(batch_size: int = 2) -> SimpleNamespace:
     zeros7 = torch.zeros(batch_size, 7)
     zeros6 = torch.zeros(batch_size, 6)
@@ -74,6 +152,7 @@ def batch(batch_size: int = 2) -> SimpleNamespace:
         next_wrench_delta6=zeros6,
         next_base_action_k6=zeros_k6,
         next_action_mask=mask,
+        next_base_valid=torch.ones(batch_size, dtype=torch.bool),
         reward=torch.ones(batch_size),
         terminated=torch.tensor([False, True][:batch_size]),
         truncated=torch.zeros(batch_size, dtype=torch.bool),
@@ -125,14 +204,58 @@ def test_actor_q_mask_and_invalid_human_residual_are_skipped() -> None:
     assert torch.equal(losses.human, torch.zeros_like(losses.human))
 
 
+def test_valid_human_residual_reaches_critic_and_unlocks_action_columns() -> None:
+    replay = human_replay()
+    row = replay.rows[0]
+    assert row["human_residual_valid"] is True
+    assert np.count_nonzero(row["behavior_residual_k6"]) > 0
+    assert np.count_nonzero(row["human_residual_target6"]) > 0
+
+    q1, q2, q1_target, q2_target = build_twin_q(hidden_dim=16, seed=13)
+    target_actor = TargetActor()
+    optimizer = torch.optim.Adam((*q1.parameters(), *q2.parameters()), lr=3e-4)
+    before = q1.layers[0].weight[
+        :, RESIDUAL_ACTION_OFFSET : RESIDUAL_ACTION_OFFSET + RESIDUAL_ACTION_WIDTH
+    ].detach().clone()
+    critic_batch = replay.sample(8, device=torch.device("cpu"), seed=1)
+    assert critic_batch is not None
+    optimizer.zero_grad(set_to_none=True)
+    residual_critic_loss(
+        q1, q2, q1_target, q2_target, target_actor, critic_batch, gamma=0.99
+    ).backward()
+    optimizer.step()
+    after = q1.layers[0].weight[
+        :, RESIDUAL_ACTION_OFFSET : RESIDUAL_ACTION_OFFSET + RESIDUAL_ACTION_WIDTH
+    ].detach()
+    assert not torch.equal(before, after)
+
+
+def test_policy_value_sampling_excludes_human_and_missing_next_base() -> None:
+    replay = human_replay()
+    assert replay.sample(
+        1,
+        device=torch.device("cpu"),
+        seed=0,
+        policy_only=True,
+        actor_q_valid_only=True,
+    ) is None
+    assert replay.sample(
+        1, device=torch.device("cpu"), seed=0, human_only=True
+    ) is not None
+
+    missing_next_base = human_replay(terminated=False)
+    assert missing_next_base.rows == ()
+    assert missing_next_base.next_base_missing_rows == 1
+
+
 def test_online_schedule_is_2q_1actor_and_episode_bounded() -> None:
-    policy = OnlineTrainingPolicy()
-    assert policy.critic_updates_per_cycle == 2
-    assert policy.actor_updates_per_cycle == 1
-    assert policy.joint_cycles_for_admission(100) == 2
-    assert policy.joint_cycles_for_admission(400) == 7
-    assert policy.joint_cycles_for_admission(641) == 10
-    assert policy.joint_cycle_budget((100, 400, 641)) == 19
+    policy = ResidualActorCriticSchedule()
+    assert policy.twin_q_updates_per_cycle == 2
+    assert policy.residual_actor_updates_per_cycle == 1
+    assert policy.cycles_for_admission(100) == 2
+    assert policy.cycles_for_admission(400) == 7
+    assert policy.cycles_for_admission(641) == 10
+    assert policy.residual_actor_critic_cycle_budget((100, 400, 641)) == 19
     assert not policy.candidate_due(9)
     assert policy.candidate_due(10)
 
@@ -142,36 +265,36 @@ def test_task_profiles_cannot_override_algorithm_parameters() -> None:
     task3 = load_common_actor_critic_config("task3")
     assert algorithm_hyperparameters(task2) == algorithm_hyperparameters(task3)
     assert task2["task"] != task3["task"]
-    assert task2["online_training"] == {
-        "critic_updates_per_cycle": 2,
-        "actor_updates_per_cycle": 1,
-        "max_joint_cycles_per_admitted_episode": 10,
-        "actor_candidate_period": 10,
-        "checkpoint_period": 50,
-        "keep_latest_checkpoints": 2,
+    assert task2["residual_actor_critic_training"] == {
+        "twin_q_updates_per_cycle": 2,
+        "residual_actor_updates_per_cycle": 1,
+        "max_cycles_per_admitted_episode": 10,
+        "residual_candidate_interval_actor_steps": 10,
+        "training_checkpoint_interval_cycles": 50,
+        "retained_training_checkpoint_count": 2,
     }
 
 
-def tiny_continuous_learner(*, phase: str, burnin_updates: int = 0):
-    learner = learner_server.ContinuousLearner.__new__(
-        learner_server.ContinuousLearner
+def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
+    learner = learner_server.ResidualActorCriticLearner.__new__(
+        learner_server.ResidualActorCriticLearner
     )
     actor = torch.nn.Linear(2, 2)
     learner.replay_root = Path("/unused")
     learner.replay = None
     learner._materialized_replay_signature = None
-    learner.training_policy = OnlineTrainingPolicy()
+    learner.training_policy = ResidualActorCriticSchedule()
     learner.learner = {
         "residual_actor": actor,
         "runtime": {
-            "phase": phase,
-            "critic_burnin_complete": phase == "joint",
-            "critic_burnin_updates": burnin_updates,
-            "online_joint_cycles": 0,
+            "learner_state": learner_state,
+            "ack_critic_warmup_complete": learner_state == "residual_actor_critic_training",
+            "ack_critic_warmup_steps": warmup_updates,
+            "residual_actor_critic_cycles": 0,
             "counters": {
-                "critic_optimizer_steps": burnin_updates,
-                "actor_optimizer_steps": 0,
-                "target_polyak_steps": burnin_updates,
+                "twin_q_optimizer_steps": warmup_updates,
+                "residual_actor_optimizer_steps": 0,
+                "twin_q_target_update_steps": warmup_updates,
             },
             "replay": {
                 "critic_td_valid_rows": 0,
@@ -184,7 +307,7 @@ def tiny_continuous_learner(*, phase: str, burnin_updates: int = 0):
 
 
 def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
-    learner = tiny_continuous_learner(phase="collecting")
+    learner = tiny_continuous_learner(learner_state="ack_replay_collection")
     actor_before = {
         name: value.detach().clone()
         for name, value in learner.residual_actor.state_dict().items()
@@ -195,12 +318,12 @@ def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
         lambda _root: 99,
     )
     result = learner(object())
-    assert result["phase"] == "collecting"
+    assert result["learner_state"] == "ack_replay_collection"
     assert result["learner_critic_steps"] == result["learner_actor_steps"] == 0
     assert learner.learner["runtime"]["counters"] == {
-        "critic_optimizer_steps": 0,
-        "actor_optimizer_steps": 0,
-        "target_polyak_steps": 0,
+        "twin_q_optimizer_steps": 0,
+        "residual_actor_optimizer_steps": 0,
+        "twin_q_target_update_steps": 0,
     }
     assert all(
         torch.equal(actor_before[name], value)
@@ -208,11 +331,13 @@ def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
     )
 
 
-def test_100_rows_runs_exactly_256_critic_burnin_then_enters_joint(
+def test_100_rows_runs_exactly_256_critic_warmup_then_starts_residual_training(
     monkeypatch,
 ) -> None:
-    learner = tiny_continuous_learner(phase="collecting")
-    replay = SimpleNamespace(critic_rows_per_episode=(100,))
+    learner = tiny_continuous_learner(learner_state="ack_replay_collection")
+    replay = SimpleNamespace(
+        critic_td_valid_rows=100, critic_rows_per_episode=(100,)
+    )
     monkeypatch.setattr(
         learner_server.warmup,
         "count_sealed_critic_td_valid_transitions",
@@ -225,31 +350,37 @@ def test_100_rows_runs_exactly_256_critic_burnin_then_enters_joint(
     }
     calls = []
 
-    def critic_update(_coordinator, _replay, *, burnin):
-        assert burnin is True
+    def critic_update(_coordinator, _replay, *, warmup):
+        assert warmup is True
         calls.append(1)
         runtime = learner.learner["runtime"]
-        runtime["critic_burnin_updates"] += 1
-        runtime["counters"]["critic_optimizer_steps"] += 1
-        runtime["counters"]["target_polyak_steps"] += 1
+        runtime["ack_critic_warmup_steps"] += 1
+        runtime["counters"]["twin_q_optimizer_steps"] += 1
+        runtime["counters"]["twin_q_target_update_steps"] += 1
         return 0.25
 
     monkeypatch.setattr(learner, "_critic_update", critic_update)
     result = learner(object())
     assert len(calls) == 256
-    assert result["critic_burnin_updates"] == 256
+    assert result["ack_critic_warmup_steps"] == 256
     assert result["learner_actor_steps"] == 0
-    assert learner.learner["runtime"]["phase"] == "joint"
-    assert learner.learner["runtime"]["critic_burnin_complete"] is True
+    assert learner.learner["runtime"]["learner_state"] == "residual_actor_critic_training"
+    assert learner.learner["runtime"]["ack_critic_warmup_complete"] is True
     assert all(
         torch.equal(actor_before[name], value)
         for name, value in learner.residual_actor.state_dict().items()
     )
 
 
-def test_joint_cycle_is_exactly_two_critic_and_one_actor(monkeypatch) -> None:
-    learner = tiny_continuous_learner(phase="joint", burnin_updates=256)
-    replay = SimpleNamespace(critic_rows_per_episode=(100,))
+def test_residual_training_cycle_is_exactly_two_critic_and_one_actor(
+    monkeypatch,
+) -> None:
+    learner = tiny_continuous_learner(
+        learner_state="residual_actor_critic_training", warmup_updates=256
+    )
+    replay = SimpleNamespace(
+        critic_td_valid_rows=100, critic_rows_per_episode=(100,)
+    )
     monkeypatch.setattr(
         learner_server.warmup,
         "count_sealed_critic_td_valid_transitions",
@@ -261,7 +392,7 @@ def test_joint_cycle_is_exactly_two_critic_and_one_actor(monkeypatch) -> None:
     monkeypatch.setattr(
         learner,
         "_critic_update",
-        lambda _coordinator, _replay, *, burnin: critic_calls.append(burnin)
+        lambda _coordinator, _replay, *, warmup: critic_calls.append(warmup)
         or 0.5,
     )
     monkeypatch.setattr(
@@ -275,4 +406,4 @@ def test_joint_cycle_is_exactly_two_critic_and_one_actor(monkeypatch) -> None:
     assert actor_calls == [1]
     assert result["learner_critic_steps"] == 2
     assert result["learner_actor_steps"] == 1
-    assert result["online_joint_cycle"] == 1
+    assert result["residual_actor_critic_cycle"] == 1

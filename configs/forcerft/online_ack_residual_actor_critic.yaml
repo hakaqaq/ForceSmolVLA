@@ -1,0 +1,46 @@
+environment:
+  random_seed: 4404
+
+batching:
+  twin_q_batch_size: 128
+  residual_policy_value_batch_size: 64
+  human_residual_imitation_batch_size: 64
+  command_macro_slots: 3
+
+ack_critic_warmup:
+  minimum_ack_transitions: 100
+  optimizer_steps: 256
+
+residual_actor_critic_training:
+  twin_q_updates_per_cycle: 2
+  residual_actor_updates_per_cycle: 1
+  max_cycles_per_admitted_episode: 10
+  residual_candidate_interval_actor_steps: 10
+  training_checkpoint_interval_cycles: 50
+  retained_training_checkpoint_count: 2
+
+optimizer:
+  residual_actor:
+    type: Adam
+    lr: 1.0e-4
+    grad_clip_norm: 1.0
+
+  twin_q:
+    type: Adam
+    lr: 3.0e-4
+    grad_clip_norm: 10.0
+
+  twin_q_polyak_tau: 0.005
+
+objective:
+  command_macro_discount: 0.99
+  value_objective_weight: 1.0
+  residual_magnitude_penalty_weight: 0.01
+  human_residual_imitation_weight: 1.0
+
+wrist_wrench_residual_actor:
+  hidden_dim: 256
+  max_normalized_residual: 0.5
+
+ack_residual_twin_q:
+  hidden_dim: 256

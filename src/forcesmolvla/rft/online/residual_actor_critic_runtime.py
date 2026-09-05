@@ -1,4 +1,4 @@
-"""Small coordination primitives for one-GPU online Actor/Learner runtime."""
+"""Coordination primitives for online ACK-residual Actor-Critic training."""
 
 from __future__ import annotations
 
@@ -26,54 +26,54 @@ class AsyncRuntimeError(RuntimeError):
 
 @dataclass(frozen=True)
 class SelectedCheckpoint:
-    """An explicitly classified Stage-3 resume parent."""
+    """An explicitly classified online residual training parent."""
 
     path: Path
     kind: str
 
 
 @dataclass(frozen=True)
-class OnlineTrainingPolicy:
+class ResidualActorCriticSchedule:
     """Fixed scheduling contract for the persistent online Learner."""
 
-    training_starts: int = 100
-    critic_burnin_updates: int = 256
-    critic_batch_size: int = 128
-    actor_policy_batch_size: int = 64
-    actor_human_batch_size: int = 64
-    critic_updates_per_cycle: int = 2
-    actor_updates_per_cycle: int = 1
-    max_joint_cycles_per_admitted_episode: int = 10
-    actor_candidate_period: int = 10
-    checkpoint_period: int = 50
-    keep_latest_checkpoints: int = 2
+    minimum_ack_transitions: int = 100
+    ack_critic_warmup_steps: int = 256
+    twin_q_batch_size: int = 128
+    residual_policy_value_batch_size: int = 64
+    human_residual_imitation_batch_size: int = 64
+    twin_q_updates_per_cycle: int = 2
+    residual_actor_updates_per_cycle: int = 1
+    max_cycles_per_admitted_episode: int = 10
+    residual_candidate_interval_actor_steps: int = 10
+    training_checkpoint_interval_cycles: int = 50
+    retained_training_checkpoint_count: int = 2
 
     def __post_init__(self) -> None:
         require(
-            self.training_starts >= 0
-            and self.critic_burnin_updates >= 1
-            and self.critic_batch_size >= 1
-            and self.actor_policy_batch_size >= 1
-            and self.actor_human_batch_size >= 1
-            and self.critic_updates_per_cycle >= 1
-            and self.actor_updates_per_cycle == 1
-            and self.max_joint_cycles_per_admitted_episode >= 1
-            and self.actor_candidate_period >= 1
-            and self.checkpoint_period >= 1
-            and self.keep_latest_checkpoints >= 1,
-            "FORCERFT_ONLINE_TRAINING_POLICY_INVALID",
+            self.minimum_ack_transitions >= 0
+            and self.ack_critic_warmup_steps >= 1
+            and self.twin_q_batch_size >= 1
+            and self.residual_policy_value_batch_size >= 1
+            and self.human_residual_imitation_batch_size >= 1
+            and self.twin_q_updates_per_cycle >= 1
+            and self.residual_actor_updates_per_cycle == 1
+            and self.max_cycles_per_admitted_episode >= 1
+            and self.residual_candidate_interval_actor_steps >= 1
+            and self.training_checkpoint_interval_cycles >= 1
+            and self.retained_training_checkpoint_count >= 1,
+            "FORCERFT_RESIDUAL_ACTOR_CRITIC_SCHEDULE_INVALID",
         )
 
     def training_ready(self, online_transition_count: int) -> bool:
-        return online_transition_count >= self.training_starts
+        return online_transition_count >= self.minimum_ack_transitions
 
     def candidate_due(self, completed_actor_steps: int) -> bool:
         return (
             completed_actor_steps > 0
-            and completed_actor_steps % self.actor_candidate_period == 0
+            and completed_actor_steps % self.residual_candidate_interval_actor_steps == 0
         )
 
-    def joint_cycles_for_admission(self, new_critic_td_valid_rows: int) -> int:
+    def cycles_for_admission(self, new_critic_td_valid_rows: int) -> int:
         require(
             new_critic_td_valid_rows >= 0,
             "FORCERFT_ONLINE_ADMITTED_ROW_COUNT_INVALID",
@@ -81,11 +81,11 @@ class OnlineTrainingPolicy:
         if new_critic_td_valid_rows == 0:
             return 0
         return min(
-            self.max_joint_cycles_per_admitted_episode,
+            self.max_cycles_per_admitted_episode,
             max(1, math.ceil(new_critic_td_valid_rows / 64)),
         )
 
-    def joint_cycle_budget(self, admitted_episode_rows: int | Sequence[int]) -> int:
+    def residual_actor_critic_cycle_budget(self, admitted_episode_rows: int | Sequence[int]) -> int:
         """Total deterministic budget, derivable again after checkpoint resume."""
 
         rows = (
@@ -93,41 +93,46 @@ class OnlineTrainingPolicy:
             if isinstance(admitted_episode_rows, int)
             else admitted_episode_rows
         )
-        return sum(self.joint_cycles_for_admission(int(count)) for count in rows)
+        return sum(self.cycles_for_admission(int(count)) for count in rows)
 
     def checkpoint_due(self, completed_cycle: int) -> bool:
-        return completed_cycle > 0 and completed_cycle % self.checkpoint_period == 0
+        return (
+            completed_cycle > 0
+            and completed_cycle % self.training_checkpoint_interval_cycles == 0
+        )
 
 
-def online_checkpoint_path(checkpoint_root: Path, completed_cycle: int) -> Path:
+def training_checkpoint_path(checkpoint_root: Path, completed_cycle: int) -> Path:
     require(completed_cycle >= 0, "FORCERFT_ONLINE_CYCLE_INVALID")
-    return checkpoint_root / f"online_actor_critic_cycle_{completed_cycle:06d}"
+    return checkpoint_root / f"residual_actor_critic_cycle_{completed_cycle:06d}"
 
 
 def exact_resume_checkpoint_is_recoverable(
     checkpoint: Path, *, expected_kind: str
 ) -> bool:
-    """Reject incomplete final-format seed/resume directories."""
+    """Reject incomplete final-format bootstrap/resume directories."""
 
-    from forcesmolvla.rft.online.learner_checkpoint import (
-        residual_checkpoint_is_recoverable,
+    from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (
+        residual_actor_critic_checkpoint_is_recoverable,
     )
 
-    if expected_kind not in {"stage3_seed", "online_residual_actor_critic"}:
+    if expected_kind not in {"online_residual_bootstrap", "residual_actor_critic_training"}:
         return False
-    return residual_checkpoint_is_recoverable(checkpoint)
+    return residual_actor_critic_checkpoint_is_recoverable(checkpoint)
 
 
-def select_resume_or_seed_checkpoint(
+def select_resume_or_bootstrap_checkpoint(
     output_root: Path,
     *,
-    configured_seed_bundle: Path | None,
+    configured_bootstrap_checkpoint: Path | None,
 ) -> SelectedCheckpoint:
-    """Choose online exact-resume, then an explicit safe seed, else fail closed."""
+    """Choose online exact-resume, then the explicit bootstrap, else fail closed."""
 
-    online_root = output_root.resolve() / "online/checkpoints"
+    online_root = (
+        output_root.resolve() / "online_ack_residual/training_checkpoints"
+    )
     candidates: list[tuple[int, Path]] = []
-    for path in online_root.glob("online_actor_critic_cycle_*"):
+    for path in online_root.glob("residual_actor_critic_cycle_*"):
         if not path.is_dir():
             continue
         try:
@@ -135,34 +140,36 @@ def select_resume_or_seed_checkpoint(
         except ValueError:
             continue
         if exact_resume_checkpoint_is_recoverable(
-            path, expected_kind="online_residual_actor_critic"
+            path, expected_kind="residual_actor_critic_training"
         ):
             candidates.append((cycle, path.resolve()))
     if candidates:
         return SelectedCheckpoint(
             path=max(candidates)[1],
-            kind="online_residual_actor_critic",
+            kind="residual_actor_critic_training",
         )
 
-    if configured_seed_bundle is not None:
-        seed = configured_seed_bundle.resolve()
+    if configured_bootstrap_checkpoint is not None:
+        bootstrap = configured_bootstrap_checkpoint.resolve()
         require(
             exact_resume_checkpoint_is_recoverable(
-                seed, expected_kind="stage3_seed"
+                bootstrap, expected_kind="online_residual_bootstrap"
             ),
-            "FORCERFT_STAGE3_SAFE_SEED_MISSING_OR_INCOMPLETE",
+            "FORCERFT_ONLINE_RESIDUAL_BOOTSTRAP_MISSING_OR_INCOMPLETE",
         )
-        return SelectedCheckpoint(path=seed, kind="stage3_seed")
+        return SelectedCheckpoint(
+            path=bootstrap, kind="online_residual_bootstrap"
+        )
 
-    raise AsyncRuntimeError("FORCERFT_STAGE3_RESUME_OR_SAFE_SEED_REQUIRED")
+    raise AsyncRuntimeError("FORCERFT_RESUME_OR_ONLINE_RESIDUAL_BOOTSTRAP_REQUIRED")
 
 
-def retain_latest_online_checkpoints(checkpoint_root: Path, *, keep: int = 2) -> tuple[Path, ...]:
+def retain_latest_training_checkpoints(checkpoint_root: Path, *, keep: int = 2) -> tuple[Path, ...]:
     """Keep the newest exact-resume directories after a successful save."""
 
     require(keep >= 1, "FORCERFT_ONLINE_CHECKPOINT_RETENTION_INVALID")
     checkpoints: list[tuple[int, Path]] = []
-    for path in checkpoint_root.glob("online_actor_critic_cycle_*"):
+    for path in checkpoint_root.glob("residual_actor_critic_cycle_*"):
         if not path.is_dir():
             continue
         try:
@@ -183,11 +190,11 @@ def require(condition: bool, message: str) -> None:
 
 def actor_optimizer_state_is_valid_for_resume(
     actor_optimizer: torch.optim.Optimizer,
-    actor_optimizer_steps: int,
+    residual_actor_optimizer_steps: int,
 ) -> bool:
     """A Critic-only checkpoint legitimately has no Actor optimizer state."""
 
-    return actor_optimizer_steps == 0 or bool(actor_optimizer.state)
+    return residual_actor_optimizer_steps == 0 or bool(actor_optimizer.state)
 
 
 def reconcile_post_checkpoint_replay(credits: Any, all_r: Sequence[dict]) -> int:
@@ -216,22 +223,28 @@ def prepare_learner(
     import yaml
 
     from forcesmolvla.rft.critic import build_twin_q
-    from forcesmolvla.rft.online.learner_checkpoint import load_residual_checkpoint
+    from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (
+        load_residual_actor_critic_checkpoint,
+    )
     from forcesmolvla.rft.residual_actor import make_residual_actor_pair
 
     resume_checkpoint = Path(resume_checkpoint).resolve()
     config = yaml.safe_load(
         (resume_checkpoint / "state/config.yaml").read_text(encoding="utf-8")
     )
+    require(
+        int(config["batching"]["command_macro_slots"]) == 3,
+        "FORCERFT_COMMAND_MACRO_SLOTS_INVALID",
+    )
     residual_actor, residual_actor_target = make_residual_actor_pair(
-        hidden_dim=int(config["residual_actor"]["hidden_dim"]),
+        hidden_dim=int(config["wrist_wrench_residual_actor"]["hidden_dim"]),
         max_normalized_residual=float(
-            config["residual_actor"]["max_normalized_residual"]
+            config["wrist_wrench_residual_actor"]["max_normalized_residual"]
         ),
     )
     q1, q2, q1_target, q2_target = build_twin_q(
-        hidden_dim=int(config["critic"]["hidden_dim"]),
-        seed=int(config["environment"]["seed"]) + 1,
+        hidden_dim=int(config["ack_residual_twin_q"]["hidden_dim"]),
+        seed=int(config["environment"]["random_seed"]) + 1,
     )
     for module in (
         residual_actor,
@@ -244,13 +257,13 @@ def prepare_learner(
         module.to(device)
     residual_actor_optimizer = torch.optim.Adam(
         residual_actor.parameters(),
-        lr=float(config["optimizer"]["actor"]["lr"]),
+        lr=float(config["optimizer"]["residual_actor"]["lr"]),
     )
     critic_optimizer = torch.optim.Adam(
         (*q1.parameters(), *q2.parameters()),
-        lr=float(config["optimizer"]["critic"]["lr"]),
+        lr=float(config["optimizer"]["twin_q"]["lr"]),
     )
-    runtime, loaded_config = load_residual_checkpoint(
+    runtime, loaded_config = load_residual_actor_critic_checkpoint(
         resume_checkpoint,
         residual_actor=residual_actor,
         residual_actor_target=residual_actor_target,
@@ -263,49 +276,51 @@ def prepare_learner(
         device=device,
     )
     require(config == loaded_config, "FORCERFT_CHECKPOINT_CONFIG_DRIFT")
-    completed_burnin = int(runtime.get("critic_burnin_updates", 0))
-    expected_burnin = int(config["warmup"]["critic_burnin_updates"])
+    completed_warmup = int(runtime.get("ack_critic_warmup_steps", 0))
+    expected_warmup = int(config["ack_critic_warmup"]["optimizer_steps"])
     require(
-        0 <= completed_burnin <= expected_burnin
-        and int(runtime["counters"]["critic_optimizer_steps"])
-        >= completed_burnin
+        0 <= completed_warmup <= expected_warmup
+        and int(runtime["counters"]["twin_q_optimizer_steps"])
+        >= completed_warmup
         and (
-            runtime["phase"] != "collecting" or completed_burnin == 0
+            runtime["learner_state"] != "ack_replay_collection" or completed_warmup == 0
         )
         and (
-            runtime["phase"] != "joint"
-            or runtime["critic_burnin_complete"] is True
-            and completed_burnin == expected_burnin
+            runtime["learner_state"] != "residual_actor_critic_training"
+            or runtime["ack_critic_warmup_complete"] is True
+            and completed_warmup == expected_warmup
         )
         and (
-            runtime["critic_burnin_complete"] is not True
-            or runtime["phase"] == "joint"
-            and completed_burnin == expected_burnin
+            runtime["ack_critic_warmup_complete"] is not True
+            or runtime["learner_state"] == "residual_actor_critic_training"
+            and completed_warmup == expected_warmup
         ),
-        "FORCERFT_CHECKPOINT_PHASE_COUNTER_MISMATCH",
+        "FORCERFT_CHECKPOINT_LEARNER_STATE_COUNTER_MISMATCH",
     )
     residual_actor.train()
     q1.train()
     q2.train()
     for target in (residual_actor_target, q1_target, q2_target):
         target.eval().requires_grad_(False)
-    warmup = config["warmup"]
+    warmup = config["ack_critic_warmup"]
     batching = config["batching"]
-    online = config["online_training"]
-    policy = OnlineTrainingPolicy(
-        training_starts=int(warmup["training_starts"]),
-        critic_burnin_updates=int(warmup["critic_burnin_updates"]),
-        critic_batch_size=int(batching["critic_batch_size"]),
-        actor_policy_batch_size=int(batching["actor_policy_batch_size"]),
-        actor_human_batch_size=int(batching["actor_human_batch_size"]),
-        critic_updates_per_cycle=int(online["critic_updates_per_cycle"]),
-        actor_updates_per_cycle=int(online["actor_updates_per_cycle"]),
-        max_joint_cycles_per_admitted_episode=int(
-            online["max_joint_cycles_per_admitted_episode"]
+    online = config["residual_actor_critic_training"]
+    policy = ResidualActorCriticSchedule(
+        minimum_ack_transitions=int(warmup["minimum_ack_transitions"]),
+        ack_critic_warmup_steps=int(warmup["optimizer_steps"]),
+        twin_q_batch_size=int(batching["twin_q_batch_size"]),
+        residual_policy_value_batch_size=int(batching["residual_policy_value_batch_size"]),
+        human_residual_imitation_batch_size=int(batching["human_residual_imitation_batch_size"]),
+        twin_q_updates_per_cycle=int(online["twin_q_updates_per_cycle"]),
+        residual_actor_updates_per_cycle=int(online["residual_actor_updates_per_cycle"]),
+        max_cycles_per_admitted_episode=int(
+            online["max_cycles_per_admitted_episode"]
         ),
-        actor_candidate_period=int(online["actor_candidate_period"]),
-        checkpoint_period=int(online["checkpoint_period"]),
-        keep_latest_checkpoints=int(online["keep_latest_checkpoints"]),
+        residual_candidate_interval_actor_steps=int(
+            online["residual_candidate_interval_actor_steps"]
+        ),
+        training_checkpoint_interval_cycles=int(online["training_checkpoint_interval_cycles"]),
+        retained_training_checkpoint_count=int(online["retained_training_checkpoint_count"]),
     )
     return {
         "residual_actor": residual_actor,
@@ -328,7 +343,7 @@ def prepare_learner(
         "runtime": runtime,
         "training_policy": policy,
         "resume_checkpoint": resume_checkpoint,
-        "online_joint_cycles": int(runtime.get("online_joint_cycles", 0)),
+        "residual_actor_critic_cycles": int(runtime.get("residual_actor_critic_cycles", 0)),
     }
 
 

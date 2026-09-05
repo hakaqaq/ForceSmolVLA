@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from forcesmolvla.rft.online import actor_learner_runtime as runtime
-from forcesmolvla.rft.online.actor_learner_runtime import (
+from forcesmolvla.rft.online import residual_actor_critic_runtime as runtime
+from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
-    online_checkpoint_path,
-    select_resume_or_seed_checkpoint,
+    training_checkpoint_path,
+    select_resume_or_bootstrap_checkpoint,
 )
 
 
@@ -18,8 +18,9 @@ def test_latest_final_online_checkpoint_wins_over_seed(
 ) -> None:
     seed = tmp_path / "seed"
     seed.mkdir()
-    first = online_checkpoint_path(tmp_path / "online/checkpoints", 5)
-    latest = online_checkpoint_path(tmp_path / "online/checkpoints", 10)
+    root = tmp_path / "online_ack_residual/training_checkpoints"
+    first = training_checkpoint_path(root, 5)
+    latest = training_checkpoint_path(root, 10)
     first.mkdir(parents=True)
     latest.mkdir()
     monkeypatch.setattr(
@@ -27,11 +28,11 @@ def test_latest_final_online_checkpoint_wins_over_seed(
         "exact_resume_checkpoint_is_recoverable",
         lambda path, *, expected_kind: path in {seed, first, latest},
     )
-    selected = select_resume_or_seed_checkpoint(
-        tmp_path, configured_seed_bundle=seed
+    selected = select_resume_or_bootstrap_checkpoint(
+        tmp_path, configured_bootstrap_checkpoint=seed
     )
     assert selected.path == latest.resolve()
-    assert selected.kind == "online_residual_actor_critic"
+    assert selected.kind == "residual_actor_critic_training"
 
 
 def test_explicit_final_seed_is_required_without_online(
@@ -43,15 +44,17 @@ def test_explicit_final_seed_is_required_without_online(
         runtime,
         "exact_resume_checkpoint_is_recoverable",
         lambda path, *, expected_kind: path == seed.resolve()
-        and expected_kind == "stage3_seed",
+        and expected_kind == "online_residual_bootstrap",
     )
-    selected = select_resume_or_seed_checkpoint(
-        tmp_path, configured_seed_bundle=seed
+    selected = select_resume_or_bootstrap_checkpoint(
+        tmp_path, configured_bootstrap_checkpoint=seed
     )
-    assert selected.path == seed.resolve() and selected.kind == "stage3_seed"
-    with pytest.raises(AsyncRuntimeError, match="RESUME_OR_SAFE_SEED_REQUIRED"):
-        select_resume_or_seed_checkpoint(
-            tmp_path, configured_seed_bundle=None
+    assert selected.path == seed.resolve() and selected.kind == "online_residual_bootstrap"
+    with pytest.raises(
+        AsyncRuntimeError, match="RESUME_OR_ONLINE_RESIDUAL_BOOTSTRAP_REQUIRED"
+    ):
+        select_resume_or_bootstrap_checkpoint(
+            tmp_path, configured_bootstrap_checkpoint=None
         )
 
 
@@ -59,11 +62,13 @@ def test_legacy_offline_fallback_is_not_an_api_or_selection_path(
     tmp_path: Path,
 ) -> None:
     assert "allow_legacy_offline_fallback" not in inspect.signature(
-        select_resume_or_seed_checkpoint
+        select_resume_or_bootstrap_checkpoint
     ).parameters
     legacy = tmp_path / "offline/checkpoints/offline_actor_critic_cycle_000210"
     legacy.mkdir(parents=True)
-    with pytest.raises(AsyncRuntimeError, match="RESUME_OR_SAFE_SEED_REQUIRED"):
-        select_resume_or_seed_checkpoint(
-            tmp_path, configured_seed_bundle=None
+    with pytest.raises(
+        AsyncRuntimeError, match="RESUME_OR_ONLINE_RESIDUAL_BOOTSTRAP_REQUIRED"
+    ):
+        select_resume_or_bootstrap_checkpoint(
+            tmp_path, configured_bootstrap_checkpoint=None
         )

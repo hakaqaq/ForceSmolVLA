@@ -24,8 +24,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
-    select_resume_or_seed_checkpoint,
+from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+    select_resume_or_bootstrap_checkpoint,
 )
 
 MODEL_PYTHON = Path("/home/rlc123/anaconda3/envs/forcesmolvla/bin/python")
@@ -98,7 +98,7 @@ def _admit(
     command = [
         str(args.model_python), str(ROOT / "tools/run_forcerft_production_bridge.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
-        "--episode", str(episode), "--state-root", str(args.formal_r_root),
+        "--episode", str(episode), "--state-root", str(args.ack_replay_root),
         "--deployed-actor-checkpoint", str(
             actor_checkpoint or args.deployed_actor_checkpoint
         ),
@@ -124,7 +124,7 @@ def _admit(
         f"accepted={report.get('accepted_unique_r_transition_count')} "
         f"human_expert={report.get('human_override_replay_count')} "
         f"total={report.get('total_unique_r_transition_count')} "
-        f"training_started={str(bool(report.get('training_starts_reached'))).lower()} "
+        f"training_started={str(bool(report.get('minimum_ack_transitions_reached'))).lower()} "
         f"elapsed={time.monotonic() - started:.1f}s"
     )
     return True
@@ -265,10 +265,10 @@ def _stop_detector_worker(
             process.wait(timeout=10)
 
 
-def _next_capture_index(root_prefix: Path) -> int:
+def _next_capture_index(capture_output_root: Path) -> int:
     indices = [
         int(path.name)
-        for path in root_prefix.iterdir()
+        for path in capture_output_root.iterdir()
         if path.is_dir() and path.name.isdigit()
     ]
     return max(indices, default=-1) + 1
@@ -309,8 +309,8 @@ def _run_episode(
     model_revision: str | None = None,
     policy_epoch: int | None = None,
 ) -> bool | None:
-    root = (args.root_prefix / f"{index:03d}").resolve()
-    session_id = f"{args.root_prefix.name}_{index:03d}"
+    root = (args.capture_output_root / f"{index:03d}").resolve()
+    session_id = f"{args.capture_output_root.name}_{index:03d}"
     require(not root.exists(), "FORCERFT_ONLINE_CAPTURE_ROOT_EXISTS")
     prepare_identity = {
         "session_id": session_id,
@@ -327,7 +327,7 @@ def _run_episode(
     policy_epoch = int(metadata.get("policy_epoch", policy_epoch or 0))
     actor_checkpoint_value = str(
         metadata.get(
-            "base_actor_checkpoint", metadata.get("active_actor_checkpoint", "")
+            "frozen_base_policy_checkpoint", metadata.get("active_actor_checkpoint", "")
         )
     )
     actor_checkpoint = (
@@ -373,7 +373,7 @@ def _run_episode(
             timeout=10.0,
         )
         require(
-            status.get("learner_state") != "failed"
+            status.get("learner_worker_state") != "failed"
             and status.get("current_episode_sampled") is False
             and status.get("server_persistent") is True,
             "FORCERFT_ONLINE_LEARNER_INVALID",
@@ -393,7 +393,7 @@ def _run_episode(
             status.get("runtime_session_id") == session_id
             and status.get("runtime_episode_id") == EPISODE_ID
             and status.get("episode_active") is False
-            and status.get("learner_state") != "failed"
+            and status.get("learner_worker_state") != "failed"
             and status.get("current_episode_sampled") is False
             and status.get("server_persistent") is True,
             "FORCERFT_ONLINE_REJECTED_CAPTURE_RUNTIME_INVALID",
@@ -414,7 +414,7 @@ def _run_episode(
             f"http://127.0.0.1:{args.policy_port}/runtime/operator-q-checkpoint",
             identity,
         ).get("operator_q_checkpoint_path")
-        print(f"[learner] operator-q checkpoint={checkpoint or 'none'}")
+        print(f"[training-checkpoint] operator-q={checkpoint or 'none'}")
         return False
     if not _finish_episode(
         args,
@@ -432,12 +432,12 @@ def run_loop(args: argparse.Namespace) -> int:
         args.allow_development_policy_execution_smoke,
         "FORCERFT_ONLINE_ROBOT_EXECUTION_FLAG_REQUIRED",
     )
-    resume = select_resume_or_seed_checkpoint(
+    resume = select_resume_or_bootstrap_checkpoint(
         args.output_root,
-        configured_seed_bundle=getattr(args, "stage3_seed_bundle", None),
+        configured_bootstrap_checkpoint=getattr(args, "online_residual_bootstrap_checkpoint", None),
     ).path
     server_command = [
-        str(args.model_python), str(ROOT / "tools/serve_forcerft_actor_learner.py"),
+        str(args.model_python), str(ROOT / "tools/serve_forcerft_residual_actor_critic.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
         "--task", args.task,
         "--dataset-root", str(args.dataset_root),
@@ -448,10 +448,6 @@ def run_loop(args: argparse.Namespace) -> int:
     ]
     if args.safety_config is not None:
         server_command.extend(["--safety-config", str(args.safety_config)])
-    if getattr(args, "stage3_seed_bundle", None) is not None:
-        server_command.extend(
-            ["--stage3-seed-bundle", str(args.stage3_seed_bundle)]
-        )
     server = subprocess.Popen(server_command, cwd=ROOT, env=os.environ.copy())
     detector_process = detector_directory = detector_socket = None
     completed = 0
@@ -466,17 +462,17 @@ def run_loop(args: argparse.Namespace) -> int:
             metadata.get("learner_resume_checkpoint") == str(resume.resolve()),
             "FORCERFT_ONLINE_RESUME_CHECKPOINT_MISMATCH",
         )
-        base_actor_checkpoint = str(
+        frozen_base_policy_checkpoint = str(
             metadata.get(
-                "base_actor_checkpoint",
+                "frozen_base_policy_checkpoint",
                 metadata.get("active_actor_checkpoint", ""),
             )
         )
-        args.deployed_actor_checkpoint = Path(base_actor_checkpoint).resolve()
+        args.deployed_actor_checkpoint = Path(frozen_base_policy_checkpoint).resolve()
         require(
             str(metadata.get("active_actor_model_revision", ""))
             and int(metadata.get("policy_epoch", -1)) >= 0
-            and base_actor_checkpoint
+            and frozen_base_policy_checkpoint
             and args.deployed_actor_checkpoint.is_dir(),
             "FORCERFT_ONLINE_SERVER_METADATA_INVALID",
         )
@@ -484,8 +480,8 @@ def run_loop(args: argparse.Namespace) -> int:
             _start_detector_worker(args)
         )
         args.detector_worker_socket = detector_socket
-        args.root_prefix.mkdir(parents=True, exist_ok=True)
-        index = _next_capture_index(args.root_prefix)
+        args.capture_output_root.mkdir(parents=True, exist_ok=True)
+        index = _next_capture_index(args.capture_output_root)
         while completed < args.max_episodes:
             result = _run_episode(
                 args,
@@ -512,9 +508,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--dataset-root", type=Path)
     parser.add_argument("--safety-config", type=Path)
-    parser.add_argument("--stage3-seed-bundle", type=Path)
+    parser.add_argument("--online-residual-bootstrap-checkpoint", type=Path)
     parser.add_argument("--max-episodes", type=int, required=True)
-    parser.add_argument("--root-prefix", type=Path)
+    parser.add_argument("--capture-output-root", type=Path)
     parser.add_argument("--task", required=True)
     parser.add_argument("--episode-time", type=float, default=60.0)
     parser.add_argument("--tool-profile", default="onrobot_robotiq")
@@ -522,7 +518,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--policy-queue-low-watermark", type=int, default=7)
     parser.add_argument("--max-force-n", type=float, default=25.0)
     parser.add_argument("--max-torque-nm", type=float, default=2.0)
-    parser.add_argument("--formal-r-root", type=Path)
+    parser.add_argument("--ack-replay-root", type=Path)
     parser.add_argument(
         "--allow-development-policy-execution-smoke",
         action="store_true",
@@ -547,10 +543,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         resolve_task_output_root,
     )
 
-    args.root_prefix = (
+    args.capture_output_root = (
         ROOT / "datasets" / f"{args.task_id}_forcerft_online"
-        if args.root_prefix is None
-        else args.root_prefix
+        if args.capture_output_root is None
+        else args.capture_output_root
     ).resolve()
     args.output_root = resolve_task_output_root(
         ROOT, task_id=args.task_id, output_root=args.output_root
@@ -560,9 +556,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     if args.safety_config is not None:
         args.safety_config = args.safety_config.resolve()
-    args.formal_r_root = (
+    args.ack_replay_root = (
         args.output_root / "online"
-        if args.formal_r_root is None else args.formal_r_root.resolve()
+        if args.ack_replay_root is None else args.ack_replay_root.resolve()
     )
     return args
 

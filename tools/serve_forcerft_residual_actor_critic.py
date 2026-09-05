@@ -23,21 +23,21 @@ for path in (SRC, ROOT / "tools"):
 
 from forcesmolvla.rft.online import replay_training as warmup  # noqa: E402
 import serve_policy  # noqa: E402
-from forcesmolvla.rft.online.actor_learner_runtime import (  # noqa: E402
-    OnlineTrainingPolicy,
+from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+    ResidualActorCriticSchedule,
     exact_resume_checkpoint_is_recoverable,
-    online_checkpoint_path,
-    retain_latest_online_checkpoints,
+    training_checkpoint_path,
+    retain_latest_training_checkpoints,
     EpisodePin,
     InferencePriorityCoordinator,
     PinnedEpisode,
     prepare_learner,
-    select_resume_or_seed_checkpoint,
+    select_resume_or_bootstrap_checkpoint,
 )
 from forcesmolvla.rft.critic import polyak_update  # noqa: E402
 from forcesmolvla.rft.residual_actor import WristWrenchResidualActor  # noqa: E402
-from forcesmolvla.rft.online.learner_checkpoint import (  # noqa: E402
-    save_residual_checkpoint,
+from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
+    save_residual_actor_critic_checkpoint,
 )
 from forcesmolvla.rft.online.training_losses import (  # noqa: E402
     residual_actor_loss,
@@ -75,16 +75,18 @@ def _select_deployed_actor_for_resume(
         map_location="cpu",
         weights_only=False,
     )
-    base = Path(runtime["base_actor_checkpoint"]).resolve()
-    revision_id = str(runtime["active_residual_revision"])
+    base = Path(runtime["frozen_base_policy_checkpoint"]).resolve()
+    revision_id = str(runtime["active_residual_policy_revision"])
+    online_adaptation_id = str(runtime["online_adaptation_id"])
     try:
         actor_step = int(revision_id.rsplit("-", 1)[1])
     except ValueError:
         actor_step = 0
     candidate = (
         resume_checkpoint.parent.parent
-        / "actor_candidates"
-        / f"online_actor_step_{actor_step:06d}"
+        / "policy_candidates"
+        / online_adaptation_id
+        / f"residual_actor_step_{actor_step:06d}"
     )
     residual = candidate / "residual_actor.pt"
     if actor_step > 0:
@@ -95,7 +97,7 @@ def _select_deployed_actor_for_resume(
     else:
         residual = resume_checkpoint / "models/residual_actor.pt"
     return base, residual.resolve(), revision_id, int(
-        runtime.get("online_joint_cycles", 0)
+        runtime.get("residual_actor_critic_cycles", 0)
     )
 
 def _session_was_sampled(
@@ -117,8 +119,8 @@ def _validate_cycle_completion(
     )
 
 
-class ContinuousLearner:
-    """Three-phase learner over sealed real ACK replay only."""
+class ResidualActorCriticLearner:
+    """Three-learner_state learner over sealed real ACK replay only."""
 
     def __init__(
         self,
@@ -130,7 +132,7 @@ class ContinuousLearner:
         current_session_id: str | None,
         task: str,
         normalizer_path: Path | None = None,
-        training_policy: OnlineTrainingPolicy | None = None,
+        training_policy: ResidualActorCriticSchedule | None = None,
     ) -> None:
         from forcesmolvla.training_data import load_normalizer_manifest
 
@@ -159,6 +161,7 @@ class ContinuousLearner:
         self.replay: warmup.OnlineResidualReplay | None = None
         self.unique_r_count = 0
         self.r_macro_count = 0
+        self.next_base_missing_rows = 0
         self._replay_signature: tuple[str, ...] | None = None
         self._replay_snapshot: tuple[Any, ...] | None = None
         self._materialized_replay_signature: tuple[str, ...] | None = None
@@ -210,6 +213,7 @@ class ContinuousLearner:
         self._replay_snapshot = None
         self.unique_r_count = len(all_r) + len(human_rows)
         self.r_macro_count = len(macros)
+        self.next_base_missing_rows = self.replay.next_base_missing_rows
         runtime_replay = self.learner["runtime"]["replay"]
         runtime_replay.update(
             critic_td_valid_rows=self.replay.critic_td_valid_rows,
@@ -223,19 +227,19 @@ class ContinuousLearner:
         coordinator: InferencePriorityCoordinator,
         replay: warmup.OnlineResidualReplay,
         *,
-        burnin: bool,
+        warmup: bool,
     ) -> float:
         learner = self.learner
         counters = learner["runtime"]["counters"]
-        step = int(counters["critic_optimizer_steps"])
+        step = int(counters["twin_q_optimizer_steps"])
         batch = replay.sample(
-            self.training_policy.critic_batch_size,
+            self.training_policy.twin_q_batch_size,
             device=self.device,
-            seed=int(learner["config"]["environment"]["seed"]) + step,
+            seed=int(learner["config"]["environment"]["random_seed"]) + step,
         )
         require(batch is not None, "FORCERFT_CRITIC_REPLAY_EMPTY")
         with coordinator.learner_step_slot(
-            "critic_burnin" if burnin else "critic"
+            "ack_critic_warmup" if warmup else "critic"
         ):
             optimizer = learner["critic_optimizer"]
             optimizer.zero_grad(set_to_none=True)
@@ -246,22 +250,22 @@ class ContinuousLearner:
                 learner["q2_target"],
                 learner["residual_actor_target"],
                 batch,
-                float(learner["config"]["loss"]["gamma_macro"]),
+                float(learner["config"]["objective"]["command_macro_discount"]),
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(
                 (*learner["q1"].parameters(), *learner["q2"].parameters()),
-                float(learner["config"]["optimizer"]["critic"]["grad_clip_norm"]),
+                float(learner["config"]["optimizer"]["twin_q"]["grad_clip_norm"]),
             )
             optimizer.step()
-            tau = float(learner["config"]["optimizer"]["polyak_tau"])
+            tau = float(learner["config"]["optimizer"]["twin_q_polyak_tau"])
             polyak_update(learner["q1"], learner["q1_target"], tau)
             polyak_update(learner["q2"], learner["q2_target"], tau)
-        counters["critic_optimizer_steps"] = step + 1
-        counters["target_polyak_steps"] = int(counters["target_polyak_steps"]) + 1
-        if burnin:
-            learner["runtime"]["critic_burnin_updates"] = (
-                int(learner["runtime"].get("critic_burnin_updates", 0)) + 1
+        counters["twin_q_optimizer_steps"] = step + 1
+        counters["twin_q_target_update_steps"] = int(counters["twin_q_target_update_steps"]) + 1
+        if warmup:
+            learner["runtime"]["ack_critic_warmup_steps"] = (
+                int(learner["runtime"].get("ack_critic_warmup_steps", 0)) + 1
             )
         return float(loss.detach())
 
@@ -272,20 +276,29 @@ class ContinuousLearner:
     ) -> dict[str, float]:
         learner = self.learner
         counters = learner["runtime"]["counters"]
-        step = int(counters["actor_optimizer_steps"])
-        seed = int(learner["config"]["environment"]["seed"]) + 1_000_000 + step
+        step = int(counters["residual_actor_optimizer_steps"])
+        seed = (
+            int(learner["config"]["environment"]["random_seed"])
+            + 1_000_000
+            + step
+        )
         policy_batch = replay.sample(
-            self.training_policy.actor_policy_batch_size,
+            self.training_policy.residual_policy_value_batch_size,
             device=self.device,
             seed=seed,
+            policy_only=True,
+            actor_q_valid_only=True,
         )
         human_batch = replay.sample(
-            self.training_policy.actor_human_batch_size,
+            self.training_policy.human_residual_imitation_batch_size,
             device=self.device,
             seed=seed + 1,
             human_only=True,
         )
-        require(policy_batch is not None, "FORCERFT_ACTOR_REPLAY_EMPTY")
+        require(
+            policy_batch is not None or human_batch is not None,
+            "FORCERFT_ACTOR_REPLAY_EMPTY",
+        )
         critic_parameters = (
             *learner["q1"].parameters(),
             *learner["q2"].parameters(),
@@ -305,20 +318,20 @@ class ContinuousLearner:
                     policy_batch,
                     human_batch,
                     actor_q_weight=float(
-                        learner["config"]["loss"]["actor_q_weight"]
+                        learner["config"]["objective"]["value_objective_weight"]
                     ),
                     residual_l2_weight=float(
-                        learner["config"]["loss"]["residual_l2_weight"]
+                        learner["config"]["objective"]["residual_magnitude_penalty_weight"]
                     ),
                     human_residual_weight=float(
-                        learner["config"]["loss"]["human_residual_weight"]
+                        learner["config"]["objective"]["human_residual_imitation_weight"]
                     ),
                 )
                 losses.total.backward()
                 torch.nn.utils.clip_grad_norm_(
                     learner["residual_actor"].parameters(),
                     float(
-                        learner["config"]["optimizer"]["actor"]["grad_clip_norm"]
+                        learner["config"]["optimizer"]["residual_actor"]["grad_clip_norm"]
                     ),
                 )
                 optimizer.step()
@@ -328,9 +341,9 @@ class ContinuousLearner:
             polyak_update(
                 learner["residual_actor"],
                 learner["residual_actor_target"],
-                float(learner["config"]["optimizer"]["polyak_tau"]),
+                float(learner["config"]["optimizer"]["twin_q_polyak_tau"]),
             )
-        counters["actor_optimizer_steps"] = step + 1
+        counters["residual_actor_optimizer_steps"] = step + 1
         return {
             "total": float(losses.total.detach()),
             "value": float(losses.value.detach()),
@@ -351,11 +364,11 @@ class ContinuousLearner:
             else warmup.count_sealed_critic_td_valid_transitions(self.replay_root)
         )
         runtime["replay"]["critic_td_valid_rows"] = count
-        if count < self.training_policy.training_starts:
-            runtime["phase"] = "collecting"
+        if count < self.training_policy.minimum_ack_transitions:
+            runtime["learner_state"] = "ack_replay_collection"
             return {
                 "waiting_for_replay": True,
-                "phase": "collecting",
+                "learner_state": "ack_replay_collection",
                 "learner_critic_steps": 0,
                 "learner_actor_steps": 0,
                 "learner_polyak_steps": 0,
@@ -365,41 +378,53 @@ class ContinuousLearner:
             }
 
         replay = self._refresh_replay()
-        if runtime["phase"] in {"collecting", "critic_burnin"}:
-            runtime["phase"] = "critic_burnin"
+        if replay.critic_td_valid_rows < self.training_policy.minimum_ack_transitions:
+            runtime["learner_state"] = "ack_replay_collection"
+            return {
+                "waiting_for_replay": True,
+                "learner_state": "ack_replay_collection",
+                "learner_critic_steps": 0,
+                "learner_actor_steps": 0,
+                "learner_polyak_steps": 0,
+                "current_episode_sampled": False,
+                "nonfinite_count": 0,
+                "oom_count": 0,
+            }
+        if runtime["learner_state"] in {"ack_replay_collection", "ack_critic_warmup"}:
+            runtime["learner_state"] = "ack_critic_warmup"
             before = {
                 name: value.detach().clone()
                 for name, value in learner["residual_actor"].state_dict().items()
             }
             losses = []
             remaining = (
-                self.training_policy.critic_burnin_updates
-                - int(runtime.get("critic_burnin_updates", 0))
+                self.training_policy.ack_critic_warmup_steps
+                - int(runtime.get("ack_critic_warmup_steps", 0))
             )
             for _ in range(max(0, remaining)):
                 losses.append(
-                    self._critic_update(coordinator, replay, burnin=True)
+                    self._critic_update(coordinator, replay, warmup=True)
                 )
             require(
                 all(
                     torch.equal(before[name], value)
                     for name, value in learner["residual_actor"].state_dict().items()
                 ),
-                "FORCERFT_BURNIN_MODIFIED_RESIDUAL_ACTOR",
+                "FORCERFT_WARMUP_MODIFIED_RESIDUAL_ACTOR",
             )
-            runtime["phase"] = "joint"
-            runtime["critic_burnin_complete"] = True
+            runtime["learner_state"] = "residual_actor_critic_training"
+            runtime["ack_critic_warmup_complete"] = True
             return {
                 "waiting_for_replay": False,
-                "phase": "joint",
-                "critic_burnin_complete": True,
-                "critic_burnin_updates": int(runtime["critic_burnin_updates"]),
+                "learner_state": "residual_actor_critic_training",
+                "ack_critic_warmup_complete": True,
+                "ack_critic_warmup_steps": int(runtime["ack_critic_warmup_steps"]),
                 "learner_critic_steps": len(losses),
                 "learner_actor_steps": 0,
                 "learner_polyak_steps": len(losses),
-                "online_joint_cycle": int(runtime["online_joint_cycles"]),
-                "actor_optimizer_steps": int(
-                    runtime["counters"]["actor_optimizer_steps"]
+                "residual_actor_critic_cycle": int(runtime["residual_actor_critic_cycles"]),
+                "residual_actor_optimizer_steps": int(
+                    runtime["counters"]["residual_actor_optimizer_steps"]
                 ),
                 "latest_critic_td_loss": losses[-1] if losses else None,
                 "current_episode_sampled": False,
@@ -408,18 +433,18 @@ class ContinuousLearner:
             }
 
         require(
-            runtime["phase"] == "joint"
-            and runtime["critic_burnin_complete"] is True,
+            runtime["learner_state"] == "residual_actor_critic_training"
+            and runtime["ack_critic_warmup_complete"] is True,
             "FORCERFT_ONLINE_PHASE_INVALID",
         )
-        cycle = int(runtime["online_joint_cycles"])
-        budget = self.training_policy.joint_cycle_budget(
+        cycle = int(runtime["residual_actor_critic_cycles"])
+        budget = self.training_policy.residual_actor_critic_cycle_budget(
             replay.critic_rows_per_episode
         )
         if cycle >= budget:
             return {
                 "waiting_for_replay": True,
-                "phase": "joint",
+                "learner_state": "residual_actor_critic_training",
                 "episode_cycle_budget_exhausted": True,
                 "episode_cycle_budget": budget,
                 "learner_critic_steps": 0,
@@ -431,27 +456,27 @@ class ContinuousLearner:
             }
 
         critic_losses = [
-            self._critic_update(coordinator, replay, burnin=False)
-            for _ in range(self.training_policy.critic_updates_per_cycle)
+            self._critic_update(coordinator, replay, warmup=False)
+            for _ in range(self.training_policy.twin_q_updates_per_cycle)
         ]
         actor_metrics = self._actor_update(coordinator, replay)
-        runtime["online_joint_cycles"] = cycle + 1
-        learner["online_joint_cycles"] = cycle + 1
+        runtime["residual_actor_critic_cycles"] = cycle + 1
+        learner["residual_actor_critic_cycles"] = cycle + 1
         latest_checkpoint = None
         if self.training_policy.checkpoint_due(cycle + 1):
             latest_checkpoint = self.save_checkpoint()
         return {
             "waiting_for_replay": False,
-            "phase": "joint",
-            "learner_critic_steps": self.training_policy.critic_updates_per_cycle,
+            "learner_state": "residual_actor_critic_training",
+            "learner_critic_steps": self.training_policy.twin_q_updates_per_cycle,
             "learner_actor_steps": 1,
-            "learner_polyak_steps": self.training_policy.critic_updates_per_cycle,
+            "learner_polyak_steps": self.training_policy.twin_q_updates_per_cycle,
             "current_episode_sampled": False,
             "nonfinite_count": 0,
             "oom_count": 0,
-            "online_joint_cycle": cycle + 1,
-            "actor_optimizer_steps": int(
-                runtime["counters"]["actor_optimizer_steps"]
+            "residual_actor_critic_cycle": cycle + 1,
+            "residual_actor_optimizer_steps": int(
+                runtime["counters"]["residual_actor_optimizer_steps"]
             ),
             "latest_critic_td_loss": critic_losses[-1],
             "latest_actor_loss": actor_metrics["total"],
@@ -461,34 +486,39 @@ class ContinuousLearner:
             ),
         }
 
-    def export_actor_candidate(self, actor_optimizer_steps: int) -> dict[str, Any]:
+    def export_actor_candidate(self, residual_actor_optimizer_steps: int) -> dict[str, Any]:
         runtime = self.learner["runtime"]
-        current = str(runtime["active_residual_revision"])
-        task_id = current.split("-residual-step-", 1)[0]
-        revision_id = f"{task_id}-residual-step-{actor_optimizer_steps:06d}"
+        current = str(runtime["active_residual_policy_revision"])
+        task_id = current.split("-residual-policy-step-", 1)[0]
+        revision_id = f"{task_id}-residual-policy-step-{residual_actor_optimizer_steps:06d}"
         destination = (
             self.checkpoint_root.parent
-            / "actor_candidates"
-            / f"online_actor_step_{actor_optimizer_steps:06d}"
+            / "policy_candidates"
+            / str(runtime["online_adaptation_id"])
+            / f"residual_actor_step_{residual_actor_optimizer_steps:06d}"
         )
-        destination.mkdir(parents=True, exist_ok=True)
+        try:
+            destination.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as error:
+            raise RuntimeError(
+                "FORCERFT_RESIDUAL_CANDIDATE_PATH_COLLISION"
+            ) from error
         path = destination / "residual_actor.pt"
-        if not path.exists():
-            torch.save(self.learner["residual_actor"].state_dict(), path)
+        torch.save(self.learner["residual_actor"].state_dict(), path)
         return {
             "revision_id": revision_id,
             "checkpoint": destination.resolve(),
-            "actor_optimizer_steps": int(actor_optimizer_steps),
+            "residual_actor_optimizer_steps": int(residual_actor_optimizer_steps),
         }
 
-    def mark_active_residual_revision(self, revision_id: str) -> None:
-        self.learner["runtime"]["active_residual_revision"] = str(revision_id)
+    def mark_active_residual_policy_revision(self, revision_id: str) -> None:
+        self.learner["runtime"]["active_residual_policy_revision"] = str(revision_id)
 
     def save_checkpoint(self) -> Path:
         learner = self.learner
-        completed = int(learner["runtime"]["online_joint_cycles"])
-        target = online_checkpoint_path(self.checkpoint_root, completed)
-        save_residual_checkpoint(
+        completed = int(learner["runtime"]["residual_actor_critic_cycles"])
+        target = training_checkpoint_path(self.checkpoint_root, completed)
+        save_residual_actor_critic_checkpoint(
             target,
             residual_actor=learner["residual_actor"],
             residual_actor_target=learner["residual_actor_target"],
@@ -501,14 +531,14 @@ class ContinuousLearner:
             runtime_state=learner["runtime"],
             config=learner["config"],
         )
-        retain_latest_online_checkpoints(
+        retain_latest_training_checkpoints(
             self.checkpoint_root,
-            keep=self.training_policy.keep_latest_checkpoints,
+            keep=self.training_policy.retained_training_checkpoint_count,
         )
         return target
 
 
-class AsyncPolicyLearnerRuntime:
+class AsyncResidualActorCriticRuntime:
     """One episode pin around HTTP inference and one background Learner cycle."""
 
     def __init__(
@@ -523,7 +553,7 @@ class AsyncPolicyLearnerRuntime:
         active_actor_checkpoint: Path,
         learner_resume_checkpoint: Path,
         online_checkpoint_root: Path,
-        learner_job: ContinuousLearner,
+        learner_job: ResidualActorCriticLearner,
         active_actor_online_cycle: int | None = None,
         inference_stream: Any = None,
     ) -> None:
@@ -534,7 +564,7 @@ class AsyncPolicyLearnerRuntime:
         self.active_revision_id = active_revision_id
         self.active_model_revision = active_model_revision
         self.active_actor_checkpoint = active_actor_checkpoint.resolve()
-        self.base_actor_checkpoint = Path(
+        self.frozen_base_policy_checkpoint = Path(
             engine.metadata.get("checkpoint", active_actor_checkpoint)
         ).resolve()
         self.learner_resume_checkpoint = learner_resume_checkpoint.resolve()
@@ -545,7 +575,7 @@ class AsyncPolicyLearnerRuntime:
         self._lock = threading.Lock()
         self._episode_active = False
         self._learner_started = False
-        self._learner_state = "ready"
+        self._learner_worker_state = "ready"
         self._learner_result: dict[str, Any] = {}
         self._learner_error: str | None = None
         self._stop_learner = threading.Event()
@@ -558,12 +588,12 @@ class AsyncPolicyLearnerRuntime:
             if active_actor_online_cycle is not None
             else (
                 int(self.active_actor_checkpoint.name.rsplit("_", 1)[1])
-                if self.active_actor_checkpoint.name.startswith("online_actor_step_")
+                if self.active_actor_checkpoint.name.startswith("residual_actor_step_")
                 else 0
             )
         )
         self._policy = getattr(
-            learner_job, "training_policy", OnlineTrainingPolicy()
+            learner_job, "training_policy", ResidualActorCriticSchedule()
         )
         self._learner_thread: threading.Thread | None = None
         self._inference_request_count = 0
@@ -579,20 +609,22 @@ class AsyncPolicyLearnerRuntime:
         )
         return {
             **self.engine.metadata,
-            "online_actor_learner": True,
+            "online_residual_actor_critic": True,
             "server_persistent": True,
             "current_episode_sampling": False,
-            "training_starts": self._policy.training_starts,
-            "actor_candidate_period": self._policy.actor_candidate_period,
-            "max_joint_cycles_per_admitted_episode": (
-                self._policy.max_joint_cycles_per_admitted_episode
+            "minimum_ack_transitions": self._policy.minimum_ack_transitions,
+            "residual_candidate_interval_actor_steps": (
+                self._policy.residual_candidate_interval_actor_steps
+            ),
+            "max_cycles_per_admitted_episode": (
+                self._policy.max_cycles_per_admitted_episode
             ),
             "active_actor_online_cycle": self._active_actor_online_cycle,
-            "checkpoint_period": self._policy.checkpoint_period,
-            "keep_latest_checkpoints": self._policy.keep_latest_checkpoints,
-            "phase": learner_runtime.get("phase", "collecting"),
-            "critic_burnin_complete": bool(
-                learner_runtime.get("critic_burnin_complete", False)
+            "training_checkpoint_interval_cycles": self._policy.training_checkpoint_interval_cycles,
+            "retained_training_checkpoint_count": self._policy.retained_training_checkpoint_count,
+            "learner_state": learner_runtime.get("learner_state", "ack_replay_collection"),
+            "ack_critic_warmup_complete": bool(
+                learner_runtime.get("ack_critic_warmup_complete", False)
             ),
             "save_checkpoint_on_graceful_exit": True,
             "save_checkpoint_on_operator_q": True,
@@ -603,7 +635,7 @@ class AsyncPolicyLearnerRuntime:
             "active_actor_revision": self.active_revision_id,
             "active_actor_model_revision": self.active_model_revision,
             "active_actor_checkpoint": str(self.active_actor_checkpoint),
-            "base_actor_checkpoint": str(self.base_actor_checkpoint),
+            "frozen_base_policy_checkpoint": str(self.frozen_base_policy_checkpoint),
             "pending_actor_revision": self.machine.pending_revision_id,
             "actor_candidate_count": self._candidate_count,
             "policy_epoch": int(self.machine.policy_epoch),
@@ -617,7 +649,7 @@ class AsyncPolicyLearnerRuntime:
                 "runtime", {}
             )
             return {
-                "online_actor_learner": True,
+                "online_residual_actor_critic": True,
                 "server_persistent": True,
                 "current_episode_sampling": False,
                 "runtime_session_id": self.session_id,
@@ -627,12 +659,12 @@ class AsyncPolicyLearnerRuntime:
                 "active_actor_revision": self.active_revision_id,
                 "active_actor_model_revision": self.active_model_revision,
                 "active_actor_checkpoint": str(self.active_actor_checkpoint),
-                "base_actor_checkpoint": str(self.base_actor_checkpoint),
+                "frozen_base_policy_checkpoint": str(self.frozen_base_policy_checkpoint),
                 "pending_actor_revision": self.machine.pending_revision_id,
                 "actor_candidate_count": self._candidate_count,
                 "policy_epoch": int(self.machine.policy_epoch),
                 "learner_started": self._learner_started,
-                "learner_state": self._learner_state,
+                "learner_worker_state": self._learner_worker_state,
                 "learner_resume_checkpoint": str(self.learner_resume_checkpoint),
                 "learner_critic_steps": int(result.get("learner_critic_steps", 0)),
                 "learner_actor_steps": int(result.get("learner_actor_steps", 0)),
@@ -655,20 +687,25 @@ class AsyncPolicyLearnerRuntime:
                 # Compatibility for existing capture summaries.
                 "actor_parameter_broadcast_count": self._broadcast_count,
                 "active_actor_online_cycle": self._active_actor_online_cycle,
-                "online_joint_cycle": int(result.get("online_joint_cycle", 0)),
-                "actor_optimizer_steps": int(result.get("actor_optimizer_steps", 0)),
-                "phase": result.get(
-                    "phase", learner_runtime.get("phase", "collecting")
+                "residual_actor_critic_cycle": int(result.get("residual_actor_critic_cycle", 0)),
+                "residual_actor_optimizer_steps": int(
+                    result.get("residual_actor_optimizer_steps", 0)
                 ),
-                "critic_burnin_complete": bool(
-                    learner_runtime.get("critic_burnin_complete", False)
+                "learner_state": result.get(
+                    "learner_state", learner_runtime.get("learner_state", "ack_replay_collection")
                 ),
-                "critic_burnin_updates": int(
-                    learner_runtime.get("critic_burnin_updates", 0)
+                "ack_critic_warmup_complete": bool(
+                    learner_runtime.get("ack_critic_warmup_complete", False)
+                ),
+                "ack_critic_warmup_steps": int(
+                    learner_runtime.get("ack_critic_warmup_steps", 0)
                 ),
                 "latest_critic_td_loss": result.get("latest_critic_td_loss"),
                 "latest_actor_loss": result.get("latest_actor_loss"),
                 "latest_min_twin_q": result.get("latest_min_twin_q"),
+                "next_base_missing_rows": int(
+                    getattr(self.learner_job, "next_base_missing_rows", 0)
+                ),
             }
 
     def start_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -716,11 +753,11 @@ class AsyncPolicyLearnerRuntime:
             self.machine.stage(revision_id)
             self._candidate_checkpoints[revision_id] = checkpoint
             self._candidate_online_cycles[revision_id] = int(
-                candidate["online_joint_cycle"]
+                candidate["residual_actor_critic_cycle"]
             )
             self._candidate_count += 1
         print(
-            "[model] staged online Actor candidate "
+            "[residual-candidate] staged "
             f"revision={revision_id} checkpoint={checkpoint}",
             flush=True,
         )
@@ -736,13 +773,13 @@ class AsyncPolicyLearnerRuntime:
         self.engine.reset_residual_episode_context()
         self.active_revision_id = activated.revision_id
         self.active_actor_checkpoint = checkpoint
-        self.learner_job.mark_active_residual_revision(activated.revision_id)
+        self.learner_job.mark_active_residual_policy_revision(activated.revision_id)
         self._active_actor_online_cycle = self._candidate_online_cycles.pop(
             activated.revision_id
         )
         self._broadcast_count += 1
         print(
-            "[model] activated online Actor at episode boundary "
+            "[residual-activation] activated at episode boundary "
             f"revision={activated.revision_id} epoch={self.machine.policy_epoch}",
             flush=True,
         )
@@ -760,7 +797,7 @@ class AsyncPolicyLearnerRuntime:
             if self._learner_started:
                 return
             self._learner_started = True
-            self._learner_state = "running"
+            self._learner_worker_state = "running"
 
         def run() -> None:
             try:
@@ -769,30 +806,30 @@ class AsyncPolicyLearnerRuntime:
                         result = dict(self.learner_job(self.coordinator))
                         if result.get("waiting_for_replay"):
                             with self._lock:
-                                self._learner_state = "waiting_for_replay"
+                                self._learner_worker_state = "waiting_for_replay"
                             self._stop_learner.wait(0.25)
                             continue
-                        cycle = int(result["online_joint_cycle"])
-                        actor_optimizer_steps = int(
-                            result.get("actor_optimizer_steps", 0)
+                        cycle = int(result["residual_actor_critic_cycle"])
+                        residual_actor_optimizer_steps = int(
+                            result.get("residual_actor_optimizer_steps", 0)
                         )
                         if (
                             int(result.get("learner_actor_steps", 0)) > 0
-                            and self._policy.candidate_due(actor_optimizer_steps)
+                            and self._policy.candidate_due(residual_actor_optimizer_steps)
                         ):
                             candidate = self.learner_job.export_actor_candidate(
-                                actor_optimizer_steps
+                                residual_actor_optimizer_steps
                             )
-                            candidate["online_joint_cycle"] = cycle
+                            candidate["residual_actor_critic_cycle"] = cycle
                             self._stage_actor_candidate(candidate)
                         result.pop("learner_actor", None)
                         with self._lock:
                             self._learner_result = result
-                            self._learner_state = "running"
+                            self._learner_worker_state = "running"
             except Exception as error:
                 with self._lock:
                     self._learner_error = f"{type(error).__name__}:{error}"
-                    self._learner_state = "failed"
+                    self._learner_worker_state = "failed"
 
         self._learner_thread = threading.Thread(
             target=run, name="online-actor-learner", daemon=True
@@ -834,7 +871,10 @@ class AsyncPolicyLearnerRuntime:
         require(not self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_ACTIVE")
         self.stop()
         with self._lock:
-            require(self._learner_state != "failed", "ONLINE_REPLAY_ASYNC_LEARNER_FAILED")
+            require(
+                self._learner_worker_state != "failed",
+                "ONLINE_REPLAY_ASYNC_LEARNER_FAILED",
+            )
         checkpoint = self.learner_job.save_checkpoint()
         return {
             **self.status(),
@@ -848,7 +888,7 @@ class AsyncPolicyLearnerRuntime:
         self.stop()
         with self._lock:
             require(
-                self._learner_state != "failed",
+                self._learner_worker_state != "failed",
                 "ONLINE_REPLAY_ASYNC_LEARNER_FAILED",
             )
         if not self._quiesced:
@@ -885,7 +925,7 @@ class AsyncPolicyLearnerRuntime:
 
 class RequestHandler(serve_policy.RequestHandler):
     @property
-    def runtime(self) -> AsyncPolicyLearnerRuntime:
+    def runtime(self) -> AsyncResidualActorCriticRuntime:
         return self.server.engine  # type: ignore[attr-defined]
 
     def do_GET(self) -> None:  # noqa: N802
@@ -939,7 +979,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--episode-id", required=True)
     parser.add_argument("--learner-resume-checkpoint", type=Path)
-    parser.add_argument("--stage3-seed-bundle", type=Path)
+    parser.add_argument("--online-residual-bootstrap-checkpoint", type=Path)
     parser.add_argument(
         "--allow-development-policy-execution-smoke",
         action="store_true",
@@ -953,7 +993,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
+def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
     from forcesmolvla.training_runtime import (
         resolve_task_dataset_root,
         resolve_task_output_root,
@@ -977,18 +1017,20 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
     )
     require(warmup.TASK == args.task.strip(), "FORCERFT_TASK_PROMPT_MISMATCH")
     if args.learner_resume_checkpoint is None:
-        selected = select_resume_or_seed_checkpoint(
+        selected = select_resume_or_bootstrap_checkpoint(
             output_root,
-            configured_seed_bundle=getattr(args, "stage3_seed_bundle", None),
+            configured_bootstrap_checkpoint=getattr(
+                args, "online_residual_bootstrap_checkpoint", None
+            ),
         )
         resume_checkpoint = selected.path
         checkpoint_kind = selected.kind
     else:
         resume_checkpoint = args.learner_resume_checkpoint.resolve()
         checkpoint_kind = (
-            "stage3_seed"
-            if resume_checkpoint.name.startswith("stage3_base_actor_residual_q_")
-            else "online_residual_actor_critic"
+            "online_residual_bootstrap"
+            if resume_checkpoint.parent.name == "bootstrap_checkpoints"
+            else "residual_actor_critic_training"
         )
     require(
         exact_resume_checkpoint_is_recoverable(
@@ -997,7 +1039,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         "FORCERFT_EXACT_RESUME_CHECKPOINT_INVALID",
     )
     (
-        base_actor_checkpoint,
+        frozen_base_policy_checkpoint,
         residual_checkpoint,
         active_revision_id,
         active_actor_online_cycle,
@@ -1011,7 +1053,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         else args.safety_config.resolve()
     )
     engine = serve_policy.InferenceEngine(
-        base_actor_checkpoint,
+        frozen_base_policy_checkpoint,
         safety_config,
         ROOT / "schemas/rulespec.schema.json",
         device,
@@ -1031,15 +1073,15 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         "FORCERFT_BASE_ACTOR_NOT_FROZEN",
     )
     common_config = warmup.load_common_actor_critic_config(args.task_id)
-    warmup_config = common_config["warmup"]
+    warmup_config = common_config["ack_critic_warmup"]
     batching_config = common_config["batching"]
-    online_config = common_config["online_training"]
+    online_config = common_config["residual_actor_critic_training"]
     try:
         active_actor_steps = int(active_revision_id.rsplit("-", 1)[1])
     except ValueError:
         active_actor_steps = 0
     initial_policy_epoch = active_actor_steps // int(
-        online_config["actor_candidate_period"]
+        online_config["residual_candidate_interval_actor_steps"]
     )
     machine = InMemoryRevisionStateMachine(
         RevisionRecord(
@@ -1049,29 +1091,31 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         ),
         initial_epoch=initial_policy_epoch,
     )
-    checkpoint_root = output_root / "online/checkpoints"
-    training_policy = OnlineTrainingPolicy(
-        training_starts=int(warmup_config["training_starts"]),
-        critic_burnin_updates=int(warmup_config["critic_burnin_updates"]),
-        critic_batch_size=int(batching_config["critic_batch_size"]),
-        actor_policy_batch_size=int(
-            batching_config["actor_policy_batch_size"]
+    checkpoint_root = output_root / "online_ack_residual/training_checkpoints"
+    training_policy = ResidualActorCriticSchedule(
+        minimum_ack_transitions=int(warmup_config["minimum_ack_transitions"]),
+        ack_critic_warmup_steps=int(warmup_config["optimizer_steps"]),
+        twin_q_batch_size=int(batching_config["twin_q_batch_size"]),
+        residual_policy_value_batch_size=int(
+            batching_config["residual_policy_value_batch_size"]
         ),
-        actor_human_batch_size=int(
-            batching_config["actor_human_batch_size"]
+        human_residual_imitation_batch_size=int(
+            batching_config["human_residual_imitation_batch_size"]
         ),
-        critic_updates_per_cycle=int(online_config["critic_updates_per_cycle"]),
-        actor_updates_per_cycle=int(online_config["actor_updates_per_cycle"]),
-        max_joint_cycles_per_admitted_episode=int(
-            online_config["max_joint_cycles_per_admitted_episode"]
+        twin_q_updates_per_cycle=int(online_config["twin_q_updates_per_cycle"]),
+        residual_actor_updates_per_cycle=int(online_config["residual_actor_updates_per_cycle"]),
+        max_cycles_per_admitted_episode=int(
+            online_config["max_cycles_per_admitted_episode"]
         ),
-        actor_candidate_period=int(
-            online_config["actor_candidate_period"]
+        residual_candidate_interval_actor_steps=int(
+            online_config["residual_candidate_interval_actor_steps"]
         ),
-        checkpoint_period=int(online_config["checkpoint_period"]),
-        keep_latest_checkpoints=int(online_config["keep_latest_checkpoints"]),
+        training_checkpoint_interval_cycles=int(
+            online_config["training_checkpoint_interval_cycles"]
+        ),
+        retained_training_checkpoint_count=int(online_config["retained_training_checkpoint_count"]),
     )
-    learner = ContinuousLearner(
+    learner = ResidualActorCriticLearner(
         device=device,
         resume_checkpoint=resume_checkpoint,
         checkpoint_root=checkpoint_root,
@@ -1082,15 +1126,15 @@ def build_runtime(args: argparse.Namespace) -> AsyncPolicyLearnerRuntime:
         training_policy=training_policy,
     )
     engine.residual_actor = WristWrenchResidualActor(
-        hidden_dim=int(common_config["residual_actor"]["hidden_dim"]),
+        hidden_dim=int(common_config["wrist_wrench_residual_actor"]["hidden_dim"]),
         max_normalized_residual=float(
-            common_config["residual_actor"]["max_normalized_residual"]
+            common_config["wrist_wrench_residual_actor"]["max_normalized_residual"]
         ),
     ).to(device)
     engine.residual_actor.eval().requires_grad_(False)
     if active_actor_steps > 0:
         _load_residual_checkpoint(engine.residual_actor, residual_checkpoint)
-    return AsyncPolicyLearnerRuntime(
+    return AsyncResidualActorCriticRuntime(
         engine=engine,
         machine=machine,
         session_id=args.session_id,
@@ -1112,13 +1156,13 @@ def main() -> int:
     server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
     server.engine = runtime  # type: ignore[attr-defined]
     print(
-        f"[model] active Actor revision={runtime.active_revision_id} "
+        f"[residual-activation] active revision={runtime.active_revision_id} "
         f"model={runtime.active_model_revision} "
         f"deployed_online_cycle={runtime.metadata['active_actor_online_cycle']}",
         flush=True,
     )
     print(
-        f"[learner] exact-resume={runtime.learner_resume_checkpoint} "
+        f"[residual-training] exact-resume={runtime.learner_resume_checkpoint} "
         f"online_checkpoints={runtime.online_checkpoint_root}",
         flush=True,
     )
@@ -1133,10 +1177,10 @@ def main() -> int:
         pass
     finally:
         runtime.stop()
-        if runtime.status()["learner_state"] != "failed":
+        if runtime.status()["learner_worker_state"] != "failed":
             checkpoint = runtime.learner_job.save_checkpoint()
             print(
-                f"[learner] graceful-exit checkpoint={checkpoint or 'none'}",
+                f"[training-checkpoint] graceful-exit={checkpoint or 'none'}",
                 flush=True,
             )
         server.server_close()

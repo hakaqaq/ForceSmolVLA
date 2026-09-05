@@ -46,9 +46,8 @@ def test_importing_online_runtime_stays_cpu_only_and_does_not_connect_or_command
         "sample_credit",
         "policy_protocol",
         "policy_revision",
-        "learner_checkpoint",
+        "residual_actor_critic_checkpoint",
         "temporal_parity",
-        "learner",
     ):
         importlib.import_module(f"forcesmolvla.rft.online.{name}")
     added = set(sys.modules) - before

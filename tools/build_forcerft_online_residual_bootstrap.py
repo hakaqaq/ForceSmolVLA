@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Build the final Stage-3 seed: frozen base path, zero residual, random Twin-Q."""
+"""Build the online ACK-residual bootstrap checkpoint."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 import sys
+import time
 
 import torch
 import yaml
@@ -17,13 +18,13 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from forcesmolvla.rft.critic import build_twin_q  # noqa: E402
-from forcesmolvla.rft.online.learner_checkpoint import (  # noqa: E402
-    save_residual_checkpoint,
+from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
+    save_residual_actor_critic_checkpoint,
 )
 from forcesmolvla.rft.residual_actor import make_residual_actor_pair  # noqa: E402
 
 
-SEED_DIRECTORY_NAME = "stage3_base_actor_residual_q_cycle_000000"
+BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_random_twin_q"
 
 
 def _load_base_actor(checkpoint: Path) -> torch.nn.Module:
@@ -38,55 +39,59 @@ def _load_base_actor(checkpoint: Path) -> torch.nn.Module:
     )
 
 
-def build_stage3_seed_bundle(
+def build_online_residual_bootstrap(
     *,
     task_id: str,
     output_root: Path,
     dataset_root: Path,
-    base_actor_checkpoint: Path,
+    frozen_base_policy_checkpoint: Path,
     checkpoint: Path,
-    common_online_config: Path,
+    online_residual_config: Path,
 ) -> Path:
     del output_root, dataset_root  # retained CLI path bindings; no demo replay is read.
-    base_actor_checkpoint = Path(base_actor_checkpoint).resolve()
+    frozen_base_policy_checkpoint = Path(frozen_base_policy_checkpoint).resolve()
     config = yaml.safe_load(
-        Path(common_online_config).read_text(encoding="utf-8")
+        Path(online_residual_config).read_text(encoding="utf-8")
     )
-    base_actor = _load_base_actor(base_actor_checkpoint).to("cpu")
+    if int(config["batching"]["command_macro_slots"]) != 3:
+        raise ValueError("FORCERFT_COMMAND_MACRO_SLOTS_INVALID")
+    base_actor = _load_base_actor(frozen_base_policy_checkpoint).to("cpu")
     base_actor.eval().requires_grad_(False)
     if any(parameter.requires_grad for parameter in base_actor.parameters()):
         raise RuntimeError("FORCERFT_BASE_ACTOR_NOT_FROZEN")
 
-    seed = int(config["environment"]["seed"])
+    seed = int(config["environment"]["random_seed"])
     with torch.random.fork_rng(devices=[]):
         torch.manual_seed(seed)
         residual_actor, residual_actor_target = make_residual_actor_pair(
-            hidden_dim=int(config["residual_actor"]["hidden_dim"]),
+            hidden_dim=int(config["wrist_wrench_residual_actor"]["hidden_dim"]),
             max_normalized_residual=float(
-                config["residual_actor"]["max_normalized_residual"]
+                config["wrist_wrench_residual_actor"]["max_normalized_residual"]
             ),
         )
         q1, q2, q1_target, q2_target = build_twin_q(
-            hidden_dim=int(config["critic"]["hidden_dim"]), seed=seed + 1
+            hidden_dim=int(config["ack_residual_twin_q"]["hidden_dim"]), seed=seed + 1
         )
     residual_actor_optimizer = torch.optim.Adam(
-        residual_actor.parameters(), lr=float(config["optimizer"]["actor"]["lr"])
+        residual_actor.parameters(),
+        lr=float(config["optimizer"]["residual_actor"]["lr"]),
     )
     critic_optimizer = torch.optim.Adam(
         (*q1.parameters(), *q2.parameters()),
-        lr=float(config["optimizer"]["critic"]["lr"]),
+        lr=float(config["optimizer"]["twin_q"]["lr"]),
     )
     runtime_state = {
-        "base_actor_checkpoint": str(base_actor_checkpoint),
-        "online_joint_cycles": 0,
-        "phase": "collecting",
-        "critic_burnin_complete": False,
-        "critic_burnin_updates": 0,
-        "active_residual_revision": f"{task_id}-residual-step-000000",
+        "frozen_base_policy_checkpoint": str(frozen_base_policy_checkpoint),
+        "residual_actor_critic_cycles": 0,
+        "learner_state": "ack_replay_collection",
+        "ack_critic_warmup_complete": False,
+        "ack_critic_warmup_steps": 0,
+        "active_residual_policy_revision": f"{task_id}-residual-policy-step-000000",
+        "online_adaptation_id": f"{task_id}-ack-residual-{time.time_ns()}",
         "counters": {
-            "critic_optimizer_steps": 0,
-            "actor_optimizer_steps": 0,
-            "target_polyak_steps": 0,
+            "twin_q_optimizer_steps": 0,
+            "residual_actor_optimizer_steps": 0,
+            "twin_q_target_update_steps": 0,
         },
         "replay": {
             "critic_td_valid_rows": 0,
@@ -94,7 +99,7 @@ def build_stage3_seed_bundle(
             "human_residual_valid_rows": 0,
         },
     }
-    return save_residual_checkpoint(
+    return save_residual_actor_critic_checkpoint(
         checkpoint,
         residual_actor=residual_actor,
         residual_actor_target=residual_actor_target,
@@ -114,24 +119,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task-id", required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--dataset-root", type=Path, required=True)
-    parser.add_argument("--base-actor-checkpoint", type=Path, required=True)
+    parser.add_argument(
+        "--frozen-base-policy-checkpoint", type=Path, required=True
+    )
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument(
-        "--common-online-config",
+        "--online-residual-config",
         type=Path,
-        default=ROOT / "configs/forcerft/actor_critic_common.yaml",
+        default=ROOT / "configs/forcerft/online_ack_residual_actor_critic.yaml",
     )
     args = parser.parse_args(argv)
     if args.checkpoint is None:
         args.checkpoint = (
-            args.output_root / "stage3_seed/checkpoints" / SEED_DIRECTORY_NAME
+            args.output_root
+            / "online_ack_residual/bootstrap_checkpoints"
+            / BOOTSTRAP_DIRECTORY_NAME
         )
     return args
 
 
 def main() -> int:
     args = parse_args()
-    result = build_stage3_seed_bundle(**vars(args))
+    result = build_online_residual_bootstrap(**vars(args))
     print(result.resolve())
     return 0
 

@@ -50,14 +50,14 @@ def test_reward_worker_request_passes_image_paths_without_temporary_frame_arrays
 def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> None:
     args = loop.parse_args([
         "--task-id", "task2", "--output-root", str(tmp_path / "outputs/task2"),
-        "--max-episodes", "1", "--root-prefix", str(tmp_path / "capture"),
+        "--max-episodes", "1", "--capture-output-root", str(tmp_path / "capture"),
         "--task", "ring",
     ])
 
     assert args.output_root == (tmp_path / "outputs/task2").resolve()
     assert args.dataset_root == (ROOT / "datasets/task2_lerobotv3").resolve()
     assert not hasattr(args, "reward_transition_root")
-    assert args.formal_r_root == (tmp_path / "outputs/task2/online").resolve()
+    assert args.ack_replay_root == (tmp_path / "outputs/task2/online").resolve()
     assert args.allow_development_policy_execution_smoke is False
     assert not hasattr(args, "deployment_profile")
     assert not hasattr(args, "deployment_binding")
@@ -68,7 +68,7 @@ def test_online_capture_defaults_to_repository_dataset_root() -> None:
         "--task-id", "task2", "--max-episodes", "1", "--task", "ring",
     ])
 
-    assert args.root_prefix == (ROOT / "datasets/task2_forcerft_online").resolve()
+    assert args.capture_output_root == (ROOT / "datasets/task2_forcerft_online").resolve()
 
 
 @pytest.mark.parametrize("reason", [
@@ -152,9 +152,9 @@ def test_online_capture_restart_uses_next_session_index(tmp_path: Path) -> None:
 def test_failed_capture_discards_only_unsealed_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sealed: bool,
 ) -> None:
-    root_prefix = tmp_path / "capture"
-    root_prefix.mkdir()
-    root = root_prefix / "001"
+    capture_output_root = tmp_path / "capture"
+    capture_output_root.mkdir()
+    root = capture_output_root / "001"
     monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
         "runtime_session_id": "capture_001",
         "runtime_episode_id": loop.EPISODE_ID,
@@ -177,7 +177,7 @@ def test_failed_capture_discards_only_unsealed_session(
 
     monkeypatch.setattr(loop, "_run", fail_capture)
     args = type("Args", (), {
-        "root_prefix": root_prefix, "policy_port": 8000,
+        "capture_output_root": capture_output_root, "policy_port": 8000,
         "robot_python": Path("python"), "task": "ring",
         "episode_time": 10.0, "tool_profile": "tool",
         "policy_replan_steps": 8, "policy_queue_low_watermark": 7,
@@ -194,9 +194,9 @@ def test_failed_capture_discards_only_unsealed_session(
 def test_failed_capture_preserves_recorder_rejected_raw(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root_prefix = tmp_path / "capture"
-    root_prefix.mkdir()
-    root = root_prefix / "001"
+    capture_output_root = tmp_path / "capture"
+    capture_output_root.mkdir()
+    root = capture_output_root / "001"
     rejected = root / "rejected_episodes" / "episode_rejected" / "raw.jsonl"
     monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
         "runtime_session_id": "capture_001",
@@ -211,7 +211,7 @@ def test_failed_capture_preserves_recorder_rejected_raw(
 
     monkeypatch.setattr(loop, "_run", fail_capture)
     args = type("Args", (), {
-        "root_prefix": root_prefix, "policy_port": 8000,
+        "capture_output_root": capture_output_root, "policy_port": 8000,
         "robot_python": Path("python"), "task": "ring",
         "episode_time": 10.0, "tool_profile": "tool",
         "policy_replan_steps": 8, "policy_queue_low_watermark": 7,
@@ -228,9 +228,9 @@ def test_failed_capture_preserves_recorder_rejected_raw(
 def test_recorder_integrity_rejection_skips_episode_and_keeps_learner_alive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
-    root_prefix = tmp_path / "capture"
-    root_prefix.mkdir()
-    root = root_prefix / "001"
+    capture_output_root = tmp_path / "capture"
+    capture_output_root.mkdir()
+    root = capture_output_root / "001"
     rejected = root / "rejected_episodes" / "episode_rejected"
     monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
         "runtime_session_id": "capture_001",
@@ -252,12 +252,13 @@ def test_recorder_integrity_rejection_skips_episode_and_keeps_learner_alive(
         "runtime_session_id": "capture_001",
         "runtime_episode_id": loop.EPISODE_ID,
         "episode_active": False,
-        "learner_state": "running",
+        "learner_worker_state": "running",
+        "learner_state": "ack_replay_collection",
         "current_episode_sampled": False,
         "server_persistent": True,
     })
     args = type("Args", (), {
-        "root_prefix": root_prefix, "policy_port": 8000,
+        "capture_output_root": capture_output_root, "policy_port": 8000,
         "robot_python": Path("python"), "task": "ring",
         "episode_time": 10.0, "tool_profile": "tool",
         "policy_replan_steps": 8, "policy_queue_low_watermark": 7,
@@ -276,9 +277,9 @@ def test_recorder_integrity_rejection_skips_episode_and_keeps_learner_alive(
 def test_pose_ack_timeout_skips_episode_and_keeps_learner_alive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
-    root_prefix = tmp_path / "capture"
-    root_prefix.mkdir()
-    root = root_prefix / "001"
+    capture_output_root = tmp_path / "capture"
+    capture_output_root.mkdir()
+    root = capture_output_root / "001"
     monkeypatch.setattr(loop, "_post_json", lambda *_args, **_kwargs: {
         "runtime_session_id": "capture_001",
         "runtime_episode_id": loop.EPISODE_ID,
@@ -295,12 +296,13 @@ def test_pose_ack_timeout_skips_episode_and_keeps_learner_alive(
         "runtime_session_id": "capture_001",
         "runtime_episode_id": loop.EPISODE_ID,
         "episode_active": False,
-        "learner_state": "running",
+        "learner_worker_state": "running",
+        "learner_state": "ack_replay_collection",
         "current_episode_sampled": False,
         "server_persistent": True,
     })
     args = type("Args", (), {
-        "root_prefix": root_prefix, "policy_port": 8000,
+        "capture_output_root": capture_output_root, "policy_port": 8000,
         "robot_python": Path("python"), "task": "ring",
         "episode_time": 10.0, "tool_profile": "tool",
         "policy_replan_steps": 8, "policy_queue_low_watermark": 7,
@@ -329,7 +331,7 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
             "critic_updates": 2,
             "actor_updates": 1,
             "actor_parameter_broadcast_count": 0,
-            "online_checkpoint_path": None,
+            "training_checkpoint_path": None,
             "current_episode_sampled_by_learner": False,
             "native_episode_result": {"stream_counts": {"camera": 99999}},
         },
@@ -344,11 +346,11 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
         "accepted_unique_r_transition_count": 364,
         "human_override_replay_count": 2,
         "total_unique_r_transition_count": 748,
-        "training_starts_reached": True,
+        "minimum_ack_transitions_reached": True,
     })
     assert loop._admit(
         type("Args", (), {
-            "model_python": Path("python"), "formal_r_root": Path("r"),
+            "model_python": Path("python"), "ack_replay_root": Path("r"),
             "task_id": "task3", "output_root": Path("outputs/task3"),
             "deployed_actor_checkpoint": Path("checkpoints/task3/actor"),
             "detector_worker_socket": Path("/tmp/task3-detector.sock"),
@@ -381,7 +383,7 @@ def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatc
 
     admitted = loop._admit(
         type("Args", (), {
-            "model_python": Path("python"), "formal_r_root": Path("r"),
+            "model_python": Path("python"), "ack_replay_root": Path("r"),
             "task_id": "task3", "output_root": Path("outputs/task3"),
             "deployed_actor_checkpoint": Path("checkpoints/task3/actor"),
         })(),
@@ -458,7 +460,7 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
 
     monkeypatch.setattr(
         loop,
-        "select_resume_or_seed_checkpoint",
+        "select_resume_or_bootstrap_checkpoint",
         lambda *_args, **_kwargs: type("Selected", (), {"path": resume})(),
     )
     monkeypatch.setattr(loop.subprocess, "Popen", lambda *_args, **_kwargs: Process())
@@ -491,7 +493,7 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
             "policy_port": 8000,
         "server_start_timeout": 1.0,
         "max_episodes": 2,
-        "root_prefix": tmp_path / "capture",
+        "capture_output_root": tmp_path / "capture",
     })()
 
     assert loop.run_loop(args) == 1
@@ -501,7 +503,7 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
 def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    resume = tmp_path / "online/checkpoints/online_actor_critic_cycle_000100"
+    resume = tmp_path / "online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000100"
     (resume / "actor").mkdir(parents=True)
     commands: list[list[str]] = []
 
@@ -510,7 +512,7 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
 
     monkeypatch.setattr(
         loop,
-        "select_resume_or_seed_checkpoint",
+        "select_resume_or_bootstrap_checkpoint",
         lambda *_args, **_kwargs: type("Selected", (), {"path": resume})(),
     )
     monkeypatch.setattr(
@@ -543,7 +545,7 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
             "policy_port": 8000,
         "server_start_timeout": 1.0,
         "max_episodes": 1,
-        "root_prefix": tmp_path / "capture",
+        "capture_output_root": tmp_path / "capture",
     })()
 
     assert loop.run_loop(args) == 0
@@ -576,7 +578,8 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
         loop, "_run", lambda command, **_kwargs: commands.append(command)
     )
     monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
-        "learner_state": "waiting_for_replay",
+        "learner_worker_state": "waiting_for_replay",
+        "learner_state": "ack_replay_collection",
         "current_episode_sampled": False,
         "server_persistent": True,
     })
@@ -584,7 +587,7 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
     monkeypatch.setattr(loop, "_admit", lambda *_args: calls.append("admit"))
 
     args = type("Args", (), {
-        "root_prefix": tmp_path / "capture",
+        "capture_output_root": tmp_path / "capture",
         "policy_port": 8000,
         "robot_python": Path("python"),
         "task": "ring", "episode_time": 10.0, "tool_profile": "tool",

@@ -1,9 +1,11 @@
 # ForceSmolVLA implementation specification v4.2
 
-状态：development-only source-of-truth  
+状态：historical offline/SFT specification
 日期：2026-08-20（Asia/Shanghai）  
 平台：单张 RTX 4090D 24 GiB；独立 Conda 环境  
 继承：v4.1 available-sensor 数据/几何契约；本文件覆盖其训练、推理、验收和 checkpoint 冲突项。
+
+> 2026-09-05 更新：本文件继续约束历史 offline/SFT P4–P9，不再定义当前在线训练方法。在线生产路径已由 `docs/forcerft_end_to_end_user_guide.md` 和 `configs/forcerft/online_ack_residual_actor_critic.yaml` 取代，采用 frozen base policy、真实 ACK Critic warm-up、wrist-wrench residual Actor 与 ACK-aligned residual Twin-Q；不再采用离线 Twin-Q warm-up、Flow/Q 联合更新或 SFT reference Actor。
 
 ## 1. 方法定位与理论动机：支持离线全模型适配的紧凑型力觉 Flow-VLA
 

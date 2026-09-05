@@ -53,14 +53,17 @@ def _async_runtime_identity(
     metadata: Mapping[str, Any], contract: IntegratedCaptureContract
 ) -> dict[str, Any]:
     try:
+        active_actor_value = metadata["active_actor_checkpoint"]
+        if not isinstance(active_actor_value, str) or not active_actor_value.strip():
+            raise ValueError("active residual checkpoint missing")
         inference_actor = Path(str(metadata["checkpoint"])).resolve()
-        active_actor_checkpoint = Path(
-            str(metadata["active_actor_checkpoint"])
+        frozen_base_policy = Path(
+            str(metadata["frozen_base_policy_checkpoint"])
         ).resolve()
     except (KeyError, TypeError, ValueError) as error:
         raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_RUNTIME_MISMATCH") from error
     if (
-        metadata.get("online_actor_learner") is not True
+        metadata.get("online_residual_actor_critic") is not True
         or metadata.get("runtime_session_id") != contract.identity.session_id
         or metadata.get("runtime_episode_id") != contract.identity.episode_id
         or metadata.get("active_actor_model_revision")
@@ -71,7 +74,7 @@ def _async_runtime_identity(
         or not metadata["learner_resume_checkpoint"]
         or metadata.get("server_persistent") is not True
         or metadata.get("current_episode_sampling") is not False
-        or inference_actor != active_actor_checkpoint
+        or inference_actor != frozen_base_policy
     ):
         raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_RUNTIME_MISMATCH")
     return {
@@ -100,13 +103,20 @@ def _complete_async_runtime(
 ) -> dict[str, Any]:
     client._request("POST", "/runtime/episode-end", dict(identity))
     status = client._request("GET", "/runtime/status")
-    state = status.get("learner_state")
-    if state == "failed":
+    worker_state = status.get("learner_worker_state")
+    if worker_state == "failed":
         raise IntegratedCaptureError(
             f"ASYNC_POLICY_LEARNER_FAILED:{status.get('learner_error')}"
         )
     if (
-        state not in {"waiting_for_replay", "ready", "running", "complete"}
+        worker_state
+        not in {"waiting_for_replay", "ready", "running", "complete"}
+        or status.get("learner_state")
+        not in {
+            "ack_replay_collection",
+            "ack_critic_warmup",
+            "residual_actor_critic_training",
+        }
         or int(status.get("learner_critic_steps", -1)) < 0
         or int(status.get("learner_actor_steps", -1)) < 0
         or int(status.get("learner_polyak_steps", -1)) < 0
@@ -1969,11 +1979,17 @@ class IntegratedCaptureBackend:
                         "base_normalized_actions": result.get(
                             "base_normalized_actions"
                         ),
+                        "base_actions_absolute7": result.get(
+                            "base_actions_absolute7"
+                        ),
                         "applied_residual_tcp6": result.get(
                             "applied_residual_tcp6"
                         ),
-                        "final_normalized_actions": result.get(
-                            "final_normalized_actions"
+                        "composed_normalized_actions": result.get(
+                            "composed_normalized_actions"
+                        ),
+                        "residual_wrench_delta_interval_ns": result.get(
+                            "residual_wrench_delta_interval_ns"
                         ),
                         "executed_action_source": "policy",
                         "formal_replay": False,
@@ -2015,11 +2031,17 @@ class IntegratedCaptureBackend:
                         "base_normalized_actions": result.get(
                             "base_normalized_actions"
                         ),
+                        "base_actions_absolute7": result.get(
+                            "base_actions_absolute7"
+                        ),
                         "applied_residual_tcp6": result.get(
                             "applied_residual_tcp6"
                         ),
-                        "final_normalized_actions": result.get(
-                            "final_normalized_actions"
+                        "composed_normalized_actions": result.get(
+                            "composed_normalized_actions"
+                        ),
+                        "residual_wrench_delta_interval_ns": result.get(
+                            "residual_wrench_delta_interval_ns"
                         ),
                         "server_timing": {
                             key: result[key]
@@ -2183,20 +2205,33 @@ class IntegratedCaptureBackend:
                         )
                         else normalized.tolist()
                     ),
+                    "base_absolute_action7": (
+                        result_base_absolute[action_index]
+                        if (
+                            isinstance(
+                                result_base_absolute := current_chunk["result"].get(
+                                    "base_actions_absolute7"
+                                ),
+                                list,
+                            )
+                            and len(result_base_absolute) == 50
+                        )
+                        else None
+                    ),
                     "applied_residual_tcp6": (
                         current_chunk["result"].get("applied_residual_tcp6")
                         or [0.0] * 6
                     ),
-                    "final_normalized_action7": (
-                        result_final[action_index]
+                    "composed_normalized_action7": (
+                        result_composed[action_index]
                         if (
                             isinstance(
-                                result_final := current_chunk["result"].get(
-                                    "final_normalized_actions"
+                                result_composed := current_chunk["result"].get(
+                                    "composed_normalized_actions"
                                 ),
                                 list,
                             )
-                            and len(result_final) == 50
+                            and len(result_composed) == 50
                         )
                         else normalized.tolist()
                     ),
@@ -2368,31 +2403,29 @@ class IntegratedCaptureBackend:
                     "learner_actor_steps": int(
                         async_status["learner_actor_steps"]
                     ),
+                    "learner_state": async_status["learner_state"],
+                    "ack_critic_warmup_steps": int(
+                        async_status.get("ack_critic_warmup_steps", 0)
+                    ),
                     "actor_updates": int(async_status["learner_actor_steps"]),
                     "critic_updates": int(async_status["learner_critic_steps"]),
-                    "online_checkpoint_path": async_status.get(
+                    "training_checkpoint_path": async_status.get(
                         "latest_checkpoint_path"
                     ),
                     "actor_parameter_broadcast_count": int(
                         async_status.get("actor_parameter_broadcast_count", 0)
                     ),
-                    "online_joint_cycle": int(
-                        async_status.get("online_joint_cycle", 0)
+                    "residual_actor_critic_cycle": int(
+                        async_status.get("residual_actor_critic_cycle", 0)
                     ),
-                    "actor_optimizer_steps": int(
-                        async_status.get("actor_optimizer_steps", 0)
+                    "residual_actor_optimizer_steps": int(
+                        async_status.get("residual_actor_optimizer_steps", 0)
                     ),
                     "latest_critic_td_loss": async_status.get(
                         "latest_critic_td_loss"
                     ),
-                    "latest_actor_fm_loss": async_status.get(
-                        "latest_actor_fm_loss"
-                    ),
+                    "latest_actor_loss": async_status.get("latest_actor_loss"),
                     "latest_min_twin_q": async_status.get("latest_min_twin_q"),
-                    "adaptive_q_eta": async_status.get("adaptive_q_eta"),
-                    "q_to_preservation_grad_ratio": async_status.get(
-                        "q_to_preservation_grad_ratio"
-                    ),
                     "current_episode_sampled_by_learner": False,
                 }
             )

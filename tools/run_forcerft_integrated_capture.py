@@ -135,27 +135,29 @@ def _print_payload(payload: dict[str, Any], *, compact: bool) -> None:
         f"human_acks={seal.get('human_action_ack_count')} "
         f"interventions={seal.get('intervention_count')}"
     )
+    log_kind = {
+        "ack_replay_collection": "ack-collection",
+        "ack_critic_warmup": "critic-warmup",
+        "residual_actor_critic_training": "residual-training",
+    }.get(seal.get("learner_state"), "ack-collection")
     print(
-        f"[learner] critic_updates={seal.get('critic_updates')} "
+        f"[{log_kind}] critic_updates={seal.get('critic_updates')} "
         f"actor_updates={seal.get('actor_updates')} "
         f"actor_broadcasts={seal.get('actor_parameter_broadcast_count')} "
-        f"checkpoint={seal.get('online_checkpoint_path') or 'none'} "
+        f"checkpoint={seal.get('training_checkpoint_path') or 'none'} "
         f"current_episode_sampled={str(bool(seal.get('current_episode_sampled_by_learner'))).lower()}"
     )
     if seal.get("latest_critic_td_loss") is not None:
         loss_line = (
-            "[loss] "
-            f"cycle={seal.get('online_joint_cycle')} "
-            f"actor_step={seal.get('actor_optimizer_steps')} "
+            "[residual-training] "
+            f"cycle={seal.get('residual_actor_critic_cycle')} "
+            f"actor_step={seal.get('residual_actor_optimizer_steps')} "
             f"critic_td={float(seal['latest_critic_td_loss']):.6g}"
         )
-        if seal.get("latest_actor_fm_loss") is not None:
+        if seal.get("latest_actor_loss") is not None:
             loss_line += (
-                f" actor_fm={float(seal['latest_actor_fm_loss']):.6g}"
+                f" actor={float(seal['latest_actor_loss']):.6g}"
                 f" min_q={float(seal['latest_min_twin_q']):.6g}"
-                f" eta={float(seal['adaptive_q_eta']):.6g}"
-                " q_grad_ratio="
-                f"{float(seal['q_to_preservation_grad_ratio']):.3%}"
             )
         print(loss_line)
 

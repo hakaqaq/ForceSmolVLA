@@ -13,7 +13,6 @@ from torch import nn
 from forcesmolvla.rft import critic_action_adapter_v2 as adapter
 from forcesmolvla.rft.online import temporal_parity, transition_authority
 from forcesmolvla.rft.online.replay_training import HumanCorrectionReplay
-from forcesmolvla.rft.online.training_losses import compute_online_twin_q_td_loss
 
 
 ROOT = Path(__file__).parents[1]
@@ -270,34 +269,6 @@ def test_critic_consumes_behavior_mask() -> None:
     value = critic(None, action, mask)
     action[:, 2] = 10_000
     assert torch.equal(value, critic(None, action, mask))
-
-
-def test_partial_macro_discount_and_bootstrap_are_correct() -> None:
-    class _Never(nn.Module):
-        def forward(self, *_args):
-            raise AssertionError("partial terminal called target")
-
-    critic = _MaskCritic()
-    result = compute_online_twin_q_td_loss(
-        q1=critic,
-        q2=critic,
-        q1_target=_Never(),
-        q2_target=_Never(),
-        observation=torch.zeros(1, 1),
-        next_observation=torch.zeros(1, 1),
-        ack_behavior_action_k7=torch.ones(1, 3, 7),
-        behavior_mask=torch.tensor([[True, True, False]]),
-        reward=torch.tensor([1.0]),
-        discount=torch.tensor([0.0]),
-        terminated=torch.tensor([True]),
-        truncated=torch.tensor([False]),
-        bootstrap_mask=torch.tensor([False]),
-        next_policy_action_fn=lambda _observation: (_ for _ in ()).throw(
-            AssertionError("partial terminal called Actor")
-        ),
-    )
-    assert result.next_actor_calls == result.target_q1_calls == result.target_q2_calls == 0
-    assert result.target.tolist() == [1.0]
 
 
 def _recorded_report():

@@ -1216,7 +1216,7 @@ def _make_policy_execution_fixture_async(episode: Path) -> Path:
             "critic_updates": 0,
             "actor_updates": 0,
             "current_episode_sampled_by_learner": False,
-            "online_checkpoint_path": None,
+            "training_checkpoint_path": None,
             "actor_parameter_broadcast_count": 0,
         }
     )
@@ -2196,11 +2196,11 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     )
     assert all(
         np.asarray(item["base_normalized_action_k7"]).shape == (3, 7)
-        and np.asarray(item["final_normalized_action_k7"]).shape == (3, 7)
+        and np.asarray(item["composed_normalized_action_k7"]).shape == (3, 7)
         and np.asarray(item["applied_residual_tcp6"]).shape == (6,)
         and np.array_equal(
             item["base_normalized_action_k7"],
-            item["final_normalized_action_k7"],
+            item["composed_normalized_action_k7"],
         )
         and np.count_nonzero(item["applied_residual_tcp6"]) == 0
         for item in policy_payloads
@@ -2210,10 +2210,14 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert isinstance(human["human_residual_valid"], bool)
     assert human["human_residual_valid"] is (
         "pre_takeover_base_normalized_action7" in human
+        and "pre_takeover_base_absolute_action7" in human
     )
     if human["human_residual_valid"]:
         assert np.asarray(
             human["pre_takeover_base_normalized_action7"]
+        ).shape == (7,)
+        assert np.asarray(
+            human["pre_takeover_base_absolute_action7"]
         ).shape == (7,)
     assert np.asarray(human["human_action_target_h50"]).shape == (50, 7)
     human_mask = np.asarray(

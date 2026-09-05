@@ -963,14 +963,15 @@ def test_integrated_cli_passes_shadow_runtime_binding_without_launch(
 def test_async_runtime_binding_requires_exact_capture_identity() -> None:
     contract = _policy_contract()
     metadata = {
-        "online_actor_learner": True,
+        "online_residual_actor_critic": True,
         "runtime_session_id": contract.identity.session_id,
         "runtime_episode_id": contract.identity.episode_id,
         "active_actor_revision": "stage3-cycle10",
         "active_actor_model_revision": contract.identity.policy_revision,
         "active_actor_checkpoint": "/tmp/cycle20/actor",
+        "frozen_base_policy_checkpoint": "/tmp/base-policy",
         "learner_resume_checkpoint": "/tmp/cycle20",
-        "checkpoint": "/tmp/cycle20/actor",
+        "checkpoint": "/tmp/base-policy",
         "learner_started": False,
         "pending_candidate_id": "stage3-cycle21",
         "pending_candidate_published": False,
@@ -995,16 +996,20 @@ def test_async_runtime_binding_requires_exact_capture_identity() -> None:
 
 def test_async_runtime_binding_accepts_activated_online_actor() -> None:
     contract = _policy_contract()
-    active_actor = "/tmp/online/actor_candidates/online_actor_step_000005"
+    active_actor = (
+        "/tmp/online_ack_residual/policy_candidates/task3-ack-residual-test/"
+        "residual_actor_step_000005"
+    )
     metadata = {
-        "online_actor_learner": True,
+        "online_residual_actor_critic": True,
         "runtime_session_id": contract.identity.session_id,
         "runtime_episode_id": contract.identity.episode_id,
         "active_actor_revision": "task3-online-actor-step-000005",
         "active_actor_model_revision": contract.identity.policy_revision,
         "active_actor_checkpoint": active_actor,
+        "frozen_base_policy_checkpoint": "/tmp/base-policy",
         "learner_resume_checkpoint": "/tmp/stage3-seed",
-        "checkpoint": active_actor,
+        "checkpoint": "/tmp/base-policy",
         "server_persistent": True,
         "current_episode_sampling": False,
     }
@@ -1041,7 +1046,8 @@ def test_async_runtime_completion_records_only_pending_candidate() -> None:
             self.calls.append((method, path, payload))
             if path == "/runtime/status":
                 return {
-                    "learner_state": "complete",
+                    "learner_worker_state": "complete",
+                    "learner_state": "residual_actor_critic_training",
                     "learner_started": True,
                     "learner_critic_steps": 2,
                     "learner_actor_steps": 1,

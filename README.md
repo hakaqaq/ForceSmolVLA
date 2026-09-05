@@ -9,13 +9,13 @@ limitations, evidence, and GitHub exclusions.
 独立工程根目录：`/home/rlc123/ForceSmolVLA`  
 独立 Conda 环境：`/home/rlc123/anaconda3/envs/forcesmolvla`
 
-从原生采集、LeRobot v3 转换、SFT、reward/Twin-Q 到 ForceRFT 持续在线训练的完整操作说明见
+从原生采集、LeRobot v3 转换、SFT、reward detector，到真实 ACK warm-up 与 wrist-wrench residual Actor–Critic 持续在线训练的完整操作说明见
 [`docs/forcerft_end_to_end_user_guide.md`](docs/forcerft_end_to_end_user_guide.md)。
 
 本工程基于固定的 LeRobot v0.6.0 commit 和 SmolVLA base revision，实现约
 505.6M 参数的力觉条件化 Flow Actor；不修改 ForceVLA/OpenPI。当前架构、训练、
-推理与 gate 的 source-of-truth 是 `ForceSmolVLA_Implementation_Spec_v4_2.md`，
-v4.1 仅保留未被 v4.2 覆盖的 available-sensor 数据/几何契约。
+推理与离线 gate 的规格是 `ForceSmolVLA_Implementation_Spec_v4_2.md`；在线 ACK-residual
+训练以 `docs/forcerft_end_to_end_user_guide.md` 和公共 YAML 配置为准。
 
 ## 方法定位
 
@@ -26,10 +26,10 @@ post-VLM force fusion 与 MoE 思想，并新增 Action-Query Force Residual Ada
 flow timestep，在原生 prefix K/V cache 之外查询固定的 Force Context。Force 分支
 不接收、不拼接或修改 `past_key_values`。
 
-v4.2 的离线范围是全参数 Force-conditioned Actor。在线部分已实现并验收
-development-only 的 frozen-VLM Twin-Q、Flow-Matching + Q-guidance、
-ActionContract-v2、exact resume、真机采集与持续 Actor/Learner 循环；这些结果不等同于
-formal detector validation、无偏策略评估或 production deployment approval。
+v4.2 的离线范围是全参数 Force-conditioned Actor。当前在线方法冻结该 base policy，
+只训练零初始化 wrist-wrench residual Actor 与无图像 ACK-aligned residual Twin-Q；
+先收集 100 条真实 ACK，完成 256-step Critic warm-up，再进入每 cycle 2Q:1Actor。
+在线更新不调用 Flow sampler、相机输入、SFT reference Actor 或 Q-gradient controller。
 
 ## 环境
 

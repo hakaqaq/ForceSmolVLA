@@ -4674,7 +4674,7 @@ class ProductionBridge:
             if isinstance(candidate.get("selection"), Mapping)
         }
         base_k7: list[list[float]] = []
-        final_k7: list[list[float]] = []
+        composed_k7: list[list[float]] = []
         for valid, dispatch_sequence in zip(
             behavior_macro.behavior_mask,
             behavior_macro.source_dispatch_sequences,
@@ -4682,7 +4682,7 @@ class ProductionBridge:
         ):
             if not valid:
                 base_k7.append([0.0] * 7)
-                final_k7.append([0.0] * 7)
+                composed_k7.append([0.0] * 7)
                 continue
             candidate = policy_by_sequence.get(int(dispatch_sequence))
             if candidate is None:
@@ -4690,21 +4690,21 @@ class ProductionBridge:
                     "BRIDGE_FORMAL_R_RESIDUAL_LINEAGE_MISSING"
                 )
             selection = candidate["selection"]
-            final_action = _finite_vector(
+            composed_action = _finite_vector(
                 selection.get(
-                    "final_normalized_action7",
+                    "composed_normalized_action7",
                     selection.get("normalized_action7"),
                 ),
                 7,
-                "BRIDGE_FORMAL_R_FINAL_NORMALIZED_ACTION_INVALID",
+                "BRIDGE_FORMAL_R_COMPOSED_NORMALIZED_ACTION_INVALID",
             )
             base_action = _finite_vector(
-                selection.get("base_normalized_action7", final_action),
+                selection.get("base_normalized_action7", composed_action),
                 7,
                 "BRIDGE_FORMAL_R_BASE_NORMALIZED_ACTION_INVALID",
             )
             base_k7.append(list(base_action))
-            final_k7.append(list(final_action))
+            composed_k7.append(list(composed_action))
         payload["base_normalized_action_k7"] = base_k7
         payload["applied_residual_tcp6"] = list(
             _finite_vector(
@@ -4713,7 +4713,10 @@ class ProductionBridge:
                 "BRIDGE_FORMAL_R_APPLIED_RESIDUAL_INVALID",
             )
         )
-        payload["final_normalized_action_k7"] = final_k7
+        payload["composed_normalized_action_k7"] = composed_k7
+        payload["accepted_absolute_action_k7"] = (
+            behavior_macro.accepted_absolute_action_k7.tolist()
+        )
         stable = {
             "schema_version": SCHEMA_VERSION,
             "episode_id": episode_id,
@@ -5048,6 +5051,7 @@ class ProductionBridge:
             None,
         )
         pre_takeover = None
+        pre_takeover_absolute = None
         if takeover_start is not None:
             start_ns = int(takeover_start["receive_monotonic_ns"])
             candidates = [
@@ -5063,9 +5067,8 @@ class ProductionBridge:
                     candidates,
                     key=lambda item: int(item["receive_monotonic_ns"]),
                 )["selection"]
-                candidate = prior.get(
-                    "base_normalized_action7", prior.get("normalized_action7")
-                )
+                candidate = prior.get("base_normalized_action7")
+                absolute_candidate = prior.get("base_absolute_action7")
                 try:
                     pre_takeover = list(
                         _finite_vector(
@@ -5074,11 +5077,22 @@ class ProductionBridge:
                             "BRIDGE_FORMAL_R_PRE_TAKEOVER_BASE_INVALID",
                         )
                     )
+                    pre_takeover_absolute = list(
+                        _finite_vector(
+                            absolute_candidate,
+                            7,
+                            "BRIDGE_FORMAL_R_PRE_TAKEOVER_BASE_ABSOLUTE_INVALID",
+                        )
+                    )
                 except ProductionBridgeError:
                     pre_takeover = None
-        payload["human_residual_valid"] = pre_takeover is not None
-        if pre_takeover is not None:
+                    pre_takeover_absolute = None
+        payload["human_residual_valid"] = (
+            pre_takeover is not None and pre_takeover_absolute is not None
+        )
+        if payload["human_residual_valid"]:
             payload["pre_takeover_base_normalized_action7"] = pre_takeover
+            payload["pre_takeover_base_absolute_action7"] = pre_takeover_absolute
         stable = {
             "schema_version": SCHEMA_VERSION,
             "episode_id": episode_id,

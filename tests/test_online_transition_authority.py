@@ -116,14 +116,17 @@ def test_new_residual_lineage_fields_are_preserved_and_td_ignores_cameras() -> N
     payload.update(
         base_normalized_action_k7=[[0.1] * 6 + [0.0] for _ in range(3)],
         applied_residual_tcp6=[0.2] * 6,
-        final_normalized_action_k7=[[0.3] * 6 + [0.0] for _ in range(3)],
+        composed_normalized_action_k7=[[0.3] * 6 + [0.0] for _ in range(3)],
     )
     payload["observation"]["camera1"]["valid"] = False
     payload["observation"]["camera2"]["valid"] = False
     value = finalize_ack_transition(payload)
     assert value["base_normalized_action_k7"] == payload["base_normalized_action_k7"]
     assert value["applied_residual_tcp6"] == [0.2] * 6
-    assert value["final_normalized_action_k7"] == payload["final_normalized_action_k7"]
+    assert (
+        value["composed_normalized_action_k7"]
+        == payload["composed_normalized_action_k7"]
+    )
 
 
 def test_legacy_human_rotation_vector_is_still_converted_to_rpy() -> None:

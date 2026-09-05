@@ -6,7 +6,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from copy import deepcopy
 from functools import lru_cache
-from io import BytesIO
 import json
 from pathlib import Path
 import sys
@@ -16,6 +15,7 @@ import numpy as np
 import torch
 import yaml
 
+from forcesmolvla.action_delta import ActionDeltaProcessor
 from forcesmolvla.rft.online.action_representation import (
     ABSOLUTE_ACTION_ROTATION_REPRESENTATION,
     legacy_absolute_action7_to_rpy_xyz,
@@ -44,11 +44,11 @@ if str(ROOT / "tools") not in sys.path:
 
 TASK_ID = "task2"
 FORMAL_R_ROOT = ROOT / "outputs/task2/online"
-COMMON_TRAINING_CONFIG = ROOT / "configs/forcerft/actor_critic_common.yaml"
+COMMON_TRAINING_CONFIG = ROOT / "configs/forcerft/online_ack_residual_actor_critic.yaml"
 TASK_PROFILE_ROOT = ROOT / "configs/forcerft/tasks"
 DATASET = ROOT / "datasets/task2_lerobotv3"
 REWARD_TRANSITION_ROOT = ROOT / "datasets/task2_forcerft_offline_reward_transitions"
-SEED = 4404
+RANDOM_SEED = 4404
 TASK = "Pick up the purple ring and place it onto the red peg."
 
 
@@ -97,12 +97,12 @@ def algorithm_hyperparameters(config: Mapping[str, Any]) -> dict[str, Any]:
         for name in (
             "environment",
             "batching",
-            "warmup",
-            "online_training",
+            "ack_critic_warmup",
+            "residual_actor_critic_training",
             "optimizer",
-            "loss",
-            "residual_actor",
-            "critic",
+            "objective",
+            "wrist_wrench_residual_actor",
+            "ack_residual_twin_q",
         )
     }
 
@@ -580,15 +580,6 @@ def _decode_path(path: str) -> np.ndarray:
     return np.ascontiguousarray(value.transpose(2, 0, 1))
 
 
-def _decode_bytes(payload: bytes) -> np.ndarray:
-    from PIL import Image
-
-    with Image.open(BytesIO(payload)) as image:
-        value = np.asarray(image.convert("RGB"), dtype=np.uint8)
-    require(value.shape == (480, 640, 3), "FORCERFT_ONLINE_REPLAY_DEMO_IMAGE_SHAPE")
-    return np.ascontiguousarray(value.transpose(2, 0, 1))
-
-
 class FormalReplay:
     def __init__(self, macros, source_episodes: Mapping[str, Path], normalizer) -> None:
         self.macros = tuple(macros)
@@ -758,6 +749,7 @@ class ResidualTransitionBatch:
     next_wrench_delta6: torch.Tensor
     next_base_action_k6: torch.Tensor
     next_action_mask: torch.Tensor
+    next_base_valid: torch.Tensor
     reward: torch.Tensor
     terminated: torch.Tensor
     truncated: torch.Tensor
@@ -771,6 +763,7 @@ class OnlineResidualReplay:
 
     def __init__(self, macros: Iterable[ProductionAckMacro], normalizer) -> None:
         self.normalizer = normalizer
+        self.next_base_missing_rows = 0
         self.rows = tuple(self._materialize_all(tuple(macros)))
 
     @staticmethod
@@ -816,12 +809,48 @@ class OnlineResidualReplay:
         ).astype(np.float32)
         return action
 
-    @staticmethod
-    def _base_action(row: Mapping[str, Any], behavior: np.ndarray) -> np.ndarray:
+    def _base_action(
+        self,
+        row: Mapping[str, Any],
+        behavior: np.ndarray,
+        anchor_state7: np.ndarray,
+    ) -> tuple[np.ndarray, bool]:
+        if row.get("action_source") == "human":
+            absolute = np.asarray(
+                row.get("pre_takeover_base_absolute_action7"),
+                dtype=np.float64,
+            )
+            valid = bool(
+                row.get("human_residual_valid") is True
+                and absolute.shape == (7,)
+                and np.isfinite(absolute).all()
+            )
+            if valid:
+                absolute_k7 = np.repeat(absolute[None, :], 3, axis=0)
+                delta_k7 = ActionDeltaProcessor.to_delta(
+                    absolute_k7, anchor_state7
+                )
+                normalized = self.normalizer.delta_action7.apply(
+                    delta_k7
+                ).astype(np.float32)
+                return normalized, True
+            return behavior.copy(), False
         base = np.asarray(row.get("base_normalized_action_k7"), dtype=np.float32)
         if base.shape != (3, 7) or not np.isfinite(base).all():
-            return behavior.copy()
-        return base
+            return behavior.copy(), True
+        return base, True
+
+    @staticmethod
+    def _wrench_delta_100ms(
+        current: np.ndarray,
+        previous: np.ndarray | None,
+        interval_ns: int,
+    ) -> np.ndarray:
+        if previous is None or interval_ns <= 0:
+            return np.zeros(6, dtype=np.float32)
+        return ((current - previous) * (100_000_000.0 / interval_ns)).astype(
+            np.float32
+        )
 
     def _materialize_all(
         self, macros: tuple[ProductionAckMacro, ...]
@@ -841,19 +870,22 @@ class OnlineResidualReplay:
                     ]
                 ),
             )
-            base_by_timestamp: dict[int, np.ndarray] = {}
+            base_by_timestamp: dict[int, tuple[np.ndarray, bool]] = {}
             mask_by_timestamp: dict[int, np.ndarray] = {}
             behavior_by_id: dict[int, np.ndarray] = {}
             for macro in ordered:
                 behavior = self._behavior_action(macro)
                 behavior_by_id[id(macro)] = behavior
+                anchor_state = self._raw_state(macro.transition["observation"])
                 base_by_timestamp[
                     int(
                         macro.transition["observation"][
                             "materialized_timestamp_monotonic_ns"
                         ]
                     )
-                ] = self._base_action(macro.transition, behavior)
+                ] = self._base_action(
+                    macro.transition, behavior, anchor_state
+                )
                 mask_by_timestamp[
                     int(
                         macro.transition["observation"][
@@ -862,14 +894,20 @@ class OnlineResidualReplay:
                     )
                 ] = np.asarray(macro.behavior.behavior_mask, dtype=np.bool_)
             previous_wrench: np.ndarray | None = None
+            previous_timestamp: int | None = None
             for macro in ordered:
                 row = macro.transition
+                timestamp = int(
+                    row["observation"]["materialized_timestamp_monotonic_ns"]
+                )
                 state, wrench = self._normalized_observation(row["observation"])
                 next_state, next_wrench = self._normalized_observation(
                     row["next_observation"]
                 )
                 behavior = behavior_by_id[id(macro)]
-                base = self._base_action(row, behavior)
+                base, base_valid = self._base_action(
+                    row, behavior, self._raw_state(row["observation"])
+                )
                 mask = np.asarray(macro.behavior.behavior_mask, dtype=np.bool_)
                 residual = (behavior[..., :6] - base[..., :6]).astype(np.float32)
                 residual[~mask] = 0.0
@@ -878,40 +916,61 @@ class OnlineResidualReplay:
                         "materialized_timestamp_monotonic_ns"
                     ]
                 )
-                next_base = base_by_timestamp.get(next_timestamp, base).copy()
-                next_mask = mask_by_timestamp.get(next_timestamp, mask).copy()
-                human_base = np.asarray(
-                    row.get("pre_takeover_base_normalized_action7"),
-                    dtype=np.float32,
+                next_entry = base_by_timestamp.get(next_timestamp)
+                next_base_valid = bool(
+                    next_entry is not None and next_entry[1]
                 )
+                outcome = row["outcome"]
+                terminal_boundary = bool(
+                    outcome["terminated"] or outcome["truncated"]
+                )
+                if not next_base_valid and not terminal_boundary:
+                    self.next_base_missing_rows += 1
+                    previous_wrench = wrench
+                    previous_timestamp = timestamp
+                    continue
+                next_base = (
+                    base.copy()
+                    if next_entry is None
+                    else next_entry[0].copy()
+                )
+                next_mask = mask_by_timestamp.get(next_timestamp, mask).copy()
                 human_valid = bool(
                     row.get("action_source") == "human"
-                    and row.get("human_residual_valid", True) is True
-                    and human_base.shape == (7,)
-                    and np.isfinite(human_base).all()
+                    and row.get("human_residual_valid") is True
+                    and base_valid
                 )
                 human_target = (
-                    behavior[0, :6] - human_base[:6]
+                    behavior[0, :6] - base[0, :6]
                     if human_valid
                     else np.zeros(6, dtype=np.float32)
                 )
+                interval_ns = (
+                    0
+                    if previous_timestamp is None
+                    else timestamp - previous_timestamp
+                )
+                next_interval_ns = next_timestamp - timestamp
                 result.append(
                     {
                         "state7": state,
                         "wrench6": wrench,
-                        "wrench_delta6": (
-                            np.zeros(6, dtype=np.float32)
-                            if previous_wrench is None
-                            else wrench - previous_wrench
+                        "wrench_delta6": self._wrench_delta_100ms(
+                            wrench, previous_wrench, interval_ns
                         ),
+                        "wrench_delta_interval_ns": interval_ns,
                         "base_action_k6": base[..., :6],
                         "behavior_residual_k6": residual,
                         "action_mask": mask,
                         "next_state7": next_state,
                         "next_wrench6": next_wrench,
-                        "next_wrench_delta6": next_wrench - wrench,
+                        "next_wrench_delta6": self._wrench_delta_100ms(
+                            next_wrench, wrench, next_interval_ns
+                        ),
+                        "next_wrench_delta_interval_ns": next_interval_ns,
                         "next_base_action_k6": next_base[..., :6],
                         "next_action_mask": next_mask,
+                        "next_base_valid": next_base_valid,
                         "reward": float(row["outcome"]["reward"]),
                         "terminated": bool(row["outcome"]["terminated"]),
                         "truncated": bool(row["outcome"]["truncated"]),
@@ -924,10 +983,12 @@ class OnlineResidualReplay:
                             human_target, dtype=np.float32
                         ),
                         "human_residual_valid": human_valid,
+                        "action_source": str(row["action_source"]),
                         "episode_id": str(row["identity"]["episode_id"]),
                     }
                 )
                 previous_wrench = wrench
+                previous_timestamp = timestamp
         return result
 
     def _batch(self, indices: torch.Tensor, device: torch.device) -> ResidualTransitionBatch:
@@ -950,6 +1011,11 @@ class OnlineResidualReplay:
             next_wrench_delta6=tensor("next_wrench_delta6"),
             next_base_action_k6=tensor("next_base_action_k6"),
             next_action_mask=tensor("next_action_mask", torch.bool),
+            next_base_valid=torch.tensor(
+                [row["next_base_valid"] for row in rows],
+                dtype=torch.bool,
+                device=device,
+            ),
             reward=torch.tensor(
                 [row["reward"] for row in rows], dtype=torch.float32, device=device
             ),
@@ -979,11 +1045,19 @@ class OnlineResidualReplay:
         device: torch.device,
         seed: int,
         human_only: bool = False,
+        policy_only: bool = False,
+        actor_q_valid_only: bool = False,
     ) -> ResidualTransitionBatch | None:
+        require(
+            not (human_only and policy_only),
+            "FORCERFT_REPLAY_SOURCE_FILTER_CONFLICT",
+        )
         population = [
             index
             for index, row in enumerate(self.rows)
-            if not human_only or row["human_residual_valid"]
+            if (not human_only or row["human_residual_valid"])
+            and (not policy_only or row["action_source"] == "policy")
+            and (not actor_q_valid_only or row["actor_q_valid"])
         ]
         if not population:
             return None
@@ -1012,100 +1086,6 @@ class OnlineResidualReplay:
         for row in self.rows:
             counts[row["episode_id"]] = counts.get(row["episode_id"], 0) + 1
         return tuple(counts.values())
-
-
-class DemoReplay:
-    """Read the already converted online-training demonstration replay."""
-
-    COLUMNS = (
-        "observation.images.camera1",
-        "observation.images.camera2",
-        "observation.state",
-        "observation.wrench",
-    )
-
-    def __init__(self, normalizer) -> None:
-        from forcesmolvla.rft.losses import load_authorized_reward_train_transitions
-
-        self.rows = load_authorized_reward_train_transitions(
-            REWARD_TRANSITION_ROOT, task_id=TASK_ID
-        ).to_pylist()
-        self.population = tuple(
-            index for index, row in enumerate(self.rows)
-            if any(row["executed_action_mask"])
-        )
-        require(self.population, "FORCERFT_ONLINE_REPLAY_DEMO_POPULATION_EMPTY")
-        conversion = json.loads((DATASET / "conversion_manifest.json").read_text(encoding="utf-8"))
-        self.tasks = {item["raw_episode_id"]: item["task"] for item in conversion["episodes"]}
-        self.normalizer = normalizer
-        self.raw: dict[tuple[str, int], dict[str, Any]] = {}
-
-    def prefetch(self, schedule: Iterable[Iterable[int]]) -> None:
-        import pyarrow.parquet as pq
-
-        requested: dict[str, set[int]] = {}
-        for batch in schedule:
-            for index in batch:
-                row = self.rows[index]
-                for key in ("observation_row_reference", "next_observation_row_reference"):
-                    reference = row[key]
-                    requested.setdefault(reference["data_relative_path"], set()).add(int(reference["row_index"]))
-        for position, (relative, indices) in enumerate(sorted(requested.items()), start=1):
-            table = pq.read_table(DATASET / relative, columns=list(self.COLUMNS))
-            for index in indices:
-                self.raw[(relative, index)] = table.slice(index, 1).to_pylist()[0]
-            del table
-            if position % 10 == 0 or position == len(requested):
-                print(f"[warmup] prefetched demonstration files {position}/{len(requested)}", file=sys.stderr, flush=True)
-
-    def _sample(self, reference: Mapping[str, Any], identity: str, task: str) -> dict[str, Any]:
-        source = self.raw[(reference["data_relative_path"], int(reference["row_index"]))]
-        return {
-            "camera1": _decode_bytes(source["observation.images.camera1"]["bytes"]),
-            "camera2": _decode_bytes(source["observation.images.camera2"]["bytes"]),
-            "state7": self.normalizer.state7.apply(np.asarray(source["observation.state"], dtype=np.float64)).astype(np.float32),
-            "wrench6": self.normalizer.wrench6.apply(np.asarray(source["observation.wrench"], dtype=np.float64)).astype(np.float32),
-            "task": task,
-            "sample_identity": identity,
-        }
-
-    def materialize(self, index: int) -> dict[str, Any]:
-        row = self.rows[index]
-        identity = f"D:{row['episode_id']}:{row['transition_index']}"
-        behavior_mask = np.asarray(row["executed_action_mask"], dtype=np.bool_)
-        executed = np.asarray(
-            row["normalized_delta_action_exec_flat"], dtype=np.float32
-        ).reshape(-1, 7)
-        require(
-            executed.shape == (int(behavior_mask.sum()), 7),
-            "FORCERFT_ONLINE_REPLAY_DEMO_ACTION_SHAPE",
-        )
-        action = np.zeros((3, 7), dtype=np.float32)
-        action[behavior_mask] = executed
-        return {
-            "current": self._sample(row["observation_row_reference"], identity + ":current", self.tasks[row["episode_id"]]),
-            "next": self._sample(row["next_observation_row_reference"], identity + ":next", self.tasks[row["episode_id"]]),
-            "behavior_action": action,
-            "behavior_mask": behavior_mask,
-            "critic_action_contract_version": row.get(
-                "critic_action_contract_version",
-                CRITIC_ACTION_CONTRACT.version,
-            ),
-            "reward": float(row["reward"]),
-            "terminated": bool(row["terminated"]),
-            "truncated": bool(row.get("truncated", False)),
-            "bootstrap": bool(row["bootstrap_mask"]),
-            "discount": float(row["discount"]),
-            "identity": identity,
-            "expert": True,
-            "action_source": "offline_demonstration",
-            "td_eligible": True,
-            "fm_eligible": True,
-            "actor_q_valid": False,
-            "actor_q_eligibility_reason": (
-                "offline_demonstration_not_ack_deployment_semantics"
-            ),
-        }
 
 
 def _resolve(path: str | Path) -> Path:
