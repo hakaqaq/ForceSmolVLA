@@ -55,6 +55,14 @@ class FakeEngine:
     def infer(self, request):
         return {"request_id": request["request_id"], "actions": [[0.0] * 7] * 50}
 
+    def residual_decision(self, request):
+        return {
+            "decision_monotonic_ns": request["decision_monotonic_ns"],
+            "base_absolute_action7": request.get(
+                "base_absolute_action7", [0.0] * 7
+            ),
+        }
+
 
 class FakeLearner:
     def __init__(self) -> None:
@@ -418,6 +426,30 @@ def test_runtime_identity_and_graceful_checkpoint(tmp_path: Path) -> None:
     second = service.quiesce_and_save({})
     assert first["quiesced"] and second["quiesced"]
     assert service.learner_job.save_calls == 1
+
+
+def test_residual_decision_echoes_control_generation_not_model_epoch(
+    tmp_path: Path,
+) -> None:
+    service = runtime(tmp_path)
+    service.start_episode(identity())
+    service.machine.invalidate_policy_epoch("human_takeover")
+
+    result = service.residual_decision(
+        {
+            "session_id": "session-1",
+            "decision_monotonic_ns": 123,
+            "control_policy_epoch": 7,
+            "control_takeover_generation": 4,
+            "base_absolute_action7": [0.0] * 7,
+        }
+    )
+
+    assert result["control_policy_epoch"] == 7
+    assert result["control_takeover_generation"] == 4
+    assert result["residual_policy_epoch"] == 1
+    assert result["active_residual_policy_revision"].endswith("000000")
+    service.abort_episode(identity())
 
 
 def test_prepare_episode_waits_for_admission_specific_budget_drain(

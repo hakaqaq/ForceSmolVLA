@@ -526,10 +526,24 @@ def _shadow_observation_type(deploy: Any, *, policy_execution: bool = False) -> 
                 source_stamp = payload.get("equilibrium_source_stamp_ns")
                 if not isinstance(raw, dict) or policy_epoch < 0:
                     raise ValueError("invalid safe-action identity")
+                human_decision_snapshot = None
+                human_decision_snapshot_error = None
+                if raw.get("source") == "human" and arbitration.get("event") in {
+                    "intervention_start",
+                    "human_action",
+                }:
+                    try:
+                        human_decision_snapshot = self.residual_decision_snapshot()
+                    except Exception as error:
+                        human_decision_snapshot_error = type(error).__name__
                 record = {
                     "shadow_receive_monotonic_ns": time.monotonic_ns(),
                     "source": str(raw["source"]),
                     "payload": payload,
+                    "human_decision_snapshot": human_decision_snapshot,
+                    "human_decision_snapshot_error": (
+                        human_decision_snapshot_error
+                    ),
                 }
                 with self._shadow_lock:
                     self._observed_policy_epoch = max(
@@ -1866,13 +1880,16 @@ class IntegratedCaptureBackend:
         previous_residual_decision_wrench: Any = None
         previous_residual_decision_ns: int | None = None
         previous_residual_generation: tuple[int, int] | None = None
+        previous_policy_dispatch_sequence: int | None = None
 
         def reset_residual_decision_history() -> None:
             nonlocal previous_residual_decision_wrench
             nonlocal previous_residual_decision_ns, previous_residual_generation
+            nonlocal previous_policy_dispatch_sequence
             previous_residual_decision_wrench = None
             previous_residual_decision_ns = None
             previous_residual_generation = None
+            previous_policy_dispatch_sequence = None
 
         def capture_observation() -> None:
             nonlocal current_request, current_observation
@@ -1945,42 +1962,49 @@ class IntegratedCaptureBackend:
                     old_chunk_id if event == "intervention_start" else None
                 )
                 if event in {"intervention_start", "human_action"}:
-                    snapshot = observation.residual_decision_snapshot()
-                    generation = (
-                        int(intervention["policy_epoch"]),
-                        int(intervention["takeover_generation"]),
-                    )
-                    decision_ns = int(snapshot["decision_monotonic_ns"])
-                    wrench = deploy.np.asarray(
-                        snapshot["wrench6"], dtype=deploy.np.float64
-                    )
-                    interval_ns = (
-                        0
-                        if previous_residual_decision_ns is None
-                        or previous_residual_generation != generation
-                        else decision_ns - previous_residual_decision_ns
-                    )
-                    wrench_delta = (
-                        deploy.np.zeros(6, dtype=deploy.np.float64)
-                        if interval_ns <= 0
-                        else (wrench - previous_residual_decision_wrench)
-                        * (100_000_000.0 / interval_ns)
-                    )
-                    intervention["residual_decision_context"] = {
-                        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
-                        "valid_for_residual_training": True,
-                        "invalid_reason": None,
-                        "decision_monotonic_ns": decision_ns,
-                        "state7_absolute": list(snapshot["state7"]),
-                        "wrench6_calibrated_tcp": list(snapshot["wrench6"]),
-                        "wrench_delta6_calibrated_tcp_100ms": (
-                            wrench_delta.tolist()
-                        ),
-                        "wrench_delta_interval_ns": interval_ns,
-                    }
-                    previous_residual_decision_wrench = wrench.copy()
-                    previous_residual_decision_ns = decision_ns
-                    previous_residual_generation = generation
+                    snapshot = audit.get("human_decision_snapshot")
+                    if not isinstance(snapshot, Mapping):
+                        intervention["residual_decision_context"] = {
+                            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+                            "valid_for_residual_training": False,
+                            "invalid_reason": "human_decision_snapshot_missing",
+                        }
+                    else:
+                        generation = (
+                            int(intervention["policy_epoch"]),
+                            int(intervention["takeover_generation"]),
+                        )
+                        decision_ns = int(snapshot["decision_monotonic_ns"])
+                        wrench = deploy.np.asarray(
+                            snapshot["wrench6"], dtype=deploy.np.float64
+                        )
+                        interval_ns = (
+                            0
+                            if previous_residual_decision_ns is None
+                            or previous_residual_generation != generation
+                            else decision_ns - previous_residual_decision_ns
+                        )
+                        wrench_delta = (
+                            deploy.np.zeros(6, dtype=deploy.np.float64)
+                            if interval_ns <= 0
+                            else (wrench - previous_residual_decision_wrench)
+                            * (100_000_000.0 / interval_ns)
+                        )
+                        intervention["residual_decision_context"] = {
+                            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+                            "valid_for_residual_training": True,
+                            "invalid_reason": None,
+                            "decision_monotonic_ns": decision_ns,
+                            "state7_absolute": list(snapshot["state7"]),
+                            "wrench6_calibrated_tcp": list(snapshot["wrench6"]),
+                            "wrench_delta6_calibrated_tcp_100ms": (
+                                wrench_delta.tolist()
+                            ),
+                            "wrench_delta_interval_ns": interval_ns,
+                        }
+                        previous_residual_decision_wrench = wrench.copy()
+                        previous_residual_decision_ns = decision_ns
+                        previous_residual_generation = generation
                 store.append("policy_execute_intervention.jsonl", intervention)
                 if event == "intervention_start":
                     human_takeover_active = True
@@ -2239,6 +2263,8 @@ class IntegratedCaptureBackend:
                         "/residual-decision",
                         {
                             "session_id": contract.identity.session_id,
+                            "control_policy_epoch": dispatch_generation[0],
+                            "control_takeover_generation": dispatch_generation[1],
                             "decision_monotonic_ns": decision_ns,
                             "state7": snapshot["state7"],
                             "wrench6": snapshot["wrench6"],
@@ -2255,8 +2281,14 @@ class IntegratedCaptureBackend:
                         != decision_ns
                         or residual_result.get("active_residual_policy_revision")
                         != metadata.get("active_actor_revision")
-                        or int(residual_result.get("policy_epoch", -1))
-                        != int(lineage["policy_epoch"])
+                        or int(residual_result.get("control_policy_epoch", -1))
+                        != dispatch_generation[0]
+                        or int(
+                            residual_result.get(
+                                "control_takeover_generation", -1
+                            )
+                        )
+                        != dispatch_generation[1]
                         or residual_result.get("base_absolute_action7")
                         != result_base_absolute[action_index]
                     ):
@@ -2372,6 +2404,9 @@ class IntegratedCaptureBackend:
                     "wrench6_calibrated_tcp": list(snapshot["wrench6"]),
                     "wrench_delta6_calibrated_tcp_100ms": wrench_delta.tolist(),
                     "wrench_delta_interval_ns": interval_ns,
+                    "previous_policy_dispatch_sequence": (
+                        previous_policy_dispatch_sequence
+                    ),
                     "base_absolute_action7": (
                         None
                         if residual_result is None
@@ -2430,6 +2465,10 @@ class IntegratedCaptureBackend:
                     ),
                     "residual_decision_context": decision_context,
                 }
+                if residual_result is not None:
+                    previous_policy_dispatch_sequence = sequence
+                else:
+                    reset_residual_decision_history()
                 audited_decision = dict(decision)
                 audited_decision["forcesmolvla_chunk_selection"] = selection
                 ack_timeout_s = float(metadata["controller_ack_timeout_ms"]) / 1000.0

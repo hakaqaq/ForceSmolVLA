@@ -675,6 +675,12 @@ def test_takeover_and_episode_end_supersede_pending_policy_decision() -> None:
         observation._shadow_lock
     )
     observation.shadow_error = None
+    action_time_snapshot = {
+        "decision_monotonic_ns": 100,
+        "state7": [1.0] * 7,
+        "wrench6": [2.0] * 6,
+    }
+    observation.residual_decision_snapshot = lambda: dict(action_time_snapshot)
     message = SimpleNamespace(
         data=json.dumps(
             {
@@ -694,6 +700,12 @@ def test_takeover_and_episode_end_supersede_pending_policy_decision() -> None:
     assert observation.shadow_error is None
     audit = observation.policy_audit_snapshot()
     assert audit[0]["payload"]["arbitration"]["event"] == "intervention_start"
+    assert audit[0]["human_decision_snapshot"] == action_time_snapshot
+
+    # The audit owns the action-time snapshot; later observation changes cannot
+    # retroactively replace the human decision context.
+    action_time_snapshot["decision_monotonic_ns"] = 400
+    assert audit[0]["human_decision_snapshot"]["decision_monotonic_ns"] == 100
 
     message.data = json.dumps(
         {

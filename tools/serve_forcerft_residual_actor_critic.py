@@ -1412,13 +1412,28 @@ class AsyncResidualActorCriticRuntime:
         """Run the small CPU Actor without waiting for frozen-VLA inference."""
 
         require(self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_INACTIVE")
+        control_policy_epoch = request.get("control_policy_epoch")
+        control_takeover_generation = request.get("control_takeover_generation")
         require(
             request.get("session_id") == self.session_id,
             "ONLINE_REPLAY_ASYNC_RESIDUAL_SESSION_MISMATCH",
         )
+        require(
+            not isinstance(control_policy_epoch, bool)
+            and isinstance(control_policy_epoch, int)
+            and control_policy_epoch >= 0
+            and not isinstance(control_takeover_generation, bool)
+            and isinstance(control_takeover_generation, int)
+            and control_takeover_generation >= 0,
+            "ONLINE_REPLAY_ASYNC_CONTROL_GENERATION_INVALID",
+        )
         result = self.engine.residual_decision(request)
         result["active_residual_policy_revision"] = self.active_revision_id
-        result["policy_epoch"] = int(self.machine.policy_epoch)
+        result["residual_policy_epoch"] = int(self.machine.policy_epoch)
+        result["control_policy_epoch"] = int(control_policy_epoch)
+        result["control_takeover_generation"] = int(
+            control_takeover_generation
+        )
         return result
 
     def end_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:

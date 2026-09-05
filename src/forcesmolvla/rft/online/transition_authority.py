@@ -38,7 +38,7 @@ SLOT_OWNERS = {
     "offline_demonstration",
 }
 ACTOR_Q_ELIGIBILITY_CONTRACT = "ack_actor_q_v1"
-ONLINE_SEMANTICS_VERSION = "forcesmolvla_ack_residual_dispatch.v1"
+ONLINE_SEMANTICS_VERSION = "forcesmolvla_ack_residual_dispatch"
 DISPATCH_DECISION_CRITIC_CONTRACT_VERSION = (
     "critic-action-contract-v4-dispatch-decision-zoh-k3"
 )

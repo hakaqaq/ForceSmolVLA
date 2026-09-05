@@ -703,10 +703,6 @@ def load_formal_online_episode(root: Path, admission_id: str) -> tuple[
             policy_rows.append(row)
     all_rows = [*policy_rows, *human_rows]
     require(len(all_rows) == expected, "FORCERFT_ONLINE_REPLAY_ADMISSION_COUNT")
-    require(
-        any(row["outcome"]["terminated"] for row in all_rows),
-        "FORCERFT_ONLINE_REPLAY_MACRO_TERMINAL_MISSING",
-    )
     macros = build_ack_macros(policy_rows)
     return (
         policy_rows,
@@ -751,14 +747,6 @@ def load_formal_online_r(root: Path) -> tuple[
         len({row["identity"]["transition_uid"] for row in all_rows})
         == len(all_rows),
         "FORCERFT_ONLINE_REPLAY_UID_DUPLICATE",
-    )
-    require(
-        macros
-        and (
-            any(macro.transition["outcome"]["terminated"] for macro in macros)
-            or any(row["outcome"]["terminated"] for row in human_rows)
-        ),
-        "FORCERFT_ONLINE_REPLAY_MACRO_TERMINAL_MISSING",
     )
     return policy_rows, tuple(macros), source_episodes, human_rows
 

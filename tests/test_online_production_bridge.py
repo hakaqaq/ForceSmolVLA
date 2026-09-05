@@ -39,24 +39,33 @@ REAL_EPISODE = Path(
 
 
 def test_dispatch_successor_requires_persisted_identity_link() -> None:
-    current_policy = {
-        "next_observation_id": "observation-2",
-        "selection": {"sequence": 4},
-    }
+    current_policy = {"selection": {"sequence": 4}}
     assert bridge_module._is_exact_real_decision_successor(
         "policy",
         current_policy,
         {
-            "current_observation_id": "observation-2",
-            "selection": {"sequence": 7},
+            # HOLD/replan may change observation identity.  The persisted
+            # dispatch predecessor is the authoritative decision link.
+            "current_observation_id": "observation-after-hold",
+            "selection": {
+                "sequence": 7,
+                "residual_decision_context": {
+                    "previous_policy_dispatch_sequence": 4
+                },
+            },
         },
     )
     assert not bridge_module._is_exact_real_decision_successor(
         "policy",
         current_policy,
         {
-            "current_observation_id": "observation-nearby-but-unlinked",
-            "selection": {"sequence": 5},
+            "current_observation_id": "observation-2",
+            "selection": {
+                "sequence": 5,
+                "residual_decision_context": {
+                    "previous_policy_dispatch_sequence": 3
+                },
+            },
         },
     )
     assert bridge_module._is_exact_real_decision_successor(
@@ -2367,6 +2376,52 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert episode_seal["checkpoint_updates"] == 0
     assert transition_path.read_bytes() == original_transition_bytes
     assert seal_path.read_bytes() == original_seal_bytes
+
+
+def test_invalid_terminal_decisions_do_not_move_reward_to_earlier_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    stream_root = (
+        episode.parent.parent / "integrated_capture" / episode.name / "streams"
+    )
+
+    # The real chain is policy -> human -> policy(terminal).  Make the final
+    # two real decisions ineligible without removing them from the causal chain.
+    policy_path = stream_root / "policy_execute_transition.jsonl"
+    policy_rows = [json.loads(line) for line in policy_path.read_text().splitlines()]
+    terminal_context = policy_rows[-1]["selection"]["residual_decision_context"]
+    terminal_context["valid_for_residual_training"] = False
+    terminal_context["invalid_reason"] = "synthetic_terminal_context_missing"
+    policy_rows[-1]["selection"]["base_absolute_action7"] = None
+    _write_jsonl(policy_path, policy_rows)
+
+    intervention_path = stream_root / "policy_execute_intervention.jsonl"
+    intervention_rows = [
+        json.loads(line) for line in intervention_path.read_text().splitlines()
+    ]
+    human_context = intervention_rows[0]["residual_decision_context"]
+    human_context["valid_for_residual_training"] = False
+    human_context["invalid_reason"] = "synthetic_human_context_missing"
+    _write_jsonl(intervention_path, intervention_rows)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+    state = tmp_path / "formal-r"
+
+    report = _bridge(state).admit_policy_execution_smoke(
+        episode, operator_task_outcome="success"
+    )
+    policy, _macros, _sources, human = replay_training.load_formal_online_episode(
+        state, report.admission_id
+    )
+
+    assert len(policy) == 1
+    assert human == []
+    outcome = policy[0]["outcome"]
+    assert outcome["reward"] == 0.0
+    assert outcome["terminated"] is False
+    assert outcome["truncated"] is True
+    assert report.residual_semantics_quarantined_count == 2
 
 
 def test_formal_online_r_admission_accepts_exact_resume_waiting_for_replay(

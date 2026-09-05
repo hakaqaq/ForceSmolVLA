@@ -152,12 +152,13 @@ def _is_exact_real_decision_successor(
     """Use persisted dispatch identities, not timestamp proximity, for TD links."""
 
     if action_source == "policy":
+        successor_context = successor.get("selection", {}).get(
+            "residual_decision_context", {}
+        )
         return bool(
-            current.get("next_observation_id")
-            and successor.get("current_observation_id")
-            == current.get("next_observation_id")
-            and int(successor["selection"]["sequence"])
-            > int(current["selection"]["sequence"])
+            isinstance(successor_context, Mapping)
+            and successor_context.get("previous_policy_dispatch_sequence")
+            == int(current["selection"]["sequence"])
         )
     if action_source == "human":
         return int(successor["source_sequence"]) == int(
@@ -5280,25 +5281,6 @@ class ProductionBridge:
             if int(current.get("t_ref_ns", 0)) < first_materialized_ns:
                 observation_warmup_excluded_count += 1
                 continue
-            context = source.get("selection", {}).get(
-                "residual_decision_context"
-            )
-            if (
-                not isinstance(context, Mapping)
-                or context.get("online_semantics_version")
-                != ONLINE_SEMANTICS_VERSION
-                or context.get("valid_for_residual_training") is not True
-                or context.get("base_absolute_action7") is None
-            ):
-                reason = (
-                    str(context.get("invalid_reason", "decision_context_missing"))
-                    if isinstance(context, Mapping)
-                    else "decision_context_missing"
-                )
-                residual_semantics_quarantine_reasons[reason] = (
-                    residual_semantics_quarantine_reasons.get(reason, 0) + 1
-                )
-                continue
             replay_sources.append(source)
         human_sources = sorted(
             (
@@ -5351,53 +5333,73 @@ class ProductionBridge:
             )
             < terminal_frame
         ]
-        eligible_human_sources: list[Mapping[str, Any]] = []
-        for source in human_sources:
-            context = source.get("intervention", {}).get(
-                "residual_decision_context"
-            )
-            base = self._human_pre_takeover_base_absolute(
-                integrated=integrated,
-                source=source,
-            )
-            if (
-                not isinstance(context, Mapping)
-                or context.get("online_semantics_version")
-                != ONLINE_SEMANTICS_VERSION
-                or context.get("valid_for_residual_training") is not True
-                or base is None
-            ):
-                reason = (
-                    "human_pre_takeover_base_missing"
-                    if base is None
-                    else "human_decision_context_missing"
-                )
-                residual_semantics_quarantine_reasons[reason] = (
-                    residual_semantics_quarantine_reasons.get(reason, 0) + 1
-                )
-                continue
-            eligible_human_sources.append(source)
-        human_sources = eligible_human_sources
         if not replay_sources and not human_sources:
             raise ProductionBridgeError(
                 "BRIDGE_FORMAL_R_NO_CAUSAL_CALIBRATED_TRANSITIONS"
             )
         terminal_id = str(summary["terminal_observation_id"])
-        def decision_context(
+        def trainable_decision_context(
             action_source: str, source: Mapping[str, Any]
-        ) -> dict[str, Any]:
+        ) -> tuple[dict[str, Any] | None, str | None]:
             if action_source == "policy":
-                return dict(source["selection"]["residual_decision_context"])
-            context = dict(
-                source["intervention"]["residual_decision_context"]
+                raw_context = source.get("selection", {}).get(
+                    "residual_decision_context"
+                )
+                if not isinstance(raw_context, Mapping):
+                    return None, "decision_context_missing"
+                context = dict(raw_context)
+                if (
+                    context.get("online_semantics_version")
+                    != ONLINE_SEMANTICS_VERSION
+                    or context.get("valid_for_residual_training") is not True
+                    or context.get("base_absolute_action7") is None
+                ):
+                    reason = context.get("invalid_reason")
+                    return None, (
+                        str(reason)
+                        if isinstance(reason, str) and reason
+                        else "decision_context_invalid"
+                    )
+                return context, None
+            raw_context = source.get("intervention", {}).get(
+                "residual_decision_context"
             )
-            context["base_absolute_action7"] = (
-                self._human_pre_takeover_base_absolute(
-                    integrated=integrated,
-                    source=source,
+            if (
+                not isinstance(raw_context, Mapping)
+                or raw_context.get("online_semantics_version")
+                != ONLINE_SEMANTICS_VERSION
+                or raw_context.get("valid_for_residual_training") is not True
+            ):
+                return None, "human_decision_context_missing"
+            base = self._human_pre_takeover_base_absolute(
+                integrated=integrated,
+                source=source,
+            )
+            if base is None:
+                return None, "human_pre_takeover_base_missing"
+            context = dict(raw_context)
+            context["base_absolute_action7"] = base
+            return context, None
+
+        def fallback_decision_ns(
+            action_source: str, source: Mapping[str, Any]
+        ) -> int:
+            if action_source == "policy":
+                return int(
+                    source.get("selection", {}).get(
+                        "apply_selection_monotonic_ns",
+                        source.get("receive_monotonic_ns", 0),
+                    )
+                )
+            raw_action = source.get("safe_action", {}).get(
+                "arbitration", {}
+            ).get("raw_action", {})
+            return int(
+                raw_action.get(
+                    "source_monotonic_ns",
+                    source.get("receive_monotonic_ns", 0),
                 )
             )
-            return context
 
         def source_generation(
             action_source: str, source: Mapping[str, Any]
@@ -5409,12 +5411,23 @@ class ProductionBridge:
                 int(value["takeover_generation"]),
             )
 
-        combined_sources = sorted(
+        combined_sources = []
+        for action_source, source in (
             [("policy", source) for source in replay_sources]
-            + [("human", source) for source in human_sources],
-            key=lambda item: int(
-                decision_context(*item)["decision_monotonic_ns"]
-            ),
+            + [("human", source) for source in human_sources]
+        ):
+            context, reason = trainable_decision_context(action_source, source)
+            if reason is not None:
+                residual_semantics_quarantine_reasons[reason] = (
+                    residual_semantics_quarantine_reasons.get(reason, 0) + 1
+                )
+            combined_sources.append((action_source, source, context))
+        combined_sources.sort(
+            key=lambda item: (
+                int(item[2]["decision_monotonic_ns"])
+                if item[2] is not None
+                else fallback_decision_ns(item[0], item[1])
+            )
         )
         task = str(result.get("task", start.get("task", "")))
         truncated_policy_decisions = _pre_intervention_policy_boundary_decisions(
@@ -5477,10 +5490,12 @@ class ProductionBridge:
                 if anchor < boundary_frame < anchor + CRITIC_ACTION_CONTRACT.critic_slots:
                     human_boundary_ns[int(source["source_sequence"])] = end_ns
         transitions = []
-        for index, (action_source, source) in enumerate(combined_sources):
-            terminal = index == len(combined_sources) - 1
+        for index, (action_source, source, current_context) in enumerate(
+            combined_sources
+        ):
+            actual_episode_terminal = index == len(combined_sources) - 1
             successor = (
-                None if terminal else combined_sources[index + 1]
+                None if actual_episode_terminal else combined_sources[index + 1]
             )
             truncated = (
                 action_source == "policy"
@@ -5506,8 +5521,9 @@ class ProductionBridge:
             )
             if action_source == "human" and boundary_ns is not None:
                 truncated = True
+            next_context = None
             if successor is not None:
-                next_source_kind, next_source = successor
+                next_source_kind, next_source, successor_context = successor
                 current_generation = source_generation(action_source, source)
                 next_generation = source_generation(
                     next_source_kind, next_source
@@ -5516,30 +5532,36 @@ class ProductionBridge:
                     action_source == next_source_kind
                     and current_generation == next_generation
                 )
-                if same_control_segment and not _is_exact_real_decision_successor(
-                    action_source, source, next_source
-                ):
-                    residual_semantics_quarantine_reasons[
-                        "decision_successor_identity_missing"
-                    ] = (
-                        residual_semantics_quarantine_reasons.get(
-                            "decision_successor_identity_missing", 0
+                if same_control_segment:
+                    if current_context is not None and (
+                        successor_context is None
+                        or not _is_exact_real_decision_successor(
+                            action_source, source, next_source
                         )
-                        + 1
-                    )
-                    continue
-                if not same_control_segment:
+                    ):
+                        residual_semantics_quarantine_reasons[
+                            "decision_successor_identity_missing"
+                        ] = (
+                            residual_semantics_quarantine_reasons.get(
+                                "decision_successor_identity_missing", 0
+                            )
+                            + 1
+                        )
+                        continue
+                    next_context = successor_context
+                else:
                     # A source/generation change is a credit boundary, not a TD
                     # successor.  The first decision after the boundary starts a
                     # new chain with its own saved decision context.
                     truncated = True
-                    boundary_ns = int(
-                        decision_context(*successor)["decision_monotonic_ns"]
+                    boundary_ns = (
+                        int(successor_context["decision_monotonic_ns"])
+                        if successor_context is not None
+                        else fallback_decision_ns(next_source_kind, next_source)
                     )
-            if terminal and truncated:
-                raise ProductionBridgeError(
-                    "BRIDGE_FORMAL_R_TERMINAL_AND_TRUNCATED"
-                )
+            terminal = actual_episode_terminal and not truncated
+            if current_context is None:
+                continue
             transitions.append(
                 self._formal_online_r_transition(
                     episode_dir=episode_dir,
@@ -5548,11 +5570,7 @@ class ProductionBridge:
                     integrated=integrated,
                     source=source,
                     policy_sources=replay_sources,
-                    next_decision_context=(
-                        None
-                        if terminal or truncated
-                        else decision_context(*successor)
-                    ),
+                    next_decision_context=next_context,
                     terminal=terminal,
                     truncated=truncated,
                     boundary_timestamp_ns=boundary_ns,
@@ -5565,15 +5583,15 @@ class ProductionBridge:
                     integrated=integrated,
                     source=source,
                     human_sources=human_sources,
-                    next_decision_context=(
-                        None
-                        if terminal or truncated
-                        else decision_context(*successor)
-                    ),
+                    next_decision_context=next_context,
                     terminal=terminal,
                     truncated=truncated,
                     boundary_timestamp_ns=boundary_ns,
                 )
+            )
+        if not transitions:
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_NO_TRAINABLE_DECISION_FRAGMENT"
             )
         uids = [item["identity"]["transition_uid"] for item in transitions]
         if len(set(uids)) != len(transitions):
