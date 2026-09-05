@@ -364,6 +364,14 @@ def test_online_schedule_is_2q_1actor_and_episode_bounded() -> None:
     assert policy.cycles_for_admission(100) == 2
     assert policy.cycles_for_admission(400) == 7
     assert policy.cycles_for_admission(641) == 10
+    assert policy.cycles_for_observed_admission(
+        new_critic_td_valid_rows=99,
+        total_critic_td_valid_rows=99,
+    ) == 0
+    assert policy.cycles_for_observed_admission(
+        new_critic_td_valid_rows=1,
+        total_critic_td_valid_rows=100,
+    ) == 1
     assert policy.residual_actor_critic_cycle_budget((100, 400, 641)) == 19
     assert not policy.candidate_due(9)
     assert policy.candidate_due(10)

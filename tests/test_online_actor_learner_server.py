@@ -129,6 +129,46 @@ class FailingDrainLearner(DrainLearner):
         raise RuntimeError("synthetic learner failure")
 
 
+class RecoveryDrainLearner(DrainLearner):
+    def __init__(self) -> None:
+        super().__init__(cycle_budget=7)
+        self.completed_cycles = 3
+        self.learner["runtime"]["residual_actor_critic_cycles"] = 3
+
+    def outstanding_budget_status(self):
+        return {
+            "total_entitled_cycle_budget": self.cycle_budget,
+            "completed_cycle_count": self.completed_cycles,
+            "remaining_cycle_budget": self.cycle_budget - self.completed_cycles,
+            "recovery_budget_drain_required": (
+                self.completed_cycles < self.cycle_budget
+            ),
+        }
+
+    def recovery_preflight(self):
+        return self.outstanding_budget_status()
+
+    def __call__(self, _coordinator):
+        if self.completed_cycles >= self.cycle_budget:
+            return {
+                "waiting_for_replay": True,
+                "learner_state": "residual_actor_critic_training",
+                "residual_actor_critic_cycle": self.completed_cycles,
+                "residual_actor_optimizer_steps": self.completed_cycles,
+            }
+        self.completed_cycles += 1
+        self.learner["runtime"][
+            "residual_actor_critic_cycles"
+        ] = self.completed_cycles
+        return {
+            "waiting_for_replay": False,
+            "learner_state": "residual_actor_critic_training",
+            "residual_actor_critic_cycle": self.completed_cycles,
+            "residual_actor_optimizer_steps": self.completed_cycles,
+            "learner_actor_steps": 1,
+        }
+
+
 def runtime(tmp_path: Path) -> AsyncResidualActorCriticRuntime:
     revision = "task3-residual-policy-step-000000"
     machine = InMemoryRevisionStateMachine(
@@ -338,6 +378,38 @@ def test_prepare_episode_waits_for_admission_specific_budget_drain(
         assert result["twin_q_updates"] == 14
         assert result["residual_actor_updates"] == 7
         assert result["replay_refresh_ms"] == 4.0
+        prepared = service.prepare_episode(
+            {"session_id": "session-2", "episode_id": "episode-2"}
+        )
+        assert prepared["runtime_session_id"] == "session-2"
+        assert prepared["runtime_episode_id"] == "episode-2"
+    finally:
+        service.stop()
+
+
+def test_restart_recovers_and_drains_remaining_episode_budget(
+    tmp_path: Path,
+) -> None:
+    service = drain_runtime(tmp_path, RecoveryDrainLearner())
+    try:
+        status = service.status()
+        assert status["recovery_budget_drain_required"] is True
+        assert status["total_entitled_cycle_budget"] == 7
+        assert status["outstanding_training_cycle_budget"] == 4
+        with pytest.raises(RuntimeError, match="BEFORE_ADMISSION_DRAIN"):
+            service.prepare_episode(
+                {"session_id": "session-2", "episode_id": "episode-2"}
+            )
+
+        result = service.drain_outstanding_budget(
+            {"timeout_seconds": 2.0}
+        )
+        assert result["status"] == "OUTSTANDING_TRAINING_BUDGET_DRAINED"
+        assert result["drained_cycle_count"] == 4
+        assert result["remaining_cycle_budget"] == 0
+        assert result["twin_q_updates"] == 8
+        assert result["residual_actor_updates"] == 4
+
         prepared = service.prepare_episode(
             {"session_id": "session-2", "episode_id": "episode-2"}
         )

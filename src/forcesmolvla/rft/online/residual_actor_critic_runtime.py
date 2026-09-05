@@ -4,17 +4,13 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
-from copy import deepcopy
 from dataclasses import dataclass
-import json
 import math
-import os
 from pathlib import Path
-import random
 import shutil
 import threading
 import time
-from typing import Any, Callable, Iterable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -95,6 +91,27 @@ class ResidualActorCriticSchedule:
                 ),
             ),
         )
+
+    def cycles_for_observed_admission(
+        self,
+        *,
+        new_critic_td_valid_rows: int,
+        total_critic_td_valid_rows: int,
+    ) -> int:
+        """Apply the fixed warmup-only semantics for pre-threshold admissions.
+
+        Rows admitted before the ACK threshold train the one-time Critic warmup
+        but never accrue retroactive residual Actor-Critic cycle debt.  The
+        admission that reaches the threshold receives only its own cycle budget.
+        """
+
+        require(
+            total_critic_td_valid_rows >= new_critic_td_valid_rows >= 0,
+            "FORCERFT_ONLINE_ADMITTED_ROW_COUNT_INVALID",
+        )
+        if total_critic_td_valid_rows < self.minimum_ack_transitions:
+            return 0
+        return self.cycles_for_admission(new_critic_td_valid_rows)
 
     def residual_actor_critic_cycle_budget(self, admitted_episode_rows: int | Sequence[int]) -> int:
         """Total deterministic budget, derivable again after checkpoint resume."""
@@ -199,6 +216,37 @@ def require(condition: bool, message: str) -> None:
         raise AsyncRuntimeError(message)
 
 
+def load_checkpoint_training_config(checkpoint: Path) -> dict[str, Any]:
+    """Load the authoritative algorithm configuration from one checkpoint."""
+
+    import yaml
+
+    checkpoint = Path(checkpoint).resolve()
+    config = yaml.safe_load(
+        (checkpoint / "state/config.yaml").read_text(encoding="utf-8")
+    )
+    require(isinstance(config, dict), "FORCERFT_CHECKPOINT_CONFIG_INVALID")
+    return dict(config)
+
+
+def require_exact_resume_algorithm_config(
+    *,
+    checkpoint_config: Mapping[str, Any],
+    current_config: Mapping[str, Any],
+) -> None:
+    """Fail closed instead of mixing checkpoint state with current YAML values."""
+
+    from forcesmolvla.rft.online.replay_training import algorithm_hyperparameters
+
+    try:
+        matches = algorithm_hyperparameters(
+            checkpoint_config
+        ) == algorithm_hyperparameters(current_config)
+    except (KeyError, TypeError):
+        matches = False
+    require(matches, "FORCERFT_EXACT_RESUME_CONFIG_MISMATCH")
+
+
 def actor_optimizer_state_is_valid_for_resume(
     actor_optimizer: torch.optim.Optimizer,
     residual_actor_optimizer_steps: int,
@@ -231,8 +279,6 @@ def prepare_learner(
 ) -> dict[str, Any]:
     """Restore only the residual Actor, target Actor, and image-free Twin-Q."""
 
-    import yaml
-
     from forcesmolvla.rft.critic import build_twin_q
     from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (
         load_residual_actor_critic_checkpoint,
@@ -240,9 +286,7 @@ def prepare_learner(
     from forcesmolvla.rft.residual_actor import make_residual_actor_pair
 
     resume_checkpoint = Path(resume_checkpoint).resolve()
-    config = yaml.safe_load(
-        (resume_checkpoint / "state/config.yaml").read_text(encoding="utf-8")
-    )
+    config = load_checkpoint_training_config(resume_checkpoint)
     require(
         int(config["batching"]["command_macro_slots"]) == 3,
         "FORCERFT_COMMAND_MACRO_SLOTS_INVALID",

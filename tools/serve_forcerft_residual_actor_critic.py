@@ -32,7 +32,9 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E40
     EpisodePin,
     InferencePriorityCoordinator,
     PinnedEpisode,
+    load_checkpoint_training_config,
     prepare_learner,
+    require_exact_resume_algorithm_config,
     select_resume_or_bootstrap_checkpoint,
 )
 from forcesmolvla.rft.critic import (  # noqa: E402
@@ -137,7 +139,6 @@ class ResidualActorCriticLearner:
         current_session_id: str | None,
         task: str,
         normalizer_path: Path | None = None,
-        training_policy: ResidualActorCriticSchedule | None = None,
     ) -> None:
         from forcesmolvla.training_data import load_normalizer_manifest
 
@@ -152,11 +153,9 @@ class ResidualActorCriticLearner:
             device,
             resume_checkpoint=self.resume_checkpoint,
         )
-        self.training_policy = (
-            self.learner["training_policy"]
-            if training_policy is None
-            else training_policy
-        )
+        # Exact resume is checkpoint-authoritative.  The repository YAML is
+        # validated by build_runtime(), never used to override this schedule.
+        self.training_policy = self.learner["training_policy"]
         path = (
             warmup.DATASET / "normalizer_manifest.json"
             if normalizer_path is None
@@ -178,6 +177,16 @@ class ResidualActorCriticLearner:
         self._admission_progress: dict[str, dict[str, Any]] = {}
         self._expected_admission_id: str | None = None
         self._joint_cycle_budget = 0
+        checkpoint_replay = self.learner["runtime"].get("replay", {})
+        self._checkpoint_loaded_episode_keys = set(
+            checkpoint_replay.get("loaded_episode_keys", ())
+        )
+        self._checkpoint_per_episode_critic_row_counts = dict(
+            checkpoint_replay.get("per_episode_critic_row_counts", {})
+        )
+        self._checkpoint_admission_cycle_budgets = dict(
+            checkpoint_replay.get("admission_cycle_budgets", {})
+        )
 
     @property
     def residual_actor(self) -> torch.nn.Module:
@@ -218,6 +227,61 @@ class ResidualActorCriticLearner:
             "completed_cycle_count_for_latest_admission": completed,
             "remaining_cycle_budget": max(0, target - cycle),
         }
+
+    def outstanding_budget_status(self) -> dict[str, Any]:
+        completed = int(
+            self.learner["runtime"]["residual_actor_critic_cycles"]
+        )
+        total = int(self._joint_cycle_budget)
+        require(
+            0 <= completed <= total,
+            "FORCERFT_RECOVERY_CYCLE_BUDGET_INCONSISTENT",
+        )
+        remaining = total - completed
+        return {
+            "total_entitled_cycle_budget": total,
+            "completed_cycle_count": completed,
+            "remaining_cycle_budget": remaining,
+            "recovery_budget_drain_required": remaining > 0,
+        }
+
+    def recovery_preflight(self) -> dict[str, Any]:
+        """Rebuild sealed-replay debt before any new episode may start."""
+
+        self._refresh_replay()
+        require(
+            self._checkpoint_loaded_episode_keys.issubset(
+                self._loaded_episode_keys
+            ),
+            "FORCERFT_RECOVERY_CHECKPOINT_EPISODE_MISSING",
+        )
+        for admission_id, count in (
+            self._checkpoint_per_episode_critic_row_counts.items()
+        ):
+            require(
+                admission_id in self._admission_progress
+                and int(
+                    self._admission_progress[admission_id][
+                        "admitted_rows_for_latest_episode"
+                    ]
+                )
+                == int(count),
+                "FORCERFT_RECOVERY_REPLAY_ROW_COUNT_MISMATCH",
+            )
+        for admission_id, budget in (
+            self._checkpoint_admission_cycle_budgets.items()
+        ):
+            require(
+                admission_id in self._admission_progress
+                and int(
+                    self._admission_progress[admission_id][
+                        "computed_cycle_budget"
+                    ]
+                )
+                == int(budget),
+                "FORCERFT_RECOVERY_REPLAY_BUDGET_MISMATCH",
+            )
+        return self.outstanding_budget_status()
 
     def _latest_budget_metrics(self) -> dict[str, Any]:
         admission_id = self._expected_admission_id
@@ -302,14 +366,9 @@ class ResidualActorCriticLearner:
                 admitted_rows > 0,
                 "FORCERFT_INCREMENTAL_REPLAY_NO_VALID_ROWS",
             )
-            # Admissions collected before the public ACK threshold have no joint
-            # training debt.  The admission that reaches the threshold receives
-            # its own normal budget after the one-time Critic warmup.
-            computed_budget = (
-                self.training_policy.cycles_for_admission(admitted_rows)
-                if self.replay.critic_td_valid_rows
-                >= self.training_policy.minimum_ack_transitions
-                else 0
+            computed_budget = self.training_policy.cycles_for_observed_admission(
+                new_critic_td_valid_rows=admitted_rows,
+                total_critic_td_valid_rows=self.replay.critic_td_valid_rows,
             )
             after_budget = before_budget + computed_budget
             self._joint_cycle_budget = after_budget
@@ -790,6 +849,24 @@ class AsyncResidualActorCriticRuntime:
         self._admission_resolution_required = False
         self._drain_in_progress = False
         self._latest_budget_drain_elapsed_ms = 0.0
+        recovery_preflight = getattr(
+            self.learner_job, "recovery_preflight", None
+        )
+        recovery = (
+            dict(recovery_preflight())
+            if callable(recovery_preflight)
+            else {
+                "total_entitled_cycle_budget": 0,
+                "completed_cycle_count": 0,
+                "remaining_cycle_budget": 0,
+                "recovery_budget_drain_required": False,
+            }
+        )
+        self._recovery_budget_drain_required = bool(
+            recovery["recovery_budget_drain_required"]
+        )
+        self._recovery_preflight = recovery
+        self._learner_result.update(recovery)
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -830,6 +907,12 @@ class AsyncResidualActorCriticRuntime:
             "actor_candidate_count": self._candidate_count,
             "policy_epoch": int(self.machine.policy_epoch),
             "online_checkpoint_root": str(self.online_checkpoint_root),
+            "recovery_budget_drain_required": (
+                self._recovery_budget_drain_required
+            ),
+            "outstanding_training_cycle_budget": int(
+                self._recovery_preflight["remaining_cycle_budget"]
+            ),
         }
 
     def status(self) -> dict[str, Any]:
@@ -837,6 +920,14 @@ class AsyncResidualActorCriticRuntime:
             result = dict(self._learner_result)
             learner_runtime = getattr(self.learner_job, "learner", {}).get(
                 "runtime", {}
+            )
+            outstanding_status = getattr(
+                self.learner_job, "outstanding_budget_status", None
+            )
+            outstanding = (
+                dict(outstanding_status())
+                if callable(outstanding_status)
+                else dict(self._recovery_preflight)
             )
             return {
                 "online_residual_actor_critic": True,
@@ -965,6 +1056,15 @@ class AsyncResidualActorCriticRuntime:
                 "budget_drain_elapsed_ms": self._latest_budget_drain_elapsed_ms,
                 "admission_resolution_required": self._admission_resolution_required,
                 "drain_in_progress": self._drain_in_progress,
+                "recovery_budget_drain_required": (
+                    self._recovery_budget_drain_required
+                ),
+                "total_entitled_cycle_budget": int(
+                    outstanding["total_entitled_cycle_budget"]
+                ),
+                "outstanding_training_cycle_budget": int(
+                    outstanding["remaining_cycle_budget"]
+                ),
             }
 
     def start_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -997,6 +1097,7 @@ class AsyncResidualActorCriticRuntime:
             )
             require(
                 not self._admission_resolution_required
+                and not self._recovery_budget_drain_required
                 and not self._drain_in_progress,
                 "FORCERFT_PREPARE_EPISODE_BEFORE_ADMISSION_DRAIN",
             )
@@ -1304,6 +1405,81 @@ class AsyncResidualActorCriticRuntime:
                 self._lock.notify_all()
             raise
 
+    def drain_outstanding_budget(
+        self, payload: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Drain replay debt recovered before the current session existed."""
+
+        timeout_seconds = float(payload.get("timeout_seconds", 60.0))
+        require(
+            0.0 < timeout_seconds <= 600.0,
+            "FORCERFT_TRAINING_DRAIN_REQUEST_INVALID",
+        )
+        started = time.monotonic()
+        deadline = started + timeout_seconds
+        with self._lock:
+            require(
+                not self._episode_active
+                and not self._admission_resolution_required
+                and self._recovery_budget_drain_required
+                and not self._drain_in_progress,
+                "FORCERFT_OUTSTANDING_TRAINING_DRAIN_STATE_INVALID",
+            )
+            starting = self.learner_job.outstanding_budget_status()
+            cycles_to_drain = int(starting["remaining_cycle_budget"])
+            require(
+                cycles_to_drain > 0,
+                "FORCERFT_OUTSTANDING_TRAINING_DRAIN_STATE_INVALID",
+            )
+            self._drain_in_progress = True
+        try:
+            self._start_learner()
+            with self._lock:
+                while True:
+                    require(
+                        self._learner_error is None
+                        and self._learner_worker_state != "failed",
+                        "FORCERFT_TRAINING_DRAIN_LEARNER_FAILED",
+                    )
+                    progress = self.learner_job.outstanding_budget_status()
+                    drained = bool(
+                        progress["remaining_cycle_budget"] == 0
+                        and self._learner_worker_state
+                        in {"waiting_for_replay", "idle"}
+                    )
+                    if drained:
+                        elapsed_ms = (time.monotonic() - started) * 1000.0
+                        self._latest_budget_drain_elapsed_ms = elapsed_ms
+                        self._recovery_budget_drain_required = False
+                        self._recovery_preflight = dict(progress)
+                        self._drain_in_progress = False
+                        self._lock.notify_all()
+                        return {
+                            "status": "OUTSTANDING_TRAINING_BUDGET_DRAINED",
+                            **progress,
+                            "drained_cycle_count": cycles_to_drain,
+                            "twin_q_updates": (
+                                cycles_to_drain
+                                * self._policy.twin_q_updates_per_cycle
+                            ),
+                            "residual_actor_updates": (
+                                cycles_to_drain
+                                * self._policy.residual_actor_updates_per_cycle
+                            ),
+                            "budget_drain_elapsed_ms": elapsed_ms,
+                        }
+                    remaining = deadline - time.monotonic()
+                    require(
+                        remaining > 0.0,
+                        "FORCERFT_TRAINING_DRAIN_TIMEOUT",
+                    )
+                    self._lock.wait(timeout=remaining)
+        except BaseException:
+            with self._lock:
+                self._drain_in_progress = False
+                self._lock.notify_all()
+            raise
+
     def checkpoint_on_operator_q(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         self._validate_identity(payload)
         require(not self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_ACTIVE")
@@ -1383,6 +1559,7 @@ class RequestHandler(serve_policy.RequestHandler):
             "/runtime/operator-q-checkpoint",
             "/runtime/quiesce-and-save",
             "/runtime/drain-admission-budget",
+            "/runtime/drain-outstanding-budget",
             "/runtime/resolve-rejected-admission",
         }:
             super().do_POST()
@@ -1405,6 +1582,9 @@ class RequestHandler(serve_policy.RequestHandler):
                 "/runtime/quiesce-and-save": self.runtime.quiesce_and_save,
                 "/runtime/drain-admission-budget": (
                     self.runtime.drain_admission_budget
+                ),
+                "/runtime/drain-outstanding-budget": (
+                    self.runtime.drain_outstanding_budget
                 ),
                 "/runtime/resolve-rejected-admission": (
                     self.runtime.resolve_rejected_admission
@@ -1486,6 +1666,12 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         ),
         "FORCERFT_EXACT_RESUME_CHECKPOINT_INVALID",
     )
+    current_config = warmup.load_common_actor_critic_config(args.task_id)
+    checkpoint_config = load_checkpoint_training_config(resume_checkpoint)
+    require_exact_resume_algorithm_config(
+        checkpoint_config=checkpoint_config,
+        current_config=current_config,
+    )
     (
         frozen_base_policy_checkpoint,
         residual_checkpoint,
@@ -1520,10 +1706,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         and not any(parameter.requires_grad for parameter in engine.policy.parameters()),
         "FORCERFT_BASE_ACTOR_NOT_FROZEN",
     )
-    common_config = warmup.load_common_actor_critic_config(args.task_id)
-    warmup_config = common_config["ack_critic_warmup"]
-    batching_config = common_config["batching"]
-    online_config = common_config["residual_actor_critic_training"]
+    online_config = checkpoint_config["residual_actor_critic_training"]
     try:
         active_actor_steps = int(active_revision_id.rsplit("-", 1)[1])
     except ValueError:
@@ -1540,36 +1723,6 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         initial_epoch=initial_policy_epoch,
     )
     checkpoint_root = output_root / "online_ack_residual/training_checkpoints"
-    training_policy = ResidualActorCriticSchedule(
-        minimum_ack_transitions=int(warmup_config["minimum_ack_transitions"]),
-        ack_critic_warmup_steps=int(warmup_config["optimizer_steps"]),
-        twin_q_batch_size=int(batching_config["twin_q_batch_size"]),
-        residual_policy_value_batch_size=int(
-            batching_config["residual_policy_value_batch_size"]
-        ),
-        human_residual_imitation_batch_size=int(
-            batching_config["human_residual_imitation_batch_size"]
-        ),
-        admitted_rows_per_cycle=int(online_config["admitted_rows_per_cycle"]),
-        twin_q_updates_per_cycle=int(online_config["twin_q_updates_per_cycle"]),
-        residual_actor_updates_per_cycle=int(online_config["residual_actor_updates_per_cycle"]),
-        max_cycles_per_admitted_episode=int(
-            online_config["max_cycles_per_admitted_episode"]
-        ),
-        residual_candidate_interval_actor_steps=int(
-            online_config["residual_candidate_interval_actor_steps"]
-        ),
-        training_checkpoint_interval_cycles=int(
-            online_config["training_checkpoint_interval_cycles"]
-        ),
-        retained_training_checkpoint_count=int(online_config["retained_training_checkpoint_count"]),
-        checkpoint_on_warmup_complete=bool(
-            online_config["checkpoint_on_warmup_complete"]
-        ),
-        checkpoint_on_candidate_activation=bool(
-            online_config["checkpoint_on_candidate_activation"]
-        ),
-    )
     learner = ResidualActorCriticLearner(
         device=device,
         resume_checkpoint=resume_checkpoint,
@@ -1578,12 +1731,11 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         current_session_id=args.session_id,
         task=args.task.strip(),
         normalizer_path=dataset_root / "normalizer_manifest.json",
-        training_policy=training_policy,
     )
     engine.residual_actor = WristWrenchResidualActor(
-        hidden_dim=int(common_config["wrist_wrench_residual_actor"]["hidden_dim"]),
+        hidden_dim=int(checkpoint_config["wrist_wrench_residual_actor"]["hidden_dim"]),
         max_normalized_residual=float(
-            common_config["wrist_wrench_residual_actor"]["max_normalized_residual"]
+            checkpoint_config["wrist_wrench_residual_actor"]["max_normalized_residual"]
         ),
     ).to(device)
     engine.residual_actor.eval().requires_grad_(False)

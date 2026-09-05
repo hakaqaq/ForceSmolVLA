@@ -188,6 +188,29 @@ def _drain_admission_budget(
     return result
 
 
+def _drain_outstanding_budget(args: argparse.Namespace) -> dict[str, Any]:
+    timeout = float(getattr(args, "training_budget_drain_timeout", 60.0))
+    result = _post_json(
+        f"http://127.0.0.1:{args.policy_port}"
+        "/runtime/drain-outstanding-budget",
+        {"timeout_seconds": timeout},
+        timeout=timeout + 5.0,
+    )
+    require(
+        result.get("status") == "OUTSTANDING_TRAINING_BUDGET_DRAINED"
+        and int(result.get("remaining_cycle_budget", -1)) == 0,
+        "FORCERFT_ONLINE_OUTSTANDING_BUDGET_NOT_DRAINED",
+    )
+    print(
+        "[training-recovery-drain] "
+        f"cycles={result.get('drained_cycle_count')} "
+        f"q_updates={result.get('twin_q_updates')} "
+        f"actor_updates={result.get('residual_actor_updates')} "
+        f"elapsed_ms={float(result.get('budget_drain_elapsed_ms', 0.0)):.1f}"
+    )
+    return result
+
+
 def _post_json(
     url: str, payload: Mapping[str, Any], *, timeout: float = 10.0
 ) -> dict[str, Any]:
@@ -530,6 +553,8 @@ def run_loop(args: argparse.Namespace) -> int:
             and args.deployed_actor_checkpoint.is_dir(),
             "FORCERFT_ONLINE_SERVER_METADATA_INVALID",
         )
+        if metadata.get("recovery_budget_drain_required") is True:
+            _drain_outstanding_budget(args)
         detector_process, detector_directory, detector_socket = (
             _start_detector_worker(args)
         )

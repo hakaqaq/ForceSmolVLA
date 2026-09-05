@@ -12,6 +12,9 @@ ack_critic_warmup:
   optimizer_steps: 256
 
 residual_actor_critic_training:
+  # Pre-threshold admissions are Critic-warmup-only and never accrue
+  # retroactive residual Actor-Critic cycles. The admission that reaches the
+  # threshold receives only the budget derived from its own valid rows.
   admitted_rows_per_cycle: 64
   twin_q_updates_per_cycle: 2
   residual_actor_updates_per_cycle: 1

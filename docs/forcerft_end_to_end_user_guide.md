@@ -203,28 +203,30 @@ Unified server 每次启动恢复一个 residual Actor/Twin-Q checkpoint，并�
 
 canonical online loop 在每个 episode 后只打印两行 capture/learner 摘要和一行 admission 摘要；完整 contract、stream quality 与 episode seal 继续保存在 session 文件中，不在终端重复展开。
 
-启动时先选择 `outputs/{task_id}/online_ack_residual/training_checkpoints/` 中 cycle 最大且结构完整的 exact-resume checkpoint；没有可恢复 checkpoint 时只接受显式 `--online-residual-bootstrap-checkpoint`。frozen base policy 始终从 checkpoint 的 `frozen_base_policy_checkpoint` 加载，整个 online session 不变。
+启动时先选择 `outputs/{task_id}/online_ack_residual/training_checkpoints/` 中 cycle 最大且结构完整的 exact-resume checkpoint；没有可恢复 checkpoint 时只接受显式 `--online-residual-bootstrap-checkpoint`。模型结构、optimizer、loss、residual cap、batch 与调度全部以 checkpoint 的 `state/config.yaml` 为唯一权威；仓库当前公共 YAML 只用于算法字段一致性校验，不一致时以 `FORCERFT_EXACT_RESUME_CONFIG_MISMATCH` 停止。需要改变算法配置时必须建立新的 adaptation lineage，不能称为 exact-resume。frozen base policy 始终从 checkpoint 的 `frozen_base_policy_checkpoint` 加载，整个 online session 不变。
+
+服务开放首个新 episode 前会扫描全部 sealed admissions，重建应得 cycle 总预算并与 checkpoint 已完成 cycle 比较。若存在历史欠账，`recovery_budget_drain_required=true`，canonical online loop 会先调用 `/runtime/drain-outstanding-budget`；欠账排空或显式失败前，`prepare-episode` 一律拒绝。这样即使进程在 formal admission 与正常 drain 之间退出，也不会跳过旧 episode 的训练预算。
 
 `--allow-development-policy-execution-smoke` 是已有的显式机器人执行开关；它不选择模型，也不触发 publication、activation、candidate、profile 或 binding 流程。力限、takeover generation、stale-result rejection、ACK 和 recorder 单控制链保持不变。
 
 在线推理只对反归一化后的 gripper candidate 做有限值饱和：低于 `-0.01 m` 按闭合端处理，高于 `0.095 m` 按打开端处理，二值判定阈值保持 `0.0425 m`，随后只输出精确的 `0.0 m` 或 `0.085 m`。`NaN/Inf` 继续拒绝；TCP6、力限和 action normalizer 不做裁剪或改写。
 
-每累计 10 个真实 residual Actor optimizer step 生成只含 `residual_actor.pt` 的 lineage-isolated candidate，并只在下一 episode boundary 生效。每 50 residual Actor–Critic cycles 保存 exact-resume checkpoint：
+每累计 10 个真实 residual Actor optimizer step 生成只含 `residual_actor.pt` 的 lineage-isolated candidate，并只在下一 episode boundary 生效。每 20 residual Actor–Critic cycles 保存 exact-resume checkpoint；Critic warm-up 完成、candidate 实际激活以及 graceful exit 时也立即保存：
 
 ```text
-outputs/{task_id}/online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000050
-outputs/{task_id}/online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000100
+outputs/{task_id}/online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000020
+outputs/{task_id}/online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000040
 ```
 
-只保留最新两个 checkpoint。每个新 admission 的 residual Actor–Critic cycle 预算为 `min(10, max(1, ceil(new_critic_td_valid_rows / 64)))`；256-step Critic warm-up 不消耗该预算。
+只保留最新十个 checkpoint。每个达到启动阈值后的新 admission，其 residual Actor–Critic cycle 预算为 `min(10, max(1, ceil(new_critic_td_valid_rows / 64)))`；256-step Critic warm-up 不消耗该预算。采用固定的 warmup-only 边界语义：阈值前 admissions 只为 Critic warm-up 提供数据，不追溯产生 joint-cycle debt；首次跨过阈值的 admission 只按自身合法行数获得预算。
 
-正常停止使用 recorder 的 `q`。系统停止新 learner cycle，等待正在进行的 optimizer step 完成，并保存最后完成 cycle；若该 cycle 恰好是 50 的倍数，只保存一次。Learner 异常失败时不保存可能只完成部分 optimizer step 的 checkpoint，也不修改原始 episode或把未封口 episode 加入 replay。
+正常停止使用 recorder 的 `q`。系统停止新 learner cycle，等待正在进行的 optimizer step 完成，并保存最后完成 cycle；若该 cycle 恰好是 20 的倍数，只保存一次。Learner 异常失败时不保存可能只完成部分 optimizer step 的 checkpoint，也不修改原始 episode或把未封口 episode 加入 replay。
 采集途中若因控制器、通信或进程错误退出，canonical online-loop 会自动删除本次未封口 session root 及 `.inprogress` 内容，不保留半条 episode。已存在 technical seal 的 session 不自动删除，即使后续 admission 失败，也保留供修复后重试。
 
-例如 cycle45 退出保存 cycle45；cycle55 保留 cycle50 与 cycle55；cycle107 保留 cycle100 与 cycle107。candidate 不复制完整 ForceSmolVLA。
+例如 cycle45 退出保存 cycle45；cycle55 会保留最近的周期/事件 checkpoint，最多十个。candidate 不复制完整 ForceSmolVLA。
 
 ## 11. 保留与故障处理
 
-必须保留：原始 D 数据和 LeRobot v3、SFT、reward classifier、materialized demo replay、历史 offline Critic 实验记录、最新两个 online exact-resume，以及 formal replay/WAL/outbox/admission 引用的所有 raw episode。
+必须保留：原始 D 数据和 LeRobot v3、SFT、reward classifier、materialized demo replay、历史 offline Critic 实验记录、最新十个 online exact-resume，以及 formal replay/WAL/outbox/admission 引用的所有 raw episode。
 
 常见 fail-closed 原因：exact-resume checkpoint 不完整、推理 Actor 与 Learner checkpoint 不同源、原始 JPEG 缺失、takeover 后旧 result、gripper origin 不完整、ACK 缺失、checkpoint/replay UID 或 credit 不一致。不得用其他 episode 图片、虚假 command ID/ACK、重绑旧 generation 或修改原始 episode绕过。

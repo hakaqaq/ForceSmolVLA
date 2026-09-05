@@ -432,6 +432,42 @@ def test_admission_budget_drain_is_identity_bound_and_fail_closed(
         )
 
 
+def test_outstanding_budget_drain_is_session_independent_and_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = []
+
+    def post(url, payload, *, timeout):
+        calls.append((url, payload, timeout))
+        return {
+            "status": "OUTSTANDING_TRAINING_BUDGET_DRAINED",
+            "total_entitled_cycle_budget": 7,
+            "completed_cycle_count": 7,
+            "remaining_cycle_budget": 0,
+            "drained_cycle_count": 4,
+            "twin_q_updates": 8,
+            "residual_actor_updates": 4,
+            "budget_drain_elapsed_ms": 12.0,
+        }
+
+    monkeypatch.setattr(loop, "_post_json", post)
+    result = loop._drain_outstanding_budget(
+        type(
+            "Args",
+            (),
+            {"policy_port": 8000, "training_budget_drain_timeout": 60.0},
+        )()
+    )
+    assert result["drained_cycle_count"] == 4
+    assert calls == [
+        (
+            "http://127.0.0.1:8000/runtime/drain-outstanding-budget",
+            {"timeout_seconds": 60.0},
+            65.0,
+        )
+    ]
+
+
 def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatch) -> None:
     monkeypatch.setattr(loop, "_report", lambda _command: {
         "status": "FORMAL_ONLINE_R_REJECTED",
@@ -566,6 +602,7 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     resume = tmp_path / "online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000100"
     (resume / "actor").mkdir(parents=True)
     commands: list[list[str]] = []
+    recovery_drains: list[object] = []
 
     class Process:
         pass
@@ -591,7 +628,13 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
         "active_actor_model_revision": "model",
         "active_actor_checkpoint": str((resume / "actor").resolve()),
         "policy_epoch": 0,
+        "recovery_budget_drain_required": True,
     })
+    monkeypatch.setattr(
+        loop,
+        "_drain_outstanding_budget",
+        lambda args: recovery_drains.append(args),
+    )
     monkeypatch.setattr(loop, "_run_episode", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(loop, "_stop_server", lambda *_args, **_kwargs: None)
     args = type("Args", (), {
@@ -609,6 +652,7 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     })()
 
     assert loop.run_loop(args) == 0
+    assert recovery_drains == [args]
     assert args.deployed_actor_checkpoint == (resume / "actor").resolve()
     command = commands[0]
     assert command[command.index("--learner-resume-checkpoint") + 1] == str(resume)
