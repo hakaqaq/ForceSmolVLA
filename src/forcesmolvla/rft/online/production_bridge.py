@@ -5306,38 +5306,32 @@ class ProductionBridge:
             raise ProductionBridgeError(
                 "BRIDGE_FORMAL_R_TERMINAL_OBSERVATION_MISSING"
             )
-        terminal_materialized = self._formal_online_r_observation(
-            episode_dir=episode_dir,
-            episode_id=episode_id,
-            source=terminal_source,
-            prepared=integrated["prepared"],
-        )
-        terminal_frame = int(terminal_materialized["materialized_frame"])
-        replay_sources = [
-            source
-            for source in replay_sources
-            if bisect_left(
-                integrated["prepared"].tuple_host_ns,
-                int(source["pose_ack"]["upper_receive_monotonic_ns"]),
+        terminal_observation_ns = int(terminal_source.get("t_ref_ns", 0))
+        if terminal_observation_ns <= 0:
+            raise ProductionBridgeError(
+                "BRIDGE_FORMAL_R_TERMINAL_OBSERVATION_MISSING"
             )
-            < terminal_frame
-        ]
         command_effective_phase_quarantined_count = 0
         command_effective_phase_quarantined_ratio = 0.0
-        human_sources = [
-            source
-            for source in human_sources
-            if bisect_left(
-                integrated["prepared"].tuple_host_ns,
-                int(source["pose_ack"]["upper_receive_monotonic_ns"]),
-            )
-            < terminal_frame
-        ]
         if not replay_sources and not human_sources:
             raise ProductionBridgeError(
                 "BRIDGE_FORMAL_R_NO_CAUSAL_CALIBRATED_TRANSITIONS"
             )
-        terminal_id = str(summary["terminal_observation_id"])
+
+        def decision_and_ack_precede_terminal(
+            source: Mapping[str, Any], context: Mapping[str, Any]
+        ) -> bool:
+            decision_ns = int(context.get("decision_monotonic_ns", 0))
+            ack_ns = int(
+                source.get("pose_ack", {}).get(
+                    "upper_receive_monotonic_ns", 0
+                )
+            )
+            return (
+                0 < decision_ns < terminal_observation_ns
+                and 0 < ack_ns <= terminal_observation_ns
+            )
+
         def trainable_decision_context(
             action_source: str, source: Mapping[str, Any]
         ) -> tuple[dict[str, Any] | None, str | None]:
@@ -5360,6 +5354,8 @@ class ProductionBridge:
                         if isinstance(reason, str) and reason
                         else "decision_context_invalid"
                     )
+                if not decision_and_ack_precede_terminal(source, context):
+                    return None, "decision_or_ack_after_terminal_observation"
                 return context, None
             raw_context = source.get("intervention", {}).get(
                 "residual_decision_context"
@@ -5379,6 +5375,8 @@ class ProductionBridge:
                 return None, "human_pre_takeover_base_missing"
             context = dict(raw_context)
             context["base_absolute_action7"] = base
+            if not decision_and_ack_precede_terminal(source, context):
+                return None, "decision_or_ack_after_terminal_observation"
             return context, None
 
         def fallback_decision_ns(

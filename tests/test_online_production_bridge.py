@@ -2424,6 +2424,55 @@ def test_invalid_terminal_decisions_do_not_move_reward_to_earlier_row(
     assert report.residual_semantics_quarantined_count == 2
 
 
+def test_ack_mapping_to_terminal_frame_keeps_true_terminal_decision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    stream_root = (
+        episode.parent.parent / "integrated_capture" / episode.name / "streams"
+    )
+    transition_path = stream_root / "policy_execute_transition.jsonl"
+    transitions = [
+        json.loads(line) for line in transition_path.read_text().splitlines()
+    ]
+    terminal_policy = transitions[-1]
+    terminal_policy["receive_monotonic_ns"] = 1_380_000_000
+    terminal_policy["pose_ack"]["upper_receive_monotonic_ns"] = 1_380_000_000
+    _write_jsonl(transition_path, transitions)
+
+    native_ack_path = episode / "streams/reference_ack.jsonl"
+    native_acks = [
+        json.loads(line) for line in native_ack_path.read_text().splitlines()
+    ]
+    terminal_stamp = terminal_policy["pose_ack"]["request_stamp_ns"]
+    native_ack = next(
+        row
+        for row in native_acks
+        if row["payload"]["request_stamp_ns"] == terminal_stamp
+    )
+    native_ack["receive_monotonic_ns"] = 1_380_100_000
+    _write_jsonl(native_ack_path, native_acks)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+    state = tmp_path / "formal-r"
+
+    report = _bridge(state).admit_policy_execution_smoke(
+        episode, operator_task_outcome="success"
+    )
+    payloads = sorted(
+        (
+            json.loads(path.read_text())["payload"]
+            for path in (state / "replay").glob("*.json")
+        ),
+        key=lambda item: item["identity"]["decision_id"],
+    )
+
+    assert report.accepted_unique_r_transition_count == 3
+    assert [item["identity"]["decision_id"] for item in payloads] == [1, 2, 3]
+    assert [item["outcome"]["reward"] for item in payloads] == [0.0, 0.0, 1.0]
+    assert payloads[-1]["outcome"]["terminated"] is True
+
+
 def test_formal_online_r_admission_accepts_exact_resume_waiting_for_replay(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
