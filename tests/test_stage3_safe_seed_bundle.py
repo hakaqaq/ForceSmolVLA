@@ -83,3 +83,7 @@ def test_online_residual_bootstrap_needs_no_critic_parent_and_starts_zero(
         "residual_actor_optimizer_steps": 0,
         "twin_q_target_update_steps": 0,
     }
+    assert runtime["replay"]["loaded_episode_keys"] == []
+    assert runtime["replay"]["per_episode_critic_row_counts"] == {}
+    assert runtime["replay"]["admission_cycle_budgets"] == {}
+    assert runtime["replay"]["replay_generation"] == 0

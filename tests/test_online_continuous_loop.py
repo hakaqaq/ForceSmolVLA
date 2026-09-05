@@ -343,12 +343,13 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
 
     monkeypatch.setattr(loop, "_report", lambda command: admission_commands.append(command) or {
         "status": "FORMAL_ONLINE_R_ADMITTED",
+        "admission_id": "003__episode_000000",
         "accepted_unique_r_transition_count": 364,
         "human_override_replay_count": 2,
         "total_unique_r_transition_count": 748,
         "minimum_ack_transitions_reached": True,
     })
-    assert loop._admit(
+    admission = loop._admit(
         type("Args", (), {
             "model_python": Path("python"), "ack_replay_root": Path("r"),
             "task_id": "task3", "output_root": Path("outputs/task3"),
@@ -357,7 +358,9 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
         })(),
         Path("episode"),
         outcome="success",
-    ) is True
+    )
+    assert admission is not None
+    assert admission["admission_id"] == "003__episode_000000"
     output = capsys.readouterr().out
     assert output.count("\n") == 1
     assert "human_expert=2" in output
@@ -370,6 +373,63 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     assert admission_commands[0][
         admission_commands[0].index("--detector-worker-socket") + 1
     ] == "/tmp/task3-detector.sock"
+
+
+def test_admission_budget_drain_is_identity_bound_and_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = []
+
+    def post(url, payload, *, timeout):
+        calls.append((url, payload, timeout))
+        return {
+            "status": "TRAINING_BUDGET_DRAINED",
+            "admission_id": "003__episode_000000",
+            "admitted_rows_for_latest_episode": 400,
+            "computed_cycle_budget": 7,
+            "completed_cycle_count": 7,
+            "remaining_cycle_budget": 0,
+            "twin_q_updates": 14,
+            "residual_actor_updates": 7,
+            "replay_refresh_ms": 20.0,
+        }
+
+    monkeypatch.setattr(loop, "_post_json", post)
+    result = loop._drain_admission_budget(
+        type(
+            "Args",
+            (),
+            {"policy_port": 8000, "training_budget_drain_timeout": 60.0},
+        )(),
+        identity={"session_id": "capture_003", "episode_id": "episode_000000"},
+        admission={"admission_id": "003__episode_000000"},
+    )
+    assert result["remaining_cycle_budget"] == 0
+    assert calls[0][1]["admission_id"] == "003__episode_000000"
+    assert calls[0][2] == 65.0
+
+    monkeypatch.setattr(
+        loop,
+        "_post_json",
+        lambda *_args, **_kwargs: {
+            "status": "TRAINING_BUDGET_DRAINED",
+            "admission_id": "wrong",
+            "remaining_cycle_budget": 0,
+        },
+    )
+    with pytest.raises(RuntimeError, match="TRAINING_BUDGET_NOT_DRAINED"):
+        loop._drain_admission_budget(
+            type(
+                "Args",
+                (),
+                {"policy_port": 8000, "training_budget_drain_timeout": 60.0},
+            )(),
+            identity={
+                "session_id": "capture_003",
+                "episode_id": "episode_000000",
+            },
+            admission={"admission_id": "003__episode_000000"},
+        )
 
 
 def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatch) -> None:
@@ -391,7 +451,7 @@ def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatc
         outcome="failure",
     )
 
-    assert admitted is False
+    assert admitted is None
     assert "FORMAL_ONLINE_R_REJECTED" in capsys.readouterr().out
 
 

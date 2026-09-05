@@ -4,7 +4,7 @@ environment:
 batching:
   twin_q_batch_size: 128
   residual_policy_value_batch_size: 64
-  human_residual_imitation_batch_size: 64
+  human_residual_imitation_batch_size: 32
   command_macro_slots: 3
 
 ack_critic_warmup:
@@ -12,12 +12,15 @@ ack_critic_warmup:
   optimizer_steps: 256
 
 residual_actor_critic_training:
+  admitted_rows_per_cycle: 64
   twin_q_updates_per_cycle: 2
   residual_actor_updates_per_cycle: 1
   max_cycles_per_admitted_episode: 10
   residual_candidate_interval_actor_steps: 10
-  training_checkpoint_interval_cycles: 50
-  retained_training_checkpoint_count: 2
+  training_checkpoint_interval_cycles: 20
+  retained_training_checkpoint_count: 10
+  checkpoint_on_warmup_complete: true
+  checkpoint_on_candidate_activation: true
 
 optimizer:
   residual_actor:

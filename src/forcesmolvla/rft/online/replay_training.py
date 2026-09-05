@@ -8,6 +8,7 @@ from copy import deepcopy
 from functools import lru_cache
 import json
 from pathlib import Path
+import random
 import sys
 from typing import Any, Iterable, Mapping
 
@@ -450,89 +451,186 @@ def _transition_eligibility(
     return eligibility
 
 
+def _validated_formal_row(
+    envelope: Mapping[str, Any],
+    *,
+    episode_id: str,
+    admission_relative: str,
+) -> tuple[dict[str, Any], str]:
+    require(
+        envelope.get("episode_sealed") is True
+        and envelope.get("admission_record") == admission_relative,
+        "FORCERFT_ONLINE_REPLAY_EPISODE_AUTHORITY",
+    )
+    row = envelope["payload"]
+    require(
+        str(row["identity"]["episode_id"]) == episode_id,
+        "FORCERFT_ONLINE_REPLAY_EPISODE_ID_MISMATCH",
+    )
+    source = row.get(
+        "action_source",
+        row.get("action_authority", {}).get("executed_action_source"),
+    )
+    eligibility = _transition_eligibility(row, source)
+    critic_td_valid = eligibility.get(
+        "critic_td_valid", eligibility.get("td_eligible")
+    )
+    require(
+        row["classification"] == "recorded_live_policy_execution_smoke"
+        and source in {"policy", "human"}
+        and row["action_authority"]["executed_action_source"] == source
+        and eligibility.get("formal_replay") is True
+        and eligibility.get("formal_training_replay_eligible") is True
+        and eligibility.get("real_online_r") is True
+        and eligibility.get("replay_membership") == "R_online"
+        and critic_td_valid is True,
+        "FORCERFT_ONLINE_REPLAY_MEMBERSHIP",
+    )
+    eligibility["critic_td_valid"] = True
+    row["action_source"] = source
+    row.setdefault("expert", source == "human")
+    row.setdefault("intervention", source == "human")
+    if source == "human":
+        require(row["intervention"] is True, "FORCERFT_ONLINE_HUMAN_INVALID")
+    else:
+        require(
+            row["expert"] is False and row["intervention"] is False,
+            "FORCERFT_ONLINE_POLICY_REPLAY_SEMANTICS_INVALID",
+        )
+        row.setdefault("action_target", [[0.0] * 7 for _ in range(50)])
+        row.setdefault("action_valid_mask", [[False] * 7 for _ in range(50)])
+    return row, str(source)
+
+
+def load_formal_online_episode(root: Path, admission_id: str) -> tuple[
+    list[dict[str, Any]],
+    tuple[ProductionAckMacro, ...],
+    dict[str, Path],
+    list[dict[str, Any]],
+]:
+    require(
+        bool(admission_id)
+        and Path(admission_id).name == admission_id
+        and not admission_id.endswith(".json"),
+        "FORCERFT_ONLINE_REPLAY_ADMISSION_ID_INVALID",
+    )
+    admission_relative = f"admissions/{admission_id}.json"
+    admission_path = root / admission_relative
+    seal_path = root / "episodes" / f"{admission_id}.json"
+    require(
+        admission_path.is_file() and seal_path.is_file(),
+        "FORCERFT_ONLINE_REPLAY_ADMISSION_MISSING",
+    )
+    admission = json.loads(admission_path.read_text(encoding="utf-8"))
+    seal = json.loads(seal_path.read_text(encoding="utf-8"))
+    episode_id = str(admission.get("episode_id", ""))
+    require(
+        seal.get("status") == "SEALED_COMMITTED"
+        and seal.get("admission_record") == admission_relative
+        and str(seal.get("episode_id", "")) == episode_id
+        and str(admission.get("admission_id", admission_id)) == admission_id
+        and str(seal.get("admission_id", admission_id)) == admission_id,
+        "FORCERFT_ONLINE_REPLAY_EPISODE_SEAL_INVALID",
+    )
+    require(
+        admission.get("policy_execution_smoke_bridge") == "PASS",
+        "FORCERFT_ONLINE_REPLAY_BRIDGE_NOT_PASS",
+    )
+    require(
+        admission.get("source_episode_semantics")
+        == {"formal_replay": False, "real_online_r": False},
+        "FORCERFT_ONLINE_REPLAY_SOURCE_SEMANTICS",
+    )
+    require(
+        (
+            admission.get("operator_task_outcome"),
+            admission.get("detector_outcome"),
+        )
+        in {("success", "success"), ("failure", "miss")},
+        "FORCERFT_ONLINE_REPLAY_OUTCOME_CONFLICT",
+    )
+    expected = int(admission["accepted_unique_r_transition_count"])
+    transition_uids = tuple(str(value) for value in seal["transition_uids"])
+    admission_uids = tuple(
+        str(item["transition_uid"]) for item in admission["transitions"]
+    )
+    require(
+        len(transition_uids) == expected
+        and len(set(transition_uids)) == expected
+        and set(transition_uids) == set(admission_uids),
+        "FORCERFT_ONLINE_REPLAY_ADMISSION_UID_MISMATCH",
+    )
+
+    policy_rows: list[dict[str, Any]] = []
+    human_rows: list[dict[str, Any]] = []
+    for uid in transition_uids:
+        path = root / "replay" / f"{uid}.json"
+        require(path.is_file(), "FORCERFT_ONLINE_REPLAY_TRANSITION_MISSING")
+        envelope = json.loads(path.read_text(encoding="utf-8"))
+        row, source = _validated_formal_row(
+            envelope,
+            episode_id=episode_id,
+            admission_relative=admission_relative,
+        )
+        require(
+            str(row["identity"]["transition_uid"]) == uid,
+            "FORCERFT_ONLINE_REPLAY_TRANSITION_UID_MISMATCH",
+        )
+        if source == "human":
+            human_rows.append(row)
+        else:
+            policy_rows.append(row)
+    all_rows = [*policy_rows, *human_rows]
+    require(len(all_rows) == expected, "FORCERFT_ONLINE_REPLAY_ADMISSION_COUNT")
+    require(
+        any(row["outcome"]["terminated"] for row in all_rows),
+        "FORCERFT_ONLINE_REPLAY_MACRO_TERMINAL_MISSING",
+    )
+    macros = build_ack_macros(policy_rows)
+    return (
+        policy_rows,
+        macros,
+        {episode_id: Path(admission["source_episode"])},
+        human_rows,
+    )
+
+
 def load_formal_online_r(root: Path) -> tuple[
     list[dict[str, Any]],
     tuple[ProductionAckMacro, ...],
     dict[str, Path],
     list[dict[str, Any]],
 ]:
-    admission_files = tuple(sorted((root / "admissions").glob("*.json")))
-    require(admission_files, "FORCERFT_ONLINE_REPLAY_ADMISSION_RECORD_COUNT")
-    sealed_episodes = _sealed_episode_ids(root)
-    expected = 0
-    source_episodes: dict[str, Path] = {}
-    for path in admission_files:
-        admission = json.loads(path.read_text(encoding="utf-8"))
-        if str(admission.get("episode_id", "")) not in sealed_episodes:
-            continue
-        require(admission.get("policy_execution_smoke_bridge") == "PASS", "FORCERFT_ONLINE_REPLAY_BRIDGE_NOT_PASS")
-        require(admission.get("source_episode_semantics") == {"formal_replay": False, "real_online_r": False}, "FORCERFT_ONLINE_REPLAY_SOURCE_SEMANTICS")
-        require(
-            (
-                admission.get("operator_task_outcome"),
-                admission.get("detector_outcome"),
-            )
-            in {("success", "success"), ("failure", "miss")},
-            "FORCERFT_ONLINE_REPLAY_OUTCOME_CONFLICT",
-        )
-        episode_id = str(admission["episode_id"])
-        require(episode_id not in source_episodes, "FORCERFT_ONLINE_REPLAY_ADMISSION_EPISODE_DUPLICATE")
-        source_episodes[episode_id] = Path(admission["source_episode"])
-        expected += int(admission["accepted_unique_r_transition_count"])
-
-    policy_rows: list[dict[str, Any]] = []
-    human_rows: list[dict[str, Any]] = []
-    for path in sorted((root / "replay").glob("*.json")):
-        envelope = json.loads(path.read_text(encoding="utf-8"))
-        if envelope.get("episode_sealed") is not True:
-            continue
-        row = envelope["payload"]
-        if str(row["identity"]["episode_id"]) not in source_episodes:
-            continue
-        source = row.get(
-            "action_source",
-            row.get("action_authority", {}).get("executed_action_source"),
-        )
-        eligibility = _transition_eligibility(row, source)
-        critic_td_valid = eligibility.get(
-            "critic_td_valid", eligibility.get("td_eligible")
-        )
-        require(
-            row["classification"] == "recorded_live_policy_execution_smoke"
-            and source in {"policy", "human"}
-            and row["action_authority"]["executed_action_source"] == source
-            and eligibility.get("formal_replay") is True
-            and eligibility.get("formal_training_replay_eligible") is True
-            and eligibility.get("real_online_r") is True
-            and eligibility.get("replay_membership") == "R_online"
-            and critic_td_valid is True,
-            "FORCERFT_ONLINE_REPLAY_MEMBERSHIP",
-        )
-        eligibility["critic_td_valid"] = True
-        row["action_source"] = source
-        row.setdefault("expert", source == "human")
-        row.setdefault("intervention", source == "human")
-        if source == "human":
-            require(row["intervention"] is True, "FORCERFT_ONLINE_HUMAN_INVALID")
-            human_rows.append(row)
-        else:
-            require(
-                row["expert"] is False and row["intervention"] is False,
-                "FORCERFT_ONLINE_POLICY_REPLAY_SEMANTICS_INVALID",
-            )
-            row.setdefault("action_target", [[0.0] * 7 for _ in range(50)])
-            row.setdefault(
-                "action_valid_mask", [[False] * 7 for _ in range(50)]
-            )
-            policy_rows.append(row)
-    all_rows = [*policy_rows, *human_rows]
-    require(len(all_rows) == expected, "FORCERFT_ONLINE_REPLAY_ADMISSION_COUNT")
-    require(
-        len(all_rows) >= 100,
-        "FORCERFT_ONLINE_REPLAY_TRAINING_STARTS",
+    admission_ids = tuple(
+        path.stem
+        for path in sorted((root / "episodes").glob("*.json"))
+        if json.loads(path.read_text(encoding="utf-8")).get("status")
+        == "SEALED_COMMITTED"
     )
-    require(len({row["identity"]["transition_uid"] for row in all_rows}) == len(all_rows), "FORCERFT_ONLINE_REPLAY_UID_DUPLICATE")
-    macros = build_ack_macros(policy_rows)
+    require(admission_ids, "FORCERFT_ONLINE_REPLAY_ADMISSION_RECORD_COUNT")
+    policy_rows: list[dict[str, Any]] = []
+    macros: list[ProductionAckMacro] = []
+    source_episodes: dict[str, Path] = {}
+    human_rows: list[dict[str, Any]] = []
+    for admission_id in admission_ids:
+        policy, episode_macros, sources, human = load_formal_online_episode(
+            root, admission_id
+        )
+        require(
+            not set(source_episodes).intersection(sources),
+            "FORCERFT_ONLINE_REPLAY_ADMISSION_EPISODE_DUPLICATE",
+        )
+        policy_rows.extend(policy)
+        macros.extend(episode_macros)
+        source_episodes.update(sources)
+        human_rows.extend(human)
+    all_rows = [*policy_rows, *human_rows]
+    require(len(all_rows) >= 100, "FORCERFT_ONLINE_REPLAY_TRAINING_STARTS")
+    require(
+        len({row["identity"]["transition_uid"] for row in all_rows})
+        == len(all_rows),
+        "FORCERFT_ONLINE_REPLAY_UID_DUPLICATE",
+    )
     require(
         macros
         and (
@@ -541,7 +639,7 @@ def load_formal_online_r(root: Path) -> tuple[
         ),
         "FORCERFT_ONLINE_REPLAY_MACRO_TERMINAL_MISSING",
     )
-    return policy_rows, macros, source_episodes, human_rows
+    return policy_rows, tuple(macros), source_episodes, human_rows
 
 
 def count_sealed_critic_td_valid_transitions(root: Path) -> int:
@@ -776,6 +874,30 @@ class OnlineResidualReplay:
         self.next_base_missing_rows = 0
         self.quarantined_current_schema_rows = 0
         self.rows = tuple(self._materialize_all(tuple(macros)))
+
+    def append_macros(
+        self, macros: Iterable[ProductionAckMacro]
+    ) -> dict[str, int]:
+        additions = tuple(macros)
+        if not additions:
+            return {}
+        existing_episode_ids = {row["episode_id"] for row in self.rows}
+        new_episode_ids = {
+            str(macro.transition["identity"]["episode_id"])
+            for macro in additions
+        }
+        require(
+            not existing_episode_ids.intersection(new_episode_ids),
+            "FORCERFT_ONLINE_REPLAY_EPISODE_ALREADY_LOADED",
+        )
+        materialized = tuple(self._materialize_all(additions))
+        self.rows = (*self.rows, *materialized)
+        return {
+            episode_id: sum(
+                int(row["episode_id"] == episode_id) for row in materialized
+            )
+            for episode_id in new_episode_ids
+        }
 
     @staticmethod
     def _raw_state(observation: Mapping[str, Any]) -> np.ndarray:
@@ -1090,11 +1212,31 @@ class OnlineResidualReplay:
         ]
         if not population:
             return None
-        generator = torch.Generator().manual_seed(int(seed))
-        draws = torch.randint(
-            len(population), (batch_size,), generator=generator
-        )
-        indices = torch.tensor([population[int(index)] for index in draws])
+        generator = random.Random(int(seed))
+        by_episode: dict[str, list[int]] = {}
+        for index in population:
+            by_episode.setdefault(self.rows[index]["episode_id"], []).append(index)
+        groups = list(by_episode.values())
+        group_order = list(range(len(groups)))
+        generator.shuffle(group_order)
+        indices: list[int] = []
+        if len(population) >= batch_size:
+            counts = [0] * len(groups)
+            selected_count = 0
+            while selected_count < batch_size:
+                for group_index in group_order:
+                    if counts[group_index] < len(groups[group_index]):
+                        counts[group_index] += 1
+                        selected_count += 1
+                        if selected_count == batch_size:
+                            break
+            for group_index, count in enumerate(counts):
+                indices.extend(generator.sample(groups[group_index], count))
+            generator.shuffle(indices)
+        else:
+            for _ in range(batch_size):
+                indices.append(generator.choice(generator.choice(groups)))
+        indices = torch.tensor(indices, dtype=torch.long)
         return self._batch(indices, device)
 
     @property

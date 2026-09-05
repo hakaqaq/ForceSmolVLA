@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from forcesmolvla.rft.online import production_bridge as bridge_module
+from forcesmolvla.rft.online import replay_training
 from forcesmolvla.raw_to_lerobot_v3 import PreparedEpisode
 from forcesmolvla.rft.detector_reward_transitions import (
     causal_detection_trace,
@@ -2142,6 +2143,27 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     )
 
     assert report.status == "FORMAL_ONLINE_R_ADMITTED"
+    assert report.admission_id == report.episode_id.replace("/", "__")
+    admission_record = json.loads(
+        (state / "admissions" / f"{report.admission_id}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    episode_manifest = json.loads(
+        (state / "episodes" / f"{report.admission_id}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert admission_record["admission_id"] == report.admission_id
+    assert episode_manifest["admission_id"] == report.admission_id
+    policy_rows, policy_macros, source_episodes, human_rows = (
+        replay_training.load_formal_online_episode(
+            state, report.admission_id
+        )
+    )
+    assert len(policy_rows) + len(human_rows) == 3
+    assert policy_macros
+    assert set(source_episodes) == {report.episode_id}
     assert report.policy_execution_smoke_bridge == "PASS"
     assert report.accepted_unique_r_transition_count == 3
     assert report.total_unique_r_transition_count == 3

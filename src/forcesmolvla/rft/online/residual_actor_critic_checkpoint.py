@@ -44,6 +44,9 @@ def residual_actor_critic_checkpoint_is_recoverable(checkpoint: Path) -> bool:
         )
         counters = state["counters"]
         replay = state["replay"]
+        loaded_episode_keys = replay.get("loaded_episode_keys", [])
+        per_episode_counts = replay.get("per_episode_critic_row_counts", {})
+        admission_cycle_budgets = replay.get("admission_cycle_budgets", {})
         return bool(
             state["learner_state"]
             in {
@@ -76,6 +79,27 @@ def residual_actor_critic_checkpoint_is_recoverable(checkpoint: Path) -> bool:
                     "human_residual_valid_rows",
                 )
             )
+            and isinstance(loaded_episode_keys, list)
+            and len(set(loaded_episode_keys)) == len(loaded_episode_keys)
+            and all(
+                isinstance(value, str) and value
+                for value in loaded_episode_keys
+            )
+            and isinstance(per_episode_counts, dict)
+            and all(
+                isinstance(key, str)
+                and key
+                and int(value) >= 0
+                for key, value in per_episode_counts.items()
+            )
+            and isinstance(admission_cycle_budgets, dict)
+            and all(
+                isinstance(key, str)
+                and key
+                and int(value) >= 0
+                for key, value in admission_cycle_budgets.items()
+            )
+            and int(replay.get("replay_generation", 0)) >= 0
         )
     except (KeyError, OSError, RuntimeError, TypeError, ValueError):
         return False

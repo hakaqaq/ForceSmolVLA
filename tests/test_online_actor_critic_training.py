@@ -325,6 +325,38 @@ def test_only_explicit_legacy_policy_rows_fallback_to_zero_residual() -> None:
     assert current.nonzero_behavior_residual_rows == 1
 
 
+def test_replay_sampling_is_without_replacement_when_population_is_large_enough() -> None:
+    replay = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=[[0.0] * 7 for _ in range(3)],
+    )
+    prototype = replay.rows[0]
+    replay.rows = tuple(
+        {**prototype, "state7": np.full(7, index, dtype=np.float32)}
+        for index in range(8)
+    )
+    sampled = replay.sample(8, device=torch.device("cpu"), seed=7)
+    assert sampled is not None
+    assert len(set(sampled.state7[:, 0].tolist())) == 8
+
+    replay.rows = tuple(
+        {
+            **prototype,
+            "episode_id": episode_id,
+            "state7": np.full(7, value, dtype=np.float32),
+        }
+        for episode_id, value, count in (
+            ("short", 0.0, 20),
+            ("long", 1.0, 100),
+        )
+        for _ in range(count)
+    )
+    balanced = replay.sample(10, device=torch.device("cpu"), seed=7)
+    assert balanced is not None
+    assert balanced.state7[:, 0].tolist().count(0.0) == 5
+    assert balanced.state7[:, 0].tolist().count(1.0) == 5
+
+
 def test_online_schedule_is_2q_1actor_and_episode_bounded() -> None:
     policy = ResidualActorCriticSchedule()
     assert policy.twin_q_updates_per_cycle == 2
@@ -335,6 +367,10 @@ def test_online_schedule_is_2q_1actor_and_episode_bounded() -> None:
     assert policy.residual_actor_critic_cycle_budget((100, 400, 641)) == 19
     assert not policy.candidate_due(9)
     assert policy.candidate_due(10)
+    assert ResidualActorCriticSchedule(
+        admitted_rows_per_cycle=32,
+        max_cycles_per_admitted_episode=20,
+    ).cycles_for_admission(400) == 13
 
 
 def test_task_profiles_cannot_override_algorithm_parameters() -> None:
@@ -343,12 +379,15 @@ def test_task_profiles_cannot_override_algorithm_parameters() -> None:
     assert algorithm_hyperparameters(task2) == algorithm_hyperparameters(task3)
     assert task2["task"] != task3["task"]
     assert task2["residual_actor_critic_training"] == {
+        "admitted_rows_per_cycle": 64,
         "twin_q_updates_per_cycle": 2,
         "residual_actor_updates_per_cycle": 1,
         "max_cycles_per_admitted_episode": 10,
         "residual_candidate_interval_actor_steps": 10,
-        "training_checkpoint_interval_cycles": 50,
-        "retained_training_checkpoint_count": 2,
+        "training_checkpoint_interval_cycles": 20,
+        "retained_training_checkpoint_count": 10,
+        "checkpoint_on_warmup_complete": True,
+        "checkpoint_on_candidate_activation": True,
     }
 
 
@@ -359,8 +398,18 @@ def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
     actor = torch.nn.Linear(2, 2)
     learner.replay_root = Path("/unused")
     learner.replay = None
-    learner._materialized_replay_signature = None
-    learner.training_policy = ResidualActorCriticSchedule()
+    learner.training_policy = ResidualActorCriticSchedule(
+        checkpoint_on_warmup_complete=False,
+        checkpoint_on_candidate_activation=False,
+    )
+    learner._loaded_episode_keys = set()
+    learner._admission_progress = {}
+    learner._expected_admission_id = None
+    learner._joint_cycle_budget = 0
+    learner.latest_replay_refresh_ms = 0.0
+    learner.latest_critic_update_ms = 0.0
+    learner.latest_actor_update_ms = 0.0
+    learner.latest_cycle_ms = 0.0
     learner.learner = {
         "residual_actor": actor,
         "runtime": {
@@ -383,6 +432,97 @@ def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
     return learner
 
 
+def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
+    learner = tiny_continuous_learner(learner_state="ack_replay_collection")
+    learner.normalizer = object()
+    learner.current_session_id = None
+    learner.unique_r_count = 0
+    learner.r_macro_count = 0
+    learner.next_base_missing_rows = 0
+    learner.quarantined_current_schema_rows = 0
+    learner.nonzero_behavior_residual_rows = 0
+    signatures = [["a"]]
+    monkeypatch.setattr(
+        learner, "_episode_signature", lambda: tuple(signatures[0])
+    )
+
+    class FakeReplay:
+        def __init__(self, _macros, _normalizer) -> None:
+            self.counts: list[int] = []
+            self.next_base_missing_rows = 0
+            self.quarantined_current_schema_rows = 0
+            self.nonzero_behavior_residual_rows = 0
+
+        def append_macros(self, macros):
+            macro = tuple(macros)[0]
+            episode_id = macro.transition["identity"]["episode_id"]
+            count = int(macro.transition["materialized_count"])
+            self.counts.append(count)
+            return {episode_id: count}
+
+        @property
+        def critic_rows_per_episode(self):
+            return tuple(self.counts)
+
+        @property
+        def critic_td_valid_rows(self):
+            return sum(self.counts)
+
+        actor_q_valid_rows = property(lambda self: sum(self.counts))
+        human_residual_valid_rows = property(lambda _self: 0)
+
+    calls: list[str] = []
+
+    def load_episode(_root, admission_id):
+        calls.append(admission_id)
+        episode_id = f"{admission_id}/episode"
+        row = {
+            "identity": {"episode_id": episode_id, "session_id": "old"},
+            "materialized_count": {"a": 99, "b": 1, "c": 400}[admission_id],
+        }
+        macro = SimpleNamespace(transition=row)
+        return [row], (macro,), {episode_id: Path("episode")}, []
+
+    monkeypatch.setattr(learner_server.warmup, "OnlineResidualReplay", FakeReplay)
+    monkeypatch.setattr(
+        learner_server.warmup, "load_formal_online_episode", load_episode
+    )
+    monkeypatch.setattr(
+        learner_server.warmup,
+        "load_formal_online_r",
+        lambda _root: (_ for _ in ()).throw(AssertionError("full reload")),
+    )
+    monkeypatch.setattr(
+        learner_server.warmup, "build_ack_macros", lambda _rows: ()
+    )
+
+    learner._refresh_replay()
+    assert calls == ["a"]
+    assert learner.admission_budget_status("a")["computed_cycle_budget"] == 0
+    signatures[0].append("b")
+    learner._refresh_replay()
+    assert learner.admission_budget_status("b")["computed_cycle_budget"] == 1
+    learner.learner["runtime"]["residual_actor_critic_cycles"] = 1
+    signatures[0].append("c")
+    learner.expect_admission("c")
+    learner._refresh_replay()
+    assert calls == ["a", "b", "c"]
+    assert learner.learner["runtime"]["replay"]["loaded_episode_keys"] == [
+        "a",
+        "b",
+        "c",
+    ]
+    assert learner.admission_budget_status("c") == {
+        "episode_key": "c",
+        "admitted_rows_for_latest_episode": 400,
+        "computed_cycle_budget": 7,
+        "cycle_count_at_admission_start": 1,
+        "target_cycle_count_after_admission": 8,
+        "completed_cycle_count_for_latest_admission": 0,
+        "remaining_cycle_budget": 7,
+    }
+
+
 def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
     learner = tiny_continuous_learner(learner_state="ack_replay_collection")
     actor_before = {
@@ -390,9 +530,9 @@ def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
         for name, value in learner.residual_actor.state_dict().items()
     }
     monkeypatch.setattr(
-        learner_server.warmup,
-        "count_sealed_critic_td_valid_transitions",
-        lambda _root: 99,
+        learner,
+        "_refresh_replay",
+        lambda: SimpleNamespace(critic_td_valid_rows=99),
     )
     result = learner(object())
     assert result["learner_state"] == "ack_replay_collection"
@@ -412,6 +552,10 @@ def test_100_rows_runs_exactly_256_critic_warmup_then_starts_residual_training(
     monkeypatch,
 ) -> None:
     learner = tiny_continuous_learner(learner_state="ack_replay_collection")
+    learner.training_policy = ResidualActorCriticSchedule(
+        checkpoint_on_warmup_complete=True,
+        checkpoint_on_candidate_activation=False,
+    )
     replay = SimpleNamespace(
         critic_td_valid_rows=100, critic_rows_per_episode=(100,)
     )
@@ -437,12 +581,20 @@ def test_100_rows_runs_exactly_256_critic_warmup_then_starts_residual_training(
         return 0.25
 
     monkeypatch.setattr(learner, "_critic_update", critic_update)
+    checkpoint_calls = []
+    monkeypatch.setattr(
+        learner,
+        "save_checkpoint",
+        lambda: checkpoint_calls.append(1) or Path("warmup-checkpoint"),
+    )
     result = learner(object())
     assert len(calls) == 256
     assert result["ack_critic_warmup_steps"] == 256
     assert result["learner_actor_steps"] == 0
     assert learner.learner["runtime"]["learner_state"] == "residual_actor_critic_training"
     assert learner.learner["runtime"]["ack_critic_warmup_complete"] is True
+    assert checkpoint_calls == [1]
+    assert result["latest_checkpoint_path"] == "warmup-checkpoint"
     assert all(
         torch.equal(actor_before[name], value)
         for name, value in learner.residual_actor.state_dict().items()
@@ -464,6 +616,7 @@ def test_residual_training_cycle_is_exactly_two_critic_and_one_actor(
         lambda _root: 100,
     )
     monkeypatch.setattr(learner, "_refresh_replay", lambda: replay)
+    learner._joint_cycle_budget = 1
     critic_calls = []
     actor_calls = []
     monkeypatch.setattr(

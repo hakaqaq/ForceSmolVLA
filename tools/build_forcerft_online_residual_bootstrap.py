@@ -97,6 +97,10 @@ def build_online_residual_bootstrap(
             "critic_td_valid_rows": 0,
             "actor_q_valid_rows": 0,
             "human_residual_valid_rows": 0,
+            "loaded_episode_keys": [],
+            "per_episode_critic_row_counts": {},
+            "admission_cycle_budgets": {},
+            "replay_generation": 0,
         },
     }
     return save_residual_actor_critic_checkpoint(

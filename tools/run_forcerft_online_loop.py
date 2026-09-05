@@ -92,7 +92,7 @@ def _admit(
     *,
     outcome: str,
     actor_checkpoint: Path | None = None,
-) -> bool:
+) -> dict[str, Any] | None:
     """Materialize the sealed episode and append it exactly once to Online-R."""
 
     command = [
@@ -114,7 +114,7 @@ def _admit(
             f"[admission] status={report['status']} "
             f"reason={report.get('reason')} replay_written=0"
         )
-        return False
+        return None
     require(
         report.get("status") == "FORMAL_ONLINE_R_ADMITTED",
         "FORCERFT_ONLINE_ADMISSION_FAILED",
@@ -127,7 +127,7 @@ def _admit(
         f"training_started={str(bool(report.get('minimum_ack_transitions_reached'))).lower()} "
         f"elapsed={time.monotonic() - started:.1f}s"
     )
-    return True
+    return report
 
 
 def _finish_episode(
@@ -136,7 +136,7 @@ def _finish_episode(
     episode: Path,
     outcome: str,
     actor_checkpoint: Path | None = None,
-) -> bool:
+) -> dict[str, Any] | None:
     require(
         outcome in {"success", "failure"},
         "FORCERFT_ONLINE_OPERATOR_OUTCOME_INVALID",
@@ -146,6 +146,46 @@ def _finish_episode(
     return _admit(
         args, episode, outcome=outcome, actor_checkpoint=actor_checkpoint
     )
+
+
+def _drain_admission_budget(
+    args: argparse.Namespace,
+    *,
+    identity: Mapping[str, Any],
+    admission: Mapping[str, Any],
+) -> dict[str, Any]:
+    admission_id = str(admission.get("admission_id", ""))
+    require(admission_id, "FORCERFT_ONLINE_ADMISSION_ID_MISSING")
+    timeout = float(getattr(args, "training_budget_drain_timeout", 60.0))
+    started = time.monotonic()
+    result = _post_json(
+        f"http://127.0.0.1:{args.policy_port}/runtime/drain-admission-budget",
+        {
+            "session_id": identity["session_id"],
+            "episode_id": identity["episode_id"],
+            "admission_id": admission_id,
+            "timeout_seconds": timeout,
+        },
+        timeout=timeout + 5.0,
+    )
+    require(
+        result.get("status") == "TRAINING_BUDGET_DRAINED"
+        and result.get("admission_id") == admission_id
+        and int(result.get("remaining_cycle_budget", -1)) == 0,
+        "FORCERFT_ONLINE_TRAINING_BUDGET_NOT_DRAINED",
+    )
+    print(
+        "[training-drain] "
+        f"admission={admission_id} "
+        f"rows={result.get('admitted_rows_for_latest_episode')} "
+        f"cycles={result.get('completed_cycle_count')}/"
+        f"{result.get('computed_cycle_budget')} "
+        f"q_updates={result.get('twin_q_updates')} "
+        f"actor_updates={result.get('residual_actor_updates')} "
+        f"replay_refresh_ms={float(result.get('replay_refresh_ms', 0.0)):.1f} "
+        f"elapsed={time.monotonic() - started:.2f}s"
+    )
+    return result
 
 
 def _post_json(
@@ -416,14 +456,28 @@ def _run_episode(
         ).get("operator_q_checkpoint_path")
         print(f"[training-checkpoint] operator-q={checkpoint or 'none'}")
         return False
-    if not _finish_episode(
+    admission = _finish_episode(
         args,
         episode=root / "episodes" / EPISODE_ID,
         outcome=outcome,
         actor_checkpoint=actor_checkpoint,
-    ):
+    )
+    if admission is None:
+        _post_json(
+            f"http://127.0.0.1:{args.policy_port}"
+            "/runtime/resolve-rejected-admission",
+            {
+                "session_id": identity["session_id"],
+                "episode_id": identity["episode_id"],
+            },
+        )
         print(f"[episode] rejected session={session_id}; continuing with next capture")
         return None
+    _drain_admission_budget(
+        args,
+        identity=identity,
+        admission=admission,
+    )
     return True
 
 
@@ -518,6 +572,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--policy-queue-low-watermark", type=int, default=7)
     parser.add_argument("--max-force-n", type=float, default=25.0)
     parser.add_argument("--max-torque-nm", type=float, default=2.0)
+    parser.add_argument(
+        "--training-budget-drain-timeout", type=float, default=60.0
+    )
     parser.add_argument("--ack-replay-root", type=Path)
     parser.add_argument(
         "--allow-development-policy-execution-smoke",
@@ -535,6 +592,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         or not 0 < args.policy_queue_low_watermark < args.policy_replan_steps <= 50
         or args.max_force_n <= 0
         or args.max_torque_nm <= 0
+        or not 0 < args.training_budget_drain_timeout <= 600
         or args.policy_port <= 0
     ):
         parser.error("invalid continuous-loop limits")

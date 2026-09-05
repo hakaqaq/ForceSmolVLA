@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import sys
 import threading
+import time
 from typing import Any, Mapping
 
 import torch
@@ -169,9 +170,14 @@ class ResidualActorCriticLearner:
         self.quarantined_current_schema_rows = 0
         self.nonzero_behavior_residual_rows = 0
         self.latest_residual_actor_output_norm = 0.0
-        self._replay_signature: tuple[str, ...] | None = None
-        self._replay_snapshot: tuple[Any, ...] | None = None
-        self._materialized_replay_signature: tuple[str, ...] | None = None
+        self.latest_replay_refresh_ms = 0.0
+        self.latest_critic_update_ms = 0.0
+        self.latest_actor_update_ms = 0.0
+        self.latest_cycle_ms = 0.0
+        self._loaded_episode_keys: set[str] = set()
+        self._admission_progress: dict[str, dict[str, Any]] = {}
+        self._expected_admission_id: str | None = None
+        self._joint_cycle_budget = 0
 
     @property
     def residual_actor(self) -> torch.nn.Module:
@@ -183,43 +189,144 @@ class ResidualActorCriticLearner:
     def clear_current_session(self) -> None:
         self.current_session_id = None
 
-    def _load_replay_snapshot(self) -> tuple[Any, ...]:
-        signature = self._episode_signature()
-        if self._replay_snapshot is None or signature != self._replay_signature:
-            self._replay_snapshot = warmup.load_formal_online_r(self.replay_root)
-            self._replay_signature = signature
-        return self._replay_snapshot
-
     def _episode_signature(self) -> tuple[str, ...]:
         return tuple(
-            path.name
+            path.stem
             for path in sorted((self.replay_root / "episodes").glob("*.json"))
         )
 
-    def _refresh_replay(self) -> warmup.OnlineResidualReplay:
-        signature = self._episode_signature()
-        if (
-            self.replay is not None
-            and signature == self._materialized_replay_signature
-        ):
-            return self.replay
-        all_r, policy_macros, _source_episodes, human_rows = (
-            self._load_replay_snapshot()
+    def expect_admission(self, admission_id: str) -> None:
+        require(
+            bool(admission_id)
+            and Path(admission_id).name == admission_id
+            and not admission_id.endswith(".json"),
+            "FORCERFT_TRAINING_DRAIN_ADMISSION_ID_INVALID",
         )
-        if self.current_session_id is not None:
-            require(
-                not any(
-                    row["identity"].get("session_id") == self.current_session_id
-                    for row in [*all_r, *human_rows]
-                ),
-                "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
+        self._expected_admission_id = admission_id
+
+    def admission_budget_status(self, admission_id: str) -> dict[str, Any] | None:
+        progress = self._admission_progress.get(admission_id)
+        if progress is None:
+            return None
+        cycle = int(self.learner["runtime"]["residual_actor_critic_cycles"])
+        start = int(progress["cycle_count_at_admission_start"])
+        target = int(progress["target_cycle_count_after_admission"])
+        budget = int(progress["computed_cycle_budget"])
+        completed = max(0, min(budget, cycle - start))
+        return {
+            **progress,
+            "completed_cycle_count_for_latest_admission": completed,
+            "remaining_cycle_budget": max(0, target - cycle),
+        }
+
+    def _latest_budget_metrics(self) -> dict[str, Any]:
+        admission_id = self._expected_admission_id
+        if admission_id is None and self._admission_progress:
+            admission_id = next(reversed(self._admission_progress))
+        status = (
+            None
+            if admission_id is None
+            else self.admission_budget_status(admission_id)
+        )
+        return {
+            "latest_observed_admission_id": (
+                None if status is None else admission_id
+            ),
+            "latest_admitted_episode_key": (
+                None if status is None else status["episode_key"]
+            ),
+            "admitted_rows_for_latest_episode": (
+                0 if status is None else status["admitted_rows_for_latest_episode"]
+            ),
+            "computed_cycle_budget": (
+                0 if status is None else status["computed_cycle_budget"]
+            ),
+            "cycle_count_at_admission_start": (
+                0 if status is None else status["cycle_count_at_admission_start"]
+            ),
+            "target_cycle_count_after_admission": (
+                0 if status is None else status["target_cycle_count_after_admission"]
+            ),
+            "completed_cycle_count_for_latest_admission": (
+                0
+                if status is None
+                else status["completed_cycle_count_for_latest_admission"]
+            ),
+            "remaining_cycle_budget": (
+                0 if status is None else status["remaining_cycle_budget"]
+            ),
+            "replay_refresh_ms": self.latest_replay_refresh_ms,
+            "latest_critic_update_ms": self.latest_critic_update_ms,
+            "latest_actor_update_ms": self.latest_actor_update_ms,
+            "latest_cycle_ms": self.latest_cycle_ms,
+        }
+
+    def _refresh_replay(self) -> warmup.OnlineResidualReplay:
+        started = time.perf_counter()
+        signature = self._episode_signature()
+        current_keys = set(signature)
+        require(
+            self._loaded_episode_keys.issubset(current_keys),
+            "FORCERFT_INCREMENTAL_REPLAY_EPISODE_REMOVED",
+        )
+        if self.replay is None:
+            self.replay = warmup.OnlineResidualReplay((), self.normalizer)
+        added_keys = [
+            key for key in signature if key not in self._loaded_episode_keys
+        ]
+        for admission_id in added_keys:
+            before_budget = self._joint_cycle_budget
+            policy_rows, policy_macros, source_episodes, human_rows = (
+                warmup.load_formal_online_episode(
+                    self.replay_root, admission_id
+                )
             )
-        macros = (*policy_macros, *warmup.build_ack_macros(human_rows))
-        self.replay = warmup.OnlineResidualReplay(macros, self.normalizer)
-        self._materialized_replay_signature = signature
-        self._replay_snapshot = None
-        self.unique_r_count = len(all_r) + len(human_rows)
-        self.r_macro_count = len(macros)
+            if self.current_session_id is not None:
+                require(
+                    not any(
+                        row["identity"].get("session_id")
+                        == self.current_session_id
+                        for row in [*policy_rows, *human_rows]
+                    ),
+                    "ONLINE_REPLAY_ASYNC_CURRENT_EPISODE_ALREADY_IN_REPLAY",
+                )
+            macros = (*policy_macros, *warmup.build_ack_macros(human_rows))
+            added_counts = self.replay.append_macros(macros)
+            require(
+                len(source_episodes) == 1,
+                "FORCERFT_INCREMENTAL_REPLAY_EPISODE_ID_INVALID",
+            )
+            episode_id = next(iter(source_episodes))
+            admitted_rows = int(added_counts.get(episode_id, 0))
+            require(
+                admitted_rows > 0,
+                "FORCERFT_INCREMENTAL_REPLAY_NO_VALID_ROWS",
+            )
+            # Admissions collected before the public ACK threshold have no joint
+            # training debt.  The admission that reaches the threshold receives
+            # its own normal budget after the one-time Critic warmup.
+            computed_budget = (
+                self.training_policy.cycles_for_admission(admitted_rows)
+                if self.replay.critic_td_valid_rows
+                >= self.training_policy.minimum_ack_transitions
+                else 0
+            )
+            after_budget = before_budget + computed_budget
+            self._joint_cycle_budget = after_budget
+            self._loaded_episode_keys.add(admission_id)
+            self._admission_progress[admission_id] = {
+                "episode_key": admission_id,
+                "admitted_rows_for_latest_episode": admitted_rows,
+                "computed_cycle_budget": computed_budget,
+                "cycle_count_at_admission_start": before_budget,
+                "target_cycle_count_after_admission": after_budget,
+            }
+            self.unique_r_count += len(policy_rows) + len(human_rows)
+            self.r_macro_count += len(macros)
+        if added_keys:
+            self.latest_replay_refresh_ms = (
+                time.perf_counter() - started
+            ) * 1000.0
         self.next_base_missing_rows = self.replay.next_base_missing_rows
         self.quarantined_current_schema_rows = (
             self.replay.quarantined_current_schema_rows
@@ -232,6 +339,16 @@ class ResidualActorCriticLearner:
             critic_td_valid_rows=self.replay.critic_td_valid_rows,
             actor_q_valid_rows=self.replay.actor_q_valid_rows,
             human_residual_valid_rows=self.replay.human_residual_valid_rows,
+            loaded_episode_keys=sorted(self._loaded_episode_keys),
+            per_episode_critic_row_counts={
+                admission_id: int(progress["admitted_rows_for_latest_episode"])
+                for admission_id, progress in self._admission_progress.items()
+            },
+            admission_cycle_budgets={
+                admission_id: int(progress["computed_cycle_budget"])
+                for admission_id, progress in self._admission_progress.items()
+            },
+            replay_generation=len(self._loaded_episode_keys),
         )
         return self.replay
 
@@ -258,6 +375,7 @@ class ResidualActorCriticLearner:
         *,
         warmup: bool,
     ) -> float:
+        started = time.perf_counter()
         learner = self.learner
         counters = learner["runtime"]["counters"]
         step = int(counters["twin_q_optimizer_steps"])
@@ -296,13 +414,18 @@ class ResidualActorCriticLearner:
             learner["runtime"]["ack_critic_warmup_steps"] = (
                 int(learner["runtime"].get("ack_critic_warmup_steps", 0)) + 1
             )
-        return float(loss.detach())
+        value = float(loss.detach())
+        self.latest_critic_update_ms = (
+            time.perf_counter() - started
+        ) * 1000.0
+        return value
 
     def _actor_update(
         self,
         coordinator: InferencePriorityCoordinator,
         replay: warmup.OnlineResidualReplay,
     ) -> dict[str, float]:
+        started = time.perf_counter()
         learner = self.learner
         counters = learner["runtime"]["counters"]
         step = int(counters["residual_actor_optimizer_steps"])
@@ -374,6 +497,9 @@ class ResidualActorCriticLearner:
             )
         counters["residual_actor_optimizer_steps"] = step + 1
         self.latest_residual_actor_output_norm = float(losses.output_norm.detach())
+        self.latest_actor_update_ms = (
+            time.perf_counter() - started
+        ) * 1000.0
         return {
             "total": float(losses.total.detach()),
             "value": float(losses.value.detach()),
@@ -387,13 +513,8 @@ class ResidualActorCriticLearner:
     ) -> dict[str, Any]:
         learner = self.learner
         runtime = learner["runtime"]
-        signature = self._episode_signature()
-        count = (
-            self.replay.critic_td_valid_rows
-            if self.replay is not None
-            and signature == self._materialized_replay_signature
-            else warmup.count_sealed_critic_td_valid_transitions(self.replay_root)
-        )
+        replay = self._refresh_replay()
+        count = replay.critic_td_valid_rows
         runtime["replay"]["critic_td_valid_rows"] = count
         if count < self.training_policy.minimum_ack_transitions:
             runtime["learner_state"] = "ack_replay_collection"
@@ -406,20 +527,7 @@ class ResidualActorCriticLearner:
                 "current_episode_sampled": False,
                 "nonfinite_count": 0,
                 "oom_count": 0,
-            }
-
-        replay = self._refresh_replay()
-        if replay.critic_td_valid_rows < self.training_policy.minimum_ack_transitions:
-            runtime["learner_state"] = "ack_replay_collection"
-            return {
-                "waiting_for_replay": True,
-                "learner_state": "ack_replay_collection",
-                "learner_critic_steps": 0,
-                "learner_actor_steps": 0,
-                "learner_polyak_steps": 0,
-                "current_episode_sampled": False,
-                "nonfinite_count": 0,
-                "oom_count": 0,
+                **self._latest_budget_metrics(),
             }
         if runtime["learner_state"] in {"ack_replay_collection", "ack_critic_warmup"}:
             runtime["learner_state"] = "ack_critic_warmup"
@@ -445,6 +553,11 @@ class ResidualActorCriticLearner:
             )
             runtime["learner_state"] = "residual_actor_critic_training"
             runtime["ack_critic_warmup_complete"] = True
+            latest_checkpoint = (
+                self.save_checkpoint()
+                if self.training_policy.checkpoint_on_warmup_complete
+                else None
+            )
             return {
                 "waiting_for_replay": False,
                 "learner_state": "residual_actor_critic_training",
@@ -471,6 +584,12 @@ class ResidualActorCriticLearner:
                 "current_episode_sampled": False,
                 "nonfinite_count": 0,
                 "oom_count": 0,
+                "latest_checkpoint_path": (
+                    None
+                    if latest_checkpoint is None
+                    else str(latest_checkpoint)
+                ),
+                **self._latest_budget_metrics(),
             }
 
         require(
@@ -479,9 +598,7 @@ class ResidualActorCriticLearner:
             "FORCERFT_ONLINE_PHASE_INVALID",
         )
         cycle = int(runtime["residual_actor_critic_cycles"])
-        budget = self.training_policy.residual_actor_critic_cycle_budget(
-            replay.critic_rows_per_episode
-        )
+        budget = self._joint_cycle_budget
         if cycle >= budget:
             return {
                 "waiting_for_replay": True,
@@ -494,8 +611,10 @@ class ResidualActorCriticLearner:
                 "current_episode_sampled": False,
                 "nonfinite_count": 0,
                 "oom_count": 0,
+                **self._latest_budget_metrics(),
             }
 
+        cycle_started = time.perf_counter()
         critic_losses = [
             self._critic_update(coordinator, replay, warmup=False)
             for _ in range(self.training_policy.twin_q_updates_per_cycle)
@@ -503,6 +622,7 @@ class ResidualActorCriticLearner:
         actor_metrics = self._actor_update(coordinator, replay)
         runtime["residual_actor_critic_cycles"] = cycle + 1
         learner["residual_actor_critic_cycles"] = cycle + 1
+        self.latest_cycle_ms = (time.perf_counter() - cycle_started) * 1000.0
         latest_checkpoint = None
         if self.training_policy.checkpoint_due(cycle + 1):
             latest_checkpoint = self.save_checkpoint()
@@ -536,6 +656,7 @@ class ResidualActorCriticLearner:
             "latest_checkpoint_path": (
                 None if latest_checkpoint is None else str(latest_checkpoint)
             ),
+            **self._latest_budget_metrics(),
         }
 
     def export_actor_candidate(
@@ -637,7 +758,7 @@ class AsyncResidualActorCriticRuntime:
         self.learner_job = learner_job
         self.inference_stream = inference_stream
         self.coordinator = InferencePriorityCoordinator()
-        self._lock = threading.Lock()
+        self._lock = threading.Condition()
         self._episode_active = False
         self._learner_started = False
         self._learner_worker_state = "ready"
@@ -666,6 +787,9 @@ class AsyncResidualActorCriticRuntime:
         self._pin: PinnedEpisode | None = None
         self._quiesced_checkpoint: Path | None = None
         self._quiesced = False
+        self._admission_resolution_required = False
+        self._drain_in_progress = False
+        self._latest_budget_drain_elapsed_ms = 0.0
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -684,6 +808,7 @@ class AsyncResidualActorCriticRuntime:
             "max_cycles_per_admitted_episode": (
                 self._policy.max_cycles_per_admitted_episode
             ),
+            "admitted_rows_per_cycle": self._policy.admitted_rows_per_cycle,
             "active_actor_online_cycle": self._active_actor_online_cycle,
             "training_checkpoint_interval_cycles": self._policy.training_checkpoint_interval_cycles,
             "retained_training_checkpoint_count": self._policy.retained_training_checkpoint_count,
@@ -802,6 +927,44 @@ class AsyncResidualActorCriticRuntime:
                 "next_base_missing_rows": int(
                     getattr(self.learner_job, "next_base_missing_rows", 0)
                 ),
+                "latest_observed_admission_id": result.get(
+                    "latest_observed_admission_id"
+                ),
+                "latest_admitted_episode_key": result.get(
+                    "latest_admitted_episode_key"
+                ),
+                "admitted_rows_for_latest_episode": int(
+                    result.get("admitted_rows_for_latest_episode", 0)
+                ),
+                "computed_cycle_budget": int(
+                    result.get("computed_cycle_budget", 0)
+                ),
+                "completed_cycle_count_for_latest_admission": int(
+                    result.get(
+                        "completed_cycle_count_for_latest_admission", 0
+                    )
+                ),
+                "remaining_cycle_budget": int(
+                    result.get("remaining_cycle_budget", 0)
+                ),
+                "target_cycle_count_after_admission": int(
+                    result.get("target_cycle_count_after_admission", 0)
+                ),
+                "replay_refresh_ms": float(
+                    result.get("replay_refresh_ms", 0.0)
+                ),
+                "latest_critic_update_ms": float(
+                    result.get("latest_critic_update_ms", 0.0)
+                ),
+                "latest_actor_update_ms": float(
+                    result.get("latest_actor_update_ms", 0.0)
+                ),
+                "latest_cycle_ms": float(
+                    result.get("latest_cycle_ms", 0.0)
+                ),
+                "budget_drain_elapsed_ms": self._latest_budget_drain_elapsed_ms,
+                "admission_resolution_required": self._admission_resolution_required,
+                "drain_in_progress": self._drain_in_progress,
             }
 
     def start_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -824,11 +987,19 @@ class AsyncResidualActorCriticRuntime:
         return self.status()
 
     def prepare_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        require(not self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_ALREADY_ACTIVE")
         session_id = str(payload.get("session_id", ""))
         episode_id = str(payload.get("episode_id", ""))
         require(bool(session_id and episode_id), "ONLINE_REPLAY_ASYNC_CAPTURE_IDENTITY_MISMATCH")
         with self._lock:
+            require(
+                not self._episode_active,
+                "ONLINE_REPLAY_ASYNC_EPISODE_ALREADY_ACTIVE",
+            )
+            require(
+                not self._admission_resolution_required
+                and not self._drain_in_progress,
+                "FORCERFT_PREPARE_EPISODE_BEFORE_ADMISSION_DRAIN",
+            )
             self._activate_pending_actor_locked()
             self.engine.reset_residual_episode_context()
             self.session_id = session_id
@@ -874,6 +1045,11 @@ class AsyncResidualActorCriticRuntime:
             activated.revision_id
         )
         self._broadcast_count += 1
+        if self._policy.checkpoint_on_candidate_activation:
+            checkpoint_path = self.learner_job.save_checkpoint()
+            self._learner_result["latest_checkpoint_path"] = (
+                None if checkpoint_path is None else str(checkpoint_path)
+            )
         print(
             "[residual-activation] activated at episode boundary "
             f"revision={activated.revision_id} epoch={self.machine.policy_epoch}",
@@ -902,7 +1078,9 @@ class AsyncResidualActorCriticRuntime:
                         result = dict(self.learner_job(self.coordinator))
                         if result.get("waiting_for_replay"):
                             with self._lock:
+                                self._learner_result = result
                                 self._learner_worker_state = "waiting_for_replay"
+                                self._lock.notify_all()
                             self._stop_learner.wait(0.25)
                             continue
                         cycle = int(result["residual_actor_critic_cycle"])
@@ -949,10 +1127,12 @@ class AsyncResidualActorCriticRuntime:
                         with self._lock:
                             self._learner_result = result
                             self._learner_worker_state = "running"
+                            self._lock.notify_all()
             except Exception as error:
                 with self._lock:
                     self._learner_error = f"{type(error).__name__}:{error}"
                     self._learner_worker_state = "failed"
+                    self._lock.notify_all()
 
         self._learner_thread = threading.Thread(
             target=run, name="online-actor-learner", daemon=True
@@ -981,13 +1161,148 @@ class AsyncResidualActorCriticRuntime:
 
     def end_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         self._validate_identity(payload)
-        self._end_episode()
+        self._end_episode(admission_required=True)
         return self.status()
 
     def abort_episode(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         self._validate_identity(payload)
-        self._end_episode()
+        self._end_episode(admission_required=False)
         return self.status()
+
+    def resolve_rejected_admission(
+        self, payload: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        require(
+            payload.get("session_id") == self.session_id
+            and payload.get("episode_id") == self.episode_id,
+            "ONLINE_REPLAY_ASYNC_CAPTURE_IDENTITY_MISMATCH",
+        )
+        with self._lock:
+            require(
+                not self._episode_active
+                and self._admission_resolution_required
+                and not self._drain_in_progress,
+                "FORCERFT_REJECTED_ADMISSION_RESOLUTION_INVALID",
+            )
+            self._admission_resolution_required = False
+            self._lock.notify_all()
+        return self.status()
+
+    def drain_admission_budget(
+        self, payload: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        require(
+            payload.get("session_id") == self.session_id
+            and payload.get("episode_id") == self.episode_id,
+            "ONLINE_REPLAY_ASYNC_CAPTURE_IDENTITY_MISMATCH",
+        )
+        admission_id = str(payload.get("admission_id", ""))
+        timeout_seconds = float(payload.get("timeout_seconds", 60.0))
+        require(
+            bool(admission_id) and 0.0 < timeout_seconds <= 600.0,
+            "FORCERFT_TRAINING_DRAIN_REQUEST_INVALID",
+        )
+        started = time.monotonic()
+        deadline = started + timeout_seconds
+        with self._lock:
+            require(
+                not self._episode_active
+                and self._admission_resolution_required
+                and not self._drain_in_progress,
+                "FORCERFT_TRAINING_DRAIN_STATE_INVALID",
+            )
+            self._drain_in_progress = True
+        try:
+            self.learner_job.expect_admission(admission_id)
+            self._start_learner()
+            with self._lock:
+                while True:
+                    require(
+                        self._learner_error is None
+                        and self._learner_worker_state != "failed",
+                        "FORCERFT_TRAINING_DRAIN_LEARNER_FAILED",
+                    )
+                    progress = self.learner_job.admission_budget_status(
+                        admission_id
+                    )
+                    drained = bool(
+                        progress is not None
+                        and progress["remaining_cycle_budget"] == 0
+                        and self._learner_worker_state
+                        in {"waiting_for_replay", "idle"}
+                    )
+                    if drained:
+                        elapsed_ms = (time.monotonic() - started) * 1000.0
+                        self._latest_budget_drain_elapsed_ms = elapsed_ms
+                        self._admission_resolution_required = False
+                        self._drain_in_progress = False
+                        self._lock.notify_all()
+                        budget = int(progress["computed_cycle_budget"])
+                        return {
+                            "status": "TRAINING_BUDGET_DRAINED",
+                            "admission_id": admission_id,
+                            **progress,
+                            "completed_cycle_count": int(
+                                progress[
+                                    "completed_cycle_count_for_latest_admission"
+                                ]
+                            ),
+                            "twin_q_updates": (
+                                budget * self._policy.twin_q_updates_per_cycle
+                            ),
+                            "residual_actor_updates": (
+                                budget
+                                * self._policy.residual_actor_updates_per_cycle
+                            ),
+                            "warmup_steps_completed": int(
+                                getattr(self.learner_job, "learner", {})
+                                .get("runtime", {})
+                                .get("ack_critic_warmup_steps", 0)
+                            ),
+                            "candidate_staged": (
+                                self.machine.pending_revision_id is not None
+                            ),
+                            "budget_drain_elapsed_ms": elapsed_ms,
+                            "replay_refresh_ms": float(
+                                getattr(
+                                    self.learner_job,
+                                    "latest_replay_refresh_ms",
+                                    0.0,
+                                )
+                            ),
+                            "latest_critic_update_ms": float(
+                                getattr(
+                                    self.learner_job,
+                                    "latest_critic_update_ms",
+                                    0.0,
+                                )
+                            ),
+                            "latest_actor_update_ms": float(
+                                getattr(
+                                    self.learner_job,
+                                    "latest_actor_update_ms",
+                                    0.0,
+                                )
+                            ),
+                            "latest_cycle_ms": float(
+                                getattr(
+                                    self.learner_job,
+                                    "latest_cycle_ms",
+                                    0.0,
+                                )
+                            ),
+                        }
+                    remaining = deadline - time.monotonic()
+                    require(
+                        remaining > 0.0,
+                        "FORCERFT_TRAINING_DRAIN_TIMEOUT",
+                    )
+                    self._lock.wait(timeout=remaining)
+        except BaseException:
+            with self._lock:
+                self._drain_in_progress = False
+                self._lock.notify_all()
+            raise
 
     def checkpoint_on_operator_q(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         self._validate_identity(payload)
@@ -1027,7 +1342,7 @@ class AsyncResidualActorCriticRuntime:
             ),
         }
 
-    def _end_episode(self) -> None:
+    def _end_episode(self, *, admission_required: bool) -> None:
         with self._lock:
             require(self._episode_active, "ONLINE_REPLAY_ASYNC_EPISODE_INACTIVE")
             self.coordinator.end_actor_window()
@@ -1037,8 +1352,10 @@ class AsyncResidualActorCriticRuntime:
             self._actor_alive = None
             self._pin = None
             self._episode_active = False
+            self._admission_resolution_required = admission_required
             self.learner_job.clear_current_session()
             self._activate_pending_actor_locked()
+            self._lock.notify_all()
 
     def stop(self) -> None:
         self._stop_learner.set()
@@ -1065,6 +1382,8 @@ class RequestHandler(serve_policy.RequestHandler):
             "/runtime/episode-abort",
             "/runtime/operator-q-checkpoint",
             "/runtime/quiesce-and-save",
+            "/runtime/drain-admission-budget",
+            "/runtime/resolve-rejected-admission",
         }:
             super().do_POST()
             return
@@ -1084,6 +1403,12 @@ class RequestHandler(serve_policy.RequestHandler):
                     self.runtime.checkpoint_on_operator_q
                 ),
                 "/runtime/quiesce-and-save": self.runtime.quiesce_and_save,
+                "/runtime/drain-admission-budget": (
+                    self.runtime.drain_admission_budget
+                ),
+                "/runtime/resolve-rejected-admission": (
+                    self.runtime.resolve_rejected_admission
+                ),
             }[self.path]
             self._write_json(200, method(payload))
         except Exception as error:
@@ -1225,6 +1550,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         human_residual_imitation_batch_size=int(
             batching_config["human_residual_imitation_batch_size"]
         ),
+        admitted_rows_per_cycle=int(online_config["admitted_rows_per_cycle"]),
         twin_q_updates_per_cycle=int(online_config["twin_q_updates_per_cycle"]),
         residual_actor_updates_per_cycle=int(online_config["residual_actor_updates_per_cycle"]),
         max_cycles_per_admitted_episode=int(
@@ -1237,6 +1563,12 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
             online_config["training_checkpoint_interval_cycles"]
         ),
         retained_training_checkpoint_count=int(online_config["retained_training_checkpoint_count"]),
+        checkpoint_on_warmup_complete=bool(
+            online_config["checkpoint_on_warmup_complete"]
+        ),
+        checkpoint_on_candidate_activation=bool(
+            online_config["checkpoint_on_candidate_activation"]
+        ),
     )
     learner = ResidualActorCriticLearner(
         device=device,

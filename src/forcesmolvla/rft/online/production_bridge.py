@@ -670,6 +670,7 @@ class BridgeReport:
 @dataclass(frozen=True)
 class FormalOnlineRAdmissionReport:
     status: str
+    admission_id: str
     episode_id: str
     classification: str
     policy_execution_smoke_bridge: str
@@ -5429,6 +5430,7 @@ class ProductionBridge:
         admission_record = {
             "schema_version": REPORT_VERSION,
             "kind": "formal_online_r_admission",
+            "admission_id": episode_key,
             "episode_id": episode_id,
             "source_episode": str(episode_dir.resolve()),
             "source_episode_semantics": {
@@ -5533,6 +5535,7 @@ class ProductionBridge:
         episode_manifest = {
             "schema_version": REPORT_VERSION,
             "kind": "formal_online_r_episode_seal",
+            "admission_id": episode_key,
             "episode_id": episode_id,
             "status": "SEALED_COMMITTED",
             "admission_record": admission_relative,
@@ -5583,6 +5586,7 @@ class ProductionBridge:
         )
         return FormalOnlineRAdmissionReport(
             status="FORMAL_ONLINE_R_ADMITTED",
+            admission_id=episode_key,
             episode_id=episode_id,
             classification=POLICY_EXECUTION_SMOKE_CLASSIFICATION,
             policy_execution_smoke_bridge="PASS",

@@ -47,6 +47,14 @@ def test_residual_checkpoint_restores_learner_state_and_warmup_progress(
             "critic_td_valid_rows": 100,
             "actor_q_valid_rows": 80,
             "human_residual_valid_rows": 0,
+            "loaded_episode_keys": ["003__episode_000000"],
+            "per_episode_critic_row_counts": {
+                "003__episode_000000": 100
+            },
+            "admission_cycle_budgets": {
+                "003__episode_000000": 2
+            },
+            "replay_generation": 1,
         },
     }
     checkpoint = tmp_path / "residual_actor_critic_cycle_000000"

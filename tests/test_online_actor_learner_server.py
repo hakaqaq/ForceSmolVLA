@@ -79,6 +79,56 @@ class FakeLearner:
         return {"waiting_for_replay": True, "learner_state": "residual_actor_critic_training"}
 
 
+class DrainLearner(FakeLearner):
+    def __init__(self, *, cycle_budget: int = 7) -> None:
+        super().__init__()
+        self.cycle_budget = cycle_budget
+        self.completed_cycles = 0
+        self.expected_admission_id: str | None = None
+        self.latest_replay_refresh_ms = 4.0
+        self.latest_critic_update_ms = 2.0
+        self.latest_actor_update_ms = 1.0
+        self.latest_cycle_ms = 5.0
+
+    def expect_admission(self, admission_id: str) -> None:
+        self.expected_admission_id = admission_id
+
+    def admission_budget_status(self, admission_id: str):
+        if admission_id != self.expected_admission_id:
+            return None
+        return {
+            "episode_key": admission_id,
+            "admitted_rows_for_latest_episode": 400,
+            "computed_cycle_budget": self.cycle_budget,
+            "cycle_count_at_admission_start": 0,
+            "target_cycle_count_after_admission": self.cycle_budget,
+            "completed_cycle_count_for_latest_admission": self.completed_cycles,
+            "remaining_cycle_budget": self.cycle_budget - self.completed_cycles,
+        }
+
+    def __call__(self, _coordinator):
+        if self.expected_admission_id is None or self.completed_cycles >= self.cycle_budget:
+            return {
+                "waiting_for_replay": True,
+                "learner_state": "residual_actor_critic_training",
+                "residual_actor_critic_cycle": self.completed_cycles,
+                "residual_actor_optimizer_steps": self.completed_cycles,
+            }
+        self.completed_cycles += 1
+        return {
+            "waiting_for_replay": False,
+            "learner_state": "residual_actor_critic_training",
+            "residual_actor_critic_cycle": self.completed_cycles,
+            "residual_actor_optimizer_steps": self.completed_cycles,
+            "learner_actor_steps": 1,
+        }
+
+
+class FailingDrainLearner(DrainLearner):
+    def __call__(self, _coordinator):
+        raise RuntimeError("synthetic learner failure")
+
+
 def runtime(tmp_path: Path) -> AsyncResidualActorCriticRuntime:
     revision = "task3-residual-policy-step-000000"
     machine = InMemoryRevisionStateMachine(
@@ -96,6 +146,27 @@ def runtime(tmp_path: Path) -> AsyncResidualActorCriticRuntime:
         online_checkpoint_root=tmp_path
         / "online_ack_residual/training_checkpoints",
         learner_job=FakeLearner(),
+        active_actor_online_cycle=0,
+    )
+
+
+def drain_runtime(tmp_path: Path, learner: FakeLearner) -> AsyncResidualActorCriticRuntime:
+    revision = "task3-residual-policy-step-000000"
+    machine = InMemoryRevisionStateMachine(
+        RevisionRecord(revision, BASE_MODEL_ID, RevisionState.ACTIVE)
+    )
+    return AsyncResidualActorCriticRuntime(
+        engine=FakeEngine(),
+        machine=machine,
+        session_id="session-1",
+        episode_id="episode-1",
+        active_revision_id=revision,
+        active_model_revision=BASE_MODEL_ID,
+        active_actor_checkpoint=tmp_path / "initial-residual",
+        learner_resume_checkpoint=tmp_path / "seed",
+        online_checkpoint_root=tmp_path
+        / "online_ack_residual/training_checkpoints",
+        learner_job=learner,
         active_actor_online_cycle=0,
     )
 
@@ -216,6 +287,7 @@ def test_step_10_candidate_activates_only_after_episode_boundary(
     assert torch.equal(service.engine.residual_actor.bias, replacement.bias)
     assert service.active_revision_id.endswith("000010")
     assert service.engine.reset_count == 1
+    assert service.learner_job.save_calls == 1
     assert all(
         torch.equal(base_before[name], value)
         for name, value in service.engine.policy.state_dict().items()
@@ -237,3 +309,89 @@ def test_runtime_identity_and_graceful_checkpoint(tmp_path: Path) -> None:
     second = service.quiesce_and_save({})
     assert first["quiesced"] and second["quiesced"]
     assert service.learner_job.save_calls == 1
+
+
+def test_prepare_episode_waits_for_admission_specific_budget_drain(
+    tmp_path: Path,
+) -> None:
+    learner = DrainLearner(cycle_budget=7)
+    service = drain_runtime(tmp_path, learner)
+    try:
+        service.start_episode(identity())
+        service.end_episode(identity())
+        with pytest.raises(RuntimeError, match="BEFORE_ADMISSION_DRAIN"):
+            service.prepare_episode(
+                {"session_id": "session-2", "episode_id": "episode-2"}
+            )
+        result = service.drain_admission_budget(
+            {
+                "session_id": "session-1",
+                "episode_id": "episode-1",
+                "admission_id": "admission-1",
+                "timeout_seconds": 2.0,
+            }
+        )
+        assert result["status"] == "TRAINING_BUDGET_DRAINED"
+        assert result["computed_cycle_budget"] == 7
+        assert result["completed_cycle_count"] == 7
+        assert result["remaining_cycle_budget"] == 0
+        assert result["twin_q_updates"] == 14
+        assert result["residual_actor_updates"] == 7
+        assert result["replay_refresh_ms"] == 4.0
+        prepared = service.prepare_episode(
+            {"session_id": "session-2", "episode_id": "episode-2"}
+        )
+        assert prepared["runtime_session_id"] == "session-2"
+        assert prepared["runtime_episode_id"] == "episode-2"
+    finally:
+        service.stop()
+
+
+def test_budget_drain_timeout_keeps_next_episode_blocked(tmp_path: Path) -> None:
+    learner = DrainLearner(cycle_budget=1)
+    learner.admission_budget_status = lambda _admission_id: None
+    service = drain_runtime(tmp_path, learner)
+    try:
+        service.start_episode(identity())
+        service.end_episode(identity())
+        with pytest.raises(RuntimeError, match="TRAINING_DRAIN_TIMEOUT"):
+            service.drain_admission_budget(
+                {
+                    "session_id": "session-1",
+                    "episode_id": "episode-1",
+                    "admission_id": "missing-admission",
+                    "timeout_seconds": 0.01,
+                }
+            )
+        assert service.status()["admission_resolution_required"] is True
+        with pytest.raises(RuntimeError, match="BEFORE_ADMISSION_DRAIN"):
+            service.prepare_episode(
+                {"session_id": "session-2", "episode_id": "episode-2"}
+            )
+    finally:
+        service.stop()
+
+
+def test_budget_drain_learner_failure_keeps_next_episode_blocked(
+    tmp_path: Path,
+) -> None:
+    service = drain_runtime(tmp_path, FailingDrainLearner(cycle_budget=1))
+    try:
+        service.start_episode(identity())
+        service.end_episode(identity())
+        with pytest.raises(RuntimeError, match="DRAIN_LEARNER_FAILED"):
+            service.drain_admission_budget(
+                {
+                    "session_id": "session-1",
+                    "episode_id": "episode-1",
+                    "admission_id": "admission-1",
+                    "timeout_seconds": 1.0,
+                }
+            )
+        assert service.status()["learner_worker_state"] == "failed"
+        with pytest.raises(RuntimeError, match="BEFORE_ADMISSION_DRAIN"):
+            service.prepare_episode(
+                {"session_id": "session-2", "episode_id": "episode-2"}
+            )
+    finally:
+        service.stop()

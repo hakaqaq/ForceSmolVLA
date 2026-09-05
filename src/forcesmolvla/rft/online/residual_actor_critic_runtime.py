@@ -40,13 +40,16 @@ class ResidualActorCriticSchedule:
     ack_critic_warmup_steps: int = 256
     twin_q_batch_size: int = 128
     residual_policy_value_batch_size: int = 64
-    human_residual_imitation_batch_size: int = 64
+    human_residual_imitation_batch_size: int = 32
+    admitted_rows_per_cycle: int = 64
     twin_q_updates_per_cycle: int = 2
     residual_actor_updates_per_cycle: int = 1
     max_cycles_per_admitted_episode: int = 10
     residual_candidate_interval_actor_steps: int = 10
-    training_checkpoint_interval_cycles: int = 50
-    retained_training_checkpoint_count: int = 2
+    training_checkpoint_interval_cycles: int = 20
+    retained_training_checkpoint_count: int = 10
+    checkpoint_on_warmup_complete: bool = True
+    checkpoint_on_candidate_activation: bool = True
 
     def __post_init__(self) -> None:
         require(
@@ -55,12 +58,15 @@ class ResidualActorCriticSchedule:
             and self.twin_q_batch_size >= 1
             and self.residual_policy_value_batch_size >= 1
             and self.human_residual_imitation_batch_size >= 1
+            and self.admitted_rows_per_cycle >= 1
             and self.twin_q_updates_per_cycle >= 1
             and self.residual_actor_updates_per_cycle == 1
             and self.max_cycles_per_admitted_episode >= 1
             and self.residual_candidate_interval_actor_steps >= 1
             and self.training_checkpoint_interval_cycles >= 1
-            and self.retained_training_checkpoint_count >= 1,
+            and self.retained_training_checkpoint_count >= 1
+            and isinstance(self.checkpoint_on_warmup_complete, bool)
+            and isinstance(self.checkpoint_on_candidate_activation, bool),
             "FORCERFT_RESIDUAL_ACTOR_CRITIC_SCHEDULE_INVALID",
         )
 
@@ -82,7 +88,12 @@ class ResidualActorCriticSchedule:
             return 0
         return min(
             self.max_cycles_per_admitted_episode,
-            max(1, math.ceil(new_critic_td_valid_rows / 64)),
+            max(
+                1,
+                math.ceil(
+                    new_critic_td_valid_rows / self.admitted_rows_per_cycle
+                ),
+            ),
         )
 
     def residual_actor_critic_cycle_budget(self, admitted_episode_rows: int | Sequence[int]) -> int:
@@ -311,6 +322,7 @@ def prepare_learner(
         twin_q_batch_size=int(batching["twin_q_batch_size"]),
         residual_policy_value_batch_size=int(batching["residual_policy_value_batch_size"]),
         human_residual_imitation_batch_size=int(batching["human_residual_imitation_batch_size"]),
+        admitted_rows_per_cycle=int(online["admitted_rows_per_cycle"]),
         twin_q_updates_per_cycle=int(online["twin_q_updates_per_cycle"]),
         residual_actor_updates_per_cycle=int(online["residual_actor_updates_per_cycle"]),
         max_cycles_per_admitted_episode=int(
@@ -321,6 +333,12 @@ def prepare_learner(
         ),
         training_checkpoint_interval_cycles=int(online["training_checkpoint_interval_cycles"]),
         retained_training_checkpoint_count=int(online["retained_training_checkpoint_count"]),
+        checkpoint_on_warmup_complete=bool(
+            online["checkpoint_on_warmup_complete"]
+        ),
+        checkpoint_on_candidate_activation=bool(
+            online["checkpoint_on_candidate_activation"]
+        ),
     )
     return {
         "residual_actor": residual_actor,
