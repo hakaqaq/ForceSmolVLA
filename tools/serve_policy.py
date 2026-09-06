@@ -516,6 +516,7 @@ class InferenceEngine:
             np.ones((1, 1), dtype=np.bool_),
             state[None, :],
         )
+        safety = self.policy._action_safety_profile
         return {
             "online_semantics_version": ONLINE_SEMANTICS_VERSION,
             "decision_monotonic_ns": decision_ns,
@@ -530,6 +531,23 @@ class InferenceEngine:
             "applied_residual_tcp6": residual.tolist(),
             "composed_normalized_action7": composed_normalized[0].tolist(),
             "composed_absolute_action7": composed_absolute.tolist(),
+            "policy_single_action_guard": {
+                "workspace_min_xyz_m": safety.workspace_min_xyz_m.tolist(),
+                "workspace_max_xyz_m": safety.workspace_max_xyz_m.tolist(),
+                "orientation_min_rpy_rad": safety.orientation_min_rpy_rad.tolist(),
+                "orientation_max_rpy_rad": safety.orientation_max_rpy_rad.tolist(),
+                "gimbal_margin_rad": float(safety.gimbal_margin_rad),
+                "gripper_width_m": float(base_absolute[6]),
+                "gripper_min_width_m": float(safety.gripper_min_width_m),
+                "gripper_max_width_m": float(safety.gripper_max_width_m),
+                "continuity_max_xyz_m": float(safety.continuity_max_xyz_m),
+                "continuity_max_rotation_rad": float(
+                    safety.continuity_max_rotation_rad
+                ),
+                "continuity_max_gripper_delta_m": float(
+                    safety.continuity_max_gripper_delta_m
+                ),
+            },
         }
 
     def reset_residual_episode_context(self) -> None:

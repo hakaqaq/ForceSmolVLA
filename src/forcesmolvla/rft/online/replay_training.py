@@ -1158,6 +1158,19 @@ class OnlineResidualReplay:
             "translation_clip_negative3": np.ones(3, dtype=np.float32),
             "rotation_clip_positive3": np.ones(3, dtype=np.float32),
             "rotation_clip_negative3": np.ones(3, dtype=np.float32),
+            "policy_workspace_min3": np.full(3, -1.0, dtype=np.float32),
+            "policy_workspace_max3": np.full(3, 1.0, dtype=np.float32),
+            "policy_orientation_min3": np.full(3, -np.pi, dtype=np.float32),
+            "policy_orientation_max3": np.full(3, np.pi, dtype=np.float32),
+            "policy_gimbal_margin_rad": np.zeros(1, dtype=np.float32),
+            "policy_gripper_width_m": np.zeros(1, dtype=np.float32),
+            "policy_gripper_min_m": np.zeros(1, dtype=np.float32),
+            "policy_gripper_max_m": np.ones(1, dtype=np.float32),
+            "policy_continuity_max_xyz_m": np.ones(1, dtype=np.float32),
+            "policy_continuity_max_rotation_rad": np.ones(1, dtype=np.float32),
+            "policy_continuity_max_gripper_delta_m": np.ones(
+                1, dtype=np.float32
+            ),
         }
 
         def unavailable() -> dict[str, Any]:
@@ -1181,6 +1194,12 @@ class OnlineResidualReplay:
         def positive(name: str) -> np.ndarray:
             value = np.asarray([raw.get(name)], dtype=np.float32)
             if value.shape != (1,) or not np.isfinite(value).all() or value[0] <= 0.0:
+                raise ValueError(name)
+            return value
+
+        def scalar(source: Mapping[str, Any], name: str) -> np.ndarray:
+            value = np.asarray([source.get(name)], dtype=np.float32)
+            if value.shape != (1,) or not np.isfinite(value).all():
                 raise ValueError(name)
             return value
 
@@ -1218,10 +1237,86 @@ class OnlineResidualReplay:
                 "rotation_clip_positive3": vector("rotation_clip_positive", 3),
                 "rotation_clip_negative3": vector("rotation_clip_negative", 3),
             }
+            if source == "policy":
+                guard = raw.get("policy_single_action_guard")
+                if not isinstance(guard, Mapping):
+                    raise ValueError("policy_single_action_guard")
+                result.update(
+                    {
+                        "policy_workspace_min3": np.asarray(
+                            guard.get("workspace_min_xyz_m"), dtype=np.float32
+                        ),
+                        "policy_workspace_max3": np.asarray(
+                            guard.get("workspace_max_xyz_m"), dtype=np.float32
+                        ),
+                        "policy_orientation_min3": np.asarray(
+                            guard.get("orientation_min_rpy_rad"), dtype=np.float32
+                        ),
+                        "policy_orientation_max3": np.asarray(
+                            guard.get("orientation_max_rpy_rad"), dtype=np.float32
+                        ),
+                        "policy_gimbal_margin_rad": scalar(
+                            guard, "gimbal_margin_rad"
+                        ),
+                        "policy_gripper_width_m": scalar(
+                            guard, "gripper_width_m"
+                        ),
+                        "policy_gripper_min_m": scalar(
+                            guard, "gripper_min_width_m"
+                        ),
+                        "policy_gripper_max_m": scalar(
+                            guard, "gripper_max_width_m"
+                        ),
+                        "policy_continuity_max_xyz_m": scalar(
+                            guard, "continuity_max_xyz_m"
+                        ),
+                        "policy_continuity_max_rotation_rad": scalar(
+                            guard, "continuity_max_rotation_rad"
+                        ),
+                        "policy_continuity_max_gripper_delta_m": scalar(
+                            guard, "continuity_max_gripper_delta_m"
+                        ),
+                    }
+                )
+            else:
+                result.update(
+                    {
+                        name: value.copy()
+                        for name, value in fallback.items()
+                        if name.startswith("policy_")
+                    }
+                )
             if (
                 np.any(result["translation_scale3"] <= 0.0)
                 or np.any(result["rotation_scale3"] <= 0.0)
                 or np.any(result["workspace_min3"] >= result["workspace_max3"])
+                or result["policy_workspace_min3"].shape != (3,)
+                or result["policy_workspace_max3"].shape != (3,)
+                or result["policy_orientation_min3"].shape != (3,)
+                or result["policy_orientation_max3"].shape != (3,)
+                or not all(
+                    np.isfinite(result[name]).all()
+                    for name in (
+                        "policy_workspace_min3",
+                        "policy_workspace_max3",
+                        "policy_orientation_min3",
+                        "policy_orientation_max3",
+                    )
+                )
+                or np.any(
+                    result["policy_workspace_min3"]
+                    >= result["policy_workspace_max3"]
+                )
+                or np.any(
+                    result["policy_orientation_min3"]
+                    >= result["policy_orientation_max3"]
+                )
+                or result["policy_gimbal_margin_rad"][0] < 0.0
+                or result["policy_gripper_min_m"][0]
+                > result["policy_gripper_max_m"][0]
+                or result["policy_continuity_max_xyz_m"][0] < 0.0
+                or result["policy_continuity_max_rotation_rad"][0] < 0.0
+                or result["policy_continuity_max_gripper_delta_m"][0] < 0.0
                 or np.any(result["translation_clip_positive3"] < 0.0)
                 or np.any(result["translation_clip_negative3"] < 0.0)
                 or np.any(result["rotation_clip_positive3"] < 0.0)
@@ -1514,6 +1609,23 @@ class OnlineResidualReplay:
                 translation_clip_negative3=field("translation_clip_negative3"),
                 rotation_clip_positive3=field("rotation_clip_positive3"),
                 rotation_clip_negative3=field("rotation_clip_negative3"),
+                policy_workspace_min3=field("policy_workspace_min3"),
+                policy_workspace_max3=field("policy_workspace_max3"),
+                policy_orientation_min3=field("policy_orientation_min3"),
+                policy_orientation_max3=field("policy_orientation_max3"),
+                policy_gimbal_margin_rad=field("policy_gimbal_margin_rad"),
+                policy_gripper_width_m=field("policy_gripper_width_m"),
+                policy_gripper_min_m=field("policy_gripper_min_m"),
+                policy_gripper_max_m=field("policy_gripper_max_m"),
+                policy_continuity_max_xyz_m=field(
+                    "policy_continuity_max_xyz_m"
+                ),
+                policy_continuity_max_rotation_rad=field(
+                    "policy_continuity_max_rotation_rad"
+                ),
+                policy_continuity_max_gripper_delta_m=field(
+                    "policy_continuity_max_gripper_delta_m"
+                ),
                 delta_action_mean6=mean6,
                 delta_action_std6=std6,
             )

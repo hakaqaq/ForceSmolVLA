@@ -147,6 +147,33 @@ def _pre_intervention_policy_boundary_decisions(
     return boundaries
 
 
+def _human_release_boundary_decisions(
+    human_sources: Sequence[Mapping[str, Any]],
+    takeover_ends: Sequence[Mapping[str, Any]],
+) -> dict[int, int]:
+    """Bind each release to the last real decision in its human control segment."""
+
+    boundaries: dict[int, int] = {}
+    for end in takeover_ends:
+        end_ns = int(end["receive_monotonic_ns"])
+        generation = {
+            field: int(end[field])
+            for field in ("policy_epoch", "reset_generation", "takeover_generation")
+        }
+        candidates = [
+            row
+            for row in human_sources
+            if row["generation"] == generation
+            and int(row["receive_monotonic_ns"]) < end_ns
+        ]
+        if candidates:
+            boundary = max(
+                candidates, key=lambda row: int(row["receive_monotonic_ns"])
+            )
+            boundaries[int(boundary["source_sequence"])] = end_ns
+    return boundaries
+
+
 def _is_exact_real_decision_successor(
     action_source: str,
     current: Mapping[str, Any],
@@ -5514,35 +5541,9 @@ class ProductionBridge:
                 key = (*old_generation, int(source["selection"]["sequence"]))
                 policy_boundary_ns[key] = start_ns
 
-        human_boundary_ns: dict[int, int] = {}
-        for takeover_end in integrated.get("takeover_ends", ()):
-            end_ns = int(takeover_end["receive_monotonic_ns"])
-            generation = {
-                field: int(takeover_end[field])
-                for field in (
-                    "policy_epoch", "reset_generation", "takeover_generation"
-                )
-            }
-            candidates = [
-                source
-                for source in human_sources
-                if source["generation"] == generation
-                and int(source["receive_monotonic_ns"]) < end_ns
-            ]
-            if candidates:
-                source = max(
-                    candidates,
-                    key=lambda item: int(item["receive_monotonic_ns"]),
-                )
-                anchor = bisect_left(
-                    integrated["prepared"].tuple_host_ns,
-                    int(source["pose_ack"]["upper_receive_monotonic_ns"]),
-                )
-                boundary_frame = bisect_left(
-                    integrated["prepared"].tuple_host_ns, end_ns
-                )
-                if anchor < boundary_frame < anchor + CRITIC_ACTION_CONTRACT.critic_slots:
-                    human_boundary_ns[int(source["source_sequence"])] = end_ns
+        human_boundary_ns = _human_release_boundary_decisions(
+            human_sources, integrated.get("takeover_ends", ())
+        )
         transitions = []
         for index, (action_source, source, current_context) in enumerate(
             combined_sources

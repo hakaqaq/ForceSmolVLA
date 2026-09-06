@@ -144,6 +144,19 @@ def acceptance_mapping(
         "translation_clip_negative_m": [1.0] * 3,
         "rotation_clip_positive": [1.0] * 3,
         "rotation_clip_negative": [1.0] * 3,
+        "policy_single_action_guard": {
+            "workspace_min_xyz_m": [-1.0] * 3,
+            "workspace_max_xyz_m": [1.0] * 3,
+            "orientation_min_rpy_rad": [-np.pi] * 3,
+            "orientation_max_rpy_rad": [np.pi] * 3,
+            "gimbal_margin_rad": np.deg2rad(2.0),
+            "gripper_width_m": float(state[6]),
+            "gripper_min_width_m": 0.0,
+            "gripper_max_width_m": 0.1,
+            "continuity_max_xyz_m": 0.08,
+            "continuity_max_rotation_rad": np.deg2rad(25.0),
+            "continuity_max_gripper_delta_m": 0.1,
+        },
     }
 
 
@@ -175,6 +188,17 @@ def acceptance_batch(
         translation_clip_negative3=repeat([[1.0] * 3]),
         rotation_clip_positive3=repeat([[1.0] * 3]),
         rotation_clip_negative3=repeat([[1.0] * 3]),
+        policy_workspace_min3=repeat([[-1.0] * 3]),
+        policy_workspace_max3=repeat([[1.0] * 3]),
+        policy_orientation_min3=repeat([[-np.pi] * 3]),
+        policy_orientation_max3=repeat([[np.pi] * 3]),
+        policy_gimbal_margin_rad=repeat([[np.deg2rad(2.0)]]),
+        policy_gripper_width_m=repeat([[0.0]]),
+        policy_gripper_min_m=repeat([[0.0]]),
+        policy_gripper_max_m=repeat([[0.1]]),
+        policy_continuity_max_xyz_m=repeat([[0.08]]),
+        policy_continuity_max_rotation_rad=repeat([[np.deg2rad(25.0)]]),
+        policy_continuity_max_gripper_delta_m=repeat([[0.1]]),
         delta_action_mean6=repeat([[0.0] * 6]),
         delta_action_std6=repeat([[1.0] * 6]),
     )
@@ -463,6 +487,45 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
     )
     assert torch.equal(target_q1.grippers[-1], torch.full((1, 1), -0.4))
 
+    # The lower controller would clamp this target to x=0.796, but deployment's
+    # earlier single-action check rejects x=0.797 instead of dispatching it.
+    actor.value.data.fill_(0.002)
+    policy = batch(1)
+    for context in (policy.acceptance_context, policy.next_acceptance_context):
+        context.decision_state7[:, 0] = 0.795
+        context.upper_position3[:, 0] = 0.795
+        context.adapter_position3[:, 0] = 0.795
+        context.filter_position_before3[:, 0] = 0.795
+        context.actual_position3[:, 0] = 0.795
+        context.policy_workspace_max3[:, 0] = 0.796
+    rejected = residual_actor_loss(
+        ConstantQ(0.0),
+        ConstantQ(1.0),
+        actor,
+        policy,
+        None,
+        actor_q_weight=1.0,
+        residual_l2_weight=0.01,
+        human_residual_weight=1.0,
+    )
+    assert rejected.actor_q_valid_count == 0
+    assert rejected.actor_q_mapping_unavailable_count == 1
+
+    target_q1, target_q2 = ConstantQ(2.0), ConstantQ(3.0)
+    rejected_target = residual_critic_loss(
+        ConstantQ(0.0),
+        ConstantQ(1.0),
+        target_q1,
+        target_q2,
+        TargetActor(0.002),
+        policy,
+        gamma=0.5,
+        return_details=True,
+    )
+    assert rejected_target.td_valid_count == 0
+    assert rejected_target.target_candidate_unavailable_count == 1
+    assert target_q1.batch_sizes == target_q2.batch_sizes == []
+
 
 def test_unmappable_successor_is_not_relabelled_as_terminal() -> None:
     critic_batch = batch(1)
@@ -695,6 +758,17 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
             return torch.full((1, 6), 0.01)
 
     class Safety:
+        workspace_min_xyz_m = np.asarray([-1.0] * 3)
+        workspace_max_xyz_m = np.asarray([1.0] * 3)
+        orientation_min_rpy_rad = np.asarray([-np.pi] * 3)
+        orientation_max_rpy_rad = np.asarray([np.pi] * 3)
+        gimbal_margin_rad = np.deg2rad(2.0)
+        gripper_min_width_m = 0.0
+        gripper_max_width_m = 0.1
+        continuity_max_xyz_m = 0.08
+        continuity_max_rotation_rad = np.deg2rad(25.0)
+        continuity_max_gripper_delta_m = 0.1
+
         @staticmethod
         def validate_chunk(*_args):
             return None
@@ -727,6 +801,7 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
             "base_absolute_action7": chunk[2],
         }
     )
+    assert response["policy_single_action_guard"]["continuity_max_xyz_m"] == 0.08
     assert np.allclose(
         engine.residual_actor.inputs["base_action6"][0].numpy(),
         [0.03, 0.0, 0.0, 0.0, 0.0, 0.0],

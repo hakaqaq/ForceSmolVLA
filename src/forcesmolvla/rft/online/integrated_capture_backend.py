@@ -64,6 +64,7 @@ def _local_candidate_acceptance_context(
     upper_quaternion_xyzw: list[float] | None,
     safe_action: Mapping[str, Any],
     recorder_args: Any,
+    policy_single_action_guard: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     measured = safe_action.get("measured_pose_basis")
     if not isinstance(measured, Mapping):
@@ -76,7 +77,7 @@ def _local_candidate_acceptance_context(
     if action_source == "human":
         upper_position_m = adapter_position
         upper_quaternion_xyzw = adapter_quaternion
-    return {
+    result = {
         "mapping_kind": "awaiting_robot_filter_leash_context",
         "unavailable_reason": "robot_filter_leash_context_missing",
         "decision_state7": list(decision_state7),
@@ -93,6 +94,9 @@ def _local_candidate_acceptance_context(
         "workspace_min_m": list(recorder_args.workspace_min),
         "workspace_max_m": list(recorder_args.workspace_max),
     }
+    if action_source == "policy" and isinstance(policy_single_action_guard, Mapping):
+        result["policy_single_action_guard"] = dict(policy_single_action_guard)
+    return result
 
 
 def _attach_robot_acceptance_context(
@@ -2503,6 +2507,11 @@ class IntegratedCaptureBackend:
                             upper_quaternion_xyzw=quaternion.tolist(),
                             safe_action=decision,
                             recorder_args=recorder_args,
+                            policy_single_action_guard=(
+                                None
+                                if residual_result is None
+                                else residual_result.get("policy_single_action_guard")
+                            ),
                         )
                     ),
                 }

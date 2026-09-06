@@ -76,6 +76,26 @@ def test_dispatch_successor_requires_persisted_identity_link() -> None:
     )
 
 
+def test_human_release_boundary_does_not_depend_on_critic_slot_window() -> None:
+    generation = {
+        "policy_epoch": 1,
+        "reset_generation": 0,
+        "takeover_generation": 1,
+    }
+    boundaries = bridge_module._human_release_boundary_decisions(
+        [
+            {
+                "source_sequence": 7,
+                "receive_monotonic_ns": 1_034_000_000,
+                "generation": generation,
+            }
+        ],
+        [{**generation, "receive_monotonic_ns": 1_200_000_000}],
+    )
+
+    assert boundaries == {7: 1_200_000_000}
+
+
 class _Affine:
     def __init__(self, mean: list[float], std: list[float]) -> None:
         self.mean = np.asarray(mean, dtype=np.float64)
