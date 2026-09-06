@@ -23,6 +23,9 @@ from forcesmolvla.rft.online.action_representation import (
     ABSOLUTE_ACTION_ROTATION_REPRESENTATION,
     quaternion_xyzw_to_rpy_xyz,
 )
+from forcesmolvla.rft.online.controller_acceptance import (
+    merge_robot_acceptance_context,
+)
 from forcesmolvla.raw_to_lerobot_v3 import (
     PreparedEpisode,
     RuntimeContract,
@@ -4539,6 +4542,13 @@ class ProductionBridge:
             raise ProductionBridgeError(
                 "BRIDGE_FORMAL_R_RESIDUAL_DECISION_CONTEXT_MISSING"
             )
+        decision_context = dict(decision_context)
+        decision_context["candidate_acceptance_mapping"] = (
+            merge_robot_acceptance_context(
+                decision_context.get("candidate_acceptance_mapping", {}),
+                pose_ack,
+            )
+        )
         observation = self._formal_online_r_decision_observation(
             episode_dir=episode_dir,
             episode_id=episode_id,
@@ -4914,6 +4924,12 @@ class ProductionBridge:
         decision_context = dict(decision_context_source)
         decision_context["base_absolute_action7"] = list(
             pre_takeover_absolute
+        )
+        decision_context["candidate_acceptance_mapping"] = (
+            merge_robot_acceptance_context(
+                decision_context.get("candidate_acceptance_mapping", {}),
+                source.get("pose_ack", {}),
+            )
         )
         sequence = int(source["source_sequence"])
         observation = self._formal_online_r_decision_observation(
@@ -5384,6 +5400,12 @@ class ProductionBridge:
                     )
                 if not decision_and_ack_precede_terminal(source, context):
                     return None, "decision_or_ack_after_terminal_observation"
+                context["candidate_acceptance_mapping"] = (
+                    merge_robot_acceptance_context(
+                        context.get("candidate_acceptance_mapping", {}),
+                        source.get("pose_ack", {}),
+                    )
+                )
                 return context, None
             raw_context = source.get("intervention", {}).get(
                 "residual_decision_context"
@@ -5403,6 +5425,12 @@ class ProductionBridge:
                 return None, "human_pre_takeover_base_missing"
             context = dict(raw_context)
             context["base_absolute_action7"] = base
+            context["candidate_acceptance_mapping"] = (
+                merge_robot_acceptance_context(
+                    context.get("candidate_acceptance_mapping", {}),
+                    source.get("pose_ack", {}),
+                )
+            )
             if not decision_and_ack_precede_terminal(source, context):
                 return None, "decision_or_ack_after_terminal_observation"
             return context, None

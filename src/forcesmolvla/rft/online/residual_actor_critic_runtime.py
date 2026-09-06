@@ -15,7 +15,7 @@ from typing import Any, Callable, Iterator, Mapping, Sequence
 import numpy as np
 import torch
 
-ONLINE_ADAPTATION_DIRECTORY_NAME = "online_ack_residual_accepted_q"
+ONLINE_ADAPTATION_DIRECTORY_NAME = "online_ack_residual_filter_leash"
 
 
 class AsyncRuntimeError(RuntimeError):

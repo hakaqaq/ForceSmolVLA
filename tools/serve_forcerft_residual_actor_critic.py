@@ -199,6 +199,7 @@ class ResidualActorCriticLearner:
         self.latest_actor_update_ms = 0.0
         self.latest_cycle_ms = 0.0
         self.latest_target_candidate_unavailable_count = 0
+        self.latest_critic_td_available_count = 0
         self.latest_actor_q_mapping_unavailable_count = 0
         self.latest_human_residual_projected_count = 0
         self.latest_human_residual_valid_count = 0
@@ -331,6 +332,9 @@ class ResidualActorCriticLearner:
             "admitted_rows_for_latest_episode": (
                 0 if status is None else status["admitted_rows_for_latest_episode"]
             ),
+            "recorded_rows_for_latest_episode": (
+                0 if status is None else status["recorded_transition_rows"]
+            ),
             "computed_cycle_budget": (
                 0 if status is None else status["computed_cycle_budget"]
             ),
@@ -390,10 +394,11 @@ class ResidualActorCriticLearner:
                 "FORCERFT_INCREMENTAL_REPLAY_EPISODE_ID_INVALID",
             )
             episode_id = next(iter(source_episodes))
-            admitted_rows = int(added_counts.get(episode_id, 0))
+            recorded_rows = int(added_counts.get(episode_id, 0))
+            admitted_rows = self.replay.critic_td_rows_for_episode(episode_id)
             require(
-                admitted_rows > 0,
-                "FORCERFT_INCREMENTAL_REPLAY_NO_VALID_ROWS",
+                recorded_rows > 0,
+                "FORCERFT_INCREMENTAL_REPLAY_NO_RECORDED_ROWS",
             )
             computed_budget = self.training_policy.cycles_for_observed_admission(
                 new_critic_td_valid_rows=admitted_rows,
@@ -404,6 +409,7 @@ class ResidualActorCriticLearner:
             self._loaded_episode_keys.add(admission_id)
             self._admission_progress[admission_id] = {
                 "episode_key": admission_id,
+                "recorded_transition_rows": recorded_rows,
                 "admitted_rows_for_latest_episode": admitted_rows,
                 "computed_cycle_budget": computed_budget,
                 "cycle_count_at_admission_start": before_budget,
@@ -424,6 +430,7 @@ class ResidualActorCriticLearner:
         )
         runtime_replay = self.learner["runtime"]["replay"]
         runtime_replay.update(
+            recorded_transition_rows=self.replay.recorded_transition_rows,
             critic_td_valid_rows=self.replay.critic_td_valid_rows,
             actor_q_valid_rows=self.replay.actor_q_valid_rows,
             human_residual_valid_rows=self.replay.human_residual_valid_rows,
@@ -462,7 +469,7 @@ class ResidualActorCriticLearner:
         replay: warmup.OnlineResidualReplay,
         *,
         warmup: bool,
-    ) -> float:
+    ) -> float | None:
         started = time.perf_counter()
         learner = self.learner
         counters = learner["runtime"]["counters"]
@@ -473,15 +480,14 @@ class ResidualActorCriticLearner:
             optimizer = learner["critic_optimizer"]
             optimizer.zero_grad(set_to_none=True)
             loss_result = None
+            unavailable_count = 0
             seed = int(learner["config"]["environment"]["random_seed"]) + step
-            for sample_attempt in range(8):
-                batch = replay.sample(
-                    self.training_policy.twin_q_batch_size,
-                    device=self.device,
-                    seed=seed + sample_attempt * 1_000_003,
-                )
-                require(batch is not None, "FORCERFT_CRITIC_REPLAY_EMPTY")
-                loss_result = residual_critic_loss(
+            for batch in replay.iter_td_batches(
+                self.training_policy.twin_q_batch_size,
+                device=self.device,
+                seed=seed,
+            ):
+                candidate = residual_critic_loss(
                     learner["q1"],
                     learner["q2"],
                     learner["q1_target"],
@@ -493,12 +499,19 @@ class ResidualActorCriticLearner:
                     ),
                     return_details=True,
                 )
-                if loss_result.td_valid_count:
+                unavailable_count += int(
+                    candidate.target_candidate_unavailable_count
+                )
+                if candidate.td_valid_count:
+                    loss_result = candidate
                     break
-            require(
-                loss_result is not None and loss_result.td_valid_count > 0,
-                "FORCERFT_CRITIC_BATCH_HAS_NO_MAPPABLE_TD_ROW",
-            )
+            if loss_result is None:
+                self.latest_target_candidate_unavailable_count = unavailable_count
+                self.latest_critic_td_available_count = 0
+                self.latest_critic_update_ms = (
+                    time.perf_counter() - started
+                ) * 1000.0
+                return None
             loss_result.total.backward()
             torch.nn.utils.clip_grad_norm_(
                 (*learner["q1"].parameters(), *learner["q2"].parameters()),
@@ -514,9 +527,8 @@ class ResidualActorCriticLearner:
             learner["runtime"]["ack_critic_warmup_steps"] = (
                 int(learner["runtime"].get("ack_critic_warmup_steps", 0)) + 1
             )
-        self.latest_target_candidate_unavailable_count = int(
-            loss_result.target_candidate_unavailable_count
-        )
+        self.latest_target_candidate_unavailable_count = int(unavailable_count)
+        self.latest_critic_td_available_count = int(loss_result.td_valid_count)
         value = float(loss_result.total.detach())
         self.latest_critic_update_ms = (
             time.perf_counter() - started
@@ -689,6 +701,9 @@ class ResidualActorCriticLearner:
         runtime = learner["runtime"]
         replay = self._refresh_replay()
         count = replay.critic_td_valid_rows
+        runtime["replay"]["recorded_transition_rows"] = int(
+            getattr(replay, "recorded_transition_rows", count)
+        )
         runtime["replay"]["critic_td_valid_rows"] = count
         if count < self.training_policy.minimum_ack_transitions:
             runtime["learner_state"] = "ack_replay_collection"
@@ -716,9 +731,10 @@ class ResidualActorCriticLearner:
                 - int(runtime.get("ack_critic_warmup_steps", 0))
             )
             for _ in range(max(0, remaining)):
-                losses.append(
-                    self._critic_update(coordinator, replay, warmup=True)
-                )
+                value = self._critic_update(coordinator, replay, warmup=True)
+                if value is None:
+                    break
+                losses.append(value)
             require(
                 all(
                     torch.equal(before[name], value)
@@ -726,6 +742,27 @@ class ResidualActorCriticLearner:
                 ),
                 "FORCERFT_WARMUP_MODIFIED_RESIDUAL_ACTOR",
             )
+            warmup_complete = int(runtime["ack_critic_warmup_steps"]) == (
+                self.training_policy.ack_critic_warmup_steps
+            )
+            if not warmup_complete:
+                return {
+                    "waiting_for_replay": True,
+                    "waiting_for_mappable_td": True,
+                    "learner_state": "ack_critic_warmup",
+                    "ack_critic_warmup_complete": False,
+                    "ack_critic_warmup_steps": int(
+                        runtime["ack_critic_warmup_steps"]
+                    ),
+                    "learner_critic_steps": len(losses),
+                    "learner_actor_steps": 0,
+                    "learner_polyak_steps": len(losses),
+                    "current_episode_sampled": False,
+                    "nonfinite_count": 0,
+                    "oom_count": 0,
+                    **self._actor_counter_metrics(),
+                    **self._latest_budget_metrics(),
+                }
             runtime["learner_state"] = "residual_actor_critic_training"
             runtime["ack_critic_warmup_complete"] = True
             latest_checkpoint = (
@@ -789,10 +826,24 @@ class ResidualActorCriticLearner:
             }
 
         cycle_started = time.perf_counter()
-        critic_losses = [
-            self._critic_update(coordinator, replay, warmup=False)
-            for _ in range(self.training_policy.twin_q_updates_per_cycle)
-        ]
+        critic_losses = []
+        for _ in range(self.training_policy.twin_q_updates_per_cycle):
+            value = self._critic_update(coordinator, replay, warmup=False)
+            if value is None:
+                return {
+                    "waiting_for_replay": True,
+                    "waiting_for_mappable_td": True,
+                    "learner_state": "residual_actor_critic_training",
+                    "learner_critic_steps": len(critic_losses),
+                    "learner_actor_steps": 0,
+                    "learner_polyak_steps": len(critic_losses),
+                    "current_episode_sampled": False,
+                    "nonfinite_count": 0,
+                    "oom_count": 0,
+                    **self._actor_counter_metrics(),
+                    **self._latest_budget_metrics(),
+                }
+            critic_losses.append(value)
         actor_metrics = self._actor_update(coordinator, replay)
         runtime["residual_actor_critic_cycles"] = cycle + 1
         learner["residual_actor_critic_cycles"] = cycle + 1
@@ -1173,6 +1224,26 @@ class AsyncResidualActorCriticRuntime:
                     learner_runtime.get("ack_critic_warmup_steps", 0)
                 ),
                 "latest_critic_td_loss": result.get("latest_critic_td_loss"),
+                "waiting_for_mappable_td": bool(
+                    result.get("waiting_for_mappable_td", False)
+                ),
+                "recorded_transition_rows": int(
+                    learner_runtime.get("replay", {}).get(
+                        "recorded_transition_rows", 0
+                    )
+                ),
+                "critic_td_valid_rows": int(
+                    learner_runtime.get("replay", {}).get(
+                        "critic_td_valid_rows", 0
+                    )
+                ),
+                "latest_critic_td_available_count": int(
+                    getattr(
+                        self.learner_job,
+                        "latest_critic_td_available_count",
+                        0,
+                    )
+                ),
                 "latest_actor_loss": result.get("latest_actor_loss"),
                 "latest_min_twin_q": result.get("latest_min_twin_q"),
                 "nonzero_behavior_residual_rows": int(

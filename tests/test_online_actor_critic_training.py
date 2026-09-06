@@ -18,6 +18,11 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     InferencePriorityCoordinator,
     ResidualActorCriticSchedule,
 )
+from forcesmolvla.rft.online.controller_acceptance import (
+    ControllerAcceptanceBatch,
+    HILSERL_ACCEPTANCE_MAPPING_KIND,
+    map_residual_to_controller_ack,
+)
 from forcesmolvla.rft.online.replay_training import (
     ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
     LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS,
@@ -103,27 +108,108 @@ class IdentityTransform:
         return np.asarray(value)
 
 
-def decision_context(
-    *, timestamp_ns: int, base_absolute: object
+def acceptance_mapping(
+    *,
+    decision_state7: object | None = None,
+    valid: bool = True,
+    step_dt_s: float = 1.0,
+    filter_time_constant_s: float = 1.0e-3,
 ) -> dict[str, object]:
+    state = np.asarray(
+        [0.0] * 7 if decision_state7 is None else decision_state7,
+        dtype=np.float64,
+    )
+    position = state[:3].tolist()
+    return {
+        "mapping_kind": (
+            HILSERL_ACCEPTANCE_MAPPING_KIND if valid else "unavailable"
+        ),
+        "unavailable_reason": None if valid else "test_mapping_unavailable",
+        "decision_state7": state.tolist(),
+        "upper_execution_position_m": position,
+        "upper_execution_quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+        "adapter_position_m": position,
+        "adapter_quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+        "translation_action_scale_m": [1.0] * 3,
+        "rotation_action_scale_rad": [1.0] * 3,
+        "workspace_min_m": [-1.0] * 3,
+        "workspace_max_m": [1.0] * 3,
+        "filter_position_before_m": position,
+        "filter_quaternion_before_xyzw": [0.0, 0.0, 0.0, 1.0],
+        "actual_position_m": position,
+        "actual_quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+        "step_dt_s": step_dt_s,
+        "filter_time_constant_s": filter_time_constant_s,
+        "translation_clip_positive_m": [1.0] * 3,
+        "translation_clip_negative_m": [1.0] * 3,
+        "rotation_clip_positive": [1.0] * 3,
+        "rotation_clip_negative": [1.0] * 3,
+    }
+
+
+def acceptance_batch(
+    batch_size: int, *, valid: bool = True
+) -> ControllerAcceptanceBatch:
+    def repeat(values: object) -> torch.Tensor:
+        return torch.as_tensor(values, dtype=torch.float32).repeat(batch_size, 1)
+
+    return ControllerAcceptanceBatch(
+        valid=torch.full((batch_size,), valid, dtype=torch.bool),
+        control_source=torch.zeros(batch_size, 1),
+        decision_state7=repeat([[0.0] * 7]),
+        upper_position3=repeat([[0.0] * 3]),
+        upper_quaternion4=repeat([[0.0, 0.0, 0.0, 1.0]]),
+        adapter_position3=repeat([[0.0] * 3]),
+        adapter_quaternion4=repeat([[0.0, 0.0, 0.0, 1.0]]),
+        translation_scale3=repeat([[1.0] * 3]),
+        rotation_scale3=repeat([[1.0] * 3]),
+        workspace_min3=repeat([[-1.0] * 3]),
+        workspace_max3=repeat([[1.0] * 3]),
+        filter_position_before3=repeat([[0.0] * 3]),
+        filter_quaternion_before4=repeat([[0.0, 0.0, 0.0, 1.0]]),
+        actual_position3=repeat([[0.0] * 3]),
+        actual_quaternion4=repeat([[0.0, 0.0, 0.0, 1.0]]),
+        step_dt_s=repeat([[1.0]]),
+        filter_time_constant_s=repeat([[1.0e-3]]),
+        translation_clip_positive3=repeat([[1.0] * 3]),
+        translation_clip_negative3=repeat([[1.0] * 3]),
+        rotation_clip_positive3=repeat([[1.0] * 3]),
+        rotation_clip_negative3=repeat([[1.0] * 3]),
+        delta_action_mean6=repeat([[0.0] * 6]),
+        delta_action_std6=repeat([[1.0] * 6]),
+    )
+
+
+def decision_context(
+    *,
+    timestamp_ns: int,
+    base_absolute: object,
+    acceptance_valid: bool = True,
+) -> dict[str, object]:
+    state = [0.0] * 7
     return {
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "valid_for_residual_training": True,
         "invalid_reason": None,
         "decision_monotonic_ns": timestamp_ns,
-        "state7_absolute": [0.0] * 7,
+        "state7_absolute": state,
         "wrench6_calibrated_tcp": [0.0] * 6,
         "wrench_delta6_calibrated_tcp_100ms": [0.0] * 6,
         "wrench_delta_interval_ns": 0,
         "base_absolute_action7": base_absolute,
-        "candidate_acceptance_mapping": {
-            "mapping_kind": "recorded_ack_point_only",
-            "identity_valid": False,
-        },
+        "candidate_acceptance_mapping": acceptance_mapping(
+            decision_state7=state,
+            valid=acceptance_valid,
+        ),
     }
 
 
-def human_replay(*, terminated: bool = True) -> OnlineResidualReplay:
+def human_replay(
+    *,
+    terminated: bool = True,
+    include_successor: bool = True,
+    acceptance_valid: bool = True,
+) -> OnlineResidualReplay:
     observation = {
         "state7_absolute": [0.0] * 7,
         "wrench6_calibrated_tcp": [0.0] * 6,
@@ -169,9 +255,25 @@ def human_replay(*, terminated: bool = True) -> OnlineResidualReplay:
         ).tolist(),
         "accepted_absolute_action_k7": accepted.tolist(),
         "residual_decision_context": decision_context(
-            timestamp_ns=1_000_000_000, base_absolute=base
+            timestamp_ns=1_000_000_000,
+            base_absolute=base,
+            acceptance_valid=acceptance_valid,
         ),
-        "next_residual_decision_context": None,
+        "next_residual_decision_context": (
+            None
+            if terminated or not include_successor
+            else decision_context(
+                timestamp_ns=1_100_000_000,
+                base_absolute=base,
+                acceptance_valid=acceptance_valid,
+            )
+        ),
+        "next_action_source": (
+            None if terminated or not include_successor else "human"
+        ),
+        "next_accepted_absolute_action7": (
+            None if terminated or not include_successor else accepted[0].tolist()
+        ),
     }
     macro = ProductionAckMacro(
         transition=transition,
@@ -266,9 +368,7 @@ def batch(batch_size: int = 2) -> SimpleNamespace:
         action_mask=mask,
         control_source=torch.zeros(batch_size, 1),
         gripper_command=torch.zeros(batch_size, 1),
-        candidate_acceptance_identity_valid=torch.ones(
-            batch_size, dtype=torch.bool
-        ),
+        acceptance_context=acceptance_batch(batch_size),
         next_state7=zeros7,
         next_wrench6=zeros6,
         next_wrench_delta6=zeros6,
@@ -277,12 +377,7 @@ def batch(batch_size: int = 2) -> SimpleNamespace:
         next_base_valid=torch.ones(batch_size, dtype=torch.bool),
         next_control_source=torch.zeros(batch_size, 1),
         next_gripper_command=torch.zeros(batch_size, 1),
-        next_candidate_acceptance_identity_valid=torch.zeros(
-            batch_size, dtype=torch.bool
-        ),
-        next_recorded_proposal_residual6=zeros6,
-        next_recorded_behavior_residual_k6=zeros_k6,
-        next_recorded_point_valid=torch.ones(batch_size, dtype=torch.bool),
+        next_acceptance_context=acceptance_batch(batch_size),
         reward=torch.ones(batch_size),
         terminated=torch.tensor([False, True][:batch_size]),
         truncated=torch.zeros(batch_size, dtype=torch.bool),
@@ -314,7 +409,7 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
     actor = ScalarResidualActor()
     q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
     policy = batch(1)
-    policy.candidate_acceptance_identity_valid[:] = False
+    policy.acceptance_context.valid[:] = False
     losses = residual_actor_loss(
         q1,
         q2,
@@ -329,7 +424,7 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
     assert losses.actor_q_mapping_unavailable_count == 1
     assert q1.batch_sizes == q2.batch_sizes == []
 
-    policy.candidate_acceptance_identity_valid[:] = True
+    policy.acceptance_context.valid[:] = True
     policy.control_source[:] = 0.0
     policy.gripper_command[:] = 0.75
     losses = residual_actor_loss(
@@ -347,7 +442,6 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
     assert torch.equal(q1.grippers[-1], torch.full((1, 1), 0.75))
 
     critic_batch = batch(1)
-    critic_batch.next_recorded_behavior_residual_k6[:] = 0.25
     critic_batch.next_gripper_command[:] = -0.4
     target_q1, target_q2 = ConstantQ(2.0), ConstantQ(3.0)
     details = residual_critic_loss(
@@ -355,27 +449,27 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
         q2,
         target_q1,
         target_q2,
-        TargetActor(),
+        TargetActor(0.02),
         critic_batch,
         gamma=0.5,
         return_details=True,
     )
     assert details.td_valid_count == 1
     assert details.target_candidate_unavailable_count == 0
-    assert torch.equal(
-        target_q1.residuals[-1], torch.full((1, 3, 6), 0.25)
+    assert torch.allclose(
+        target_q1.residuals[-1],
+        torch.full((1, 3, 6), 0.02),
+        atol=1.0e-5,
     )
     assert torch.equal(target_q1.grippers[-1], torch.full((1, 1), -0.4))
 
 
 def test_unmappable_successor_is_not_relabelled_as_terminal() -> None:
     critic_batch = batch(1)
-    critic_batch.next_candidate_acceptance_identity_valid[:] = False
+    critic_batch.next_acceptance_context.valid[:] = False
     q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
     q1_target, q2_target = ConstantQ(2.0), ConstantQ(3.0)
-    # A real ACK exists, but only for proposal zero.  A different target-Actor
-    # candidate cannot reuse that historical acceptance point.
-    target_actor = TargetActor(0.1)
+    target_actor = TargetActor(0.01)
     details = residual_critic_loss(
         q1,
         q2,
@@ -404,6 +498,62 @@ def test_unmappable_successor_is_not_relabelled_as_terminal() -> None:
     )
     assert target_actor.calls == 1
     assert q1_target.batch_sizes == q2_target.batch_sizes == []
+
+
+def test_filter_leash_mapping_is_differentiable_and_not_a_recorded_point() -> None:
+    context = acceptance_batch(1)
+    proposal = torch.full((1, 6), 2.0e-6, requires_grad=True)
+    mapped = map_residual_to_controller_ack(
+        proposal,
+        torch.zeros(1, 6),
+        context,
+    )
+    assert mapped.valid.tolist() == [True]
+    assert torch.allclose(
+        mapped.residual_k6[:, 0], proposal, rtol=1.0e-4, atol=1.0e-7
+    )
+    mapped.residual_k6.sum().backward()
+    assert proposal.grad is not None
+    assert torch.isfinite(proposal.grad).all()
+    assert torch.count_nonzero(proposal.grad) == 6
+
+
+def test_nonterminal_human_successor_participates_in_td() -> None:
+    replay = human_replay(terminated=False)
+    assert replay.critic_td_valid_rows == 1
+    critic_batch = replay.sample(
+        1,
+        device=torch.device("cpu"),
+        seed=1,
+        td_mappable_only=True,
+    )
+    assert critic_batch is not None
+    assert critic_batch.control_source.item() == 1.0
+    assert critic_batch.next_control_source.item() == 1.0
+    q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
+    q1_target, q2_target = ConstantQ(2.0), ConstantQ(3.0)
+    details = residual_critic_loss(
+        q1,
+        q2,
+        q1_target,
+        q2_target,
+        TargetActor(0.01),
+        critic_batch,
+        gamma=0.99,
+        return_details=True,
+    )
+    assert details.td_valid_count == 1
+    assert q1_target.sources[-1].item() == 1.0
+
+
+def test_recorded_rows_are_distinct_from_currently_usable_td_rows() -> None:
+    replay = human_replay(terminated=False, acceptance_valid=False)
+    assert replay.recorded_transition_rows == 1
+    assert replay.critic_td_valid_rows == 0
+    assert replay.human_residual_valid_rows == 1
+    assert list(
+        replay.iter_td_batches(8, device=torch.device("cpu"), seed=3)
+    ) == []
 
 
 def test_critic_conditions_policy_and_human_on_accepted_gripper() -> None:
@@ -600,6 +750,9 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
         "normalized_wrench6": response["normalized_wrench6"],
         "normalized_wrench_delta6": response["normalized_wrench_delta6"],
         "base_normalized_action6": response["base_normalized_action7"][:6],
+        "candidate_acceptance_mapping": acceptance_mapping(
+            decision_state7=state
+        ),
     }
     next_base = [0.14, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085]
     next_context = {
@@ -612,6 +765,9 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
         "normalized_wrench6": [2.0] * 6,
         "normalized_wrench_delta6": [7.0] * 6,
         "base_normalized_action6": [0.04, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "candidate_acceptance_mapping": acceptance_mapping(
+            decision_state7=state
+        ),
     }
     accepted = np.repeat(
         np.asarray(response["composed_absolute_action7"])[None, :], 3, axis=0
@@ -678,7 +834,7 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
     assert row["next_base_valid"] is True
     assert np.array_equal(row["control_source"], [0.0])
     assert np.allclose(row["gripper_command"], [0.085])
-    assert row["next_recorded_point_valid"] is True
+    assert row["next_acceptance_context"]["valid"] is True
     assert np.array_equal(row["next_control_source"], [0.0])
     assert np.allclose(row["next_gripper_command"], [0.085])
 
@@ -696,7 +852,7 @@ def test_policy_value_sampling_excludes_human_and_missing_next_base() -> None:
         1, device=torch.device("cpu"), seed=0, human_only=True
     ) is not None
 
-    missing_next_base = human_replay(terminated=False)
+    missing_next_base = human_replay(terminated=False, include_successor=False)
     assert missing_next_base.rows == ()
     assert missing_next_base.next_base_missing_rows == 1
 
@@ -883,6 +1039,14 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
         def critic_td_valid_rows(self):
             return sum(self.counts)
 
+        @property
+        def recorded_transition_rows(self):
+            return sum(self.counts)
+
+        def critic_td_rows_for_episode(self, episode_id):
+            admission_id = str(episode_id).split("/", 1)[0]
+            return {"a": 99, "b": 1, "c": 400}[admission_id]
+
         actor_q_valid_rows = property(lambda self: sum(self.counts))
         human_residual_valid_rows = property(lambda _self: 0)
 
@@ -929,6 +1093,7 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
     ]
     assert learner.admission_budget_status("c") == {
         "episode_key": "c",
+        "recorded_transition_rows": 400,
         "admitted_rows_for_latest_episode": 400,
         "computed_cycle_budget": 7,
         "cycle_count_at_admission_start": 1,
@@ -1016,6 +1181,80 @@ def test_100_rows_runs_exactly_256_critic_warmup_then_starts_residual_training(
         torch.equal(actor_before[name], value)
         for name, value in learner.residual_actor.state_dict().items()
     )
+
+
+def test_no_currently_mappable_td_row_waits_without_advancing_critic() -> None:
+    learner = actor_update_test_learner()
+    q1_target, q2_target = build_twin_q(hidden_dim=16, seed=31)[2:]
+    learner.learner["q1_target"] = q1_target
+    learner.learner["q2_target"] = q2_target
+    learner.learner["critic_optimizer"] = torch.optim.Adam(
+        (
+            *learner.learner["q1"].parameters(),
+            *learner.learner["q2"].parameters(),
+        ),
+        lr=3.0e-4,
+    )
+    learner.learner["config"]["optimizer"]["twin_q"] = {
+        "grad_clip_norm": 10.0
+    }
+    learner.learner["config"]["objective"]["command_macro_discount"] = 0.99
+    learner.latest_target_candidate_unavailable_count = 0
+    learner.latest_critic_td_available_count = 0
+    critic_batch = batch(1)
+    critic_batch.next_acceptance_context.valid[:] = False
+
+    class SparseReplay:
+        @staticmethod
+        def iter_td_batches(*_args, **_kwargs):
+            yield critic_batch
+
+    counters_before = dict(learner.learner["runtime"]["counters"])
+    q_before = {
+        name: value.detach().clone()
+        for name, value in learner.learner["q1"].state_dict().items()
+    }
+    result = learner._critic_update(
+        InferencePriorityCoordinator(), SparseReplay(), warmup=False
+    )
+    assert result is None
+    assert learner.latest_critic_td_available_count == 0
+    assert learner.latest_target_candidate_unavailable_count == 1
+    assert learner.learner["runtime"]["counters"] == counters_before
+    assert all(
+        torch.equal(q_before[name], value)
+        for name, value in learner.learner["q1"].state_dict().items()
+    )
+
+
+def test_unavailable_td_does_not_consume_joint_cycle_budget(monkeypatch) -> None:
+    learner = tiny_continuous_learner(
+        learner_state="residual_actor_critic_training", warmup_updates=256
+    )
+    replay = SimpleNamespace(
+        recorded_transition_rows=100,
+        critic_td_valid_rows=100,
+    )
+    monkeypatch.setattr(learner, "_refresh_replay", lambda: replay)
+    learner._joint_cycle_budget = 1
+    monkeypatch.setattr(
+        learner,
+        "_critic_update",
+        lambda _coordinator, _replay, *, warmup: None,
+    )
+    monkeypatch.setattr(
+        learner,
+        "_actor_update",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("Actor must not run without its two Critic updates")
+        ),
+    )
+
+    result = learner(InferencePriorityCoordinator())
+    assert result["waiting_for_mappable_td"] is True
+    assert result["learner_critic_steps"] == 0
+    assert result["learner_actor_steps"] == 0
+    assert learner.learner["runtime"]["residual_actor_critic_cycles"] == 0
 
 
 def test_residual_training_cycle_is_exactly_two_critic_and_one_actor(

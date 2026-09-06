@@ -16,7 +16,10 @@ import numpy as np
 import torch
 import yaml
 
-from forcesmolvla.action_delta import ActionDeltaProcessor
+from forcesmolvla.rft.online.controller_acceptance import (
+    ControllerAcceptanceBatch,
+    HILSERL_ACCEPTANCE_MAPPING_KIND,
+)
 from forcesmolvla.rft.online.action_representation import (
     ABSOLUTE_ACTION_ROTATION_REPRESENTATION,
     legacy_absolute_action7_to_rpy_xyz,
@@ -967,7 +970,7 @@ class ResidualTransitionBatch:
     action_mask: torch.Tensor
     control_source: torch.Tensor
     gripper_command: torch.Tensor
-    candidate_acceptance_identity_valid: torch.Tensor
+    acceptance_context: ControllerAcceptanceBatch
     next_state7: torch.Tensor
     next_wrench6: torch.Tensor
     next_wrench_delta6: torch.Tensor
@@ -976,10 +979,7 @@ class ResidualTransitionBatch:
     next_base_valid: torch.Tensor
     next_control_source: torch.Tensor
     next_gripper_command: torch.Tensor
-    next_candidate_acceptance_identity_valid: torch.Tensor
-    next_recorded_proposal_residual6: torch.Tensor
-    next_recorded_behavior_residual_k6: torch.Tensor
-    next_recorded_point_valid: torch.Tensor
+    next_acceptance_context: ControllerAcceptanceBatch
     reward: torch.Tensor
     terminated: torch.Tensor
     truncated: torch.Tensor
@@ -995,6 +995,7 @@ class OnlineResidualReplay:
         self.normalizer = normalizer
         self.next_base_missing_rows = 0
         self.quarantined_current_schema_rows = 0
+        self.candidate_acceptance_unavailable_rows = 0
         self.rows = tuple(self._materialize_all(tuple(macros)))
 
     def append_macros(
@@ -1119,6 +1120,122 @@ class OnlineResidualReplay:
                 )
         return state, wrench, wrench_delta, base[0]
 
+    def _acceptance_mapping(
+        self,
+        context: Mapping[str, Any],
+        source: str,
+        *,
+        count_unavailable: bool = True,
+    ) -> dict[str, Any]:
+        raw = context.get("candidate_acceptance_mapping")
+        fallback = {
+            "valid": False,
+            "control_source": 0.0 if source == "policy" else 1.0,
+            "decision_state7": np.zeros(7, dtype=np.float32),
+            "upper_position3": np.zeros(3, dtype=np.float32),
+            "upper_quaternion4": np.asarray(
+                [0.0, 0.0, 0.0, 1.0], dtype=np.float32
+            ),
+            "adapter_position3": np.zeros(3, dtype=np.float32),
+            "adapter_quaternion4": np.asarray(
+                [0.0, 0.0, 0.0, 1.0], dtype=np.float32
+            ),
+            "translation_scale3": np.ones(3, dtype=np.float32),
+            "rotation_scale3": np.ones(3, dtype=np.float32),
+            "workspace_min3": np.full(3, -1.0, dtype=np.float32),
+            "workspace_max3": np.full(3, 1.0, dtype=np.float32),
+            "filter_position_before3": np.zeros(3, dtype=np.float32),
+            "filter_quaternion_before4": np.asarray(
+                [0.0, 0.0, 0.0, 1.0], dtype=np.float32
+            ),
+            "actual_position3": np.zeros(3, dtype=np.float32),
+            "actual_quaternion4": np.asarray(
+                [0.0, 0.0, 0.0, 1.0], dtype=np.float32
+            ),
+            "step_dt_s": np.asarray([1.0], dtype=np.float32),
+            "filter_time_constant_s": np.asarray([1.0], dtype=np.float32),
+            "translation_clip_positive3": np.ones(3, dtype=np.float32),
+            "translation_clip_negative3": np.ones(3, dtype=np.float32),
+            "rotation_clip_positive3": np.ones(3, dtype=np.float32),
+            "rotation_clip_negative3": np.ones(3, dtype=np.float32),
+        }
+
+        def unavailable() -> dict[str, Any]:
+            if count_unavailable:
+                self.candidate_acceptance_unavailable_rows += 1
+            return fallback
+
+        if (
+            source not in {"policy", "human"}
+            or not isinstance(raw, Mapping)
+            or raw.get("mapping_kind") != HILSERL_ACCEPTANCE_MAPPING_KIND
+        ):
+            return unavailable()
+
+        def vector(name: str, width: int) -> np.ndarray:
+            value = np.asarray(raw.get(name), dtype=np.float32)
+            if value.shape != (width,) or not np.isfinite(value).all():
+                raise ValueError(name)
+            return value
+
+        def positive(name: str) -> np.ndarray:
+            value = np.asarray([raw.get(name)], dtype=np.float32)
+            if value.shape != (1,) or not np.isfinite(value).all() or value[0] <= 0.0:
+                raise ValueError(name)
+            return value
+
+        try:
+            result = {
+                "valid": True,
+                "control_source": 0.0 if source == "policy" else 1.0,
+                "decision_state7": vector("decision_state7", 7),
+                "upper_position3": vector("upper_execution_position_m", 3),
+                "upper_quaternion4": vector(
+                    "upper_execution_quaternion_xyzw", 4
+                ),
+                "adapter_position3": vector("adapter_position_m", 3),
+                "adapter_quaternion4": vector("adapter_quaternion_xyzw", 4),
+                "translation_scale3": vector("translation_action_scale_m", 3),
+                "rotation_scale3": vector("rotation_action_scale_rad", 3),
+                "workspace_min3": vector("workspace_min_m", 3),
+                "workspace_max3": vector("workspace_max_m", 3),
+                "filter_position_before3": vector(
+                    "filter_position_before_m", 3
+                ),
+                "filter_quaternion_before4": vector(
+                    "filter_quaternion_before_xyzw", 4
+                ),
+                "actual_position3": vector("actual_position_m", 3),
+                "actual_quaternion4": vector("actual_quaternion_xyzw", 4),
+                "step_dt_s": positive("step_dt_s"),
+                "filter_time_constant_s": positive("filter_time_constant_s"),
+                "translation_clip_positive3": vector(
+                    "translation_clip_positive_m", 3
+                ),
+                "translation_clip_negative3": vector(
+                    "translation_clip_negative_m", 3
+                ),
+                "rotation_clip_positive3": vector("rotation_clip_positive", 3),
+                "rotation_clip_negative3": vector("rotation_clip_negative", 3),
+            }
+            if (
+                np.any(result["translation_scale3"] <= 0.0)
+                or np.any(result["rotation_scale3"] <= 0.0)
+                or np.any(result["workspace_min3"] >= result["workspace_max3"])
+                or np.any(result["translation_clip_positive3"] < 0.0)
+                or np.any(result["translation_clip_negative3"] < 0.0)
+                or np.any(result["rotation_clip_positive3"] < 0.0)
+                or np.any(result["rotation_clip_negative3"] < 0.0)
+                or np.linalg.norm(result["upper_quaternion4"]) <= 0.0
+                or np.linalg.norm(result["adapter_quaternion4"]) <= 0.0
+                or np.linalg.norm(result["filter_quaternion_before4"]) <= 0.0
+                or np.linalg.norm(result["actual_quaternion4"]) <= 0.0
+            ):
+                raise ValueError("acceptance bounds")
+            return result
+        except (TypeError, ValueError):
+            return unavailable()
+
     def _materialize_all(
         self, macros: tuple[ProductionAckMacro, ...]
     ) -> list[dict[str, Any]]:
@@ -1191,14 +1308,7 @@ class OnlineResidualReplay:
                 "FORCERFT_ONLINE_REPLAY_CONTROL_SOURCE_INVALID",
             )
             control_source = 0.0 if source == "policy" else 1.0
-            acceptance_mapping = context.get("candidate_acceptance_mapping", {})
-            candidate_identity_valid = bool(
-                source == "policy"
-                and isinstance(acceptance_mapping, Mapping)
-                and acceptance_mapping.get("mapping_kind")
-                == "verified_differentiable_identity"
-                and acceptance_mapping.get("identity_valid") is True
-            )
+            acceptance_mapping = self._acceptance_mapping(context, source)
             outcome = row["outcome"]
             terminal_boundary = bool(
                 outcome["terminated"] or outcome["truncated"]
@@ -1216,10 +1326,9 @@ class OnlineResidualReplay:
                 next_base_valid = False
                 next_control_source = control_source
                 next_gripper_command = float(accepted[np.flatnonzero(mask)[0], 6])
-                next_identity_valid = False
-                next_recorded_proposal = np.zeros(6, dtype=np.float32)
-                next_recorded_behavior = np.zeros((3, 6), dtype=np.float32)
-                next_recorded_point_valid = False
+                next_acceptance_mapping = self._acceptance_mapping(
+                    {}, source, count_unavailable=False
+                )
             else:
                 require(
                     not terminal_boundary and isinstance(next_context, Mapping),
@@ -1235,38 +1344,23 @@ class OnlineResidualReplay:
                 next_base_valid = True
                 next_source = row.get("next_action_source")
                 next_accepted_absolute = row.get("next_accepted_absolute_action7")
-                next_applied_residual = row.get("next_applied_residual_tcp6")
-                next_mapping = next_context.get("candidate_acceptance_mapping", {})
-                next_identity_valid = bool(
-                    next_source == "policy"
-                    and isinstance(next_mapping, Mapping)
-                    and next_mapping.get("mapping_kind")
-                    == "verified_differentiable_identity"
-                    and next_mapping.get("identity_valid") is True
-                )
                 try:
                     next_accepted_one = np.asarray(
                         next_accepted_absolute, dtype=np.float64
                     )
-                    next_proposal = np.asarray(
-                        next_applied_residual, dtype=np.float32
-                    )
                 except (TypeError, ValueError):
                     next_accepted_one = np.empty(0, dtype=np.float64)
-                    next_proposal = np.empty(0, dtype=np.float32)
                 next_accepted_valid = bool(
                     next_source in {"policy", "human"}
                     and next_accepted_one.shape == (7,)
                     and np.isfinite(next_accepted_one).all()
                 )
-                next_recorded_point_valid = bool(
-                    next_source == "policy"
-                    and next_accepted_valid
-                    and next_proposal.shape == (6,)
-                    and np.isfinite(next_proposal).all()
+                next_acceptance_mapping = self._acceptance_mapping(
+                    next_context,
+                    str(next_source),
                 )
                 if next_accepted_valid:
-                    _next_base, next_accepted, next_recorded_behavior = (
+                    _next_base, next_accepted, _next_behavior = (
                         normalized_behavior_residual(
                             base_absolute_k7=np.repeat(
                                 np.asarray(next_context["base_absolute_action7"])[
@@ -1290,16 +1384,14 @@ class OnlineResidualReplay:
                         1.0 if next_source == "human" else 0.0
                     )
                 else:
-                    next_recorded_behavior = np.zeros((3, 6), dtype=np.float32)
+                    next_acceptance_mapping = {
+                        **next_acceptance_mapping,
+                        "valid": False,
+                    }
                     next_gripper_command = 0.0
                     next_control_source = (
                         1.0 if next_source == "human" else 0.0
                     )
-                next_recorded_proposal = (
-                    next_proposal
-                    if next_recorded_point_valid
-                    else np.zeros(6, dtype=np.float32)
-                )
             human_valid = bool(
                 row.get("action_source") == "human"
                 and row.get("human_residual_valid") is True
@@ -1319,7 +1411,7 @@ class OnlineResidualReplay:
                     "gripper_command": np.asarray(
                         [accepted[np.flatnonzero(mask)[0], 6]], dtype=np.float32
                     ),
-                    "candidate_acceptance_identity_valid": candidate_identity_valid,
+                    "acceptance_context": acceptance_mapping,
                     "next_state7": next_state,
                     "next_wrench6": next_wrench,
                     "next_wrench_delta6": next_wrench_delta,
@@ -1337,16 +1429,17 @@ class OnlineResidualReplay:
                     "next_gripper_command": np.asarray(
                         [next_gripper_command], dtype=np.float32
                     ),
-                    "next_candidate_acceptance_identity_valid": next_identity_valid,
-                    "next_recorded_proposal_residual6": next_recorded_proposal,
-                    "next_recorded_behavior_residual_k6": next_recorded_behavior,
-                    "next_recorded_point_valid": next_recorded_point_valid,
+                    "next_acceptance_context": next_acceptance_mapping,
+                    "td_mapping_valid": bool(
+                        terminal_boundary or next_acceptance_mapping["valid"]
+                    ),
                     "reward": float(outcome["reward"]),
                     "terminated": bool(outcome["terminated"]),
                     "truncated": bool(outcome["truncated"]),
                     "actor_q_valid": bool(
                         source == "policy"
                         and macro.actor_q_eligibility.valid
+                        and acceptance_mapping["valid"]
                     ),
                     "human_residual_target6": (
                         residual[0].copy()
@@ -1368,6 +1461,63 @@ class OnlineResidualReplay:
                 np.stack([row[name] for row in rows]), dtype=dtype, device=device
             )
 
+        def acceptance(name: str) -> ControllerAcceptanceBatch:
+            values = [row[name] for row in rows]
+
+            def field(field_name: str, dtype=torch.float32) -> torch.Tensor:
+                return torch.as_tensor(
+                    np.stack([value[field_name] for value in values]),
+                    dtype=dtype,
+                    device=device,
+                )
+
+            count = len(values)
+            mean6 = torch.as_tensor(
+                self.normalizer.delta_action7.mean[:6],
+                dtype=torch.float32,
+                device=device,
+            ).expand(count, -1)
+            std6 = torch.as_tensor(
+                self.normalizer.delta_action7.std[:6],
+                dtype=torch.float32,
+                device=device,
+            ).expand(count, -1)
+            require(
+                torch.isfinite(mean6).all()
+                and torch.isfinite(std6).all()
+                and bool((std6 > 0.0).all()),
+                "FORCERFT_ACCEPTANCE_NORMALIZER_INVALID",
+            )
+            return ControllerAcceptanceBatch(
+                valid=torch.tensor(
+                    [value["valid"] for value in values],
+                    dtype=torch.bool,
+                    device=device,
+                ),
+                control_source=field("control_source")[:, None],
+                decision_state7=field("decision_state7"),
+                upper_position3=field("upper_position3"),
+                upper_quaternion4=field("upper_quaternion4"),
+                adapter_position3=field("adapter_position3"),
+                adapter_quaternion4=field("adapter_quaternion4"),
+                translation_scale3=field("translation_scale3"),
+                rotation_scale3=field("rotation_scale3"),
+                workspace_min3=field("workspace_min3"),
+                workspace_max3=field("workspace_max3"),
+                filter_position_before3=field("filter_position_before3"),
+                filter_quaternion_before4=field("filter_quaternion_before4"),
+                actual_position3=field("actual_position3"),
+                actual_quaternion4=field("actual_quaternion4"),
+                step_dt_s=field("step_dt_s"),
+                filter_time_constant_s=field("filter_time_constant_s"),
+                translation_clip_positive3=field("translation_clip_positive3"),
+                translation_clip_negative3=field("translation_clip_negative3"),
+                rotation_clip_positive3=field("rotation_clip_positive3"),
+                rotation_clip_negative3=field("rotation_clip_negative3"),
+                delta_action_mean6=mean6,
+                delta_action_std6=std6,
+            )
+
         return ResidualTransitionBatch(
             state7=tensor("state7"),
             wrench6=tensor("wrench6"),
@@ -1377,11 +1527,7 @@ class OnlineResidualReplay:
             action_mask=tensor("action_mask", torch.bool),
             control_source=tensor("control_source"),
             gripper_command=tensor("gripper_command"),
-            candidate_acceptance_identity_valid=torch.tensor(
-                [row["candidate_acceptance_identity_valid"] for row in rows],
-                dtype=torch.bool,
-                device=device,
-            ),
+            acceptance_context=acceptance("acceptance_context"),
             next_state7=tensor("next_state7"),
             next_wrench6=tensor("next_wrench6"),
             next_wrench_delta6=tensor("next_wrench_delta6"),
@@ -1394,22 +1540,7 @@ class OnlineResidualReplay:
             ),
             next_control_source=tensor("next_control_source"),
             next_gripper_command=tensor("next_gripper_command"),
-            next_candidate_acceptance_identity_valid=torch.tensor(
-                [row["next_candidate_acceptance_identity_valid"] for row in rows],
-                dtype=torch.bool,
-                device=device,
-            ),
-            next_recorded_proposal_residual6=tensor(
-                "next_recorded_proposal_residual6"
-            ),
-            next_recorded_behavior_residual_k6=tensor(
-                "next_recorded_behavior_residual_k6"
-            ),
-            next_recorded_point_valid=torch.tensor(
-                [row["next_recorded_point_valid"] for row in rows],
-                dtype=torch.bool,
-                device=device,
-            ),
+            next_acceptance_context=acceptance("next_acceptance_context"),
             reward=torch.tensor(
                 [row["reward"] for row in rows], dtype=torch.float32, device=device
             ),
@@ -1441,6 +1572,7 @@ class OnlineResidualReplay:
         human_only: bool = False,
         policy_only: bool = False,
         actor_q_valid_only: bool = False,
+        td_mappable_only: bool = False,
     ) -> ResidualTransitionBatch | None:
         require(
             not (human_only and policy_only),
@@ -1452,6 +1584,7 @@ class OnlineResidualReplay:
             if (not human_only or row["human_residual_valid"])
             and (not policy_only or row["action_source"] == "policy")
             and (not actor_q_valid_only or row["actor_q_valid"])
+            and (not td_mappable_only or row["td_mapping_valid"])
         ]
         if not population:
             return None
@@ -1482,8 +1615,26 @@ class OnlineResidualReplay:
         indices = torch.tensor(indices, dtype=torch.long)
         return self._batch(indices, device)
 
+    def iter_td_batches(
+        self, batch_size: int, *, device: torch.device, seed: int
+    ) -> Iterable[ResidualTransitionBatch]:
+        population = [
+            index for index, row in enumerate(self.rows) if row["td_mapping_valid"]
+        ]
+        generator = random.Random(int(seed))
+        generator.shuffle(population)
+        for start in range(0, len(population), batch_size):
+            yield self._batch(
+                torch.tensor(population[start : start + batch_size], dtype=torch.long),
+                device,
+            )
+
     @property
     def critic_td_valid_rows(self) -> int:
+        return sum(int(row["td_mapping_valid"]) for row in self.rows)
+
+    @property
+    def recorded_transition_rows(self) -> int:
         return len(self.rows)
 
     @property
@@ -1505,8 +1656,16 @@ class OnlineResidualReplay:
     def critic_rows_per_episode(self) -> tuple[int, ...]:
         counts: dict[str, int] = {}
         for row in self.rows:
-            counts[row["episode_id"]] = counts.get(row["episode_id"], 0) + 1
+            counts.setdefault(row["episode_id"], 0)
+            counts[row["episode_id"]] += int(row["td_mapping_valid"])
         return tuple(counts.values())
+
+    def critic_td_rows_for_episode(self, episode_id: str) -> int:
+        return sum(
+            int(row["td_mapping_valid"])
+            for row in self.rows
+            if row["episode_id"] == episode_id
+        )
 
 
 def _resolve(path: str | Path) -> Path:

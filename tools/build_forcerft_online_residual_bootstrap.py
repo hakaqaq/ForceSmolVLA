@@ -35,7 +35,7 @@ from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
 from forcesmolvla.rft.residual_actor import make_residual_actor_pair  # noqa: E402
 
 
-BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_accepted_q_random_twin_q"
+BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_filter_leash_random_twin_q"
 
 
 def _load_base_actor(checkpoint: Path) -> torch.nn.Module:
@@ -124,7 +124,7 @@ def build_online_residual_bootstrap(
         "ack_critic_warmup_complete": False,
         "ack_critic_warmup_steps": 0,
         "active_residual_policy_revision": f"{task_id}-residual-policy-step-000000",
-        "online_adaptation_id": f"{task_id}-ack-accepted-q-residual-{time.time_ns()}",
+        "online_adaptation_id": f"{task_id}-ack-filter-leash-residual-{time.time_ns()}",
         "counters": {
             "twin_q_optimizer_steps": 0,
             "residual_actor_optimizer_steps": 0,
@@ -133,6 +133,7 @@ def build_online_residual_bootstrap(
             "twin_q_target_update_steps": 0,
         },
         "replay": {
+            "recorded_transition_rows": 0,
             "critic_td_valid_rows": 0,
             "actor_q_valid_rows": 0,
             "human_residual_valid_rows": 0,

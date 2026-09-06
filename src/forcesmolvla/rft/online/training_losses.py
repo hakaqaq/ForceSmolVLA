@@ -9,14 +9,10 @@ import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
 
-
-RECORDED_CANDIDATE_ATOL = 1.0e-6
-
-
-@dataclass(frozen=True)
-class AcceptedCandidate:
-    residual_k6: Tensor
-    valid: Tensor
+from forcesmolvla.rft.online.controller_acceptance import (
+    AcceptedResidual,
+    map_residual_to_controller_ack,
+)
 
 
 @dataclass(frozen=True)
@@ -42,56 +38,16 @@ class ResidualActorLoss:
 def accepted_candidate_for_q(
     candidate_residual6: Tensor,
     *,
-    differentiable_identity_valid: Tensor,
-    recorded_proposal_residual6: Tensor | None = None,
-    recorded_accepted_residual_k6: Tensor | None = None,
-    recorded_point_valid: Tensor | None = None,
-    allow_recorded_point: bool,
-) -> AcceptedCandidate:
-    """Map a proposal to ACK space only where the recorded interface proves it.
+    base_normalized_action6: Tensor,
+    acceptance_context: Any,
+) -> AcceptedResidual:
+    """Map a residual proposal through the recorded real execution context."""
 
-    The deployed controller applies a stateful low-pass/reference leash after the
-    locally recorded workspace guard.  Its hidden pre-update reference and exact
-    time step are not present in the ACK.  Consequently a differentiable value
-    query is allowed only for an explicitly verified identity domain.  A target
-    query may additionally reuse the real ACK at the exact proposal point that
-    produced it; that path is intentionally used only under ``no_grad``.
-    """
-
-    batch = int(candidate_residual6.shape[0])
-    if candidate_residual6.shape != (batch, 6):
-        raise ValueError("FORCERFT_CANDIDATE_RESIDUAL_SHAPE_INVALID")
-    if (
-        differentiable_identity_valid.dtype != torch.bool
-        or differentiable_identity_valid.shape != (batch,)
-    ):
-        raise ValueError("FORCERFT_CANDIDATE_IDENTITY_MASK_INVALID")
-    candidate_k6 = candidate_residual6[:, None, :].expand(-1, 3, -1)
-    accepted = candidate_k6
-    valid = differentiable_identity_valid.clone()
-    if allow_recorded_point:
-        if (
-            recorded_proposal_residual6 is None
-            or recorded_accepted_residual_k6 is None
-            or recorded_point_valid is None
-        ):
-            raise ValueError("FORCERFT_RECORDED_ACCEPTANCE_POINT_MISSING")
-        if (
-            recorded_proposal_residual6.shape != (batch, 6)
-            or recorded_accepted_residual_k6.shape != (batch, 3, 6)
-            or recorded_point_valid.dtype != torch.bool
-            or recorded_point_valid.shape != (batch,)
-        ):
-            raise ValueError("FORCERFT_RECORDED_ACCEPTANCE_POINT_INVALID")
-        exact = recorded_point_valid & (
-            (candidate_residual6 - recorded_proposal_residual6)
-            .abs()
-            .amax(dim=1)
-            <= RECORDED_CANDIDATE_ATOL
-        )
-        accepted = torch.where(exact[:, None, None], recorded_accepted_residual_k6, accepted)
-        valid |= exact
-    return AcceptedCandidate(accepted, valid)
+    return map_residual_to_controller_ack(
+        candidate_residual6,
+        base_normalized_action6,
+        acceptance_context,
+    )
 
 
 def residual_critic_loss(
@@ -124,17 +80,8 @@ def residual_critic_loss(
             )
             mapped = accepted_candidate_for_q(
                 next_residual6,
-                differentiable_identity_valid=(
-                    batch.next_candidate_acceptance_identity_valid[indices]
-                ),
-                recorded_proposal_residual6=(
-                    batch.next_recorded_proposal_residual6[indices]
-                ),
-                recorded_accepted_residual_k6=(
-                    batch.next_recorded_behavior_residual_k6[indices]
-                ),
-                recorded_point_valid=batch.next_recorded_point_valid[indices],
-                allow_recorded_point=True,
+                base_normalized_action6=batch.next_base_action_k6[indices, 0],
+                acceptance_context=batch.next_acceptance_context.select(indices),
             )
             if bool(mapped.valid.any()):
                 mapped_indices = indices[mapped.valid]
@@ -232,10 +179,8 @@ def residual_actor_loss(
             raise ValueError("FORCERFT_ACTOR_Q_VALID_MASK_INVALID")
         mapped = accepted_candidate_for_q(
             candidate_residual6,
-            differentiable_identity_valid=(
-                policy_batch.candidate_acceptance_identity_valid
-            ),
-            allow_recorded_point=False,
+            base_normalized_action6=policy_batch.base_action_k6[:, 0],
+            acceptance_context=policy_batch.acceptance_context,
         )
         valid = eligible & mapped.valid
         valid_count = int(valid.sum())

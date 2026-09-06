@@ -56,4 +56,4 @@ ack_residual_twin_q:
   condition_order:
     - control_source
     - gripper_command
-  candidate_acceptance_mapping: recorded_ack_point_or_verified_differentiable_identity
+  candidate_acceptance_mapping: differentiable_hilserl_adapter_filter_leash

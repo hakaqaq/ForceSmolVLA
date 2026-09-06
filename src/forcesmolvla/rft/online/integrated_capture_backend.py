@@ -35,6 +35,9 @@ from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority, UPPE
 from forcesmolvla.rft.online.action_representation import (
     quaternion_xyzw_to_rpy_xyz,
 )
+from forcesmolvla.rft.online.controller_acceptance import (
+    merge_robot_acceptance_context,
+)
 from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
 
 
@@ -51,6 +54,51 @@ EXTERNAL_SCRIPTS = Path("/home/rlc123/fr3_client_ws/scripts")
 DEFAULT_DEPLOYMENT_PROFILE = Path(
     "/home/rlc123/ForceSmolVLA/configs/deployment.active.development.json"
 )
+
+
+def _local_candidate_acceptance_context(
+    *,
+    action_source: str,
+    decision_state7: list[float],
+    upper_position_m: list[float] | None,
+    upper_quaternion_xyzw: list[float] | None,
+    safe_action: Mapping[str, Any],
+    recorder_args: Any,
+) -> dict[str, Any]:
+    measured = safe_action.get("measured_pose_basis")
+    if not isinstance(measured, Mapping):
+        return {
+            "mapping_kind": "unavailable",
+            "unavailable_reason": "adapter_measured_pose_basis_missing",
+        }
+    adapter_position = list(measured.get("position_m", ()))
+    adapter_quaternion = list(measured.get("quaternion_xyzw", ()))
+    if action_source == "human":
+        upper_position_m = adapter_position
+        upper_quaternion_xyzw = adapter_quaternion
+    return {
+        "mapping_kind": "awaiting_robot_filter_leash_context",
+        "unavailable_reason": "robot_filter_leash_context_missing",
+        "decision_state7": list(decision_state7),
+        "upper_execution_position_m": upper_position_m,
+        "upper_execution_quaternion_xyzw": upper_quaternion_xyzw,
+        "adapter_position_m": adapter_position,
+        "adapter_quaternion_xyzw": adapter_quaternion,
+        "translation_action_scale_m": [
+            float(recorder_args.hilserl_translation_action_scale_m)
+        ] * 3,
+        "rotation_action_scale_rad": [
+            float(recorder_args.hilserl_rotation_action_scale_rad)
+        ] * 3,
+        "workspace_min_m": list(recorder_args.workspace_min),
+        "workspace_max_m": list(recorder_args.workspace_max),
+    }
+
+
+def _attach_robot_acceptance_context(
+    local: dict[str, Any], pose_ack: Mapping[str, Any]
+) -> None:
+    local.update(merge_robot_acceptance_context(local, pose_ack))
 
 
 def _async_runtime_identity(
@@ -2001,6 +2049,16 @@ class IntegratedCaptureBackend:
                                 wrench_delta.tolist()
                             ),
                             "wrench_delta_interval_ns": interval_ns,
+                            "candidate_acceptance_mapping": (
+                                _local_candidate_acceptance_context(
+                                    action_source="human",
+                                    decision_state7=list(snapshot["state7"]),
+                                    upper_position_m=None,
+                                    upper_quaternion_xyzw=None,
+                                    safe_action=payload,
+                                    recorder_args=recorder_args,
+                                )
+                            ),
                         }
                         previous_residual_decision_wrench = wrench.copy()
                         previous_residual_decision_ns = decision_ns
@@ -2437,28 +2495,16 @@ class IntegratedCaptureBackend:
                         if residual_result is None
                         else residual_result["normalizer_manifest_sha256"]
                     ),
-                    # The robot-side reference filter/leash is stateful and the
-                    # ACK currently exposes only its resulting accepted pose.
-                    # Persist the available execution evidence and fail closed
-                    # for counterfactual differentiable Q queries.
-                    "candidate_acceptance_mapping": {
-                        "mapping_kind": "recorded_ack_point_only",
-                        "identity_valid": False,
-                        "unavailable_reason": (
-                            "controller_prefilter_state_and_dt_not_exposed"
-                        ),
-                        "upper_execution_position_m": position.tolist(),
-                        "upper_execution_quaternion_xyzw": quaternion.tolist(),
-                        "adapter_measured_pose_basis": decision.get(
-                            "measured_pose_basis"
-                        ),
-                        "requested_equilibrium": decision.get(
-                            "requested_equilibrium"
-                        ),
-                        "workspace_clipped": decision.get(
-                            "workspace_clipped"
-                        ),
-                    },
+                    "candidate_acceptance_mapping": (
+                        _local_candidate_acceptance_context(
+                            action_source="policy",
+                            decision_state7=list(snapshot["state7"]),
+                            upper_position_m=position.tolist(),
+                            upper_quaternion_xyzw=quaternion.tolist(),
+                            safe_action=decision,
+                            recorder_args=recorder_args,
+                        )
+                    ),
                 }
                 selection = {
                     **lineage,
@@ -2500,6 +2546,9 @@ class IntegratedCaptureBackend:
                 if pose_ack is None:
                     current_chunk = None
                     continue
+                _attach_robot_acceptance_context(
+                    decision_context["candidate_acceptance_mapping"], pose_ack
+                )
                 deploy.validate_exact_controller_ack(
                     audited_decision,
                     pose_ack,

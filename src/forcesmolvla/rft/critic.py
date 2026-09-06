@@ -24,7 +24,7 @@ def require_critic_input_config(config: Mapping[str, Any]) -> None:
         int(config.get("input_dim", -1)) != CRITIC_INPUT_DIM
         or tuple(config.get("condition_order", ())) != CRITIC_CONDITION_ORDER
         or config.get("candidate_acceptance_mapping")
-        != "recorded_ack_point_or_verified_differentiable_identity"
+        != "differentiable_hilserl_adapter_filter_leash"
     ):
         raise ValueError("FORCERFT_CRITIC_INPUT_SPEC_MISMATCH")
 RESIDUAL_ACTION_OFFSET = 7 + 6 + 6 + ACTION_SLOTS * TCP_DIM

@@ -103,6 +103,35 @@ def test_policy_publisher_is_a_fail_closed_non_dds_sentinel() -> None:
         publisher.publish({"source": "policy"})
 
 
+def test_robot_ack_completes_filter_leash_acceptance_context() -> None:
+    local = {
+        "mapping_kind": "awaiting_robot_filter_leash_context",
+        "decision_state7": [0.0] * 7,
+        "upper_execution_position_m": [0.0] * 3,
+    }
+    ack = {
+        "candidate_acceptance_mapping": {
+            "mapping_kind": "hilserl_filter_leash",
+            "filter_position_before_m": [0.1, 0.2, 0.3],
+            "filter_quaternion_before_xyzw": [0.0, 0.0, 0.0, 1.0],
+            "actual_position_m": [0.1, 0.2, 0.3],
+            "actual_quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+            "step_dt_s": 0.001,
+            "filter_time_constant_s": 0.005,
+            "translation_clip_positive_m": [0.1] * 3,
+            "translation_clip_negative_m": [0.1] * 3,
+            "rotation_clip_positive": [0.1] * 3,
+            "rotation_clip_negative": [0.1] * 3,
+        }
+    }
+
+    capture_backend._attach_robot_acceptance_context(local, ack)
+    assert local["mapping_kind"] == "hilserl_absolute_adapter_filter_leash"
+    assert local["unavailable_reason"] is None
+    assert local["filter_position_before_m"] == [0.1, 0.2, 0.3]
+    assert local["decision_state7"] == [0.0] * 7
+
+
 def test_session_manifest_waits_for_hilserl_enrichment(tmp_path: Path) -> None:
     path = tmp_path / "session.json"
     path.write_text(json.dumps({"task": "task"}), encoding="utf-8")
