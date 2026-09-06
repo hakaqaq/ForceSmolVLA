@@ -59,7 +59,7 @@ def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> 
     assert not hasattr(args, "reward_transition_root")
     assert args.ack_replay_root == (
         tmp_path
-        / "outputs/task2/online_ack_residual_dispatch/formal_replay"
+        / "outputs/task2/online_ack_residual_accepted_q/formal_replay"
     ).resolve()
     assert args.allow_development_policy_execution_smoke is False
     assert not hasattr(args, "deployment_profile")

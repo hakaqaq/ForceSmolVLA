@@ -26,12 +26,14 @@ def inputs(batch: int = 4, mask=(True, True, True)) -> tuple[torch.Tensor, ...]:
         torch.randn(batch, 3, 6, generator=generator),
         torch.randn(batch, 3, 6, generator=generator),
         torch.tensor(mask, dtype=torch.bool).repeat(batch, 1),
+        torch.zeros(batch, 1),
+        torch.randn(batch, 1, generator=generator),
     )
 
 
-def test_residual_q_is_a_58_dimensional_image_free_mlp() -> None:
+def test_residual_q_is_a_60_dimensional_image_free_mlp() -> None:
     q = ResidualQHead(hidden_dim=32)
-    assert CRITIC_INPUT_DIM == 58
+    assert CRITIC_INPUT_DIM == 60
     assert tuple(inspect.signature(q.forward).parameters) == (
         "normalized_state7",
         "normalized_wrench6",
@@ -39,6 +41,8 @@ def test_residual_q_is_a_58_dimensional_image_free_mlp() -> None:
         "base_action_k6",
         "residual_action_k6",
         "action_mask_k",
+        "control_source",
+        "gripper_command",
     )
     assert not any("camera" in name or "image" in name for name in q.state_dict())
     result = q(*inputs())

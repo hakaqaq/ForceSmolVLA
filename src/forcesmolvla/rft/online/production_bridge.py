@@ -4486,6 +4486,9 @@ class ProductionBridge:
         source: Mapping[str, Any],
         policy_sources: Sequence[Mapping[str, Any]],
         next_decision_context: Mapping[str, Any] | None,
+        next_action_source: str | None,
+        next_accepted_absolute_action7: Sequence[float] | None,
+        next_applied_residual_tcp6: Sequence[float] | None,
         terminal: bool,
         truncated: bool,
         boundary_timestamp_ns: int | None = None,
@@ -4651,6 +4654,17 @@ class ProductionBridge:
                 None
                 if next_decision_context is None
                 else dict(next_decision_context)
+            ),
+            "next_action_source": next_action_source,
+            "next_accepted_absolute_action7": (
+                None
+                if next_accepted_absolute_action7 is None
+                else list(next_accepted_absolute_action7)
+            ),
+            "next_applied_residual_tcp6": (
+                None
+                if next_applied_residual_tcp6 is None
+                else list(next_applied_residual_tcp6)
             ),
             "decision_interval": {
                 "start_monotonic_ns": int(
@@ -4875,6 +4889,9 @@ class ProductionBridge:
         source: Mapping[str, Any],
         human_sources: Sequence[Mapping[str, Any]],
         next_decision_context: Mapping[str, Any] | None,
+        next_action_source: str | None,
+        next_accepted_absolute_action7: Sequence[float] | None,
+        next_applied_residual_tcp6: Sequence[float] | None,
         terminal: bool,
         truncated: bool = False,
         boundary_timestamp_ns: int | None = None,
@@ -5035,6 +5052,17 @@ class ProductionBridge:
                 None
                 if next_decision_context is None
                 else dict(next_decision_context)
+            ),
+            "next_action_source": next_action_source,
+            "next_accepted_absolute_action7": (
+                None
+                if next_accepted_absolute_action7 is None
+                else list(next_accepted_absolute_action7)
+            ),
+            "next_applied_residual_tcp6": (
+                None
+                if next_applied_residual_tcp6 is None
+                else list(next_applied_residual_tcp6)
             ),
             "decision_interval": {
                 "start_monotonic_ns": int(
@@ -5520,6 +5548,9 @@ class ProductionBridge:
             if action_source == "human" and boundary_ns is not None:
                 truncated = True
             next_context = None
+            next_action_source = None
+            next_accepted_absolute_action7 = None
+            next_applied_residual_tcp6 = None
             if successor is not None:
                 next_source_kind, next_source, successor_context = successor
                 current_generation = source_generation(action_source, source)
@@ -5547,6 +5578,20 @@ class ProductionBridge:
                         )
                         continue
                     next_context = successor_context
+                    next_action_source = next_source_kind
+                    next_accepted_absolute_action7 = _finite_vector(
+                        next_source.get("accepted_absolute7"),
+                        7,
+                        "BRIDGE_FORMAL_R_SUCCESSOR_ACCEPTED_ACTION_INVALID",
+                    )
+                    if next_source_kind == "policy":
+                        next_applied_residual_tcp6 = _finite_vector(
+                            next_source.get("selection", {}).get(
+                                "applied_residual_tcp6"
+                            ),
+                            6,
+                            "BRIDGE_FORMAL_R_SUCCESSOR_RESIDUAL_INVALID",
+                        )
                 else:
                     # A source/generation change is a credit boundary, not a TD
                     # successor.  The first decision after the boundary starts a
@@ -5569,6 +5614,9 @@ class ProductionBridge:
                     source=source,
                     policy_sources=replay_sources,
                     next_decision_context=next_context,
+                    next_action_source=next_action_source,
+                    next_accepted_absolute_action7=next_accepted_absolute_action7,
+                    next_applied_residual_tcp6=next_applied_residual_tcp6,
                     terminal=terminal,
                     truncated=truncated,
                     boundary_timestamp_ns=boundary_ns,
@@ -5582,6 +5630,9 @@ class ProductionBridge:
                     source=source,
                     human_sources=human_sources,
                     next_decision_context=next_context,
+                    next_action_source=next_action_source,
+                    next_accepted_absolute_action7=next_accepted_absolute_action7,
+                    next_applied_residual_tcp6=next_applied_residual_tcp6,
                     terminal=terminal,
                     truncated=truncated,
                     boundary_timestamp_ns=boundary_ns,

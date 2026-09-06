@@ -144,18 +144,20 @@ outputs/{task_id}/reward_classifier/checkpoints/best/best_checkpoint.msgpack
 输出：
 
 ```text
-outputs/{task_id}/online_ack_residual/bootstrap_checkpoints/base_policy_zero_residual_random_twin_q
+outputs/{task_id}/online_ack_residual_accepted_q/bootstrap_checkpoints/base_policy_zero_residual_accepted_q_random_twin_q
 ```
 
 bootstrap checkpoint 保存 frozen base policy 的路径、严格零输出 wrist-wrench residual Actor、随机 ACK-aligned residual Twin-Q、targets、两个 optimizer 与运行计数；不读取 demonstration 或旧 offline Critic checkpoint。
 
 ## 8. 真实 ACK Critic warm-up 与 Residual Actor–Critic 训练
 
-Learner 状态依次为 `ack_replay_collection → ack_critic_warmup → residual_actor_critic_training`。前 100 条正式 sealed ACK transition 期间 Actor/Twin-Q 均不更新；达到阈值后在同一进程执行一次 256-step Twin-Q warm-up，然后每 cycle 固定执行 `2 Twin-Q + 1 wrist-wrench residual Actor`。训练只读取低维 state/wrench/base/residual/ACK 数据，不运行第二份 base policy、Flow sampler 或图像 Critic。
+Learner 状态依次为 `ack_replay_collection → ack_critic_warmup → residual_actor_critic_training`。前 100 条正式 sealed ACK transition 期间 Actor/Twin-Q 均不更新；达到阈值后在同一进程执行一次 256-step Twin-Q warm-up，然后每 cycle 固定执行 `2 Twin-Q + 1 wrist-wrench residual Actor`。训练只读取低维 state/wrench/base/residual/ACK 数据，不运行第二份 base policy、Flow sampler 或图像 Critic。Twin-Q 输入为原 58 维低维特征再追加 `control_source` 与归一化的 accepted gripper command，共 60 维；Residual Actor 仍为 25 维输入且只输出 TCP6。
+
+Critic 的行为标签始终由同一 residual-decision pose 下的 frozen-base absolute target 与 Controller ACK accepted absolute target 重表达后相减。实际 FR3 reference gateway 还会对请求目标执行带隐藏状态的低通与 pose leash；现有 ACK 没有暴露滤波前 reference、精确 `dt` 或可微 Jacobian。因此 target-Q 只允许复用“target Actor 输出与真实后继已记录 proposal 相同”这一精确 ACK 点，或显式记录的可微恒等域；当前 Actor value 在缺少后者时跳过 Q 项而保留有界 BC/正则，绝不以本地 workspace clamp 冒充完整接受映射，也不把不可映射的非终止样本伪装成 terminal。
 
 ## 9. HIL 与 online replay
 
-`tools/serve_forcerft_residual_actor_critic.py` 是唯一 GPU owner；`tools/run_forcerft_integrated_capture.py` 是唯一机器人控制链。控制仍保持 H50、10 Hz、low-watermark inference、takeover generation、stale result rejection、Pose ACK 和 gripper authority。
+`tools/serve_forcerft_residual_actor_critic.py` 是唯一 GPU owner；`tools/run_forcerft_integrated_capture.py` 是唯一机器人控制链。当前 chunk/slot 映射为：第 `n` 次真实 dispatch 使用当前已采纳 chunk `i(n)`，再按该 chunk 的 `t_ref_ns` 与 dispatch selection time 在 30 Hz 有理数时基上取 `j(n)=ceil(30(selection_ns-t_ref_ns))`；超出缓存 H50 便丢弃并重规划。模型在 request pose 下生成的 delta 先还原为 absolute chunk，选中槽位再以真实 decision pose 重表达给 Residual Actor。异步新 chunk 只在完成 lineage 检查后生效；最多从一个 chunk 派发 8 次，当前 CLI 的 replan/low-watermark 为 8/7；接管使旧 chunk 与 pending request 失效，释放后必须 fresh observation + fresh inference。只有实际发送且获得 Controller ACK 的 decision 才形成后继，HOLD 或被拒绝命令不虚构 transition。
 若 inference 期间 wrench causal filter 因源间隙重置并切换 generation，旧 request/result 和未执行 chunk 会被作废；等待现有 250-sample warmup 完成后，同一 episode 使用 fresh observation 重新 inference，恢复等待期间不生成 transition。
 
 episode seal 后，操作者输入 success/failure。技术记录完整的 success 与 failure episode 都通过 production bridge 的同一次 admission 调用物化 TD transition，并 append 到：
@@ -168,9 +170,11 @@ outputs/{task_id}/online/replay
 
 task2 封口物化在 30 Hz 因果网格上允许双相机样本年龄不超过 `100 ms`，以覆盖正常调度抖动和偶发丢帧；双相机 skew 仍不得超过 `33 ms`，样本年龄超过 `100 ms` 仍拒绝进入 replay。历史 checkpoint 内保存的 provenance 不重写。
 
-所有 `critic_td_valid=true` 的正式 sealed online ACK transition 进入同一个低维 Critic replay，包括 autonomous policy ACK、accepted human correction、success、failure 和 intervention-truncated boundary。旧 transition 缺少 base/residual 字段时按 `base=accepted behavior, residual=0` 兼容，不迁移 replay 目录。
+所有满足当前 accepted-Q 语义且 `critic_td_valid=true` 的正式 sealed online ACK transition 进入同一个低维 Critic replay，包括 autonomous policy ACK、accepted human correction、success、failure 和 intervention-truncated boundary。缺少可信 frozen absolute base、真实 dispatch decision context、accepted action 或真实后继关联的旧 transition 不自动补零，保留原始记录但排除当前训练。
 
-只有带可靠 pre-takeover base action 的 human row 才提供 residual Actor 监督目标；缺少该基线时仅令 `human_residual_valid=false`，不拒绝 episode。人工姿态差继续使用 RPY delta。接管开始时清空旧 chunk/pending request/旧 observation、接管期间暂停 policy dispatch、释放后 fresh observation + fresh inference 的控制语义保持不变。
+只有带可靠 pre-takeover base action 的 human row 才提供 residual Actor 监督目标；缺少该基线时仅令 `human_residual_valid=false`，不拒绝 episode。人工姿态差继续使用 RPY delta，BC target 单独投影到 Residual Actor 的输出范围，原始 ACK、行为残差与 human TD 不被改写。接管开始时清空旧 chunk/pending request/旧 observation、接管期间暂停 policy dispatch、释放后 fresh observation + fresh inference 的控制语义保持不变。
+
+takeover、release 与 reset 继续作为信用截断边界。因此 Q 是“给定控制源和夹爪命令的当前控制段内折扣终端成功反馈”代理，而不是完整 episode 自主成功率的无偏估计：在 `自主 A → 人工 B → 自主 C → 成功` 中，成功只沿 C 的 TD 链传播；B 仍通过 human TD 与有界 BC 提供训练信号，但 BC 不等价于补回任务奖励信用。
 
 ## 10. 持续在线 Actor/Learner
 
@@ -181,9 +185,9 @@ task2 封口物化在 30 Hz 因果网格上允许双相机样本年龄不超过 
   --dataset-root "$LEROBOT_DATASET" \
   --max-episodes 100 \
   --capture-output-root "$ONLINE_CAPTURE_ROOT" \
-  --ack-replay-root "$TASK_OUTPUT_ROOT/online" \
+  --ack-replay-root "$TASK_OUTPUT_ROOT/online_ack_residual_accepted_q/formal_replay" \
   --online-residual-bootstrap-checkpoint \
-    "$TASK_OUTPUT_ROOT/online_ack_residual/bootstrap_checkpoints/base_policy_zero_residual_random_twin_q" \
+    "$TASK_OUTPUT_ROOT/online_ack_residual_accepted_q/bootstrap_checkpoints/base_policy_zero_residual_accepted_q_random_twin_q" \
   --task "Pick up the purple ring and place it onto the red peg." \
   --episode-time 120 \
   --tool-profile onrobot_robotiq \
@@ -203,7 +207,7 @@ Unified server 每次启动恢复一个 residual Actor/Twin-Q checkpoint，并�
 
 canonical online loop 在每个 episode 后只打印两行 capture/learner 摘要和一行 admission 摘要；完整 contract、stream quality 与 episode seal 继续保存在 session 文件中，不在终端重复展开。
 
-启动时先选择 `outputs/{task_id}/online_ack_residual/training_checkpoints/` 中 cycle 最大且结构完整的 exact-resume checkpoint；没有可恢复 checkpoint 时只接受显式 `--online-residual-bootstrap-checkpoint`。模型结构、optimizer、loss、residual cap、batch 与调度全部以 checkpoint 的 `state/config.yaml` 为唯一权威；仓库当前公共 YAML 只用于算法字段一致性校验，不一致时以 `FORCERFT_EXACT_RESUME_CONFIG_MISMATCH` 停止。需要改变算法配置时必须建立新的 adaptation lineage，不能称为 exact-resume。frozen base policy 始终从 checkpoint 的 `frozen_base_policy_checkpoint` 加载，整个 online session 不变。
+启动时先选择 `outputs/{task_id}/online_ack_residual_accepted_q/training_checkpoints/` 中 cycle 最大且结构完整的 exact-resume checkpoint；没有可恢复 checkpoint 时只接受显式 `--online-residual-bootstrap-checkpoint`。模型结构、optimizer、loss、residual cap、batch 与调度全部以 checkpoint 的 `state/config.yaml` 为唯一权威；仓库当前公共 YAML 只用于算法字段一致性校验，不一致时以 `FORCERFT_EXACT_RESUME_CONFIG_MISMATCH` 停止。需要改变算法配置时必须建立新的 adaptation lineage，不能称为 exact-resume。frozen base policy 始终从 checkpoint 的 `frozen_base_policy_checkpoint` 加载，整个 online session 不变。
 
 服务开放首个新 episode 前会扫描全部 sealed admissions，重建应得 cycle 总预算并与 checkpoint 已完成 cycle 比较。若存在历史欠账，`recovery_budget_drain_required=true`，canonical online loop 会先调用 `/runtime/drain-outstanding-budget`；欠账排空或显式失败前，`prepare-episode` 一律拒绝。这样即使进程在 formal admission 与正常 drain 之间退出，也不会跳过旧 episode 的训练预算。
 
@@ -214,8 +218,8 @@ canonical online loop 在每个 episode 后只打印两行 capture/learner 摘�
 每累计 10 个真实 residual Actor optimizer step 生成只含 `residual_actor.pt` 的 lineage-isolated candidate，并只在下一 episode boundary 生效。每 20 residual Actor–Critic cycles 保存 exact-resume checkpoint；Critic warm-up 完成、candidate 实际激活以及 graceful exit 时也立即保存：
 
 ```text
-outputs/{task_id}/online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000020
-outputs/{task_id}/online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000040
+outputs/{task_id}/online_ack_residual_accepted_q/training_checkpoints/residual_actor_critic_cycle_000020
+outputs/{task_id}/online_ack_residual_accepted_q/training_checkpoints/residual_actor_critic_cycle_000040
 ```
 
 只保留最新十个 checkpoint。每个达到启动阈值后的新 admission，其 residual Actor–Critic cycle 预算为 `min(10, max(1, ceil(new_critic_td_valid_rows / 64)))`；256-step Critic warm-up 不消耗该预算。采用固定的 warmup-only 边界语义：阈值前 admissions 只为 Critic warm-up 提供数据，不追溯产生 joint-cycle debt；首次跨过阈值的 admission 只按自身合法行数获得预算。

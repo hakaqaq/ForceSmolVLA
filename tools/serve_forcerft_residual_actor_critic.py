@@ -198,6 +198,10 @@ class ResidualActorCriticLearner:
         self.latest_critic_update_ms = 0.0
         self.latest_actor_update_ms = 0.0
         self.latest_cycle_ms = 0.0
+        self.latest_target_candidate_unavailable_count = 0
+        self.latest_actor_q_mapping_unavailable_count = 0
+        self.latest_human_residual_projected_count = 0
+        self.latest_human_residual_valid_count = 0
         self._loaded_episode_keys: set[str] = set()
         self._admission_progress: dict[str, dict[str, Any]] = {}
         self._expected_admission_id: str | None = None
@@ -463,27 +467,39 @@ class ResidualActorCriticLearner:
         learner = self.learner
         counters = learner["runtime"]["counters"]
         step = int(counters["twin_q_optimizer_steps"])
-        batch = replay.sample(
-            self.training_policy.twin_q_batch_size,
-            device=self.device,
-            seed=int(learner["config"]["environment"]["random_seed"]) + step,
-        )
-        require(batch is not None, "FORCERFT_CRITIC_REPLAY_EMPTY")
         with coordinator.learner_step_slot(
             "ack_critic_warmup" if warmup else "critic"
         ):
             optimizer = learner["critic_optimizer"]
             optimizer.zero_grad(set_to_none=True)
-            loss = residual_critic_loss(
-                learner["q1"],
-                learner["q2"],
-                learner["q1_target"],
-                learner["q2_target"],
-                learner["residual_actor_target"],
-                batch,
-                float(learner["config"]["objective"]["command_macro_discount"]),
+            loss_result = None
+            seed = int(learner["config"]["environment"]["random_seed"]) + step
+            for sample_attempt in range(8):
+                batch = replay.sample(
+                    self.training_policy.twin_q_batch_size,
+                    device=self.device,
+                    seed=seed + sample_attempt * 1_000_003,
+                )
+                require(batch is not None, "FORCERFT_CRITIC_REPLAY_EMPTY")
+                loss_result = residual_critic_loss(
+                    learner["q1"],
+                    learner["q2"],
+                    learner["q1_target"],
+                    learner["q2_target"],
+                    learner["residual_actor_target"],
+                    batch,
+                    float(
+                        learner["config"]["objective"]["command_macro_discount"]
+                    ),
+                    return_details=True,
+                )
+                if loss_result.td_valid_count:
+                    break
+            require(
+                loss_result is not None and loss_result.td_valid_count > 0,
+                "FORCERFT_CRITIC_BATCH_HAS_NO_MAPPABLE_TD_ROW",
             )
-            loss.backward()
+            loss_result.total.backward()
             torch.nn.utils.clip_grad_norm_(
                 (*learner["q1"].parameters(), *learner["q2"].parameters()),
                 float(learner["config"]["optimizer"]["twin_q"]["grad_clip_norm"]),
@@ -498,7 +514,10 @@ class ResidualActorCriticLearner:
             learner["runtime"]["ack_critic_warmup_steps"] = (
                 int(learner["runtime"].get("ack_critic_warmup_steps", 0)) + 1
             )
-        value = float(loss.detach())
+        self.latest_target_candidate_unavailable_count = int(
+            loss_result.target_candidate_unavailable_count
+        )
+        value = float(loss_result.total.detach())
         self.latest_critic_update_ms = (
             time.perf_counter() - started
         ) * 1000.0
@@ -607,6 +626,15 @@ class ResidualActorCriticLearner:
                 )
             ) + 1
         self.latest_residual_actor_output_norm = float(losses.output_norm.detach())
+        self.latest_actor_q_mapping_unavailable_count = int(
+            losses.actor_q_mapping_unavailable_count
+        )
+        self.latest_human_residual_projected_count = int(
+            losses.human_residual_projected_count
+        )
+        self.latest_human_residual_valid_count = int(
+            losses.human_residual_valid_count
+        )
         self.latest_actor_update_ms = (
             time.perf_counter() - started
         ) * 1000.0
@@ -623,6 +651,15 @@ class ResidualActorCriticLearner:
             ),
             "grad_norm": actor_grad_norm,
             "support_available": support_available,
+            "actor_q_mapping_unavailable_count": int(
+                losses.actor_q_mapping_unavailable_count
+            ),
+            "human_residual_projected_count": int(
+                losses.human_residual_projected_count
+            ),
+            "human_residual_valid_count": int(
+                losses.human_residual_valid_count
+            ),
         }
 
     def _actor_counter_metrics(self) -> dict[str, int]:
@@ -783,6 +820,18 @@ class ResidualActorCriticLearner:
             "latest_critic_td_loss": critic_losses[-1],
             "latest_actor_loss": actor_metrics["total"],
             "latest_min_twin_q": -actor_metrics["value"],
+            "target_candidate_mapping_unavailable_count": int(
+                getattr(self, "latest_target_candidate_unavailable_count", 0)
+            ),
+            "actor_q_mapping_unavailable_count": int(
+                actor_metrics.get("actor_q_mapping_unavailable_count", 0)
+            ),
+            "human_residual_projected_count": int(
+                actor_metrics.get("human_residual_projected_count", 0)
+            ),
+            "human_residual_projection_denominator": int(
+                actor_metrics.get("human_residual_valid_count", 0)
+            ),
             "nonzero_behavior_residual_rows": int(
                 getattr(self, "nonzero_behavior_residual_rows", 0)
             ),
@@ -1149,6 +1198,46 @@ class AsyncResidualActorCriticRuntime:
                 ),
                 "residual_actor_output_norm": result.get(
                     "residual_actor_output_norm", 0.0
+                ),
+                "target_candidate_mapping_unavailable_count": int(
+                    result.get(
+                        "target_candidate_mapping_unavailable_count",
+                        getattr(
+                            self.learner_job,
+                            "latest_target_candidate_unavailable_count",
+                            0,
+                        ),
+                    )
+                ),
+                "actor_q_mapping_unavailable_count": int(
+                    result.get(
+                        "actor_q_mapping_unavailable_count",
+                        getattr(
+                            self.learner_job,
+                            "latest_actor_q_mapping_unavailable_count",
+                            0,
+                        ),
+                    )
+                ),
+                "human_residual_projected_count": int(
+                    result.get(
+                        "human_residual_projected_count",
+                        getattr(
+                            self.learner_job,
+                            "latest_human_residual_projected_count",
+                            0,
+                        ),
+                    )
+                ),
+                "human_residual_projection_denominator": int(
+                    result.get(
+                        "human_residual_projection_denominator",
+                        getattr(
+                            self.learner_job,
+                            "latest_human_residual_valid_count",
+                            0,
+                        ),
+                    )
                 ),
                 "quarantined_current_schema_rows": int(
                     getattr(

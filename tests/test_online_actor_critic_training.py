@@ -50,27 +50,39 @@ class ConstantQ(torch.nn.Module):
         super().__init__()
         self.value = torch.nn.Parameter(torch.tensor(value))
         self.batch_sizes: list[int] = []
+        self.residuals: list[torch.Tensor] = []
+        self.sources: list[torch.Tensor] = []
+        self.grippers: list[torch.Tensor] = []
 
-    def forward(self, state, wrench, wrench_delta, base, residual, mask):
+    def forward(
+        self, state, wrench, wrench_delta, base, residual, mask, source, gripper
+    ):
         del wrench, wrench_delta, base, mask
         self.batch_sizes.append(len(state))
+        self.residuals.append(residual.detach().clone())
+        self.sources.append(source.detach().clone())
+        self.grippers.append(gripper.detach().clone())
         return self.value.expand(len(state)) + residual.flatten(1).mean(1) * 0.0
 
 
 class TargetActor(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, value: float = 0.0) -> None:
         super().__init__()
         self.calls = 0
+        self.value = float(value)
 
     def forward(self, **kwargs):
         self.calls += 1
-        return torch.zeros(len(kwargs["normalized_state7"]), 6)
+        return torch.full(
+            (len(kwargs["normalized_state7"]), 6), self.value
+        )
 
 
 class ScalarResidualActor(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.value = torch.nn.Parameter(torch.tensor(0.0))
+        self.max_normalized_residual = 0.5
         self.batch_sizes: list[int] = []
 
     def forward(self, **kwargs):
@@ -104,6 +116,10 @@ def decision_context(
         "wrench_delta6_calibrated_tcp_100ms": [0.0] * 6,
         "wrench_delta_interval_ns": 0,
         "base_absolute_action7": base_absolute,
+        "candidate_acceptance_mapping": {
+            "mapping_kind": "recorded_ack_point_only",
+            "identity_valid": False,
+        },
     }
 
 
@@ -248,12 +264,25 @@ def batch(batch_size: int = 2) -> SimpleNamespace:
         base_action_k6=zeros_k6,
         behavior_residual_k6=zeros_k6,
         action_mask=mask,
+        control_source=torch.zeros(batch_size, 1),
+        gripper_command=torch.zeros(batch_size, 1),
+        candidate_acceptance_identity_valid=torch.ones(
+            batch_size, dtype=torch.bool
+        ),
         next_state7=zeros7,
         next_wrench6=zeros6,
         next_wrench_delta6=zeros6,
         next_base_action_k6=zeros_k6,
         next_action_mask=mask,
         next_base_valid=torch.ones(batch_size, dtype=torch.bool),
+        next_control_source=torch.zeros(batch_size, 1),
+        next_gripper_command=torch.zeros(batch_size, 1),
+        next_candidate_acceptance_identity_valid=torch.zeros(
+            batch_size, dtype=torch.bool
+        ),
+        next_recorded_proposal_residual6=zeros6,
+        next_recorded_behavior_residual_k6=zeros_k6,
+        next_recorded_point_valid=torch.ones(batch_size, dtype=torch.bool),
         reward=torch.ones(batch_size),
         terminated=torch.tensor([False, True][:batch_size]),
         truncated=torch.zeros(batch_size, dtype=torch.bool),
@@ -273,12 +302,146 @@ def test_residual_critic_td_target_is_ack_only_and_bootstrap_safe() -> None:
     assert torch.isclose(loss, torch.tensor(1.5))
     assert target_actor.calls == 1
     assert q1.batch_sizes == q2.batch_sizes == [2]
-    assert q1_target.batch_sizes == q2_target.batch_sizes == [2]
+    assert q1_target.batch_sizes == q2_target.batch_sizes == [1]
     assert "base_actor" not in inspect.signature(residual_critic_loss).parameters
     assert not any(
         "camera" in name
         for name in inspect.signature(residual_critic_loss).parameters
     )
+
+
+def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
+    actor = ScalarResidualActor()
+    q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
+    policy = batch(1)
+    policy.candidate_acceptance_identity_valid[:] = False
+    losses = residual_actor_loss(
+        q1,
+        q2,
+        actor,
+        policy,
+        None,
+        actor_q_weight=1.0,
+        residual_l2_weight=0.01,
+        human_residual_weight=1.0,
+    )
+    assert losses.actor_q_valid_count == 0
+    assert losses.actor_q_mapping_unavailable_count == 1
+    assert q1.batch_sizes == q2.batch_sizes == []
+
+    policy.candidate_acceptance_identity_valid[:] = True
+    policy.control_source[:] = 0.0
+    policy.gripper_command[:] = 0.75
+    losses = residual_actor_loss(
+        q1,
+        q2,
+        actor,
+        policy,
+        None,
+        actor_q_weight=1.0,
+        residual_l2_weight=0.01,
+        human_residual_weight=1.0,
+    )
+    assert losses.actor_q_valid_count == 1
+    assert torch.equal(q1.sources[-1], torch.zeros(1, 1))
+    assert torch.equal(q1.grippers[-1], torch.full((1, 1), 0.75))
+
+    critic_batch = batch(1)
+    critic_batch.next_recorded_behavior_residual_k6[:] = 0.25
+    critic_batch.next_gripper_command[:] = -0.4
+    target_q1, target_q2 = ConstantQ(2.0), ConstantQ(3.0)
+    details = residual_critic_loss(
+        q1,
+        q2,
+        target_q1,
+        target_q2,
+        TargetActor(),
+        critic_batch,
+        gamma=0.5,
+        return_details=True,
+    )
+    assert details.td_valid_count == 1
+    assert details.target_candidate_unavailable_count == 0
+    assert torch.equal(
+        target_q1.residuals[-1], torch.full((1, 3, 6), 0.25)
+    )
+    assert torch.equal(target_q1.grippers[-1], torch.full((1, 1), -0.4))
+
+
+def test_unmappable_successor_is_not_relabelled_as_terminal() -> None:
+    critic_batch = batch(1)
+    critic_batch.next_candidate_acceptance_identity_valid[:] = False
+    q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
+    q1_target, q2_target = ConstantQ(2.0), ConstantQ(3.0)
+    # A real ACK exists, but only for proposal zero.  A different target-Actor
+    # candidate cannot reuse that historical acceptance point.
+    target_actor = TargetActor(0.1)
+    details = residual_critic_loss(
+        q1,
+        q2,
+        q1_target,
+        q2_target,
+        target_actor,
+        critic_batch,
+        gamma=0.99,
+        return_details=True,
+    )
+    assert details.td_valid_count == 0
+    assert details.target_candidate_unavailable_count == 1
+    assert critic_batch.terminated.item() is False
+    assert q1.batch_sizes == q2.batch_sizes == []
+    assert q1_target.batch_sizes == q2_target.batch_sizes == []
+
+    critic_batch.terminated[:] = True
+    residual_critic_loss(
+        q1,
+        q2,
+        q1_target,
+        q2_target,
+        target_actor,
+        critic_batch,
+        gamma=0.99,
+    )
+    assert target_actor.calls == 1
+    assert q1_target.batch_sizes == q2_target.batch_sizes == []
+
+
+def test_critic_conditions_policy_and_human_on_accepted_gripper() -> None:
+    critic_batch = batch(2)
+    critic_batch.terminated[:] = True
+    critic_batch.control_source[:] = torch.tensor([[0.0], [1.0]])
+    critic_batch.gripper_command[:] = torch.tensor([[0.85], [-0.25]])
+    q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
+    residual_critic_loss(
+        q1, q2, ConstantQ(2.0), ConstantQ(3.0), TargetActor(), critic_batch, 0.99
+    )
+    assert torch.equal(q1.sources[-1], torch.tensor([[0.0], [1.0]]))
+    assert torch.equal(q1.grippers[-1], torch.tensor([[0.85], [-0.25]]))
+
+
+def test_human_imitation_projects_only_bc_target() -> None:
+    actor = ScalarResidualActor()
+    human = batch(2)
+    human.human_residual_valid[:] = True
+    human.human_residual_target6[:] = 0.8
+    human.behavior_residual_k6[:] = 0.8
+    raw_target = human.human_residual_target6.clone()
+    raw_behavior = human.behavior_residual_k6.clone()
+    losses = residual_actor_loss(
+        ConstantQ(0.0),
+        ConstantQ(1.0),
+        actor,
+        None,
+        human,
+        actor_q_weight=1.0,
+        residual_l2_weight=0.01,
+        human_residual_weight=1.0,
+    )
+    assert losses.human_residual_projected_count == 2
+    assert losses.human_residual_valid_count == 2
+    assert torch.isclose(losses.human, torch.tensor(0.25))
+    assert torch.equal(human.human_residual_target6, raw_target)
+    assert torch.equal(human.behavior_residual_k6, raw_behavior)
 
 
 def test_actor_q_mask_and_invalid_human_residual_are_skipped() -> None:
@@ -490,6 +653,9 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
         "accepted_absolute_action_k7": accepted.tolist(),
         "residual_decision_context": current_context,
         "next_residual_decision_context": next_context,
+        "next_action_source": "policy",
+        "next_accepted_absolute_action7": next_base,
+        "next_applied_residual_tcp6": [0.0] * 6,
         "human_residual_valid": False,
     }
     replay = OnlineResidualReplay(
@@ -510,6 +676,11 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
     assert np.array_equal(row["next_wrench_delta6"], np.full(6, 7.0))
     assert np.allclose(row["behavior_residual_k6"], 0.01)
     assert row["next_base_valid"] is True
+    assert np.array_equal(row["control_source"], [0.0])
+    assert np.allclose(row["gripper_command"], [0.085])
+    assert row["next_recorded_point_valid"] is True
+    assert np.array_equal(row["next_control_source"], [0.0])
+    assert np.allclose(row["next_gripper_command"], [0.085])
 
 
 def test_policy_value_sampling_excludes_human_and_missing_next_base() -> None:

@@ -10,6 +10,7 @@ from typing import Any, Mapping
 import torch
 import yaml
 
+from forcesmolvla.rft.critic import CRITIC_INPUT_SPEC
 from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
 
 
@@ -71,6 +72,7 @@ def residual_actor_critic_checkpoint_is_recoverable(
             state.get("checkpoint_kind") in CHECKPOINT_KINDS
             and (expected_kind is None or state["checkpoint_kind"] == expected_kind)
             and state.get("online_semantics_version") == ONLINE_SEMANTICS_VERSION
+            and state.get("critic_input_spec") == CRITIC_INPUT_SPEC
             and state["learner_state"]
             in {
                 "ack_replay_collection",
@@ -154,6 +156,8 @@ def save_residual_actor_critic_checkpoint(
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_KIND_INVALID")
     if runtime_state.get("online_semantics_version") != ONLINE_SEMANTICS_VERSION:
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_SEMANTICS_INVALID")
+    if runtime_state.get("critic_input_spec") != CRITIC_INPUT_SPEC:
+        raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_CRITIC_INPUT_SPEC_INVALID")
     if checkpoint.exists() and not residual_actor_critic_checkpoint_is_recoverable(
         checkpoint, expected_kind=expected_kind
     ):

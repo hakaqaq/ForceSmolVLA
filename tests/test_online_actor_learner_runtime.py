@@ -6,7 +6,7 @@ import pytest
 import torch
 import yaml
 
-from forcesmolvla.rft.critic import build_twin_q, state_exact
+from forcesmolvla.rft.critic import CRITIC_INPUT_SPEC, build_twin_q, state_exact
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
     ONLINE_ADAPTATION_DIRECTORY_NAME,
@@ -47,6 +47,7 @@ def write_checkpoint(
     runtime = {
         "checkpoint_kind": checkpoint_kind,
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+        "critic_input_spec": CRITIC_INPUT_SPEC,
         "frozen_base_policy_checkpoint": "/fixed/base",
         "learner_state": learner_state,
         "ack_critic_warmup_complete": learner_state == "residual_actor_critic_training",

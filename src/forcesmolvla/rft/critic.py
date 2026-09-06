@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Any, Mapping
 
 import torch
 from torch import Tensor, nn
@@ -10,7 +11,22 @@ from torch import Tensor, nn
 
 ACTION_SLOTS = 3
 TCP_DIM = 6
-CRITIC_INPUT_DIM = 58
+CRITIC_INPUT_DIM = 60
+CRITIC_INPUT_SPEC = (
+    "state7+wrench6+wrench_delta6+base_action_k6+residual_action_k6+"
+    "action_mask_k+control_source+gripper_command=60"
+)
+CRITIC_CONDITION_ORDER = ("control_source", "gripper_command")
+
+
+def require_critic_input_config(config: Mapping[str, Any]) -> None:
+    if (
+        int(config.get("input_dim", -1)) != CRITIC_INPUT_DIM
+        or tuple(config.get("condition_order", ())) != CRITIC_CONDITION_ORDER
+        or config.get("candidate_acceptance_mapping")
+        != "recorded_ack_point_or_verified_differentiable_identity"
+    ):
+        raise ValueError("FORCERFT_CRITIC_INPUT_SPEC_MISMATCH")
 RESIDUAL_ACTION_OFFSET = 7 + 6 + 6 + ACTION_SLOTS * TCP_DIM
 RESIDUAL_ACTION_WIDTH = ACTION_SLOTS * TCP_DIM
 
@@ -29,7 +45,7 @@ def _float_tensor(value: Tensor, shape: tuple[int, ...], name: str) -> Tensor:
 
 
 class ResidualQHead(nn.Module):
-    """Q(state, wrench, wrench delta, base action, residual, mask)."""
+    """ACK value conditioned on control source and accepted gripper command."""
 
     def __init__(self, hidden_dim: int = 256) -> None:
         super().__init__()
@@ -61,6 +77,8 @@ class ResidualQHead(nn.Module):
         base_action_k6: Tensor,
         residual_action_k6: Tensor,
         action_mask_k: Tensor,
+        control_source: Tensor,
+        gripper_command: Tensor,
     ) -> Tensor:
         batch = int(normalized_state7.shape[0])
         if batch < 1:
@@ -84,6 +102,8 @@ class ResidualQHead(nn.Module):
             raise ValueError("FORCERFT_CRITIC_ACTION_MASK_INVALID")
         if not bool(action_mask_k.any(dim=1).all()):
             raise ValueError("FORCERFT_CRITIC_ACTION_MASK_EMPTY")
+        source = _float_tensor(control_source, (batch, 1), "CONTROL_SOURCE")
+        gripper = _float_tensor(gripper_command, (batch, 1), "GRIPPER_COMMAND")
         mask = action_mask_k.to(dtype=torch.float32)
         features = torch.cat(
             (
@@ -93,6 +113,8 @@ class ResidualQHead(nn.Module):
                 (base * mask.unsqueeze(-1)).flatten(1),
                 (residual * mask.unsqueeze(-1)).flatten(1),
                 mask,
+                source,
+                gripper,
             ),
             dim=1,
         )

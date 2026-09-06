@@ -52,3 +52,8 @@ wrist_wrench_residual_actor:
 
 ack_residual_twin_q:
   hidden_dim: 256
+  input_dim: 60
+  condition_order:
+    - control_source
+    - gripper_command
+  candidate_acceptance_mapping: recorded_ack_point_or_verified_differentiable_identity

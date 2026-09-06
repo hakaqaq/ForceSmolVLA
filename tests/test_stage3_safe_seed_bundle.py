@@ -115,7 +115,7 @@ def test_online_residual_bootstrap_needs_no_critic_parent_and_starts_zero(
     assert runtime["learner_state"] == "ack_replay_collection"
     assert runtime["ack_critic_warmup_complete"] is False
     assert runtime["online_adaptation_id"].startswith(
-        "task3-ack-dispatch-residual-"
+        "task3-ack-accepted-q-residual-"
     )
     assert runtime["counters"] == {
         "twin_q_optimizer_steps": 0,

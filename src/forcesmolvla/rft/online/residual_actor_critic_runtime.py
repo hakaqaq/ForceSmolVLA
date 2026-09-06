@@ -15,7 +15,7 @@ from typing import Any, Callable, Iterator, Mapping, Sequence
 import numpy as np
 import torch
 
-ONLINE_ADAPTATION_DIRECTORY_NAME = "online_ack_residual_dispatch"
+ONLINE_ADAPTATION_DIRECTORY_NAME = "online_ack_residual_accepted_q"
 
 
 class AsyncRuntimeError(RuntimeError):
@@ -291,7 +291,11 @@ def prepare_learner(
 ) -> dict[str, Any]:
     """Restore only the residual Actor, target Actor, and image-free Twin-Q."""
 
-    from forcesmolvla.rft.critic import build_twin_q
+    from forcesmolvla.rft.critic import (
+        CRITIC_INPUT_SPEC,
+        build_twin_q,
+        require_critic_input_config,
+    )
     from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (
         load_residual_actor_critic_checkpoint,
     )
@@ -299,6 +303,7 @@ def prepare_learner(
 
     resume_checkpoint = Path(resume_checkpoint).resolve()
     config = load_checkpoint_training_config(resume_checkpoint)
+    require_critic_input_config(config["ack_residual_twin_q"])
     require(
         int(config["batching"]["command_macro_slots"]) == 3,
         "FORCERFT_COMMAND_MACRO_SLOTS_INVALID",
@@ -345,6 +350,10 @@ def prepare_learner(
     )
     require(config == loaded_config, "FORCERFT_CHECKPOINT_CONFIG_DRIFT")
     counters = runtime["counters"]
+    require(
+        runtime.get("critic_input_spec") == CRITIC_INPUT_SPEC,
+        "FORCERFT_CHECKPOINT_CRITIC_INPUT_SPEC_MISMATCH",
+    )
     applied_actor_steps = int(counters["residual_actor_optimizer_steps"])
     actor_update_attempts = int(counters["residual_actor_update_attempts"])
     skipped_actor_updates = int(

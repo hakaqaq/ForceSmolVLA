@@ -17,7 +17,11 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from forcesmolvla.rft.critic import build_twin_q  # noqa: E402
+from forcesmolvla.rft.critic import (  # noqa: E402
+    CRITIC_INPUT_SPEC,
+    build_twin_q,
+    require_critic_input_config,
+)
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
     ONLINE_ADAPTATION_DIRECTORY_NAME,
 )
@@ -31,7 +35,7 @@ from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
 from forcesmolvla.rft.residual_actor import make_residual_actor_pair  # noqa: E402
 
 
-BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_random_twin_q"
+BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_accepted_q_random_twin_q"
 
 
 def _load_base_actor(checkpoint: Path) -> torch.nn.Module:
@@ -84,6 +88,7 @@ def build_online_residual_bootstrap(
     )
     if int(config["batching"]["command_macro_slots"]) != 3:
         raise ValueError("FORCERFT_COMMAND_MACRO_SLOTS_INVALID")
+    require_critic_input_config(config["ack_residual_twin_q"])
     base_actor = _load_base_actor(frozen_base_policy_checkpoint).to("cpu")
     base_actor.eval().requires_grad_(False)
     if any(parameter.requires_grad for parameter in base_actor.parameters()):
@@ -112,13 +117,14 @@ def build_online_residual_bootstrap(
     runtime_state = {
         "checkpoint_kind": BOOTSTRAP_CHECKPOINT_KIND,
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+        "critic_input_spec": CRITIC_INPUT_SPEC,
         "frozen_base_policy_checkpoint": str(frozen_base_policy_checkpoint),
         "residual_actor_critic_cycles": 0,
         "learner_state": "ack_replay_collection",
         "ack_critic_warmup_complete": False,
         "ack_critic_warmup_steps": 0,
         "active_residual_policy_revision": f"{task_id}-residual-policy-step-000000",
-        "online_adaptation_id": f"{task_id}-ack-dispatch-residual-{time.time_ns()}",
+        "online_adaptation_id": f"{task_id}-ack-accepted-q-residual-{time.time_ns()}",
         "counters": {
             "twin_q_optimizer_steps": 0,
             "residual_actor_optimizer_steps": 0,

@@ -7,7 +7,7 @@ import pytest
 import torch
 import yaml
 
-from forcesmolvla.rft.critic import build_twin_q, state_exact
+from forcesmolvla.rft.critic import CRITIC_INPUT_SPEC, build_twin_q, state_exact
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
     load_checkpoint_training_config,
@@ -42,6 +42,7 @@ def test_residual_checkpoint_restores_learner_state_and_warmup_progress(
     runtime = {
         "checkpoint_kind": TRAINING_CHECKPOINT_KIND,
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+        "critic_input_spec": CRITIC_INPUT_SPEC,
         "frozen_base_policy_checkpoint": "/fixed/base",
         "learner_state": "ack_critic_warmup",
         "ack_critic_warmup_complete": False,
@@ -155,6 +156,7 @@ def test_exact_resume_rejects_current_yaml_algorithm_drift(
         runtime_state={
             "checkpoint_kind": TRAINING_CHECKPOINT_KIND,
             "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+            "critic_input_spec": CRITIC_INPUT_SPEC,
             "frozen_base_policy_checkpoint": "/fixed/base",
             "learner_state": "ack_replay_collection",
             "ack_critic_warmup_complete": False,
@@ -212,6 +214,13 @@ def test_exact_resume_rejects_current_yaml_algorithm_drift(
     missing_counter = deepcopy(original)
     del missing_counter["counters"]["residual_actor_update_attempts"]
     torch.save(missing_counter, state_path)
+    assert not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=TRAINING_CHECKPOINT_KIND
+    )
+
+    missing_critic_spec = deepcopy(original)
+    del missing_critic_spec["critic_input_spec"]
+    torch.save(missing_critic_spec, state_path)
     assert not residual_actor_critic_checkpoint_is_recoverable(
         checkpoint, expected_kind=TRAINING_CHECKPOINT_KIND
     )

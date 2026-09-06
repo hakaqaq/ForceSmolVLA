@@ -2437,6 +2437,28 @@ class IntegratedCaptureBackend:
                         if residual_result is None
                         else residual_result["normalizer_manifest_sha256"]
                     ),
+                    # The robot-side reference filter/leash is stateful and the
+                    # ACK currently exposes only its resulting accepted pose.
+                    # Persist the available execution evidence and fail closed
+                    # for counterfactual differentiable Q queries.
+                    "candidate_acceptance_mapping": {
+                        "mapping_kind": "recorded_ack_point_only",
+                        "identity_valid": False,
+                        "unavailable_reason": (
+                            "controller_prefilter_state_and_dt_not_exposed"
+                        ),
+                        "upper_execution_position_m": position.tolist(),
+                        "upper_execution_quaternion_xyzw": quaternion.tolist(),
+                        "adapter_measured_pose_basis": decision.get(
+                            "measured_pose_basis"
+                        ),
+                        "requested_equilibrium": decision.get(
+                            "requested_equilibrium"
+                        ),
+                        "workspace_clipped": decision.get(
+                            "workspace_clipped"
+                        ),
+                    },
                 }
                 selection = {
                     **lineage,

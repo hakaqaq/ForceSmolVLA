@@ -965,12 +965,21 @@ class ResidualTransitionBatch:
     base_action_k6: torch.Tensor
     behavior_residual_k6: torch.Tensor
     action_mask: torch.Tensor
+    control_source: torch.Tensor
+    gripper_command: torch.Tensor
+    candidate_acceptance_identity_valid: torch.Tensor
     next_state7: torch.Tensor
     next_wrench6: torch.Tensor
     next_wrench_delta6: torch.Tensor
     next_base_action_k6: torch.Tensor
     next_action_mask: torch.Tensor
     next_base_valid: torch.Tensor
+    next_control_source: torch.Tensor
+    next_gripper_command: torch.Tensor
+    next_candidate_acceptance_identity_valid: torch.Tensor
+    next_recorded_proposal_residual6: torch.Tensor
+    next_recorded_behavior_residual_k6: torch.Tensor
+    next_recorded_point_valid: torch.Tensor
     reward: torch.Tensor
     terminated: torch.Tensor
     truncated: torch.Tensor
@@ -1159,7 +1168,7 @@ class OnlineResidualReplay:
                 and np.allclose(base_absolute[0], context["base_absolute_action7"]),
                 "FORCERFT_ONLINE_REPLAY_FROZEN_BASE_EVIDENCE_INVALID",
             )
-            base, _accepted, residual = normalized_behavior_residual(
+            base, accepted, residual = normalized_behavior_residual(
                 base_absolute_k7=base_absolute,
                 accepted_absolute_k7=accepted_absolute,
                 decision_state7=np.asarray(context["state7_absolute"], dtype=np.float64),
@@ -1169,6 +1178,26 @@ class OnlineResidualReplay:
             require(
                 np.allclose(base[0], base_one, rtol=1.0e-5, atol=1.0e-6),
                 "FORCERFT_ONLINE_REPLAY_BASE_CONTEXT_MISMATCH",
+            )
+            require(
+                np.allclose(
+                    accepted[mask, 6], accepted[np.flatnonzero(mask)[0], 6]
+                ),
+                "FORCERFT_ONLINE_REPLAY_GRIPPER_COMMAND_INCONSISTENT",
+            )
+            source = str(row["action_source"])
+            require(
+                source in {"policy", "human"},
+                "FORCERFT_ONLINE_REPLAY_CONTROL_SOURCE_INVALID",
+            )
+            control_source = 0.0 if source == "policy" else 1.0
+            acceptance_mapping = context.get("candidate_acceptance_mapping", {})
+            candidate_identity_valid = bool(
+                source == "policy"
+                and isinstance(acceptance_mapping, Mapping)
+                and acceptance_mapping.get("mapping_kind")
+                == "verified_differentiable_identity"
+                and acceptance_mapping.get("identity_valid") is True
             )
             outcome = row["outcome"]
             terminal_boundary = bool(
@@ -1185,6 +1214,12 @@ class OnlineResidualReplay:
                 next_wrench_delta = np.zeros(6, dtype=np.float32)
                 next_base = base.copy()
                 next_base_valid = False
+                next_control_source = control_source
+                next_gripper_command = float(accepted[np.flatnonzero(mask)[0], 6])
+                next_identity_valid = False
+                next_recorded_proposal = np.zeros(6, dtype=np.float32)
+                next_recorded_behavior = np.zeros((3, 6), dtype=np.float32)
+                next_recorded_point_valid = False
             else:
                 require(
                     not terminal_boundary and isinstance(next_context, Mapping),
@@ -1198,6 +1233,73 @@ class OnlineResidualReplay:
                 ) = self._decision_features(next_context)
                 next_base = np.repeat(next_base_one[None, :], 3, axis=0)
                 next_base_valid = True
+                next_source = row.get("next_action_source")
+                next_accepted_absolute = row.get("next_accepted_absolute_action7")
+                next_applied_residual = row.get("next_applied_residual_tcp6")
+                next_mapping = next_context.get("candidate_acceptance_mapping", {})
+                next_identity_valid = bool(
+                    next_source == "policy"
+                    and isinstance(next_mapping, Mapping)
+                    and next_mapping.get("mapping_kind")
+                    == "verified_differentiable_identity"
+                    and next_mapping.get("identity_valid") is True
+                )
+                try:
+                    next_accepted_one = np.asarray(
+                        next_accepted_absolute, dtype=np.float64
+                    )
+                    next_proposal = np.asarray(
+                        next_applied_residual, dtype=np.float32
+                    )
+                except (TypeError, ValueError):
+                    next_accepted_one = np.empty(0, dtype=np.float64)
+                    next_proposal = np.empty(0, dtype=np.float32)
+                next_accepted_valid = bool(
+                    next_source in {"policy", "human"}
+                    and next_accepted_one.shape == (7,)
+                    and np.isfinite(next_accepted_one).all()
+                )
+                next_recorded_point_valid = bool(
+                    next_source == "policy"
+                    and next_accepted_valid
+                    and next_proposal.shape == (6,)
+                    and np.isfinite(next_proposal).all()
+                )
+                if next_accepted_valid:
+                    _next_base, next_accepted, next_recorded_behavior = (
+                        normalized_behavior_residual(
+                            base_absolute_k7=np.repeat(
+                                np.asarray(next_context["base_absolute_action7"])[
+                                    None, :
+                                ],
+                                3,
+                                axis=0,
+                            ),
+                            accepted_absolute_k7=np.repeat(
+                                next_accepted_one[None, :], 3, axis=0
+                            ),
+                            decision_state7=np.asarray(
+                                next_context["state7_absolute"], dtype=np.float64
+                            ),
+                            normalize_delta7=self.normalizer.delta_action7.apply,
+                            valid_mask=np.ones(3, dtype=np.bool_),
+                        )
+                    )
+                    next_gripper_command = float(next_accepted[0, 6])
+                    next_control_source = (
+                        1.0 if next_source == "human" else 0.0
+                    )
+                else:
+                    next_recorded_behavior = np.zeros((3, 6), dtype=np.float32)
+                    next_gripper_command = 0.0
+                    next_control_source = (
+                        1.0 if next_source == "human" else 0.0
+                    )
+                next_recorded_proposal = (
+                    next_proposal
+                    if next_recorded_point_valid
+                    else np.zeros(6, dtype=np.float32)
+                )
             human_valid = bool(
                 row.get("action_source") == "human"
                 and row.get("human_residual_valid") is True
@@ -1213,6 +1315,11 @@ class OnlineResidualReplay:
                     "base_action_k6": base[..., :6],
                     "behavior_residual_k6": residual,
                     "action_mask": mask,
+                    "control_source": np.asarray([control_source], dtype=np.float32),
+                    "gripper_command": np.asarray(
+                        [accepted[np.flatnonzero(mask)[0], 6]], dtype=np.float32
+                    ),
+                    "candidate_acceptance_identity_valid": candidate_identity_valid,
                     "next_state7": next_state,
                     "next_wrench6": next_wrench,
                     "next_wrench_delta6": next_wrench_delta,
@@ -1224,11 +1331,21 @@ class OnlineResidualReplay:
                     "next_base_action_k6": next_base[..., :6],
                     "next_action_mask": np.ones(3, dtype=np.bool_),
                     "next_base_valid": next_base_valid,
+                    "next_control_source": np.asarray(
+                        [next_control_source], dtype=np.float32
+                    ),
+                    "next_gripper_command": np.asarray(
+                        [next_gripper_command], dtype=np.float32
+                    ),
+                    "next_candidate_acceptance_identity_valid": next_identity_valid,
+                    "next_recorded_proposal_residual6": next_recorded_proposal,
+                    "next_recorded_behavior_residual_k6": next_recorded_behavior,
+                    "next_recorded_point_valid": next_recorded_point_valid,
                     "reward": float(outcome["reward"]),
                     "terminated": bool(outcome["terminated"]),
                     "truncated": bool(outcome["truncated"]),
                     "actor_q_valid": bool(
-                        row.get("action_source") == "policy"
+                        source == "policy"
                         and macro.actor_q_eligibility.valid
                     ),
                     "human_residual_target6": (
@@ -1237,7 +1354,7 @@ class OnlineResidualReplay:
                         else np.zeros(6, dtype=np.float32)
                     ),
                     "human_residual_valid": human_valid,
-                    "action_source": str(row["action_source"]),
+                    "action_source": source,
                     "episode_id": str(row["identity"]["episode_id"]),
                 }
             )
@@ -1258,6 +1375,13 @@ class OnlineResidualReplay:
             base_action_k6=tensor("base_action_k6"),
             behavior_residual_k6=tensor("behavior_residual_k6"),
             action_mask=tensor("action_mask", torch.bool),
+            control_source=tensor("control_source"),
+            gripper_command=tensor("gripper_command"),
+            candidate_acceptance_identity_valid=torch.tensor(
+                [row["candidate_acceptance_identity_valid"] for row in rows],
+                dtype=torch.bool,
+                device=device,
+            ),
             next_state7=tensor("next_state7"),
             next_wrench6=tensor("next_wrench6"),
             next_wrench_delta6=tensor("next_wrench_delta6"),
@@ -1265,6 +1389,24 @@ class OnlineResidualReplay:
             next_action_mask=tensor("next_action_mask", torch.bool),
             next_base_valid=torch.tensor(
                 [row["next_base_valid"] for row in rows],
+                dtype=torch.bool,
+                device=device,
+            ),
+            next_control_source=tensor("next_control_source"),
+            next_gripper_command=tensor("next_gripper_command"),
+            next_candidate_acceptance_identity_valid=torch.tensor(
+                [row["next_candidate_acceptance_identity_valid"] for row in rows],
+                dtype=torch.bool,
+                device=device,
+            ),
+            next_recorded_proposal_residual6=tensor(
+                "next_recorded_proposal_residual6"
+            ),
+            next_recorded_behavior_residual_k6=tensor(
+                "next_recorded_behavior_residual_k6"
+            ),
+            next_recorded_point_valid=torch.tensor(
+                [row["next_recorded_point_valid"] for row in rows],
                 dtype=torch.bool,
                 device=device,
             ),
