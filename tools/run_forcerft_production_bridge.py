@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+from typing import Sequence
 
 import numpy as np
 
@@ -61,6 +62,29 @@ def _import_path(name: str, path: Path):
     return module
 
 
+def _fixed_detector_batches(
+    camera1_paths: Sequence[Path], camera2_paths: Sequence[Path]
+) -> list[dict[str, object]]:
+    if not camera1_paths or len(camera1_paths) != len(camera2_paths):
+        raise RuntimeError("BRIDGE_FROZEN_DETECTOR_IMAGE_PATH_COUNT_INVALID")
+    batches: list[dict[str, object]] = []
+    for start in range(0, len(camera1_paths), INFERENCE_BATCH_SIZE):
+        stop = min(start + INFERENCE_BATCH_SIZE, len(camera1_paths))
+        count = stop - start
+        batch: dict[str, object] = {
+            "count": count,
+            "inference_count": INFERENCE_BATCH_SIZE,
+        }
+        for name, paths in zip(
+            ("camera1", "camera2"),
+            (camera1_paths[start:stop], camera2_paths[start:stop]),
+            strict=True,
+        ):
+            batch[f"{name}_paths"] = [str(path) for path in paths]
+        batches.append(batch)
+    return batches
+
+
 class _LoadedFrozenRewardDetector:
     """One loaded/JIT-compiled detector reused by a local worker process."""
 
@@ -106,6 +130,21 @@ class _LoadedFrozenRewardDetector:
 
         self.Image = Image
         self.jax, self.jnp, self.infer = jax, jnp, infer
+        self._warmup_inference()
+
+    def _warmup_inference(self) -> None:
+        observations = {
+            key: self.jnp.zeros(
+                (INFERENCE_BATCH_SIZE, 1, *IMAGE_SHAPE), dtype=self.jnp.uint8
+            )
+            for key in CAMERA_KEYS
+        }
+        logits = np.asarray(
+            self.jax.block_until_ready(self.infer(observations)),
+            dtype=np.float32,
+        ).reshape(-1)
+        if logits.shape != (INFERENCE_BATCH_SIZE,):
+            raise RuntimeError("BRIDGE_FROZEN_DETECTOR_WARMUP_OUTPUT_INVALID")
 
     def run(self, request_path: Path, output_path: Path) -> None:
         request = json.loads(request_path.read_text(encoding="utf-8"))
@@ -122,6 +161,12 @@ class _LoadedFrozenRewardDetector:
         frame_count = 0
         for batch in batches:
             count = int(batch["count"])
+            inference_count = int(batch["inference_count"])
+            if (
+                not 0 < count <= INFERENCE_BATCH_SIZE
+                or inference_count != INFERENCE_BATCH_SIZE
+            ):
+                raise RuntimeError("BRIDGE_FROZEN_DETECTOR_BATCH_SHAPE_INVALID")
             arrays = []
             for name in ("camera1", "camera2"):
                 paths = batch.get(f"{name}_paths")
@@ -135,17 +180,38 @@ class _LoadedFrozenRewardDetector:
                         decoded.append(
                             np.asarray(image.convert("RGB"), dtype=np.uint8)
                         )
-                arrays.append(np.ascontiguousarray(decoded))
-            if any(value.shape != (count, *IMAGE_SHAPE) for value in arrays):
+                decoded_array = np.ascontiguousarray(decoded)
+                if decoded_array.shape != (count, *IMAGE_SHAPE):
+                    raise RuntimeError("BRIDGE_FROZEN_DETECTOR_IMAGE_BATCH_INVALID")
+                if count < inference_count:
+                    decoded_array = np.concatenate(
+                        (
+                            decoded_array,
+                            np.repeat(
+                                decoded_array[-1:],
+                                inference_count - count,
+                                axis=0,
+                            ),
+                        ),
+                        axis=0,
+                    )
+                arrays.append(np.ascontiguousarray(decoded_array))
+            if any(
+                value.shape != (inference_count, *IMAGE_SHAPE)
+                for value in arrays
+            ):
                 raise RuntimeError("BRIDGE_FROZEN_DETECTOR_IMAGE_BATCH_INVALID")
             observations = {
                 key: self.jnp.asarray(np.asarray(value))[:, None]
                 for key, value in zip(CAMERA_KEYS, arrays, strict=True)
             }
-            logits.append(np.asarray(
+            batch_logits = np.asarray(
                 self.jax.block_until_ready(self.infer(observations)),
                 dtype=np.float32,
-            ).reshape(-1))
+            ).reshape(-1)
+            if batch_logits.shape != (inference_count,):
+                raise RuntimeError("BRIDGE_FROZEN_DETECTOR_OUTPUT_SHAPE_INVALID")
+            logits.append(batch_logits[:count])
             frame_count += count
         values = np.concatenate(logits).astype(np.float64)
         probabilities = np.where(
@@ -239,19 +305,9 @@ class OneShotFrozenRewardDetector:
             root = Path(directory)
             request = root / "request.json"
             output = root / "probabilities.npy"
-            batches = []
-            for start in range(0, len(prepared.camera1_paths), INFERENCE_BATCH_SIZE):
-                stop = min(start + INFERENCE_BATCH_SIZE, len(prepared.camera1_paths))
-                paths_by_camera = (
-                    prepared.camera1_paths[start:stop],
-                    prepared.camera2_paths[start:stop],
-                )
-                batch = {"count": stop - start}
-                for name, paths in zip(
-                    ("camera1", "camera2"), paths_by_camera, strict=True
-                ):
-                    batch[f"{name}_paths"] = [str(path) for path in paths]
-                batches.append(batch)
+            batches = _fixed_detector_batches(
+                prepared.camera1_paths, prepared.camera2_paths
+            )
             request.write_text(
                 json.dumps(
                     {

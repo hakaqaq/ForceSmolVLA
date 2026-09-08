@@ -30,11 +30,12 @@ def test_reward_worker_request_passes_image_paths_without_temporary_frame_arrays
 
     def fake_request(_socket: Path, request: Path, output: Path) -> None:
         payload = bridge_tool.json.loads(request.read_text(encoding="utf-8"))
-        assert payload["batches"] == [{
-            "count": 3,
-            "camera1_paths": [str(path) for path in camera1],
-            "camera2_paths": [str(path) for path in camera2],
-        }]
+        assert len(payload["batches"]) == 1
+        batch = payload["batches"][0]
+        assert batch["count"] == 3
+        assert batch["inference_count"] == bridge_tool.INFERENCE_BATCH_SIZE
+        for name, paths in (("camera1", camera1), ("camera2", camera2)):
+            assert batch[f"{name}_paths"] == [str(path) for path in paths]
         assert not list(request.parent.glob("camera*.npy"))
         np.save(output, np.asarray([0.1, 0.2, 0.3]), allow_pickle=False)
 
@@ -45,6 +46,123 @@ def test_reward_worker_request_passes_image_paths_without_temporary_frame_arrays
     ))
 
     assert scores.probabilities == pytest.approx((0.1, 0.2, 0.3))
+
+
+def test_reward_detector_tail_batch_keeps_fixed_inference_shape() -> None:
+    camera1 = [Path(f"external-{index}.jpg") for index in range(129)]
+    camera2 = [Path(f"wrist-{index}.jpg") for index in range(129)]
+
+    batches = bridge_tool._fixed_detector_batches(camera1, camera2)
+
+    assert [batch["count"] for batch in batches] == [128, 1]
+    assert all(
+        batch["inference_count"] == bridge_tool.INFERENCE_BATCH_SIZE
+        and len(batch["camera1_paths"]) == batch["count"]
+        and len(batch["camera2_paths"]) == batch["count"]
+        for batch in batches
+    )
+    assert set(batches[-1]["camera1_paths"]) == {str(camera1[-1])}
+    assert set(batches[-1]["camera2_paths"]) == {str(camera2[-1])}
+
+
+def test_reward_detector_worker_warms_fixed_inference_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(bridge_tool, "IMAGE_SHAPE", (2, 3, 3))
+    calls = []
+
+    class FakeJnp:
+        uint8 = np.uint8
+        zeros = staticmethod(np.zeros)
+
+    class FakeJax:
+        @staticmethod
+        def block_until_ready(value):
+            return value
+
+    detector = bridge_tool._LoadedFrozenRewardDetector.__new__(
+        bridge_tool._LoadedFrozenRewardDetector
+    )
+    detector.jnp = FakeJnp()
+    detector.jax = FakeJax()
+
+    def infer(observations):
+        calls.append({key: value.shape for key, value in observations.items()})
+        return np.zeros((bridge_tool.INFERENCE_BATCH_SIZE, 1), dtype=np.float32)
+
+    detector.infer = infer
+    detector._warmup_inference()
+
+    assert calls == [{
+        key: (bridge_tool.INFERENCE_BATCH_SIZE, 1, 2, 3, 3)
+        for key in bridge_tool.CAMERA_KEYS
+    }]
+
+
+def test_reward_detector_worker_pads_tail_after_image_decode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bridge_tool, "IMAGE_SHAPE", (2, 3, 3))
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.write_bytes(b"test")
+    inference_shapes = []
+
+    class FakeImageValue:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def convert(self, _mode):
+            return np.ones(bridge_tool.IMAGE_SHAPE, dtype=np.uint8)
+
+    class FakeImage:
+        open = staticmethod(lambda _path: FakeImageValue())
+
+    class FakeJnp:
+        asarray = staticmethod(np.asarray)
+
+    class FakeJax:
+        block_until_ready = staticmethod(lambda value: value)
+        default_backend = staticmethod(lambda: "test")
+
+    detector = bridge_tool._LoadedFrozenRewardDetector.__new__(
+        bridge_tool._LoadedFrozenRewardDetector
+    )
+    detector.checkpoint = checkpoint.resolve()
+    detector.expected_train_state_step = 7
+    detector.Image = FakeImage()
+    detector.jnp = FakeJnp()
+    detector.jax = FakeJax()
+
+    def infer(observations):
+        inference_shapes.append(
+            {key: value.shape for key, value in observations.items()}
+        )
+        return np.zeros((bridge_tool.INFERENCE_BATCH_SIZE, 1), dtype=np.float32)
+
+    detector.infer = infer
+    request = tmp_path / "request.json"
+    output = tmp_path / "output.npy"
+    camera1 = [tmp_path / f"external-{index}.jpg" for index in range(3)]
+    camera2 = [tmp_path / f"wrist-{index}.jpg" for index in range(3)]
+    request.write_text(
+        bridge_tool.json.dumps({
+            "batches": bridge_tool._fixed_detector_batches(camera1, camera2),
+            "checkpoint": str(checkpoint),
+            "expected_train_state_step": 7,
+        }),
+        encoding="utf-8",
+    )
+
+    detector.run(request, output)
+
+    assert inference_shapes == [{
+        key: (bridge_tool.INFERENCE_BATCH_SIZE, 1, 2, 3, 3)
+        for key in bridge_tool.CAMERA_KEYS
+    }]
+    assert np.load(output, allow_pickle=False).shape == (3,)
 
 
 def test_task_output_root_and_replay_default_are_task_scoped(tmp_path: Path) -> None:
@@ -350,7 +468,13 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
         "accepted_unique_r_transition_count": 364,
         "human_override_replay_count": 2,
         "total_unique_r_transition_count": 748,
-        "minimum_ack_transitions_reached": True,
+        "training_starts_reached": True,
+        "admission_timing_seconds": {
+            "data_preparation": 1.0,
+            "reward_detection": 2.0,
+            "transition_build": 3.0,
+            "persistence": 4.0,
+        },
     })
     admission = loop._admit(
         type("Args", (), {
@@ -367,6 +491,9 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     output = capsys.readouterr().out
     assert output.count("\n") == 1
     assert "human_expert=2" in output
+    assert "training_started=true" in output
+    assert "prepare=1.000s detector=2.000s" in output
+    assert "transitions=3.000s persistence=4.000s" in output
     assert admission_commands[0][2:6] == [
         "--task-id", "task3", "--output-root", "outputs/task3",
     ]

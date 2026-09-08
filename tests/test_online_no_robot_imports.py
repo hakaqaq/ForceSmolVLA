@@ -56,7 +56,7 @@ def test_importing_online_runtime_stays_cpu_only_and_does_not_connect_or_command
     assert not any("deploy_forcesmolvla" in name or "serve_policy" in name for name in added)
 
 
-def test_integrated_capture_import_does_not_require_torch() -> None:
+def test_integrated_capture_backend_import_does_not_require_torch() -> None:
     script = """
 import importlib.abc
 import sys
@@ -69,6 +69,7 @@ class BlockTorch(importlib.abc.MetaPathFinder):
 
 sys.meta_path.insert(0, BlockTorch())
 import forcesmolvla.rft.online.integrated_capture
+import forcesmolvla.rft.online.integrated_capture_backend
 assert "torch" not in sys.modules
 """
     environment = os.environ.copy()

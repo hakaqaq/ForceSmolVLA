@@ -1,5 +1,314 @@
 {
-  "generated_at": "2026-09-02T10:09:21.668563+00:00",
-  "nodes": {},
+  "generated_at": "2026-09-08T06:41:02.112446+00:00",
+  "nodes": {
+    "src::forcesmolvla_deployment_binding": {
+      "code_fingerprint": "",
+      "label": "deployment_binding.py",
+      "last": "2026-09-03T05:35:58.345150+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-03T05:35:58.345150+00:00",
+          "outcome": "useful",
+          "q": "给我forcevla的那个也取消掉bounding和输入RUN FORCEVLA"
+        },
+        {
+          "date": "2026-09-03T04:03:53.551185+00:00",
+          "outcome": "useful",
+          "q": "我的意思是我这个文件不需要绑定hash256，修改文件我不需要这么严格的要求"
+        }
+      ],
+      "score": 1.778624427,
+      "source_file": "forcesmolvla/deployment_binding.py",
+      "status": "preferred",
+      "uses": 2
+    },
+    "src::forcesmolvla_inference": {
+      "code_fingerprint": "",
+      "label": "inference.py",
+      "last": "2026-09-03T05:38:27.103004+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-03T05:38:27.103004+00:00",
+          "outcome": "useful",
+          "q": "给我一下命令行也是对于task3"
+        }
+      ],
+      "score": 0.890004565,
+      "source_file": "forcesmolvla/inference.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src::forcesmolvla_modeling_forcesmolvla_forcevlaflowmatching": {
+      "code_fingerprint": "",
+      "label": "ForceVLAFlowMatching",
+      "last": "2026-09-03T05:38:27.103004+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-03T05:38:27.103004+00:00",
+          "outcome": "useful",
+          "q": "给我一下命令行也是对于task3"
+        },
+        {
+          "date": "2026-09-03T05:35:58.345150+00:00",
+          "outcome": "useful",
+          "q": "给我forcevla的那个也取消掉bounding和输入RUN FORCEVLA"
+        }
+      ],
+      "score": 1.779973726,
+      "source_file": "forcesmolvla/modeling_forcesmolvla.py",
+      "status": "preferred",
+      "uses": 2
+    },
+    "src::forcesmolvla_rft_exact_resume_restore_rng_states_last": {
+      "code_fingerprint": "",
+      "label": "restore_rng_states_last()",
+      "last": "2026-09-02T10:40:07.592005+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-02T10:40:07.592005+00:00",
+          "outcome": "useful",
+          "q": "Remaining minimal fix: guarantee one FM-eligible row per Actor update"
+        }
+      ],
+      "score": 0.873896616,
+      "source_file": "forcesmolvla/rft/exact_resume.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src::forcesmolvla_rft_online_actor_learner_runtime_takeoverwindow": {
+      "code_fingerprint": "",
+      "label": "TakeoverWindow",
+      "last": "2026-09-08T04:47:28.705086+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T04:47:28.705086+00:00",
+          "outcome": "useful",
+          "q": "侧键本身不会打断policy对吧，控制夹爪是否必须保持SpaceMouse机械臂接管"
+        }
+      ],
+      "score": 0.998179632,
+      "source_file": "forcesmolvla/rft/online/actor_learner_runtime.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src::forcesmolvla_rft_online_integrated_capture_backend": {
+      "code_fingerprint": "",
+      "label": "integrated_capture_backend.py",
+      "last": "2026-09-07T05:23:05.254857+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-07T05:23:05.254857+00:00",
+          "outcome": "useful",
+          "q": "现在呢连上了吗"
+        },
+        {
+          "date": "2026-09-07T05:17:24.253913+00:00",
+          "outcome": "useful",
+          "q": "是我没有启动conda的原因阿妈"
+        }
+      ],
+      "score": 1.951788253,
+      "source_file": "forcesmolvla/rft/online/integrated_capture_backend.py",
+      "status": "preferred",
+      "uses": 2
+    },
+    "src::forcesmolvla_rft_online_learner_checkpoint": {
+      "code_fingerprint": "",
+      "label": "learner_checkpoint.py",
+      "last": "2026-09-08T05:58:06.915321+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T05:58:06.915321+00:00",
+          "outcome": "useful",
+          "q": "run_forcerft_online_loop.py 这条命令在线采集的数据和保存的 checkpoint 都在哪个路径"
+        }
+      ],
+      "score": 0.999311583,
+      "source_file": "forcesmolvla/rft/online/learner_checkpoint.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src::forcesmolvla_rft_online_replay_onlinereplay": {
+      "code_fingerprint": "",
+      "label": "OnlineReplay",
+      "last": "2026-09-08T05:58:06.915321+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T05:58:06.915321+00:00",
+          "outcome": "useful",
+          "q": "run_forcerft_online_loop.py 这条命令在线采集的数据和保存的 checkpoint 都在哪个路径"
+        },
+        {
+          "date": "2026-09-02T10:13:47.760275+00:00",
+          "outcome": "useful",
+          "q": "除了大文件的，其他的也git上去"
+        }
+      ],
+      "score": 1.872839078,
+      "source_file": "forcesmolvla/rft/online/replay.py",
+      "status": "preferred",
+      "uses": 2
+    },
+    "src::forcesmolvla_rft_training_cycle_runtime": {
+      "code_fingerprint": "",
+      "label": "training_cycle_runtime.py",
+      "last": "2026-09-08T05:58:06.915321+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T05:58:06.915321+00:00",
+          "outcome": "useful",
+          "q": "run_forcerft_online_loop.py 这条命令在线采集的数据和保存的 checkpoint 都在哪个路径"
+        }
+      ],
+      "score": 0.999311583,
+      "source_file": "forcesmolvla/rft/training_cycle_runtime.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests::grippertoggleauthority": {
+      "code_fingerprint": "",
+      "label": "GripperToggleAuthority",
+      "last": "2026-09-08T04:47:28.705086+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T04:47:28.705086+00:00",
+          "outcome": "useful",
+          "q": "侧键本身不会打断policy对吧，控制夹爪是否必须保持SpaceMouse机械臂接管"
+        }
+      ],
+      "score": 0.998179632,
+      "source_file": "",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tests::test_online_integrated_capture_backend_toggle_authority": {
+      "code_fingerprint": "",
+      "label": "_toggle_authority()",
+      "last": "2026-09-08T04:47:28.705086+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T04:47:28.705086+00:00",
+          "outcome": "useful",
+          "q": "侧键本身不会打断policy对吧，控制夹爪是否必须保持SpaceMouse机械臂接管"
+        }
+      ],
+      "score": 0.998179632,
+      "source_file": "test_online_integrated_capture_backend.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tools::run_forcerft_online_loop": {
+      "code_fingerprint": "",
+      "label": "run_forcerft_online_loop.py",
+      "last": "2026-09-07T05:17:24.253913+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-07T05:17:24.253913+00:00",
+          "outcome": "useful",
+          "q": "是我没有启动conda的原因阿妈"
+        }
+      ],
+      "score": 0.975849631,
+      "source_file": "run_forcerft_online_loop.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tools::run_forcerft_production_bridge_oneshotfrozenrewarddetector": {
+      "code_fingerprint": "",
+      "label": "OneShotFrozenRewardDetector",
+      "last": "2026-09-08T06:26:24.283691+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T06:26:24.283691+00:00",
+          "outcome": "useful",
+          "q": "优先优化 ForceRFT admission：复用 PreparedEpisode、固定奖励检测 batch 并预热、增加阶段计时、修正 training_started 日志"
+        }
+      ],
+      "score": 0.99976528,
+      "source_file": "run_forcerft_production_bridge.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tools::serve_policy": {
+      "code_fingerprint": "",
+      "label": "serve_policy.py",
+      "last": "2026-09-03T03:50:50.830992+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-03T03:50:50.830992+00:00",
+          "outcome": "useful",
+          "q": "PermissionError: DEPLOYMENT_BINDING_SERVER_SOURCE_SHA256_MISMATCH"
+        }
+      ],
+      "score": 0.888469278,
+      "source_file": "serve_policy.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tools::serve_policy_load_deployment_binding": {
+      "code_fingerprint": "",
+      "label": "load_deployment_binding()",
+      "last": "2026-09-03T03:50:50.830992+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-03T03:50:50.830992+00:00",
+          "outcome": "useful",
+          "q": "PermissionError: DEPLOYMENT_BINDING_SERVER_SOURCE_SHA256_MISMATCH"
+        }
+      ],
+      "score": 0.888469278,
+      "source_file": "serve_policy.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tools::serve_policy_load_deployment_profile": {
+      "code_fingerprint": "",
+      "label": "load_deployment_profile()",
+      "last": "2026-09-03T03:50:50.830992+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-03T03:50:50.830992+00:00",
+          "outcome": "useful",
+          "q": "PermissionError: DEPLOYMENT_BINDING_SERVER_SOURCE_SHA256_MISMATCH"
+        }
+      ],
+      "score": 0.888469278,
+      "source_file": "serve_policy.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tools::train_forcerft_actor_critic_jointdemoreplay": {
+      "code_fingerprint": "",
+      "label": "JointDemoReplay",
+      "last": "2026-09-02T10:40:07.592005+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-02T10:40:07.592005+00:00",
+          "outcome": "useful",
+          "q": "Remaining minimal fix: guarantee one FM-eligible row per Actor update"
+        }
+      ],
+      "score": 0.873896616,
+      "source_file": "train_forcerft_actor_critic.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "tools::train_forcerft_actor_critic_make_schedules": {
+      "code_fingerprint": "",
+      "label": "make_schedules()",
+      "last": "2026-09-02T10:40:07.592005+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-02T10:40:07.592005+00:00",
+          "outcome": "useful",
+          "q": "Remaining minimal fix: guarantee one FM-eligible row per Actor update"
+        }
+      ],
+      "score": 0.873896616,
+      "source_file": "train_forcerft_actor_critic.py",
+      "status": "tentative",
+      "uses": 1
+    }
+  },
   "version": 1
 }

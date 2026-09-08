@@ -35,16 +35,11 @@ from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority, UPPE
 from forcesmolvla.rft.online.action_representation import (
     quaternion_xyzw_to_rpy_xyz,
 )
-from forcesmolvla.rft.online.controller_acceptance import (
-    merge_robot_acceptance_context,
-)
-from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
-
-
 SHADOW_BACKEND_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
 POLICY_EXECUTION_BACKEND_SCHEMA = (
     "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
 )
+ONLINE_SEMANTICS_VERSION = "forcesmolvla_ack_residual_filter_leash"
 RETRYABLE_OBSERVATION_ERRORS = (
     "STATE_POSE_AGE_EXCEEDED",
     "CAMERA_AGE_EXCEEDED:",
@@ -102,7 +97,11 @@ def _local_candidate_acceptance_context(
 def _attach_robot_acceptance_context(
     local: dict[str, Any], pose_ack: Mapping[str, Any]
 ) -> None:
-    local.update(merge_robot_acceptance_context(local, pose_ack))
+    robot = pose_ack.get("candidate_acceptance_mapping")
+    if isinstance(robot, Mapping) and robot.get("mapping_kind") == "hilserl_filter_leash":
+        local.update(robot)
+        local["mapping_kind"] = "hilserl_absolute_adapter_filter_leash"
+        local["unavailable_reason"] = None
 
 
 def _async_runtime_identity(

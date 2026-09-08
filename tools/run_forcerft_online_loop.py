@@ -120,13 +120,23 @@ def _admit(
         report.get("status") == "FORMAL_ONLINE_R_ADMITTED",
         "FORCERFT_ONLINE_ADMISSION_FAILED",
     )
+    timings = report.get("admission_timing_seconds", {})
+    timing_text = ""
+    if isinstance(timings, Mapping):
+        timing_text = (
+            f" prepare={float(timings.get('data_preparation', 0.0)):.3f}s"
+            f" detector={float(timings.get('reward_detection', 0.0)):.3f}s"
+            f" transitions={float(timings.get('transition_build', 0.0)):.3f}s"
+            f" persistence={float(timings.get('persistence', 0.0)):.3f}s"
+        )
     print(
         f"[admission] status={report['status']} "
         f"accepted={report.get('accepted_unique_r_transition_count')} "
         f"human_expert={report.get('human_override_replay_count')} "
         f"total={report.get('total_unique_r_transition_count')} "
-        f"training_started={str(bool(report.get('minimum_ack_transitions_reached'))).lower()} "
+        f"training_started={str(bool(report.get('training_starts_reached'))).lower()} "
         f"elapsed={time.monotonic() - started:.1f}s"
+        f"{timing_text}"
     )
     return report
 

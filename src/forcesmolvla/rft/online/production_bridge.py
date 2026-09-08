@@ -15,6 +15,7 @@ import json
 import math
 import os
 from pathlib import Path
+import time
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import numpy as np
@@ -504,16 +505,8 @@ def frozen_episode_materializer(
     if not parent_id:
         raise ProductionBridgeError("BRIDGE_PARENT_BINDING_ID_MISSING")
 
-    def materialize(episode_dir: Path) -> EpisodeMaterialization:
-        episode_dir = Path(episode_dir)
-        session = _read_json(episode_dir.parent.parent / "session.json")
+    def materialize_prepared(prepared: PreparedEpisode) -> EpisodeMaterialization:
         try:
-            prepared = prepare_episode(
-                episode_dir,
-                session=session,
-                calibration_payload=calibration_payload,
-                contract=runtime_contract,
-            )
             scores = detector(prepared)
             if (
                 scores.detector_id != spec.get("detector_id")
@@ -576,6 +569,25 @@ def frozen_episode_materializer(
             },
         )
 
+    def materialize(episode_dir: Path) -> EpisodeMaterialization:
+        episode_dir = Path(episode_dir)
+        session = _read_json(episode_dir.parent.parent / "session.json")
+        try:
+            prepared = prepare_episode(
+                episode_dir,
+                session=session,
+                calibration_payload=calibration_payload,
+                contract=runtime_contract,
+            )
+        except ProductionBridgeError:
+            raise
+        except Exception as error:
+            raise ProductionBridgeError(
+                f"BRIDGE_EPISODE_MATERIALIZATION_FAILED:{type(error).__name__}:{error}"
+            ) from error
+        return materialize_prepared(prepared)
+
+    setattr(materialize, "_from_prepared_episode", materialize_prepared)
     return materialize
 
 
@@ -752,6 +764,7 @@ class FormalOnlineRAdmissionReport:
     idempotent_transition_count: int
     admission_record_written: bool
     episode_seal_written: bool
+    admission_timing_seconds: Mapping[str, float]
     actor_update_count: int = 0
     critic_update_count: int = 0
     optimizer_update_count: int = 0
@@ -4259,7 +4272,13 @@ class ProductionBridge:
             detector_outcome=detector_outcome,
         )
 
-    def _immutable_write(self, path: Path, value: Mapping[str, Any]) -> bool:
+    def _immutable_write(
+        self,
+        path: Path,
+        value: Mapping[str, Any],
+        *,
+        sync_directory: bool = True,
+    ) -> bool:
         data = _canonical_bytes(value) + b"\n"
         if path.exists():
             existing = path.read_bytes()
@@ -4282,7 +4301,8 @@ class ProductionBridge:
             return False
         finally:
             temporary.unlink(missing_ok=True)
-        _fsync_directory(path.parent)
+        if sync_directory:
+            _fsync_directory(path.parent)
         return True
 
     def _stage(self, episode_key: str, value: Mapping[str, Any]) -> None:
@@ -5261,6 +5281,7 @@ class ProductionBridge:
     ) -> FormalOnlineRAdmissionReport:
         """Admit an already bridge-valid smoke episode into durable formal R."""
 
+        admission_started = time.perf_counter()
         episode_dir = Path(episode_dir)
         start = _read_json(episode_dir / "episode_start.json")
         episode_id = self._episode_id(episode_dir, start)
@@ -5282,6 +5303,7 @@ class ProductionBridge:
             raise ProductionBridgeError(
                 "BRIDGE_FORMAL_R_POLICY_EXECUTION_SMOKE_PASS_REQUIRED"
             )
+        data_preparation_finished = time.perf_counter()
         summary = integrated["summary"]
         if self.episode_materializer is None:
             if summary.get("operator_task_outcome") != "success":
@@ -5289,8 +5311,13 @@ class ProductionBridge:
             detector_outcome = str(summary.get("detector_outcome"))
             detector_trigger_frame = None
         else:
-            detector_materialization = self.episode_materializer(
-                episode_dir
+            materialize_prepared = getattr(
+                self.episode_materializer, "_from_prepared_episode", None
+            )
+            detector_materialization = (
+                materialize_prepared(integrated["prepared"])
+                if callable(materialize_prepared)
+                else self.episode_materializer(episode_dir)
             ).validate(allow_detector_miss=True)
             detector_trigger_frame = (
                 detector_materialization.detection_trace.trigger_frame
@@ -5298,6 +5325,8 @@ class ProductionBridge:
             detector_outcome = (
                 "success" if detector_trigger_frame is not None else "miss"
             )
+        reward_detection_finished = time.perf_counter()
+        transition_build_started = reward_detection_finished
         summary["detector_outcome"] = detector_outcome
         summary["detector_trigger_frame"] = detector_trigger_frame
         outcome_pair = (
@@ -5755,18 +5784,31 @@ class ProductionBridge:
                 "policy_revision_publication": 0,
             },
         }
+        episode_seal_path = (
+            self.state_root / "episodes" / f"{episode_key}.json"
+        )
+        episode_already_sealed = episode_seal_path.exists()
+        persistence_started = time.perf_counter()
         admission_written = self._immutable_write(
             self.state_root / admission_relative, admission_record
         )
+        if not admission_written and not episode_already_sealed:
+            _fsync_directory((self.state_root / admission_relative).parent)
 
+        # File contents remain individually fsynced. Directory entries become
+        # durable once per dependency phase before the episode seal is committed.
+        records = [
+            (
+                transition,
+                transition["identity"]["transition_uid"],
+                transition["integrity"]["canonical_payload_sha256"],
+            )
+            for transition in transitions
+        ]
         wal_written = outbox_written = replay_written = idempotent = 0
-        for transition in transitions:
-            uid = transition["identity"]["transition_uid"]
-            digest = transition["integrity"]["canonical_payload_sha256"]
-            wal_relative = f"wal/{uid}.json"
-            outbox_relative = f"outbox/{uid}.json"
+        for transition, uid, digest in records:
             if self._immutable_write(
-                self.state_root / wal_relative,
+                self.state_root / "wal" / f"{uid}.json",
                 {
                     "transition_uid": uid,
                     "canonical_payload_sha256": digest,
@@ -5774,35 +5816,48 @@ class ProductionBridge:
                     "episode_sealed": True,
                     "payload": transition,
                 },
+                sync_directory=False,
             ):
                 wal_written += 1
+        if records and (wal_written or not episode_already_sealed):
+            _fsync_directory(self.state_root / "wal")
+
+        for _transition, uid, digest in records:
             if self._immutable_write(
-                self.state_root / outbox_relative,
+                self.state_root / "outbox" / f"{uid}.json",
                 {
                     "transition_uid": uid,
                     "canonical_payload_sha256": digest,
                     "admission_record": admission_relative,
-                    "wal_record": wal_relative,
+                    "wal_record": f"wal/{uid}.json",
                     "episode_sealed": True,
                     "replay_membership": "R_online",
                 },
+                sync_directory=False,
             ):
                 outbox_written += 1
+        if records and (outbox_written or not episode_already_sealed):
+            _fsync_directory(self.state_root / "outbox")
+
+        for transition, uid, digest in records:
             if self._immutable_write(
                 self.state_root / "replay" / f"{uid}.json",
                 {
                     "transition_uid": uid,
                     "canonical_payload_sha256": digest,
                     "admission_record": admission_relative,
-                    "outbox_record": outbox_relative,
+                    "outbox_record": f"outbox/{uid}.json",
                     "episode_sealed": True,
                     "replay_membership": "R_online",
                     "payload": transition,
                 },
+                sync_directory=False,
             ):
                 replay_written += 1
             else:
                 idempotent += 1
+        if records and (replay_written or not episode_already_sealed):
+            _fsync_directory(self.state_root / "replay")
 
         episode_manifest = {
             "schema_version": REPORT_VERSION,
@@ -5842,7 +5897,7 @@ class ProductionBridge:
             "policy_revision_publications": 0,
         }
         episode_seal_written = self._immutable_write(
-            self.state_root / "episodes" / f"{episode_key}.json",
+            episode_seal_path,
             episode_manifest,
         )
         # Episode seals are the commit boundary and contain incremental counts.
@@ -5862,6 +5917,7 @@ class ProductionBridge:
             for item in committed_episodes
             if item.get("status") == "SEALED_COMMITTED"
         )
+        persistence_finished = time.perf_counter()
         return FormalOnlineRAdmissionReport(
             status="FORMAL_ONLINE_R_ADMITTED",
             admission_id=episode_key,
@@ -5898,6 +5954,19 @@ class ProductionBridge:
             idempotent_transition_count=idempotent,
             admission_record_written=admission_written,
             episode_seal_written=episode_seal_written,
+            admission_timing_seconds={
+                "data_preparation": (
+                    data_preparation_finished - admission_started
+                ),
+                "reward_detection": (
+                    reward_detection_finished - data_preparation_finished
+                ),
+                "transition_build": (
+                    persistence_started - transition_build_started
+                ),
+                "persistence": persistence_finished - persistence_started,
+                "total": persistence_finished - admission_started,
+            },
         )
 
     def process_episode(

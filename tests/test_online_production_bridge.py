@@ -1436,6 +1436,41 @@ def test_frozen_episode_materializer_defers_detector_miss_for_failure(
     assert materialization.validate(allow_detector_miss=True) is materialization
 
 
+def test_formal_admission_reuses_prepared_episode_for_reward_detection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    prepared = _admission_prepared(episode)
+    prepare_calls = []
+
+    def prepare_once(*_args, **_kwargs) -> PreparedEpisode:
+        prepare_calls.append(True)
+        return prepared
+
+    def detector(value: PreparedEpisode) -> FrozenDetectorScores:
+        assert value is prepared
+        probabilities = np.zeros(len(value.tuple_host_ns), dtype=np.float64)
+        probabilities[-5:] = 0.9
+        return FrozenDetectorScores(
+            probabilities=tuple(probabilities),
+            validity=(True,) * len(probabilities),
+        )
+
+    monkeypatch.setattr(bridge_module, "prepare_episode", prepare_once)
+    report = ProductionBridge(
+        config=BridgeConfig(),
+        state_root=tmp_path / "formal-r",
+        episode_materializer=frozen_episode_materializer(detector),
+    ).admit_policy_execution_smoke(
+        episode,
+        operator_task_outcome="success",
+    )
+
+    assert report.status == "FORMAL_ONLINE_R_ADMITTED"
+    assert len(prepare_calls) == 1
+
+
 def _bridge(state: Path, **overrides) -> ProductionBridge:
     return ProductionBridge(
         config=BridgeConfig(**overrides),
@@ -2286,6 +2321,25 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert report.critic_update_count == 0
     assert report.optimizer_update_count == 0
     assert report.checkpoint_update_count == 0
+    assert set(report.admission_timing_seconds) == {
+        "data_preparation",
+        "reward_detection",
+        "transition_build",
+        "persistence",
+        "total",
+    }
+    assert all(value >= 0.0 for value in report.admission_timing_seconds.values())
+    assert report.admission_timing_seconds["total"] == pytest.approx(
+        sum(
+            report.admission_timing_seconds[name]
+            for name in (
+                "data_preparation",
+                "reward_detection",
+                "transition_build",
+                "persistence",
+            )
+        )
+    )
     assert len(list((state / "wal").glob("*.json"))) == 3
     assert len(list((state / "outbox").glob("*.json"))) == 3
     replay_records = [
@@ -2511,6 +2565,79 @@ def test_formal_online_r_admission_accepts_exact_resume_waiting_for_replay(
     assert report.training_starts_reached is False
     assert report.actor_update_count == 0
     assert report.critic_update_count == 0
+
+
+def test_formal_admission_batches_directory_fsync_but_keeps_file_fsync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+    directory_syncs = []
+    file_syncs = []
+    monkeypatch.setattr(
+        bridge_module,
+        "_fsync_directory",
+        lambda path: directory_syncs.append(path.name),
+    )
+    monkeypatch.setattr(bridge_module.os, "fsync", lambda fd: file_syncs.append(fd))
+
+    report = _bridge(tmp_path / "formal-r").admit_policy_execution_smoke(
+        episode,
+        operator_task_outcome="success",
+    )
+
+    assert report.accepted_unique_r_transition_count == 3
+    assert len(file_syncs) == 11
+    assert directory_syncs == ["admissions", "wal", "outbox", "replay", "episodes"]
+
+
+def test_formal_admission_recovers_if_replay_directory_sync_is_interrupted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episode = _fixture(tmp_path)
+    _integrated_policy_execution_fixture(episode)
+    monkeypatch.setattr(bridge_module, "_prepare_native_episode", _admission_prepared)
+    state = tmp_path / "formal-r"
+    bridge = _bridge(state)
+    original_sync = bridge_module._fsync_directory
+    interrupted = False
+
+    def interrupt_replay_sync(path: Path) -> None:
+        nonlocal interrupted
+        if path.name == "replay" and not interrupted:
+            interrupted = True
+            raise InjectedBridgeCrash("BRIDGE_INJECTED_BEFORE_REPLAY_DIRECTORY_SYNC")
+        original_sync(path)
+
+    monkeypatch.setattr(bridge_module, "_fsync_directory", interrupt_replay_sync)
+    with pytest.raises(InjectedBridgeCrash, match="BEFORE_REPLAY_DIRECTORY_SYNC"):
+        bridge.admit_policy_execution_smoke(
+            episode,
+            operator_task_outcome="success",
+        )
+
+    assert len(list((state / "wal").glob("*.json"))) == 3
+    assert len(list((state / "outbox").glob("*.json"))) == 3
+    assert len(list((state / "replay").glob("*.json"))) == 3
+    assert not list((state / "episodes").glob("*.json"))
+
+    recovery_syncs = []
+
+    def record_recovery_sync(path: Path) -> None:
+        recovery_syncs.append(path.name)
+        original_sync(path)
+
+    monkeypatch.setattr(bridge_module, "_fsync_directory", record_recovery_sync)
+    recovered = bridge.admit_policy_execution_smoke(
+        episode,
+        operator_task_outcome="success",
+    )
+
+    assert recovered.status == "FORMAL_ONLINE_R_ADMITTED"
+    assert recovered.replay_written_count == 0
+    assert recovered.idempotent_transition_count == 3
+    assert recovery_syncs == ["admissions", "wal", "outbox", "replay", "episodes"]
 
 
 def test_formal_online_r_admission_is_uid_digest_idempotent(

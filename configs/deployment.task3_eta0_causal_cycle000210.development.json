@@ -1,0 +1,12 @@
+{
+  "schema_version": "forcesmolvla-deployment-profile-v1",
+  "artifact_status": "development_only",
+  "deployment_id": "task3-eta0-causal-cycle000210",
+  "checkpoint": "outputs/task3/ablations/legacy_eta0_full/offline_actor_critic_cycle_000210/actor",
+  "rulespec": "configs/live_action_safety.task3.development.yaml",
+  "deployment_binding": "artifacts/development/live/task3_eta0_causal_cycle000210_live_deployment_binding.v1.json",
+  "deployment_binding_sha256": "3ab6a56b613a1976bb342310b96796acde482ec063e7ce8d1991d86c3b05ef14",
+  "dataset_manifest": "datasets/task3_lerobotv3/conversion_manifest.json",
+  "raw_session": "/home/rlc123/fr3_client_ws/datasets/task3/session.json",
+  "tool_profile": "onrobot_robotiq"
+}
