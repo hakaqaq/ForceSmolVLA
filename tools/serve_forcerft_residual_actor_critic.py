@@ -962,10 +962,10 @@ class ResidualActorCriticLearner:
         return {
             "waiting_for_replay": False,
             "learner_state": "residual_actor_critic_training",
-            "learner_critic_steps": self.training_policy.twin_q_updates_per_cycle,
+            "learner_critic_steps": len(critic_losses),
             "learner_actor_steps": int(actor_metrics["applied"]),
             "learner_actor_update_attempts": 1,
-            "learner_polyak_steps": self.training_policy.twin_q_updates_per_cycle,
+            "learner_polyak_steps": len(critic_losses),
             "current_episode_sampled": False,
             "nonfinite_count": 0,
             "oom_count": 0,
@@ -976,7 +976,9 @@ class ResidualActorCriticLearner:
             "actor_update_skip_reason": actor_metrics["skip_reason"],
             "actor_grad_norm": actor_metrics["grad_norm"],
             "actor_support_available": actor_metrics["support_available"],
-            "latest_critic_td_loss": critic_losses[-1],
+            "latest_critic_td_loss": (
+                critic_losses[-1] if critic_losses else None
+            ),
             "latest_actor_loss": actor_metrics["total"],
             "latest_min_twin_q": -actor_metrics["value"],
             "target_candidate_mapping_unavailable_count": int(

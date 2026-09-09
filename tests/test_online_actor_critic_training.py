@@ -1409,9 +1409,92 @@ def test_partial_q_cycle_resumes_without_claiming_or_repeating_completed_q(
 
     second = learner(InferencePriorityCoordinator())
     assert second["residual_actor_critic_cycle"] == 1
-    assert second["learner_critic_steps"] == 2
+    assert second["learner_critic_steps"] == 1
+    assert second["learner_polyak_steps"] == 1
     assert learner.learner["runtime"]["partial_cycle_q_updates"] == 0
     assert learner.learner["runtime"]["counters"]["twin_q_optimizer_steps"] == 258
+
+
+@pytest.mark.parametrize("actor_applied", [True, False], ids=["applied", "skipped"])
+def test_partial_two_resume_completes_cycle_and_publishes_once(
+    monkeypatch, tmp_path: Path, actor_applied: bool
+) -> None:
+    learner = actor_update_test_learner()
+    runtime = learner.learner["runtime"]
+    runtime["residual_actor_critic_cycles"] = 99
+    runtime["partial_cycle_q_updates"] = 2
+    counters = runtime["counters"]
+    counters["twin_q_optimizer_steps"] = 456
+    counters["twin_q_target_update_steps"] = 456
+    counters["residual_actor_update_attempts"] = 99
+    counters["residual_actor_optimizer_steps"] = 99 if actor_applied else 0
+    counters["residual_actor_updates_skipped_no_gradient"] = (
+        0 if actor_applied else 99
+    )
+    learner.checkpoint_root = tmp_path / "training_checkpoints"
+    monkeypatch.setattr(
+        learner,
+        "_refresh_replay",
+        lambda: SimpleNamespace(critic_td_valid_rows=100),
+    )
+    monkeypatch.setattr(
+        learner,
+        "_critic_update",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("completed Q updates must not be repeated")
+        ),
+    )
+    actor_calls = []
+    monkeypatch.setattr(
+        learner,
+        "_actor_update",
+        lambda *_args: actor_calls.append(1)
+        or {
+            "total": 0.1,
+            "value": -0.2,
+            "applied": actor_applied,
+            "skip_reason": None if actor_applied else "no_effective_gradient",
+            "grad_norm": 1.0 if actor_applied else 0.0,
+            "support_available": actor_applied,
+        },
+    )
+
+    result = learner(InferencePriorityCoordinator())
+
+    assert result["residual_actor_critic_cycle"] == 100
+    assert result["learner_critic_steps"] == 0
+    assert result["learner_polyak_steps"] == 0
+    assert result["latest_critic_td_loss"] is None
+    assert result["learner_actor_update_attempts"] == 1
+    assert result["learner_actor_steps"] == int(actor_applied)
+    assert result["actor_update_applied"] is actor_applied
+    assert actor_calls == [1]
+    assert runtime["partial_cycle_q_updates"] == 0
+    assert counters["twin_q_optimizer_steps"] == 456
+    assert counters["twin_q_target_update_steps"] == 456
+    assert counters["residual_actor_update_attempts"] == 100
+    assert counters["residual_actor_optimizer_steps"] == (
+        100 if actor_applied else 0
+    )
+    assert counters["residual_actor_updates_skipped_no_gradient"] == (
+        0 if actor_applied else 100
+    )
+
+    async_runtime = learner_server.AsyncResidualActorCriticRuntime.__new__(
+        learner_server.AsyncResidualActorCriticRuntime
+    )
+    async_runtime.learner_job = learner
+    async_runtime.coordinator = InferencePriorityCoordinator()
+    async_runtime._policy = learner.training_policy
+    staged = []
+    async_runtime._stage_actor_candidate = staged.append
+
+    assert async_runtime._process_completed_cycle_events(result) == (True, False)
+    assert async_runtime._process_completed_cycle_events(result) == (False, False)
+    assert len(staged) == 1
+    assert runtime["scheduling"]["publication_event_count"] == 1
+    assert runtime["scheduling"]["last_published_cycle"] == 100
+    assert len(list(tmp_path.glob("**/cycle_000100.json"))) == 1
 
 
 def test_residual_training_cycle_is_exactly_two_critic_and_one_actor(
