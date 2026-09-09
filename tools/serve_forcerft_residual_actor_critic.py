@@ -1412,6 +1412,7 @@ class AsyncResidualActorCriticRuntime:
         learner_runtime = getattr(self.learner_job, "learner", {}).get(
             "runtime", {}
         )
+        scheduling = learner_runtime.get("scheduling", {})
         return {
             **self.engine.metadata,
             "online_residual_actor_critic": True,

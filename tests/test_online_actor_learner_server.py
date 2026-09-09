@@ -368,6 +368,16 @@ def identity() -> dict[str, str]:
     }
 
 
+def test_metadata_reads_active_policy_epoch_status_from_scheduling(
+    tmp_path: Path,
+) -> None:
+    service = runtime(tmp_path)
+    try:
+        assert service.metadata["active_policy_epoch_status"] == "known"
+    finally:
+        service.stop()
+
+
 def write_committed_admission(root: Path, admission_id: str = "001__episode-1") -> None:
     (root / "episodes").mkdir(parents=True, exist_ok=True)
     (root / "admissions").mkdir()
