@@ -328,6 +328,30 @@ def test_server_exit_reports_reason_and_log_path(tmp_path: Path) -> None:
     assert f"log={log}" in str(raised.value)
 
 
+def test_runtime_http_error_reports_server_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from io import BytesIO
+
+    error = loop.HTTPError(
+        "http://127.0.0.1:8000/runtime/prepare-episode",
+        422,
+        "Unprocessable Entity",
+        {},
+        BytesIO(b'{"detail":"CURRENT_EPISODE_ALREADY_IN_REPLAY"}'),
+    )
+
+    def fail(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(loop, "urlopen", fail)
+    with pytest.raises(
+        loop.ContinuousLoopError,
+        match="FORCERFT_ONLINE_HTTP_422:CURRENT_EPISODE_ALREADY_IN_REPLAY",
+    ):
+        loop._post_json("http://127.0.0.1:8000/runtime/prepare-episode", {})
+
+
 def test_server_log_relay_reports_exit_while_operator_input_can_be_blocked(
     tmp_path: Path, capsys,
 ) -> None:
@@ -354,8 +378,11 @@ def test_online_capture_restart_uses_next_session_index(tmp_path: Path) -> None:
     prefix.mkdir()
     (prefix / "000").mkdir()
     (prefix / "002").mkdir()
+    replay = tmp_path / "formal_replay/admissions"
+    replay.mkdir(parents=True)
+    (replay / "004__episode_000000.json").write_text("{}\n", encoding="utf-8")
 
-    assert loop._next_capture_index(prefix) == 3
+    assert loop._next_capture_index(prefix, replay.parent) == 5
 
 
 @pytest.mark.parametrize("sealed", [False, True])

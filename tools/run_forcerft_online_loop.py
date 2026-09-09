@@ -17,7 +17,7 @@ import tempfile
 import threading
 import time
 from typing import Any, Callable, Mapping
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
@@ -235,8 +235,17 @@ def _post_json(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(request, timeout=timeout) as response:
-        value = json.loads(response.read())
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            value = json.loads(response.read())
+    except HTTPError as error:
+        try:
+            detail = json.loads(error.read()).get("detail", str(error))
+        except (AttributeError, json.JSONDecodeError, UnicodeDecodeError):
+            detail = str(error)
+        raise ContinuousLoopError(
+            f"FORCERFT_ONLINE_HTTP_{error.code}:{detail}:{url}"
+        ) from error
     require(isinstance(value, dict), "FORCERFT_ONLINE_SERVER_RESPONSE_INVALID")
     return value
 
@@ -418,12 +427,20 @@ def _stop_detector_worker(
             process.wait(timeout=10)
 
 
-def _next_capture_index(capture_output_root: Path) -> int:
+def _next_capture_index(
+    capture_output_root: Path, ack_replay_root: Path | None = None,
+) -> int:
     indices = [
         int(path.name)
         for path in capture_output_root.iterdir()
         if path.is_dir() and path.name.isdigit()
     ]
+    if ack_replay_root is not None:
+        indices.extend(
+            int(path.name.split("__", 1)[0])
+            for path in (ack_replay_root / "admissions").glob("*__*.json")
+            if path.name.split("__", 1)[0].isdigit()
+        )
     return max(indices, default=-1) + 1
 
 
@@ -706,7 +723,7 @@ def run_loop(args: argparse.Namespace) -> int:
         )
         args.detector_worker_socket = detector_socket
         args.capture_output_root.mkdir(parents=True, exist_ok=True)
-        index = _next_capture_index(args.capture_output_root)
+        index = _next_capture_index(args.capture_output_root, ack_replay_root)
         while completed < args.max_episodes:
             result = _run_episode(
                 args,
