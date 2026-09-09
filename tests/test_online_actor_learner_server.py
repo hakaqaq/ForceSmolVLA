@@ -378,6 +378,23 @@ def test_metadata_reads_active_policy_epoch_status_from_scheduling(
         service.stop()
 
 
+def test_request_handler_logs_only_http_errors(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        learner_server.serve_policy.RequestHandler,
+        "log_request",
+        lambda _self, code="-", size="-": calls.append((code, size)),
+    )
+    handler = learner_server.RequestHandler.__new__(
+        learner_server.RequestHandler
+    )
+
+    handler.log_request(200)
+    handler.log_request(422)
+
+    assert calls == [(422, "-")]
+
+
 def write_committed_admission(root: Path, admission_id: str = "001__episode-1") -> None:
     (root / "episodes").mkdir(parents=True, exist_ok=True)
     (root / "admissions").mkdir()

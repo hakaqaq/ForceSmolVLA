@@ -2178,6 +2178,10 @@ class RequestHandler(serve_policy.RequestHandler):
     def runtime(self) -> AsyncResidualActorCriticRuntime:
         return self.server.engine  # type: ignore[attr-defined]
 
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+        if not isinstance(code, int) or code >= 400:
+            super().log_request(code, size)
+
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/runtime/status":
             self._write_json(200, self.runtime.status())

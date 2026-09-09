@@ -260,6 +260,95 @@ def test_command_report_uses_final_json_after_child_process_logs(
     }
 
 
+def test_server_log_relay_filters_http_and_rate_limits_training(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log = tmp_path / "server.log"
+    log.write_text(
+        "[http] GET /runtime/status 200\n"
+        "[residual-training] cycle=1\n"
+        "[residual-training] cycle=2\n"
+        "[residual-activation] revision=next\n"
+        "[training-checkpoint] periodic cycle=1000\n"
+        "Traceback: hidden in file log\n",
+        encoding="utf-8",
+    )
+    times = iter((10.0, 11.0))
+    monkeypatch.setattr(loop.time, "monotonic", lambda: next(times))
+    process = type("Process", (), {"poll": lambda _self: 1})()
+
+    loop._relay_server_log(
+        log, process, loop.threading.Event(), loop.threading.Event()
+    )
+
+    output = capsys.readouterr().out
+    assert output.splitlines() == [
+        "[residual-training] cycle=1",
+        "[residual-activation] revision=next",
+        "[training-checkpoint] periodic cycle=1000",
+    ]
+
+
+def test_server_log_relay_pauses_only_training_summaries(
+    tmp_path: Path, capsys,
+) -> None:
+    log = tmp_path / "server.log"
+    log.write_text(
+        "[residual-training] cycle=3\n"
+        "[residual-activation] revision=next\n",
+        encoding="utf-8",
+    )
+    pause = loop.threading.Event()
+    pause.set()
+    process = type("Process", (), {"poll": lambda _self: 1})()
+
+    loop._relay_server_log(log, process, pause, loop.threading.Event())
+
+    assert capsys.readouterr().out == "[residual-activation] revision=next\n"
+
+
+def test_server_exit_reports_reason_and_log_path(tmp_path: Path) -> None:
+    log = tmp_path / "server.log"
+    log.write_text(
+        "Traceback (most recent call last):\nRuntimeError: learner failed\n",
+        encoding="utf-8",
+    )
+    process = type("Process", (), {"poll": lambda _self: 7})()
+
+    with pytest.raises(loop.ContinuousLoopError) as raised:
+        loop._wait_json(
+            "http://unused",
+            process=process,
+            timeout=1.0,
+            log_path=log,
+        )
+
+    assert "exit_code=7" in str(raised.value)
+    assert "RuntimeError: learner failed" in str(raised.value)
+    assert f"log={log}" in str(raised.value)
+
+
+def test_server_log_relay_reports_exit_while_operator_input_can_be_blocked(
+    tmp_path: Path, capsys,
+) -> None:
+    log = tmp_path / "server.log"
+    log.write_text("RuntimeError: learner failed\n", encoding="utf-8")
+    pause = loop.threading.Event()
+    pause.set()
+    reported = loop.threading.Event()
+    process = type("Process", (), {"poll": lambda _self: 9})()
+
+    loop._relay_server_log(
+        log, process, pause, loop.threading.Event(), reported
+    )
+
+    assert reported.is_set()
+    error = capsys.readouterr().err
+    assert "exit_code=9" in error
+    assert "RuntimeError: learner failed" in error
+    assert f"log={log}" in error
+
+
 def test_online_capture_restart_uses_next_session_index(tmp_path: Path) -> None:
     prefix = tmp_path / "task2_forcerft_online"
     prefix.mkdir()
@@ -697,7 +786,7 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
         / "online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000100"
     )
     (resume / "actor").mkdir(parents=True)
-    commands: list[list[str]] = []
+    launches: list[tuple[list[str], dict]] = []
 
     class Process:
         pass
@@ -710,7 +799,7 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     monkeypatch.setattr(
         loop.subprocess,
         "Popen",
-        lambda command, **_kwargs: commands.append(command) or Process(),
+        lambda command, **kwargs: launches.append((command, kwargs)) or Process(),
     )
     monkeypatch.setattr(
         loop, "_start_detector_worker",
@@ -746,11 +835,15 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
 
     assert loop.run_loop(args) == 0
     assert args.deployed_actor_checkpoint == (resume / "actor").resolve()
-    command = commands[0]
+    command, popen_kwargs = launches[0]
     assert command[command.index("--learner-resume-checkpoint") + 1] == str(resume)
     assert "--allow-development-policy-execution-smoke" in command
     assert "--deployment-profile" not in command
     assert "--deployment-binding" not in command
+    assert popen_kwargs["stdin"] is loop.subprocess.DEVNULL
+    assert popen_kwargs["stderr"] is loop.subprocess.STDOUT
+    assert Path(popen_kwargs["stdout"].name) == args.server_log_path
+    assert popen_kwargs["stdout"].closed is True
 
 
 def test_loop_reports_legacy_schedule_migration_instead_of_bootstrapping(
@@ -813,7 +906,13 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
         "current_episode_sampled": False,
         "server_persistent": True,
     })
-    monkeypatch.setattr("builtins.input", lambda _prompt: "q")
+    pause_summaries = loop.threading.Event()
+
+    def operator_input(_prompt):
+        assert pause_summaries.is_set()
+        return "q"
+
+    monkeypatch.setattr("builtins.input", operator_input)
     monkeypatch.setattr(loop, "_admit", lambda *_args: calls.append("admit"))
 
     args = type("Args", (), {
@@ -827,7 +926,9 @@ def test_q_stops_before_admission_and_server_gets_graceful_signal(
     assert loop._run_episode(
         args, 1, server=object(),
         model_revision="model", policy_epoch=0,
+        pause_summaries=pause_summaries,
     ) is False
+    assert pause_summaries.is_set() is False
     assert calls == []
     assert posts[-1][0].endswith("/runtime/operator-q-checkpoint")
     assert posts[-1][1]["session_id"] == "capture_001"

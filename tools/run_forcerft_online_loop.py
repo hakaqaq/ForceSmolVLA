@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any, Callable, Mapping
 from urllib.error import URLError
@@ -39,6 +41,7 @@ from forcesmolvla.rft.online.replay_training import (  # noqa: E402
 MODEL_PYTHON = Path("/home/rlc123/anaconda3/envs/forcesmolvla/bin/python")
 ROBOT_PYTHON = Path("/home/rlc123/fr3_client_ws/.venv/bin/python")
 EPISODE_ID = "episode_000000"
+SERVER_SUMMARY_INTERVAL_SECONDS = 5.0
 
 
 class ContinuousLoopError(RuntimeError):
@@ -216,12 +219,14 @@ def _wait_json(
     *,
     process: subprocess.Popen[Any],
     timeout: float,
+    log_path: Path | None = None,
     ready: Callable[[Mapping[str, Any]], bool] = lambda _value: True,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
     while time.monotonic() < deadline:
-        require(process.poll() is None, "FORCERFT_ONLINE_SERVER_EXITED")
+        if process.poll() is not None:
+            raise ContinuousLoopError(_server_exit_message(process, log_path))
         try:
             with urlopen(url, timeout=2.0) as response:
                 value = json.loads(response.read())
@@ -230,7 +235,69 @@ def _wait_json(
         except (OSError, URLError, json.JSONDecodeError) as error:
             last_error = error
         time.sleep(0.25)
-    raise ContinuousLoopError(f"FORCERFT_ONLINE_SERVER_TIMEOUT:{last_error}")
+    raise ContinuousLoopError(
+        f"FORCERFT_ONLINE_SERVER_TIMEOUT:{last_error}:"
+        f"log={log_path or 'unavailable'}"
+    )
+
+
+def _server_exit_message(
+    process: subprocess.Popen[Any], log_path: Path | None
+) -> str:
+    tail: deque[str] = deque(maxlen=20)
+    if log_path is not None:
+        try:
+            with log_path.open(encoding="utf-8", errors="replace") as stream:
+                tail.extend(line.strip() for line in stream if line.strip())
+        except OSError:
+            pass
+    reason = tail[-1][:500] if tail else "no server log output"
+    return (
+        f"FORCERFT_ONLINE_SERVER_EXITED:exit_code={process.poll()}:"
+        f"reason={reason}:log={log_path or 'unavailable'}"
+    )
+
+
+def _relay_server_log(
+    log_path: Path,
+    process: subprocess.Popen[Any],
+    pause_summaries: threading.Event,
+    stop: threading.Event,
+    failure_reported: threading.Event | None = None,
+) -> None:
+    last_summary_at: float | None = None
+    poll = getattr(process, "poll", lambda: None)
+    with log_path.open(encoding="utf-8", errors="replace") as stream:
+        while True:
+            line = stream.readline()
+            if not line:
+                if poll() is not None:
+                    if not stop.is_set() and failure_reported is not None:
+                        print(
+                            f"[online] STOP:{_server_exit_message(process, log_path)}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        failure_reported.set()
+                    return
+                if stop.wait(0.1):
+                    return
+                continue
+            if line.startswith(("[residual-activation]", "[training-checkpoint]")):
+                print(line, end="", flush=True)
+                continue
+            if not line.startswith(("[residual-training]", "[critic-warmup]")):
+                continue
+            now = time.monotonic()
+            if (
+                not pause_summaries.is_set()
+                and (
+                    last_summary_at is None
+                    or now - last_summary_at >= SERVER_SUMMARY_INTERVAL_SECONDS
+                )
+            ):
+                print(line, end="", flush=True)
+                last_summary_at = now
 
 
 def _stop_server(
@@ -240,6 +307,7 @@ def _stop_server(
 
     if process.poll() is not None:
         return
+    checkpoint = None
     if policy_port is not None:
         try:
             report = _post_json(
@@ -251,6 +319,7 @@ def _stop_server(
                 report.get("quiesced") is True,
                 "FORCERFT_ONLINE_SERVER_QUIESCE_FAILED",
             )
+            checkpoint = report.get("quiesced_checkpoint_path")
         except (OSError, URLError, ContinuousLoopError, ValueError):
             # SIGINT remains the recovery path if the local HTTP server is gone.
             pass
@@ -260,6 +329,8 @@ def _stop_server(
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=10)
+    if checkpoint is not None:
+        print(f"[training-checkpoint] graceful-exit={checkpoint}")
 
 
 def _start_detector_worker(
@@ -270,25 +341,32 @@ def _start_detector_worker(
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(ROOT / "src")
     environment.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-    process = subprocess.Popen([
-        shutil.which("conda") or "conda", "run", "--no-capture-output",
-        "-n", "conrft_reward", "python",
-        str(ROOT / "tools/run_forcerft_production_bridge.py"),
-        "--task-id", args.task_id, "--output-root", str(args.output_root),
-        "--detector-worker-socket", str(socket_path), "--serve-detector-worker",
-    ], cwd=ROOT, env=environment)
+    with args.detector_log_path.open("w", encoding="utf-8") as log:
+        process = subprocess.Popen([
+            shutil.which("conda") or "conda", "run", "--no-capture-output",
+            "-n", "conrft_reward", "python",
+            str(ROOT / "tools/run_forcerft_production_bridge.py"),
+            "--task-id", args.task_id, "--output-root", str(args.output_root),
+            "--detector-worker-socket", str(socket_path), "--serve-detector-worker",
+        ], cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
+            stdout=log, stderr=subprocess.STDOUT)
     deadline = time.monotonic() + args.server_start_timeout
     while not socket_path.exists():
         if process.poll() is not None:
             directory.cleanup()
-            raise ContinuousLoopError("FORCERFT_REWARD_DETECTOR_WORKER_EXITED")
+            raise ContinuousLoopError(
+                "FORCERFT_REWARD_DETECTOR_WORKER_EXITED:"
+                f"log={args.detector_log_path}"
+            )
         if time.monotonic() >= deadline:
             process.terminate()
             process.wait(timeout=10)
             directory.cleanup()
-            raise ContinuousLoopError("FORCERFT_REWARD_DETECTOR_WORKER_TIMEOUT")
+            raise ContinuousLoopError(
+                "FORCERFT_REWARD_DETECTOR_WORKER_TIMEOUT:"
+                f"log={args.detector_log_path}"
+            )
         time.sleep(0.1)
-    print(f"[reward] persistent detector ready socket={socket_path}")
     return process, directory, socket_path
 
 
@@ -356,6 +434,7 @@ def _run_episode(
     server: subprocess.Popen[Any],
     model_revision: str | None = None,
     policy_epoch: int | None = None,
+    pause_summaries: threading.Event | None = None,
 ) -> bool | None:
     root = (args.capture_output_root / f"{index:03d}").resolve()
     session_id = f"{args.capture_output_root.name}_{index:03d}"
@@ -419,6 +498,7 @@ def _run_episode(
             f"http://127.0.0.1:{args.policy_port}/runtime/status",
             process=server,
             timeout=10.0,
+            log_path=getattr(args, "server_log_path", None),
         )
         require(
             status.get("learner_worker_state") != "failed"
@@ -436,6 +516,7 @@ def _run_episode(
             f"http://127.0.0.1:{args.policy_port}/runtime/status",
             process=server,
             timeout=10.0,
+            log_path=getattr(args, "server_log_path", None),
         )
         require(
             status.get("runtime_session_id") == session_id
@@ -455,7 +536,13 @@ def _run_episode(
     except (OSError, KeyboardInterrupt):
         _discard_unsealed_capture(root)
         raise
-    outcome = input("operator_task_outcome [success/failure/q]: ").strip().lower()
+    if pause_summaries is not None:
+        pause_summaries.set()
+    try:
+        outcome = input("operator_task_outcome [success/failure/q]: ").strip().lower()
+    finally:
+        if pause_summaries is not None:
+            pause_summaries.clear()
     require(outcome in {"success", "failure", "q"}, "FORCERFT_ONLINE_OPERATOR_OUTCOME_INVALID")
     if outcome == "q":
         checkpoint = _post_json(
@@ -531,7 +618,39 @@ def run_loop(args: argparse.Namespace) -> int:
     ]
     if args.safety_config is not None:
         server_command.extend(["--safety-config", str(args.safety_config)])
-    server = subprocess.Popen(server_command, cwd=ROOT, env=os.environ.copy())
+    log_root = (
+        args.output_root / ONLINE_ADAPTATION_DIRECTORY_NAME / "runtime_logs"
+    )
+    log_root.mkdir(parents=True, exist_ok=True)
+    run_id = str(time.time_ns())
+    args.server_log_path = log_root / f"server_{run_id}.log"
+    args.detector_log_path = log_root / f"detector_{run_id}.log"
+    server_environment = os.environ.copy()
+    server_environment["PYTHONUNBUFFERED"] = "1"
+    with args.server_log_path.open("w", encoding="utf-8") as server_log:
+        server = subprocess.Popen(
+            server_command,
+            cwd=ROOT,
+            env=server_environment,
+            stdin=subprocess.DEVNULL,
+            stdout=server_log,
+            stderr=subprocess.STDOUT,
+        )
+    pause_summaries = threading.Event()
+    relay_stop = threading.Event()
+    args.server_failure_reported = threading.Event()
+    relay = threading.Thread(
+        target=_relay_server_log,
+        args=(
+            args.server_log_path,
+            server,
+            pause_summaries,
+            relay_stop,
+            args.server_failure_reported,
+        ),
+        daemon=True,
+    )
+    relay.start()
     detector_process = detector_directory = detector_socket = None
     completed = 0
     try:
@@ -539,6 +658,7 @@ def run_loop(args: argparse.Namespace) -> int:
             f"http://127.0.0.1:{args.policy_port}/metadata",
             process=server,
             timeout=args.server_start_timeout,
+            log_path=args.server_log_path,
             ready=lambda value: value.get("server_persistent") is True,
         )
         require(
@@ -570,17 +690,26 @@ def run_loop(args: argparse.Namespace) -> int:
                 args,
                 index,
                 server=server,
+                pause_summaries=pause_summaries,
             )
             index += 1
             if result is False:
                 break
             if result is True:
                 completed += 1
+    except Exception as error:
+        if getattr(server, "poll", lambda: None)() is not None:
+            raise ContinuousLoopError(
+                _server_exit_message(server, args.server_log_path)
+            ) from error
+        raise
     finally:
         if detector_process is not None and detector_socket is not None:
             _stop_detector_worker(detector_process, detector_socket)
         if detector_directory is not None:
             detector_directory.cleanup()
+        relay_stop.set()
+        relay.join(timeout=2.0)
         _stop_server(server, policy_port=args.policy_port)
     return completed
 
@@ -658,7 +787,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         completed = run_loop(args)
     except (ContinuousLoopError, OSError) as error:
-        print(f"[online] STOP:{error}", file=sys.stderr)
+        failure_reported = getattr(args, "server_failure_reported", None)
+        if failure_reported is not None and failure_reported.is_set():
+            return 2
+        log_path = getattr(args, "server_log_path", None)
+        suffix = (
+            ""
+            if log_path is None or f"log={log_path}" in str(error)
+            else f":log={log_path}"
+        )
+        print(f"[online] STOP:{error}{suffix}", file=sys.stderr)
         return 2
     print(f"[online] complete episodes={completed}")
     return 0
