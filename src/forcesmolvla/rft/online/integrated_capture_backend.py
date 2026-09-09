@@ -40,6 +40,9 @@ POLICY_EXECUTION_BACKEND_SCHEMA = (
     "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
 )
 ONLINE_SEMANTICS_VERSION = "forcesmolvla_ack_residual_filter_leash"
+CAPTURE_DISCARDED_EXIT_CODE = 20
+CAPTURE_EXITED_EXIT_CODE = 21
+CAPTURE_TIMED_OUT_EXIT_CODE = 22
 RETRYABLE_OBSERVATION_ERRORS = (
     "STATE_POSE_AGE_EXCEEDED",
     "CAMERA_AGE_EXCEEDED:",
@@ -49,6 +52,14 @@ EXTERNAL_SCRIPTS = Path("/home/rlc123/fr3_client_ws/scripts")
 DEFAULT_DEPLOYMENT_PROFILE = Path(
     "/home/rlc123/ForceSmolVLA/configs/deployment.active.development.json"
 )
+
+
+class IntegratedCaptureAttemptEnded(IntegratedCaptureError):
+    """A native attempt ended cleanly without producing an episode seal."""
+
+    def __init__(self, result: Mapping[str, Any]) -> None:
+        self.result = dict(result)
+        super().__init__(str(self.result["status"]))
 
 
 def _local_candidate_acceptance_context(
@@ -316,6 +327,7 @@ def build_native_recorder_command(arguments: Mapping[str, Any]) -> list[str]:
         tool_profile,
         "--initial-policy-epoch",
         str(initial_policy_epoch),
+        "--single-attempt",
     ]
 
 
@@ -1217,6 +1229,55 @@ def _json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _completed_native_attempt(
+    *,
+    root: Path,
+    final_episode: Path,
+    process: subprocess.Popen[Any],
+    timeout: float,
+    contract: IntegratedCaptureContract,
+    failure_prefix: str,
+) -> dict[str, Any]:
+    try:
+        return_code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        raise IntegratedCaptureError(
+            f"{failure_prefix}:RECORDER_FINISH_TIMEOUT"
+        ) from error
+    if return_code == 0 and final_episode.is_dir():
+        native_result = _json(final_episode / "episode_result.json")
+        if native_result.get("saved") is True:
+            return native_result
+
+    attempt_path = root / "capture_attempt_result.json"
+    attempt = _json(attempt_path) if attempt_path.is_file() else {}
+    outcome = attempt.get("outcome")
+    statuses = {
+        "discard": ("CAPTURE_DISCARDED", True),
+        "exit": ("CAPTURE_EXITED", False),
+        "timeout": ("CAPTURE_TIMED_OUT", True),
+    }
+    if return_code == 0 and attempt.get("saved") is False and outcome in statuses:
+        status, recoverable = statuses[str(outcome)]
+        raise IntegratedCaptureAttemptEnded(
+            {
+                "status": status,
+                "attempt_outcome": outcome,
+                "recoverable": recoverable,
+                "session_id": contract.identity.session_id,
+                "episode_id": contract.identity.episode_id,
+                "reason": attempt.get("detail") or f"operator {outcome}",
+                "native_recorder_exit_code": return_code,
+                "formal_training_replay_written": False,
+                "admission_required": False,
+            }
+        )
+    reason = attempt.get("detail") or attempt.get("fatal_reason") or "unknown"
+    raise IntegratedCaptureError(
+        f"{failure_prefix}:{return_code}:outcome={outcome}:reason={reason}"
+    )
+
+
 def _wait_for_path(path: Path, process: subprocess.Popen[Any], deadline: float) -> None:
     while not path.is_file():
         return_code = process.poll()
@@ -1791,8 +1852,7 @@ class IntegratedCaptureBackend:
                 if observation.shadow_error:
                     raise IntegratedCaptureError(observation.shadow_error)
                 if observation.episode_ending():
-                    time.sleep(0.005)
-                    continue
+                    break
                 if not work_episode.is_dir():
                     if native_episode_missing_since is None:
                         native_episode_missing_since = time.monotonic()
@@ -1890,14 +1950,14 @@ class IntegratedCaptureBackend:
                 record_human_acks()
                 next_inference = time.monotonic() + inference_period
 
-            return_code = process.wait(timeout=max(30.0, start_timeout))
-            if return_code != 0 or not final_episode.is_dir():
-                raise IntegratedCaptureError(
-                    f"SHADOW_NATIVE_EPISODE_NOT_SAVED:{return_code}"
-                )
-            native_result = _json(final_episode / "episode_result.json")
-            if native_result.get("saved") is not True:
-                raise IntegratedCaptureError("SHADOW_NATIVE_EPISODE_NOT_SAVED")
+            native_result = _completed_native_attempt(
+                root=root,
+                final_episode=final_episode,
+                process=process,
+                timeout=max(30.0, start_timeout),
+                contract=contract,
+                failure_prefix="SHADOW_NATIVE_EPISODE_NOT_SAVED",
+            )
             time.sleep(0.05)
             record_human_acks()
             if not observations:
@@ -1936,6 +1996,21 @@ class IntegratedCaptureBackend:
             artifact_final = root / "integrated_capture/episode_000000"
             artifact_work.rename(artifact_final)
             return seal
+        except IntegratedCaptureAttemptEnded:
+            if async_runtime_started and async_runtime_identity is not None:
+                status = client._request(
+                    "POST", "/runtime/episode-abort", async_runtime_identity
+                )
+                if (
+                    status.get("episode_active") is not False
+                    or status.get("admission_resolution_required") is not False
+                    or status.get("current_episode_sampling") is not False
+                ):
+                    raise IntegratedCaptureError(
+                        "ASYNC_POLICY_LEARNER_ABORT_INVALID"
+                    )
+                async_runtime_started = False
+            raise
         finally:
             if async_runtime_started and async_runtime_identity is not None:
                 try:
@@ -2181,8 +2256,7 @@ class IntegratedCaptureBackend:
                     raise IntegratedCaptureError(observation.shadow_error)
                 consume_interventions()
                 if observation.episode_ending():
-                    time.sleep(0.005)
-                    continue
+                    break
                 if not work_episode.is_dir():
                     if native_episode_missing_since is None:
                         native_episode_missing_since = time.monotonic()
@@ -2752,14 +2826,14 @@ class IntegratedCaptureBackend:
         finally:
             worker.close()
 
-        return_code = process.wait(timeout=max(30.0, start_timeout))
-        if return_code != 0 or not final_episode.is_dir():
-            raise IntegratedCaptureError(
-                f"POLICY_EXECUTE_NATIVE_EPISODE_NOT_SAVED:{return_code}"
-            )
-        native_result = _json(final_episode / "episode_result.json")
-        if native_result.get("saved") is not True:
-            raise IntegratedCaptureError("POLICY_EXECUTE_NATIVE_EPISODE_NOT_SAVED")
+        native_result = _completed_native_attempt(
+            root=root,
+            final_episode=final_episode,
+            process=process,
+            timeout=max(30.0, start_timeout),
+            contract=contract,
+            failure_prefix="POLICY_EXECUTE_NATIVE_EPISODE_NOT_SAVED",
+        )
         if not transitions:
             raise IntegratedCaptureError("POLICY_EXECUTE_ACCEPTED_ACTION_MISSING")
         reconciliation = _camera_reconciliation(final_episode, observations)
@@ -2881,8 +2955,12 @@ class IntegratedCaptureBackend:
 
 
 __all__ = [
+    "CAPTURE_DISCARDED_EXIT_CODE",
+    "CAPTURE_EXITED_EXIT_CODE",
+    "CAPTURE_TIMED_OUT_EXIT_CODE",
     "ForbiddenPolicyPublisher",
     "IntegratedCaptureBackend",
+    "IntegratedCaptureAttemptEnded",
     "POLICY_EXECUTION_BACKEND_SCHEMA",
     "SHADOW_BACKEND_SCHEMA",
     "CaptureArtifactStore",

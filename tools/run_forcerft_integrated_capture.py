@@ -25,6 +25,12 @@ from forcesmolvla.rft.online.integrated_capture import (  # noqa: E402
     run_integrated_capture,
     validate_development_policy_package,
 )
+from forcesmolvla.rft.online.integrated_capture_backend import (  # noqa: E402
+    CAPTURE_DISCARDED_EXIT_CODE,
+    CAPTURE_EXITED_EXIT_CODE,
+    CAPTURE_TIMED_OUT_EXIT_CODE,
+    IntegratedCaptureAttemptEnded,
+)
 
 
 _EPISODE_LOCAL_TRANSIENT_PREFIXES = (
@@ -124,6 +130,17 @@ def _backend(specification: str | None) -> Any:
 
 
 def _print_payload(payload: dict[str, Any], *, compact: bool) -> None:
+    if compact and payload.get("status") in {
+        "CAPTURE_DISCARDED",
+        "CAPTURE_EXITED",
+        "CAPTURE_TIMED_OUT",
+    }:
+        print(
+            f"[capture] status={payload['status']} "
+            f"session={payload.get('session_id')} "
+            f"reason={payload.get('reason')} replay_written=0"
+        )
+        return
     if not compact or payload.get("status") != "CAPTURE_SEALED":
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
@@ -301,6 +318,13 @@ def main(argv: list[str] | None = None) -> int:
                 "recorder_arguments": recorder_arguments,
                 "robot_or_ros_started": False,
             }
+    except IntegratedCaptureAttemptEnded as ended:
+        _print_payload(ended.result, compact=args.compact_output)
+        return {
+            "CAPTURE_DISCARDED": CAPTURE_DISCARDED_EXIT_CODE,
+            "CAPTURE_EXITED": CAPTURE_EXITED_EXIT_CODE,
+            "CAPTURE_TIMED_OUT": CAPTURE_TIMED_OUT_EXIT_CODE,
+        }[str(ended.result["status"])]
     except (OSError, TypeError, ValueError, IntegratedCaptureError) as error:
         print(json.dumps({
             "status": "BLOCKED",

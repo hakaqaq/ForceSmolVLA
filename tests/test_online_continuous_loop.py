@@ -435,7 +435,7 @@ def test_failed_capture_preserves_recorder_rejected_raw(
     assert rejected.read_text(encoding="utf-8") == "{}\n"
 
 
-def test_recorder_integrity_rejection_skips_episode_and_keeps_learner_alive(
+def test_recorder_integrity_rejection_is_not_treated_as_operator_discard(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
     capture_output_root = tmp_path / "capture"
@@ -458,15 +458,6 @@ def test_recorder_integrity_rejection_skips_episode_and_keeps_learner_alive(
         raise loop.ContinuousLoopError("capture failed")
 
     monkeypatch.setattr(loop, "_run", reject_capture)
-    monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
-        "runtime_session_id": "capture_001",
-        "runtime_episode_id": loop.EPISODE_ID,
-        "episode_active": False,
-        "learner_worker_state": "running",
-        "learner_state": "ack_replay_collection",
-        "current_episode_sampled": False,
-        "server_persistent": True,
-    })
     args = type("Args", (), {
         "capture_output_root": capture_output_root, "policy_port": 8000,
         "robot_python": Path("python"), "task": "ring",
@@ -475,13 +466,117 @@ def test_recorder_integrity_rejection_skips_episode_and_keeps_learner_alive(
         "max_force_n": 25.0, "max_torque_nm": 2.0,
     })()
 
+    with pytest.raises(loop.ContinuousLoopError, match="capture failed"):
+        loop._run_episode(
+            args, 1, server=object(), model_revision="model", policy_epoch=0,
+        )
+    assert (rejected / "episode_result.json").is_file()
+    assert "capture rejected" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("return_code", "error"),
+    [
+        (loop.CAPTURE_DISCARDED_EXIT_CODE, loop.CaptureDiscardedError),
+        (loop.CAPTURE_TIMED_OUT_EXIT_CODE, loop.CaptureTimedOutError),
+        (loop.CAPTURE_EXITED_EXIT_CODE, loop.CaptureOperatorExit),
+    ],
+)
+def test_integrated_capture_exit_codes_are_unambiguous(
+    monkeypatch: pytest.MonkeyPatch, return_code: int, error: type[Exception],
+) -> None:
+    command = ["python", "/tmp/run_forcerft_integrated_capture.py"]
+    monkeypatch.setattr(
+        loop.subprocess,
+        "run",
+        lambda *_args, **_kwargs: loop.subprocess.CompletedProcess(
+            command, return_code
+        ),
+    )
+
+    with pytest.raises(error):
+        loop._run(command)
+
+
+def test_discard_restarts_with_fresh_session_inference_and_policy_ack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capture_root = tmp_path / "capture"
+    capture_root.mkdir()
+    prepared: list[str] = []
+    started: list[str] = []
+    inferred: list[str] = []
+    policy_acks: list[str] = []
+    admitted: list[Path] = []
+    operator_prompts: list[str] = []
+
+    def post(url, payload):
+        assert url.endswith("/runtime/prepare-episode")
+        prepared.append(payload["session_id"])
+        return {
+            "runtime_session_id": payload["session_id"],
+            "runtime_episode_id": loop.EPISODE_ID,
+            "server_persistent": True,
+        }
+
+    def run(command, **_kwargs):
+        session = command[command.index("--session-id") + 1]
+        started.append(session)
+        if len(started) == 1:
+            (capture_root / "000").mkdir()
+            raise loop.CaptureDiscardedError("discard")
+        inferred.append(session)
+        policy_acks.append(session)
+        return loop.subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(loop, "_post_json", post)
+    monkeypatch.setattr(loop, "_run", run)
+    monkeypatch.setattr(loop, "_wait_json", lambda *_args, **_kwargs: {
+        "runtime_session_id": prepared[-1],
+        "runtime_episode_id": loop.EPISODE_ID,
+        "episode_active": False,
+        "learner_worker_state": "running",
+        "learner_state": "residual_actor_critic_training",
+        "current_episode_sampled": False,
+        "server_persistent": True,
+    })
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: operator_prompts.append(prompt) or "success",
+    )
+    monkeypatch.setattr(
+        loop,
+        "_finish_episode",
+        lambda _args, *, episode, outcome, actor_checkpoint: (
+            admitted.append(episode)
+            or {"admission_id": "001__episode-1"}
+        ),
+    )
+    monkeypatch.setattr(
+        loop,
+        "_notify_admission_committed",
+        lambda *_args, **_kwargs: {},
+    )
+    args = type("Args", (), {
+        "capture_output_root": capture_root, "policy_port": 8000,
+        "robot_python": Path("python"), "task": "ring",
+        "episode_time": 10.0, "tool_profile": "tool",
+        "policy_replan_steps": 8, "policy_queue_low_watermark": 7,
+        "max_force_n": 25.0, "max_torque_nm": 2.0,
+    })()
+
+    assert loop._run_episode(
+        args, 0, server=object(), model_revision="model", policy_epoch=0,
+    ) is None
     assert loop._run_episode(
         args, 1, server=object(), model_revision="model", policy_epoch=0,
-    ) is None
-    assert (rejected / "episode_result.json").is_file()
-    output = capsys.readouterr().out
-    assert "capture rejected" in output
-    assert "learner continues" in output
+    ) is True
+    assert prepared == ["capture_000", "capture_001"]
+    assert started == prepared
+    assert inferred == policy_acks == ["capture_001"]
+    assert len(operator_prompts) == 1
+    assert admitted == [capture_root / "001/episodes/episode_000000"]
+    assert not (capture_root / "000").exists()
 
 
 def test_pose_ack_timeout_skips_episode_and_keeps_learner_alive(

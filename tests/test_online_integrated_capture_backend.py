@@ -95,6 +95,79 @@ def test_backend_owns_exactly_one_native_recorder_control_chain(tmp_path: Path) 
     assert "--execute" not in command
     assert command[command.index("--episodes") + 1] == "1"
     assert command[command.index("--initial-policy-epoch") + 1] == "2"
+    assert "--single-attempt" in command
+
+
+@pytest.mark.parametrize(
+    ("outcome", "status", "recoverable"),
+    [
+        ("discard", "CAPTURE_DISCARDED", True),
+        ("timeout", "CAPTURE_TIMED_OUT", True),
+        ("exit", "CAPTURE_EXITED", False),
+    ],
+)
+def test_native_attempt_end_is_explicit(
+    tmp_path: Path, outcome: str, status: str, recoverable: bool,
+) -> None:
+    root = tmp_path / "native"
+    root.mkdir()
+    (root / "capture_attempt_result.json").write_text(
+        json.dumps({
+            "outcome": outcome,
+            "saved": False,
+            "detail": f"episode {outcome}",
+        }),
+        encoding="utf-8",
+    )
+    process = SimpleNamespace(wait=lambda timeout: 0)
+
+    with pytest.raises(capture_backend.IntegratedCaptureAttemptEnded) as raised:
+        capture_backend._completed_native_attempt(
+            root=root,
+            final_episode=root / "episodes/episode_000000",
+            process=process,
+            timeout=10.0,
+            contract=_contract(),
+            failure_prefix="SHADOW_NATIVE_EPISODE_NOT_SAVED",
+        )
+
+    assert raised.value.result == {
+        "status": status,
+        "attempt_outcome": outcome,
+        "recoverable": recoverable,
+        "session_id": "shadow-session-1",
+        "episode_id": "episode_000000",
+        "reason": f"episode {outcome}",
+        "native_recorder_exit_code": 0,
+        "formal_training_replay_written": False,
+        "admission_required": False,
+    }
+
+
+def test_unsaved_save_failure_is_not_operator_discard(tmp_path: Path) -> None:
+    root = tmp_path / "native"
+    root.mkdir()
+    (root / "capture_attempt_result.json").write_text(
+        json.dumps({
+            "outcome": "save",
+            "saved": False,
+            "detail": "save rejected by integrity checks",
+        }),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        IntegratedCaptureError,
+        match="outcome=save:reason=save rejected by integrity checks",
+    ):
+        capture_backend._completed_native_attempt(
+            root=root,
+            final_episode=root / "episodes/episode_000000",
+            process=SimpleNamespace(wait=lambda timeout: 1),
+            timeout=10.0,
+            contract=_contract(),
+            failure_prefix="SHADOW_NATIVE_EPISODE_NOT_SAVED",
+        )
 
 
 def test_policy_publisher_is_a_fail_closed_non_dds_sentinel() -> None:

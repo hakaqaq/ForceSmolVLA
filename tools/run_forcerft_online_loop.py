@@ -26,6 +26,14 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from forcesmolvla.rft.online.integrated_capture_backend import (  # noqa: E402
+    CAPTURE_DISCARDED_EXIT_CODE,
+    CAPTURE_EXITED_EXIT_CODE,
+    CAPTURE_TIMED_OUT_EXIT_CODE,
+)
+from forcesmolvla.rft.online.replay_training import (  # noqa: E402
+    load_common_actor_critic_config,
+)
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
     ONLINE_ADAPTATION_DIRECTORY_NAME,
     load_checkpoint_training_config,
@@ -33,9 +41,6 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E40
 )
 from forcesmolvla.rft.online.schedule_migration import (  # noqa: E402
     schedule_migration_required,
-)
-from forcesmolvla.rft.online.replay_training import (  # noqa: E402
-    load_common_actor_critic_config,
 )
 
 MODEL_PYTHON = Path("/home/rlc123/anaconda3/envs/forcesmolvla/bin/python")
@@ -49,6 +54,18 @@ class ContinuousLoopError(RuntimeError):
 
 
 class EpisodeLocalTransientError(ContinuousLoopError):
+    pass
+
+
+class CaptureDiscardedError(EpisodeLocalTransientError):
+    pass
+
+
+class CaptureTimedOutError(EpisodeLocalTransientError):
+    pass
+
+
+class CaptureOperatorExit(ContinuousLoopError):
     pass
 
 
@@ -73,6 +90,16 @@ def _run(
             print(result.stdout, end="")
         if result.stderr:
             print(result.stderr, end="", file=sys.stderr)
+    integrated_capture = (
+        len(command) > 1
+        and Path(command[1]).name == "run_forcerft_integrated_capture.py"
+    )
+    if integrated_capture and result.returncode == CAPTURE_DISCARDED_EXIT_CODE:
+        raise CaptureDiscardedError("FORCERFT_ONLINE_CAPTURE_DISCARDED")
+    if integrated_capture and result.returncode == CAPTURE_TIMED_OUT_EXIT_CODE:
+        raise CaptureTimedOutError("FORCERFT_ONLINE_CAPTURE_TIMED_OUT")
+    if integrated_capture and result.returncode == CAPTURE_EXITED_EXIT_CODE:
+        raise CaptureOperatorExit("FORCERFT_ONLINE_CAPTURE_EXITED")
     if result.returncode == os.EX_TEMPFAIL:
         raise EpisodeLocalTransientError(
             f"FORCERFT_ONLINE_EPISODE_LOCAL_TRANSIENT:{command[1]}"
@@ -410,23 +437,6 @@ def _discard_unsealed_capture(root: Path) -> None:
         shutil.rmtree(root)
 
 
-def _recorder_rejection_reason(root: Path) -> str | None:
-    for path in sorted((root / "rejected_episodes").glob("*/episode_result.json")):
-        try:
-            result = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        reason = result.get("fatal_reason") if isinstance(result, dict) else None
-        if (
-            isinstance(result, dict)
-            and result.get("saved") is False
-            and isinstance(reason, str)
-            and reason
-        ):
-            return reason
-    return None
-
-
 def _run_episode(
     args: argparse.Namespace,
     index: int,
@@ -506,12 +516,8 @@ def _run_episode(
             and status.get("server_persistent") is True,
             "FORCERFT_ONLINE_LEARNER_INVALID",
         )
-    except ContinuousLoopError as error:
+    except (EpisodeLocalTransientError, CaptureOperatorExit) as error:
         _discard_unsealed_capture(root)
-        rejection_reason = _recorder_rejection_reason(root)
-        episode_local_transient = isinstance(error, EpisodeLocalTransientError)
-        if rejection_reason is None and not episode_local_transient:
-            raise
         status = _wait_json(
             f"http://127.0.0.1:{args.policy_port}/runtime/status",
             process=server,
@@ -527,12 +533,28 @@ def _run_episode(
             and status.get("server_persistent") is True,
             "FORCERFT_ONLINE_REJECTED_CAPTURE_RUNTIME_INVALID",
         )
+        if isinstance(error, CaptureOperatorExit):
+            print(
+                f"[episode] capture exited session={session_id}; "
+                "replay_written=0"
+            )
+            return False
+        reason = (
+            "operator discard"
+            if isinstance(error, CaptureDiscardedError)
+            else "episode timeout"
+            if isinstance(error, CaptureTimedOutError)
+            else "episode-local transient capture failure"
+        )
         print(
             f"[episode] capture rejected session={session_id}; "
-            f"reason={rejection_reason or 'episode-local transient capture failure'}; "
+            f"reason={reason}; "
             "replay_written=0; learner continues"
         )
         return None
+    except ContinuousLoopError:
+        _discard_unsealed_capture(root)
+        raise
     except (OSError, KeyboardInterrupt):
         _discard_unsealed_capture(root)
         raise
