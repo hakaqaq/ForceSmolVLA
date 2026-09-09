@@ -35,12 +35,14 @@ class SelectedCheckpoint:
 class ResidualActorCriticSchedule:
     """Fixed scheduling contract for the persistent online Learner."""
 
-    minimum_ack_transitions: int = 100
+    minimum_ack_transitions: int = 1000
+    minimum_admitted_episodes: int = 3
     ack_critic_warmup_steps: int = 256
     twin_q_batch_size: int = 128
     residual_policy_value_batch_size: int = 64
     human_residual_imitation_batch_size: int = 32
     scheduling_mode: str = "continuous_async"
+    new_td_rows_per_cycle: int = 8
     twin_q_updates_per_cycle: int = 2
     residual_actor_updates_per_cycle: int = 1
     residual_candidate_interval_cycles: int = 100
@@ -52,11 +54,13 @@ class ResidualActorCriticSchedule:
     def __post_init__(self) -> None:
         require(
             self.minimum_ack_transitions >= 0
+            and self.minimum_admitted_episodes >= 1
             and self.ack_critic_warmup_steps >= 1
             and self.twin_q_batch_size >= 1
             and self.residual_policy_value_batch_size >= 1
             and self.human_residual_imitation_batch_size >= 1
             and self.scheduling_mode == "continuous_async"
+            and self.new_td_rows_per_cycle >= 1
             and self.twin_q_updates_per_cycle == 2
             and self.residual_actor_updates_per_cycle == 1
             and self.residual_candidate_interval_cycles == 100
@@ -67,8 +71,13 @@ class ResidualActorCriticSchedule:
             "FORCERFT_RESIDUAL_ACTOR_CRITIC_SCHEDULE_INVALID",
         )
 
-    def training_ready(self, online_transition_count: int) -> bool:
-        return online_transition_count >= self.minimum_ack_transitions
+    def training_ready(
+        self, online_transition_count: int, admitted_episode_count: int = 0
+    ) -> bool:
+        return (
+            online_transition_count >= self.minimum_ack_transitions
+            and admitted_episode_count >= self.minimum_admitted_episodes
+        )
 
     def candidate_due(
         self, completed_cycle: int, *, last_publish_attempt_cycle: int = 0
@@ -262,11 +271,21 @@ def prepare_learner(
         int(config["batching"]["command_macro_slots"]) == 3,
         "FORCERFT_COMMAND_MACRO_SLOTS_INVALID",
     )
+    actor_state = torch.load(
+        resume_checkpoint / "models/residual_actor.pt",
+        map_location="cpu",
+        weights_only=True,
+    )
+    require(
+        isinstance(actor_state, Mapping) and "residual_cap6" in actor_state,
+        "FORCERFT_RESIDUAL_ACTOR_CAP6_MISSING",
+    )
     residual_actor, residual_actor_target = make_residual_actor_pair(
         hidden_dim=int(config["wrist_wrench_residual_actor"]["hidden_dim"]),
         max_normalized_residual=float(
             config["wrist_wrench_residual_actor"]["max_normalized_residual"]
         ),
+        residual_cap6=actor_state["residual_cap6"],
     )
     q1, q2, q1_target, q2_target = build_twin_q(
         hidden_dim=int(config["ack_residual_twin_q"]["hidden_dim"]),
@@ -303,6 +322,13 @@ def prepare_learner(
         expected_kind=None,
     )
     require(config == loaded_config, "FORCERFT_CHECKPOINT_CONFIG_DRIFT")
+    require(
+        torch.equal(
+            residual_actor.residual_cap6,
+            residual_actor_target.residual_cap6,
+        ),
+        "FORCERFT_RESIDUAL_ACTOR_TARGET_CAP_MISMATCH",
+    )
     counters = runtime["counters"]
     require(
         runtime.get("critic_input_spec") == CRITIC_INPUT_SPEC,
@@ -349,11 +375,13 @@ def prepare_learner(
     online = config["residual_actor_critic_training"]
     policy = ResidualActorCriticSchedule(
         minimum_ack_transitions=int(warmup["minimum_ack_transitions"]),
+        minimum_admitted_episodes=int(warmup["minimum_admitted_episodes"]),
         ack_critic_warmup_steps=int(warmup["optimizer_steps"]),
         twin_q_batch_size=int(batching["twin_q_batch_size"]),
         residual_policy_value_batch_size=int(batching["residual_policy_value_batch_size"]),
         human_residual_imitation_batch_size=int(batching["human_residual_imitation_batch_size"]),
         scheduling_mode=str(online["scheduling_mode"]),
+        new_td_rows_per_cycle=int(online["new_td_rows_per_cycle"]),
         twin_q_updates_per_cycle=int(online["twin_q_updates_per_cycle"]),
         residual_actor_updates_per_cycle=int(online["residual_actor_updates_per_cycle"]),
         residual_candidate_interval_cycles=int(

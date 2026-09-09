@@ -8,11 +8,13 @@ batching:
   command_macro_slots: 3
 
 ack_critic_warmup:
-  minimum_ack_transitions: 100
+  minimum_ack_transitions: 1000
+  minimum_admitted_episodes: 3
   optimizer_steps: 256
 
 residual_actor_critic_training:
   scheduling_mode: continuous_async
+  new_td_rows_per_cycle: 8
   twin_q_updates_per_cycle: 2
   residual_actor_updates_per_cycle: 1
   residual_candidate_interval_cycles: 100
@@ -24,7 +26,7 @@ residual_actor_critic_training:
 optimizer:
   residual_actor:
     type: Adam
-    lr: 1.0e-4
+    lr: 3.0e-5
     grad_clip_norm: 1.0
 
   twin_q:
@@ -38,13 +40,15 @@ objective:
   # Discount per real dispatch-to-successor decision transition. K=3 remains
   # the accepted-command ZOH encoding, not a fixed 100 ms transition clock.
   command_macro_discount: 0.99
-  value_objective_weight: 1.0
-  residual_magnitude_penalty_weight: 0.01
+  value_objective_weight: 0.1
+  residual_magnitude_penalty_weight: 0.1
   human_residual_imitation_weight: 1.0
 
 wrist_wrench_residual_actor:
   hidden_dim: 256
-  max_normalized_residual: 0.5
+  max_normalized_residual: 0.1
+  max_translation_residual_per_axis_m: 0.001
+  max_rpy_residual_per_axis_rad: 0.008726646259971648
 
 ack_residual_twin_q:
   hidden_dim: 256

@@ -1495,6 +1495,13 @@ class OnlineResidualReplay:
             )
             result.append(
                 {
+                    "transition_uid": str(
+                        row["identity"].get(
+                            "transition_uid",
+                            f"{row['identity']['episode_id']}:"
+                            f"{context['decision_monotonic_ns']}:{len(result)}",
+                        )
+                    ),
                     "state7": state,
                     "wrench6": wrench,
                     "wrench_delta6": wrench_delta,
@@ -1544,6 +1551,16 @@ class OnlineResidualReplay:
                         else np.zeros(6, dtype=np.float32)
                     ),
                     "human_residual_valid": human_valid,
+                    "pre_takeover_base_age_s": (
+                        float(row["pre_takeover_base_age_s"])
+                        if human_valid
+                        and row.get("pre_takeover_base_age_s") is not None
+                        else None
+                    ),
+                    "control_duration_s": float(
+                        macro.behavior.macro_duration_ns
+                    )
+                    / 1_000_000_000.0,
                     "action_source": source,
                     "session_id": str(row["identity"].get("session_id", "")),
                     "episode_id": str(row["identity"]["episode_id"]),

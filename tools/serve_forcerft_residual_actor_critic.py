@@ -14,6 +14,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+import traceback
 from typing import Any, Mapping
 
 import torch
@@ -46,7 +47,13 @@ from forcesmolvla.rft.critic import (  # noqa: E402
     RESIDUAL_ACTION_WIDTH,
     polyak_update,
 )
-from forcesmolvla.rft.residual_actor import WristWrenchResidualActor  # noqa: E402
+from forcesmolvla.rft.residual_actor import (  # noqa: E402
+    WristWrenchResidualActor,
+    resolve_residual_cap6,
+)
+from forcesmolvla.rft.online.sample_credit import (  # noqa: E402
+    TdCycleCreditLedger,
+)
 from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
     CANDIDATE_CHECKPOINT_KIND,
     TRAINING_CHECKPOINT_KIND,
@@ -104,10 +111,21 @@ def _load_residual_checkpoint(policy: Any, checkpoint: Path) -> None:
             == ONLINE_SEMANTICS_VERSION,
             "FORCERFT_RESIDUAL_CANDIDATE_SEMANTICS_MISMATCH",
         )
-    policy.load_state_dict(
-        torch.load(path, map_location=next(policy.parameters()).device, weights_only=True),
-        strict=True,
+    state = torch.load(
+        path, map_location=next(policy.parameters()).device, weights_only=True
     )
+    expected_cap6 = getattr(policy, "residual_cap6", None)
+    if isinstance(expected_cap6, torch.Tensor):
+        expected_cap6 = expected_cap6.detach().clone()
+        require(
+            isinstance(state, Mapping)
+            and isinstance(state.get("residual_cap6"), torch.Tensor)
+            and torch.equal(
+                state["residual_cap6"].to(expected_cap6.device), expected_cap6
+            ),
+            "FORCERFT_RESIDUAL_ACTOR_CAP_MISMATCH",
+        )
+    policy.load_state_dict(state, strict=True)
     policy.eval()
 
 
@@ -223,6 +241,12 @@ class ResidualActorCriticLearner:
         self.replay_root = replay_root.resolve()
         self.current_session_id = current_session_id
         self.task = task
+        path = (
+            warmup.DATASET / "normalizer_manifest.json"
+            if normalizer_path is None
+            else Path(normalizer_path).resolve()
+        )
+        self.normalizer = load_normalizer_manifest(path)
         self.learner = prepare_learner(
             device,
             resume_checkpoint=self.resume_checkpoint,
@@ -230,12 +254,21 @@ class ResidualActorCriticLearner:
         # Exact resume is checkpoint-authoritative.  The repository YAML is
         # validated by build_runtime(), never used to override this schedule.
         self.training_policy = self.learner["training_policy"]
-        path = (
-            warmup.DATASET / "normalizer_manifest.json"
-            if normalizer_path is None
-            else Path(normalizer_path).resolve()
+        resolved_cap6 = resolve_residual_cap6(
+            self.normalizer,
+            self.learner["config"]["wrist_wrench_residual_actor"],
+        ).to(self.learner["residual_actor"].residual_cap6.device)
+        require(
+            torch.equal(
+                self.learner["residual_actor"].residual_cap6,
+                resolved_cap6,
+            )
+            and torch.equal(
+                self.learner["residual_actor_target"].residual_cap6,
+                resolved_cap6,
+            ),
+            "FORCERFT_RESIDUAL_ACTOR_NORMALIZER_CAP_MISMATCH",
         )
-        self.normalizer = load_normalizer_manifest(path)
         self.replay: warmup.OnlineResidualReplay | None = None
         self.unique_r_count = 0
         self.r_macro_count = 0
@@ -252,6 +285,7 @@ class ResidualActorCriticLearner:
         self.latest_actor_q_mapping_unavailable_count = 0
         self.latest_human_residual_projected_count = 0
         self.latest_human_residual_valid_count = 0
+        self.human_supervision_diagnostics: dict[str, Any] = {}
         self.sampled_session_ids: set[str] = set()
         self.sampled_episode_ids: set[str] = set()
         self._state_lock = threading.RLock()
@@ -261,6 +295,14 @@ class ResidualActorCriticLearner:
         self._admission_progress: dict[str, dict[str, Any]] = {}
         self._expected_admission_id: str | None = None
         checkpoint_replay = self.learner["runtime"].get("replay", {})
+        self.credit_ledger = TdCycleCreditLedger.from_state_dict(
+            checkpoint_replay["training_credit_ledger"]
+        )
+        require(
+            self.credit_ledger.new_td_rows_per_cycle
+            == self.training_policy.new_td_rows_per_cycle,
+            "FORCERFT_TD_CREDIT_RATE_MISMATCH",
+        )
         self._checkpoint_loaded_episode_keys = set(
             checkpoint_replay.get("loaded_episode_keys", ())
         )
@@ -294,10 +336,6 @@ class ResidualActorCriticLearner:
         scheduling.setdefault("active_policy_epoch", 0)
         scheduling.setdefault("active_policy_epoch_status", "legacy_unknown")
         scheduling.setdefault("pending_publication", None)
-        scheduling.setdefault(
-            "retired_admission_cycle_budgets",
-            dict(checkpoint_replay.get("admission_cycle_budgets", {})),
-        )
         scheduling["candidate_export_generation"] = (
             f"{time.time_ns()}-{os.getpid()}"
         )
@@ -307,10 +345,60 @@ class ResidualActorCriticLearner:
             <= self.training_policy.twin_q_updates_per_cycle,
             "FORCERFT_CONTINUOUS_SCHEDULING_STATE_INVALID",
         )
+        credit = self.credit_ledger.snapshot(completed_cycles=completed)
+        require(
+            credit.in_flight_cycle in {None, completed + 1}
+            and (
+                int(runtime["partial_cycle_q_updates"]) == 0
+                or credit.in_flight_cycle == completed + 1
+            ),
+            "FORCERFT_TD_CREDIT_PARTIAL_STATE_INVALID",
+        )
 
     @property
     def residual_actor(self) -> torch.nn.Module:
         return self.learner["residual_actor"]
+
+    def training_contract(self) -> dict[str, Any]:
+        config = self.learner.get("config", {})
+        if (
+            "wrist_wrench_residual_actor" not in config
+            or not hasattr(self.residual_actor, "residual_cap6")
+            or not hasattr(self, "normalizer")
+        ):
+            return {}
+        actor = config["wrist_wrench_residual_actor"]
+        objective = config["objective"]
+        return {
+            "normalizer_delta_action_std6": [
+                float(value) for value in self.normalizer.delta_action7.std[:6]
+            ],
+            "residual_cap6": [
+                float(value)
+                for value in self.residual_actor.residual_cap6.detach().cpu()
+            ],
+            "max_normalized_residual": float(
+                actor["max_normalized_residual"]
+            ),
+            "max_translation_residual_per_axis_m": float(
+                actor["max_translation_residual_per_axis_m"]
+            ),
+            "max_rpy_residual_per_axis_rad": float(
+                actor["max_rpy_residual_per_axis_rad"]
+            ),
+            "residual_actor_lr": float(
+                config["optimizer"]["residual_actor"]["lr"]
+            ),
+            "value_objective_weight": float(
+                objective["value_objective_weight"]
+            ),
+            "residual_magnitude_penalty_weight": float(
+                objective["residual_magnitude_penalty_weight"]
+            ),
+            "human_residual_imitation_weight": float(
+                objective["human_residual_imitation_weight"]
+            ),
+        }
 
     def set_current_session(self, session_id: str) -> None:
         with self._state_lock:
@@ -339,7 +427,7 @@ class ResidualActorCriticLearner:
                 "sampled_session_ids": sorted(self.sampled_session_ids),
             }
 
-    def counter_snapshot(self) -> dict[str, int]:
+    def counter_snapshot(self) -> dict[str, Any]:
         with self._state_lock:
             runtime = self.learner["runtime"]
             counters = runtime["counters"]
@@ -375,7 +463,115 @@ class ResidualActorCriticLearner:
                 "periodic_checkpoint_events": int(
                     scheduling.get("periodic_checkpoint_event_count", 0)
                 ),
+                **self._credit_metrics_locked(),
+                "actual_q_sample_draws": int(
+                    counters.get("critic_sample_draws", 0)
+                ),
+                "policy_sample_draws": int(
+                    counters.get("policy_sample_draws", 0)
+                ),
+                "human_sample_draws": int(
+                    counters.get("human_sample_draws", 0)
+                ),
+                **dict(self.human_supervision_diagnostics),
             }
+
+    def _credit_metrics_locked(self) -> dict[str, Any]:
+        completed = int(
+            self.learner["runtime"].get("residual_actor_critic_cycles", 0)
+        )
+        ledger = getattr(self, "credit_ledger", None)
+        if ledger is None:
+            return {
+                "unique_td_rows": 0,
+                "distinct_td_episodes": 0,
+                "allowed_cycles": 0,
+                "completed_cycles": completed,
+                "in_flight_cycle": None,
+                "available_cycles": 0,
+            }
+        snapshot = ledger.snapshot(completed_cycles=completed)
+        return {
+            "unique_td_rows": snapshot.unique_td_rows,
+            "distinct_td_episodes": snapshot.distinct_td_episodes,
+            "allowed_cycles": snapshot.allowed_cycles,
+            "completed_cycles": snapshot.completed_cycles,
+            "in_flight_cycle": snapshot.in_flight_cycle,
+            "available_cycles": snapshot.available_cycles,
+        }
+
+    def _sync_credit_ledger_locked(self) -> None:
+        self.learner["runtime"]["replay"][
+            "training_credit_ledger"
+        ] = self.credit_ledger.state_dict()
+
+    def _refresh_human_supervision_diagnostics_locked(self) -> None:
+        rows = [
+            row
+            for row in self.replay.rows
+            if row["human_residual_valid"]
+        ]
+        if not rows:
+            self.human_supervision_diagnostics = {
+                "human_projection_row_fraction": 0.0,
+                "human_projection_axis_fraction": 0.0,
+                "human_control_duration_s": 0.0,
+                "pre_takeover_base_age_s_p50_p95_max": [0.0, 0.0, 0.0],
+            }
+            return
+        raw = torch.as_tensor(
+            [row["human_residual_target6"] for row in rows],
+            dtype=torch.float32,
+        )
+        cap6 = self.residual_actor.residual_cap6.detach().cpu()
+        projected = torch.maximum(torch.minimum(raw, cap6), -cap6)
+        changed = raw != projected
+        sigma6 = torch.as_tensor(
+            self.normalizer.delta_action7.std[:6], dtype=torch.float32
+        )
+
+        def per_axis_quantiles(value: torch.Tensor) -> dict[str, list[float]]:
+            absolute = value.abs()
+            return {
+                "p50": torch.quantile(absolute, 0.50, dim=0).tolist(),
+                "p95": torch.quantile(absolute, 0.95, dim=0).tolist(),
+                "max": absolute.max(dim=0).values.tolist(),
+            }
+
+        ages = torch.tensor(
+            [
+                float(row["pre_takeover_base_age_s"])
+                for row in rows
+                if row.get("pre_takeover_base_age_s") is not None
+            ],
+            dtype=torch.float32,
+        )
+        age_summary = (
+            [0.0, 0.0, 0.0]
+            if ages.numel() == 0
+            else [
+                float(torch.quantile(ages, 0.50)),
+                float(torch.quantile(ages, 0.95)),
+                float(ages.max()),
+            ]
+        )
+        physical = raw * sigma6
+        self.human_supervision_diagnostics = {
+            "human_projection_row_fraction": float(changed.any(dim=1).float().mean()),
+            "human_projection_axis_fraction": float(changed.float().mean()),
+            "human_raw_normalized_abs_per_axis": per_axis_quantiles(raw),
+            "human_projected_normalized_abs_per_axis": per_axis_quantiles(projected),
+            "human_raw_translation_mm_abs_per_axis": per_axis_quantiles(
+                physical[:, :3] * 1000.0
+            ),
+            "human_raw_rpy_deg_abs_per_axis": per_axis_quantiles(
+                physical[:, 3:] * (180.0 / 3.141592653589793)
+            ),
+            "human_control_duration_s": float(
+                sum(float(row["control_duration_s"]) for row in rows)
+            ),
+            "pre_takeover_base_age_s_p50_p95_max": age_summary,
+        }
 
     def _record_sampled_batch(
         self, batch: warmup.ResidualTransitionBatch | None
@@ -408,14 +604,15 @@ class ResidualActorCriticLearner:
             self._expected_admission_id = admission_id
 
     def outstanding_budget_status(self) -> dict[str, Any]:
-        completed = int(
-            self.learner["runtime"]["residual_actor_critic_cycles"]
-        )
-        return {
-            "scheduling_mode": "continuous_async",
-            "completed_cycle_count": completed,
-            "recovery_budget_drain_required": False,
-        }
+        with self._state_lock:
+            return {
+                "scheduling_mode": "continuous_async",
+                "completed_cycle_count": int(
+                    self.learner["runtime"]["residual_actor_critic_cycles"]
+                ),
+                "recovery_budget_drain_required": False,
+                **self._credit_metrics_locked(),
+            }
 
     def recovery_preflight(self) -> dict[str, Any]:
         """Validate checkpoint replay identity without rebuilding retired debt."""
@@ -443,35 +640,38 @@ class ResidualActorCriticLearner:
         return self.outstanding_budget_status()
 
     def _latest_budget_metrics(self) -> dict[str, Any]:
-        admission_id = self._expected_admission_id
-        if admission_id is None and self._admission_progress:
-            admission_id = next(reversed(self._admission_progress))
-        status = (
-            None
-            if admission_id is None
-            else self._admission_progress.get(admission_id)
-        )
-        return {
-            "latest_observed_admission_id": (
-                None if status is None else admission_id
-            ),
-            "latest_admitted_episode_key": (
-                None if status is None else status["episode_key"]
-            ),
-            "admitted_rows_for_latest_episode": (
-                0 if status is None else status["admitted_rows_for_latest_episode"]
-            ),
-            "recorded_rows_for_latest_episode": (
-                0 if status is None else status["recorded_transition_rows"]
-            ),
-            "cycle_count_when_admission_observed": (
-                0 if status is None else status["cycle_count_when_observed"]
-            ),
-            "replay_refresh_ms": self.latest_replay_refresh_ms,
-            "latest_critic_update_ms": self.latest_critic_update_ms,
-            "latest_actor_update_ms": self.latest_actor_update_ms,
-            "latest_cycle_ms": self.latest_cycle_ms,
-        }
+        with self._state_lock:
+            admission_id = self._expected_admission_id
+            if admission_id is None and self._admission_progress:
+                admission_id = next(reversed(self._admission_progress))
+            status = (
+                None
+                if admission_id is None
+                else self._admission_progress.get(admission_id)
+            )
+            return {
+                "latest_observed_admission_id": (
+                    None if status is None else admission_id
+                ),
+                "latest_admitted_episode_key": (
+                    None if status is None else status["episode_key"]
+                ),
+                "admitted_rows_for_latest_episode": (
+                    0 if status is None else status["admitted_rows_for_latest_episode"]
+                ),
+                "recorded_rows_for_latest_episode": (
+                    0 if status is None else status["recorded_transition_rows"]
+                ),
+                "cycle_count_when_admission_observed": (
+                    0 if status is None else status["cycle_count_when_observed"]
+                ),
+                "replay_refresh_ms": self.latest_replay_refresh_ms,
+                "latest_critic_update_ms": self.latest_critic_update_ms,
+                "latest_actor_update_ms": self.latest_actor_update_ms,
+                "latest_cycle_ms": self.latest_cycle_ms,
+                **self._credit_metrics_locked(),
+                **self.human_supervision_diagnostics,
+            }
 
     def _refresh_replay(self) -> warmup.OnlineResidualReplay:
         started = time.perf_counter()
@@ -513,6 +713,16 @@ class ResidualActorCriticLearner:
                 admitted_rows = self.replay.critic_td_rows_for_episode(
                     episode_id
                 )
+                td_uids = {
+                    str(row["transition_uid"])
+                    for row in self.replay.rows
+                    if row["episode_id"] == episode_id
+                    and row["td_mapping_valid"]
+                }
+                require(
+                    len(td_uids) == admitted_rows,
+                    "FORCERFT_TD_CREDIT_MATERIALIZATION_MISMATCH",
+                )
                 require(
                     recorded_rows > 0,
                     "FORCERFT_INCREMENTAL_REPLAY_NO_RECORDED_ROWS",
@@ -528,6 +738,12 @@ class ResidualActorCriticLearner:
                         ]
                     ),
                 }
+                self.credit_ledger.register_admission(
+                    admission_id=admission_id,
+                    episode_id=episode_id,
+                    td_uids=td_uids,
+                )
+                self._sync_credit_ledger_locked()
                 self.unique_r_count += len(policy_rows) + len(human_rows)
                 self.r_macro_count += len(macros)
         if added_keys:
@@ -556,6 +772,10 @@ class ResidualActorCriticLearner:
                     for admission_id, progress in self._admission_progress.items()
                 },
                 replay_generation=len(self._loaded_episode_keys),
+            )
+            self._refresh_human_supervision_diagnostics_locked()
+            runtime_replay["human_supervision_diagnostics"] = dict(
+                self.human_supervision_diagnostics
             )
         return self.replay
 
@@ -617,6 +837,10 @@ class ResidualActorCriticLearner:
                 if candidate.td_valid_count:
                     loss_result = candidate
                     self._record_sampled_batch(batch)
+                    with self._state_lock:
+                        counters["critic_sample_draws"] = int(
+                            counters.get("critic_sample_draws", 0)
+                        ) + len(batch.session_ids)
                     break
             if loss_result is None:
                 self.latest_target_candidate_unavailable_count = unavailable_count
@@ -688,6 +912,13 @@ class ResidualActorCriticLearner:
         )
         self._record_sampled_batch(policy_batch)
         self._record_sampled_batch(human_batch)
+        with self._state_lock:
+            counters["policy_sample_draws"] = int(
+                counters.get("policy_sample_draws", 0)
+            ) + (0 if policy_batch is None else len(policy_batch.session_ids))
+            counters["human_sample_draws"] = int(
+                counters.get("human_sample_draws", 0)
+            ) + (0 if human_batch is None else len(human_batch.session_ids))
         critic_parameters = (
             *learner["q1"].parameters(),
             *learner["q2"].parameters(),
@@ -759,6 +990,10 @@ class ResidualActorCriticLearner:
         self.latest_actor_update_ms = (
             time.perf_counter() - started
         ) * 1000.0
+
+        def optional_float(value: torch.Tensor | None) -> float | None:
+            return None if value is None else float(value.detach().cpu())
+
         return {
             "total": float(losses.total.detach()),
             "value": float(losses.value.detach()),
@@ -781,27 +1016,39 @@ class ResidualActorCriticLearner:
             "human_residual_valid_count": int(
                 losses.human_residual_valid_count
             ),
+            "human_residual_projected_axis_count": int(
+                losses.human_residual_projected_axis_count
+            ),
+            "candidate_q1_mean": optional_float(losses.candidate_q1_mean),
+            "candidate_q2_mean": optional_float(losses.candidate_q2_mean),
+            "zero_q1_mean": optional_float(losses.zero_q1_mean),
+            "zero_q2_mean": optional_float(losses.zero_q2_mean),
+            "behavior_q1_mean": optional_float(losses.behavior_q1_mean),
+            "behavior_q2_mean": optional_float(losses.behavior_q2_mean),
         }
 
     def _actor_counter_metrics(self) -> dict[str, int]:
-        counters = self.learner["runtime"]["counters"]
-        applied = int(counters["residual_actor_optimizer_steps"])
-        attempts = int(counters.get("residual_actor_update_attempts", applied))
-        skipped = int(
-            counters.get(
-                "residual_actor_updates_skipped_no_gradient",
-                attempts - applied,
+        with self._state_lock:
+            counters = self.learner["runtime"]["counters"]
+            applied = int(counters["residual_actor_optimizer_steps"])
+            attempts = int(
+                counters.get("residual_actor_update_attempts", applied)
             )
-        )
-        require(
-            attempts == applied + skipped,
-            "FORCERFT_RESIDUAL_ACTOR_UPDATE_COUNTER_MISMATCH",
-        )
-        return {
-            "residual_actor_optimizer_steps": applied,
-            "residual_actor_update_attempts": attempts,
-            "residual_actor_updates_skipped_no_gradient": skipped,
-        }
+            skipped = int(
+                counters.get(
+                    "residual_actor_updates_skipped_no_gradient",
+                    attempts - applied,
+                )
+            )
+            require(
+                attempts == applied + skipped,
+                "FORCERFT_RESIDUAL_ACTOR_UPDATE_COUNTER_MISMATCH",
+            )
+            return {
+                "residual_actor_optimizer_steps": applied,
+                "residual_actor_update_attempts": attempts,
+                "residual_actor_updates_skipped_no_gradient": skipped,
+            }
 
     def __call__(
         self, coordinator: InferencePriorityCoordinator
@@ -814,10 +1061,16 @@ class ResidualActorCriticLearner:
             getattr(replay, "recorded_transition_rows", count)
         )
         runtime["replay"]["critic_td_valid_rows"] = count
-        if count < self.training_policy.minimum_ack_transitions:
+        with self._state_lock:
+            credit = self._credit_metrics_locked()
+        if not self.training_policy.training_ready(
+            int(credit["unique_td_rows"]),
+            int(credit["distinct_td_episodes"]),
+        ):
             runtime["learner_state"] = "ack_replay_collection"
             return {
                 "waiting_for_replay": True,
+                "waiting_for_startup_data": True,
                 "learner_state": "ack_replay_collection",
                 "learner_critic_steps": 0,
                 "learner_actor_steps": 0,
@@ -826,6 +1079,7 @@ class ResidualActorCriticLearner:
                 "nonfinite_count": 0,
                 "oom_count": 0,
                 **self._actor_counter_metrics(),
+                **credit,
                 **self._latest_budget_metrics(),
             }
         if runtime["learner_state"] in {"ack_replay_collection", "ack_critic_warmup"}:
@@ -917,6 +1171,29 @@ class ResidualActorCriticLearner:
             "FORCERFT_ONLINE_PHASE_INVALID",
         )
         cycle = int(runtime["residual_actor_critic_cycles"])
+        with self._state_lock:
+            if not self.credit_ledger.reserve_cycle(
+                completed_cycles=cycle
+            ):
+                self._sync_credit_ledger_locked()
+                return {
+                    "waiting_for_replay": True,
+                    "waiting_for_credit": True,
+                    "learner_state": "residual_actor_critic_training",
+                    "learner_critic_steps": 0,
+                    "learner_actor_steps": 0,
+                    "learner_polyak_steps": 0,
+                    "partial_cycle_q_updates": int(
+                        runtime["partial_cycle_q_updates"]
+                    ),
+                    "current_episode_sampled": False,
+                    "nonfinite_count": 0,
+                    "oom_count": 0,
+                    **self._actor_counter_metrics(),
+                    **self._credit_metrics_locked(),
+                    **self._latest_budget_metrics(),
+                }
+            self._sync_credit_ledger_locked()
         cycle_started = time.perf_counter()
         critic_losses = []
         partial_q_updates = int(runtime.get("partial_cycle_q_updates", 0))
@@ -958,6 +1235,8 @@ class ResidualActorCriticLearner:
             runtime["residual_actor_critic_cycles"] = cycle + 1
             runtime["partial_cycle_q_updates"] = 0
             learner["residual_actor_critic_cycles"] = cycle + 1
+            self.credit_ledger.complete_cycle(completed_cycle=cycle + 1)
+            self._sync_credit_ledger_locked()
         self.latest_cycle_ms = (time.perf_counter() - cycle_started) * 1000.0
         return {
             "waiting_for_replay": False,
@@ -980,7 +1259,36 @@ class ResidualActorCriticLearner:
                 critic_losses[-1] if critic_losses else None
             ),
             "latest_actor_loss": actor_metrics["total"],
+            "actor_value_loss_raw": actor_metrics["value"],
+            "actor_value_loss_weighted": actor_metrics["value"]
+            * float(
+                learner.get("config", {})
+                .get("objective", {})
+                .get("value_objective_weight", 1.0)
+            ),
+            "actor_residual_l2_loss_raw": actor_metrics.get("residual", 0.0),
+            "actor_residual_l2_loss_weighted": actor_metrics.get(
+                "residual", 0.0
+            )
+            * float(
+                learner.get("config", {})
+                .get("objective", {})
+                .get("residual_magnitude_penalty_weight", 1.0)
+            ),
+            "actor_human_bc_loss_raw": actor_metrics.get("human", 0.0),
+            "actor_human_bc_loss_weighted": actor_metrics.get("human", 0.0)
+            * float(
+                learner.get("config", {})
+                .get("objective", {})
+                .get("human_residual_imitation_weight", 1.0)
+            ),
             "latest_min_twin_q": -actor_metrics["value"],
+            "candidate_q1_mean": actor_metrics.get("candidate_q1_mean"),
+            "candidate_q2_mean": actor_metrics.get("candidate_q2_mean"),
+            "zero_q1_mean": actor_metrics.get("zero_q1_mean"),
+            "zero_q2_mean": actor_metrics.get("zero_q2_mean"),
+            "behavior_q1_mean": actor_metrics.get("behavior_q1_mean"),
+            "behavior_q2_mean": actor_metrics.get("behavior_q2_mean"),
             "target_candidate_mapping_unavailable_count": int(
                 getattr(self, "latest_target_candidate_unavailable_count", 0)
             ),
@@ -993,6 +1301,11 @@ class ResidualActorCriticLearner:
             "human_residual_projection_denominator": int(
                 actor_metrics.get("human_residual_valid_count", 0)
             ),
+            "human_residual_projected_axis_count": int(
+                actor_metrics.get("human_residual_projected_axis_count", 0)
+            ),
+            "human_residual_projection_axis_denominator": 6
+            * int(actor_metrics.get("human_residual_valid_count", 0)),
             "nonzero_behavior_residual_rows": int(
                 getattr(self, "nonzero_behavior_residual_rows", 0)
             ),
@@ -1005,6 +1318,7 @@ class ResidualActorCriticLearner:
                 float(getattr(self, "latest_residual_actor_output_norm", 0.0)),
             ),
             "partial_cycle_q_updates": 0,
+            **self._credit_metrics_locked(),
             **self._latest_budget_metrics(),
         }
 
@@ -1045,6 +1359,42 @@ class ResidualActorCriticLearner:
                         "residual_actor"
                     ].state_dict().items()
                 }
+                credit = self._credit_metrics_locked()
+                runtime_replay = runtime.get("replay", {})
+                replay_provenance = {
+                    "loaded_admission_ids": sorted(
+                        getattr(self, "_loaded_episode_keys", set())
+                    ),
+                    "per_episode_critic_row_counts": dict(
+                        runtime_replay.get("per_episode_critic_row_counts", {})
+                    ),
+                    "sampled_episode_ids": sorted(
+                        getattr(self, "sampled_episode_ids", set())
+                    ),
+                    "actual_q_sample_draws": int(
+                        runtime["counters"].get("critic_sample_draws", 0)
+                    ),
+                    "policy_sample_draws": int(
+                        runtime["counters"].get("policy_sample_draws", 0)
+                    ),
+                    "human_sample_draws": int(
+                        runtime["counters"].get("human_sample_draws", 0)
+                    ),
+                    "human_supervision_diagnostics": dict(
+                        getattr(self, "human_supervision_diagnostics", {})
+                    ),
+                    **credit,
+                }
+        require(
+            all(torch.isfinite(value).all() for value in state.values()),
+            "FORCERFT_RESIDUAL_CANDIDATE_NONFINITE",
+        )
+        policy = getattr(self, "training_policy", ResidualActorCriticSchedule())
+        activation_eligible = policy.training_ready(
+            int(credit["unique_td_rows"]),
+            int(credit["distinct_td_episodes"]),
+        )
+        probe = self._candidate_probe(state)
         actor_sha256 = _residual_actor_state_sha256(state)
         candidate_root = (
             self.checkpoint_root.parent
@@ -1110,6 +1460,10 @@ class ResidualActorCriticLearner:
             "residual_actor_optimizer_steps": int(residual_actor_optimizer_steps),
             "actor_content_sha256": actor_sha256,
             "candidate_export_generation": generation,
+            "training_data_provenance": replay_provenance,
+            "training_contract": self.training_contract(),
+            "activation_eligible": activation_eligible,
+            "proposal_probe": probe,
         }
         event_root = candidate_root / "publications" / generation
         event_root.mkdir(parents=True, exist_ok=True)
@@ -1128,6 +1482,98 @@ class ResidualActorCriticLearner:
             ) + 1
             scheduling["pending_publication"] = dict(event)
         return {**event, "checkpoint": destination.resolve()}
+
+    def _candidate_probe(
+        self, state: Mapping[str, torch.Tensor]
+    ) -> dict[str, Any]:
+        replay = getattr(self, "replay", None)
+        if replay is None or not replay.rows:
+            return {"sample_count": 0}
+        by_episode: dict[str, list[dict[str, Any]]] = {}
+        for row in replay.rows:
+            by_episode.setdefault(str(row["episode_id"]), []).append(row)
+        rows: list[dict[str, Any]] = []
+        for episode_rows in by_episode.values():
+            indices = sorted({0, len(episode_rows) // 2, len(episode_rows) - 1})
+            rows.extend(episode_rows[index] for index in indices)
+        config = self.learner["config"]["wrist_wrench_residual_actor"]
+        actor = WristWrenchResidualActor(
+            hidden_dim=int(config["hidden_dim"]),
+            max_normalized_residual=float(config["max_normalized_residual"]),
+            residual_cap6=state["residual_cap6"],
+        ).eval()
+        actor.load_state_dict(state, strict=True)
+
+        def proposals(module: torch.nn.Module) -> torch.Tensor:
+            with torch.no_grad():
+                return module(
+                    normalized_state7=torch.as_tensor(
+                        [row["state7"] for row in rows], dtype=torch.float32
+                    ),
+                    normalized_wrench6=torch.as_tensor(
+                        [row["wrench6"] for row in rows], dtype=torch.float32
+                    ),
+                    normalized_wrench_delta6=torch.as_tensor(
+                        [row["wrench_delta6"] for row in rows], dtype=torch.float32
+                    ),
+                    base_action6=torch.as_tensor(
+                        [row["base_action_k6"][0] for row in rows],
+                        dtype=torch.float32,
+                    ),
+                )
+
+        candidate = proposals(actor)
+        sigma6 = torch.as_tensor(
+            self.normalizer.delta_action7.std[:6], dtype=torch.float32
+        )
+
+        def distribution(value: torch.Tensor) -> list[float]:
+            return [
+                float(value.mean()),
+                float(torch.quantile(value, 0.95)),
+                float(value.max()),
+            ]
+
+        physical = candidate * sigma6
+        result = {
+            "sample_count": len(rows),
+            "episode_count": len(by_episode),
+            "proposal_translation_mm_mean_p95_max": distribution(
+                physical[:, :3].norm(dim=1) * 1000.0
+            ),
+            "proposal_rpy_deg_mean_p95_max": distribution(
+                physical[:, 3:].norm(dim=1)
+                * (180.0 / 3.141592653589793)
+            ),
+            "normalized_axis_cap_fraction": float(
+                (
+                    candidate.abs()
+                    >= actor.residual_cap6 * (1.0 - 1.0e-5)
+                ).float().mean()
+            ),
+        }
+        active_value = self.learner["runtime"]["scheduling"].get(
+            "active_actor_checkpoint"
+        )
+        if active_value:
+            active_path = Path(str(active_value))
+            active = WristWrenchResidualActor(
+                hidden_dim=int(config["hidden_dim"]),
+                max_normalized_residual=float(config["max_normalized_residual"]),
+                residual_cap6=state["residual_cap6"],
+            ).eval()
+            _load_residual_checkpoint(active, active_path)
+            difference = (candidate - proposals(active)) * sigma6
+            result.update(
+                relative_active_translation_mm_mean_p95_max=distribution(
+                    difference[:, :3].norm(dim=1) * 1000.0
+                ),
+                relative_active_rpy_deg_mean_p95_max=distribution(
+                    difference[:, 3:].norm(dim=1)
+                    * (180.0 / 3.141592653589793)
+                ),
+            )
+        return result
 
     def mark_active_residual_policy_revision(
         self,
@@ -1246,6 +1692,9 @@ class AsyncResidualActorCriticRuntime:
         self._candidate_checkpoints: dict[str, Path] = {}
         self._candidate_online_cycles: dict[str, int] = {}
         self._candidate_actor_steps: dict[str, int] = {}
+        self._newest_candidate_cycle: int | None = None
+        self._newest_candidate_activation_eligible: bool | None = None
+        self._newest_candidate_probe: dict[str, Any] = {}
         self._active_actor_online_cycle = active_actor_online_cycle
         self._policy = getattr(
             learner_job, "training_policy", ResidualActorCriticSchedule()
@@ -1281,6 +1730,16 @@ class AsyncResidualActorCriticRuntime:
         pending = runtime.get("scheduling", {}).get("pending_publication")
         if not isinstance(pending, Mapping):
             return
+        require(
+            pending.get("activation_eligible") is True,
+            "FORCERFT_PENDING_PUBLICATION_NOT_ELIGIBLE",
+        )
+        contract = getattr(self.learner_job, "training_contract", None)
+        if callable(contract):
+            require(
+                pending.get("training_contract") == contract(),
+                "FORCERFT_PENDING_PUBLICATION_CONTRACT_MISMATCH",
+            )
         revision_id = str(pending.get("revision_id", ""))
         checkpoint = Path(str(pending.get("checkpoint", ""))).resolve()
         require(
@@ -1298,6 +1757,13 @@ class AsyncResidualActorCriticRuntime:
         )
         self._candidate_actor_steps[revision_id] = int(
             pending["residual_actor_optimizer_steps"]
+        )
+        self._newest_candidate_cycle = int(
+            pending["residual_actor_critic_cycle"]
+        )
+        self._newest_candidate_activation_eligible = True
+        self._newest_candidate_probe = dict(
+            pending.get("proposal_probe", {})
         )
 
     def _learner_counter_snapshot(self) -> dict[str, int]:
@@ -1419,6 +1885,8 @@ class AsyncResidualActorCriticRuntime:
             "server_persistent": True,
             "current_episode_sampling": False,
             "minimum_ack_transitions": self._policy.minimum_ack_transitions,
+            "minimum_admitted_episodes": self._policy.minimum_admitted_episodes,
+            "new_td_rows_per_cycle": self._policy.new_td_rows_per_cycle,
             "scheduling_mode": self._policy.scheduling_mode,
             "residual_candidate_interval_cycles": (
                 self._policy.residual_candidate_interval_cycles
@@ -1453,8 +1921,15 @@ class AsyncResidualActorCriticRuntime:
     def status(self) -> dict[str, Any]:
         with self._lock:
             result = dict(self._learner_result)
-            actor_counters = self._residual_actor_update_counters()
             learner_counters = self._learner_counter_snapshot()
+            actor_counters = {
+                name: int(learner_counters[name])
+                for name in (
+                    "residual_actor_optimizer_steps",
+                    "residual_actor_update_attempts",
+                    "residual_actor_updates_skipped_no_gradient",
+                )
+            }
             capture_window = self._capture_window_snapshot()
             learner_runtime = getattr(self.learner_job, "learner", {}).get(
                 "runtime", {}
@@ -1474,6 +1949,11 @@ class AsyncResidualActorCriticRuntime:
                 "frozen_base_policy_checkpoint": str(self.frozen_base_policy_checkpoint),
                 "pending_actor_revision": self.machine.pending_revision_id,
                 "actor_candidate_count": self._candidate_count,
+                "newest_candidate_cycle": self._newest_candidate_cycle,
+                "newest_candidate_activation_eligible": (
+                    self._newest_candidate_activation_eligible
+                ),
+                "newest_candidate_probe": dict(self._newest_candidate_probe),
                 "policy_epoch": int(self.machine.policy_epoch),
                 "active_policy_epoch_status": scheduling.get(
                     "active_policy_epoch_status", "legacy_unknown"
@@ -1556,6 +2036,12 @@ class AsyncResidualActorCriticRuntime:
                 "latest_critic_td_loss": result.get("latest_critic_td_loss"),
                 "waiting_for_mappable_td": bool(
                     result.get("waiting_for_mappable_td", False)
+                ),
+                "waiting_for_startup_data": bool(
+                    result.get("waiting_for_startup_data", False)
+                ),
+                "waiting_for_credit": bool(
+                    result.get("waiting_for_credit", False)
                 ),
                 "recorded_transition_rows": int(
                     learner_runtime.get("replay", {}).get(
@@ -1744,6 +2230,29 @@ class AsyncResidualActorCriticRuntime:
     def _stage_actor_candidate(self, candidate: Mapping[str, Any]) -> None:
         revision_id = str(candidate["revision_id"])
         checkpoint = Path(candidate["checkpoint"]).resolve()
+        contract = getattr(self.learner_job, "training_contract", None)
+        if callable(contract):
+            require(
+                candidate.get("training_contract") == contract(),
+                "FORCERFT_RESIDUAL_CANDIDATE_CONTRACT_MISMATCH",
+            )
+        with self._lock:
+            self._newest_candidate_cycle = int(
+                candidate["residual_actor_critic_cycle"]
+            )
+            self._newest_candidate_activation_eligible = bool(
+                candidate.get("activation_eligible") is True
+            )
+            self._newest_candidate_probe = dict(
+                candidate.get("proposal_probe", {})
+            )
+        if candidate.get("activation_eligible") is not True:
+            print(
+                "[residual-candidate] not eligible "
+                f"revision={revision_id} checkpoint={checkpoint}",
+                flush=True,
+            )
+            return
         with self._lock:
             pending = self.machine.pending_revision_id
             if pending is not None:
@@ -1866,11 +2375,20 @@ class AsyncResidualActorCriticRuntime:
                     while not self._stop_learner.is_set():
                         result = dict(self.learner_job(self.coordinator))
                         if result.get("waiting_for_replay"):
+                            wait_state = (
+                                "waiting_for_startup_data"
+                                if result.get("waiting_for_startup_data")
+                                else "waiting_for_credit"
+                                if result.get("waiting_for_credit")
+                                else "waiting_for_mappable_td"
+                                if result.get("waiting_for_mappable_td")
+                                else "waiting_for_replay"
+                            )
                             with self._lock:
                                 self._learner_result = result
-                                self._learner_worker_state = "waiting_for_replay"
+                                self._learner_worker_state = wait_state
                                 self._lock.notify_all()
-                            self._wake_learner.wait(0.5)
+                            self._wake_learner.wait()
                             self._wake_learner.clear()
                             continue
                         cycle = int(result["residual_actor_critic_cycle"])
@@ -1887,7 +2405,6 @@ class AsyncResidualActorCriticRuntime:
                             label == "critic-warmup"
                             or published
                             or checkpointed
-                            or cycle % 25 == 0
                             or now - self._last_training_log_monotonic >= 5.0
                         ):
                             print(
@@ -1905,7 +2422,22 @@ class AsyncResidualActorCriticRuntime:
                                 f"actor_update_skip_reason="
                                 f"{result.get('actor_update_skip_reason')} "
                                 f"residual_actor_output_norm="
-                                f"{result.get('residual_actor_output_norm', 0.0)}",
+                                f"{result.get('residual_actor_output_norm', 0.0)} "
+                                f"td={result.get('unique_td_rows', 0)} "
+                                f"episodes={result.get('distinct_td_episodes', 0)} "
+                                f"credit={result.get('available_cycles', 0)} "
+                                f"q_loss={result.get('actor_value_loss_raw')}/"
+                                f"{result.get('actor_value_loss_weighted')} "
+                                f"bc_loss={result.get('actor_human_bc_loss_raw')}/"
+                                f"{result.get('actor_human_bc_loss_weighted')} "
+                                f"l2_loss={result.get('actor_residual_l2_loss_raw')}/"
+                                f"{result.get('actor_residual_l2_loss_weighted')} "
+                                f"q_candidate={result.get('candidate_q1_mean')}/"
+                                f"{result.get('candidate_q2_mean')} "
+                                f"q_zero={result.get('zero_q1_mean')}/"
+                                f"{result.get('zero_q2_mean')} "
+                                f"q_behavior={result.get('behavior_q1_mean')}/"
+                                f"{result.get('behavior_q2_mean')}",
                                 flush=True,
                             )
                             self._last_training_log_monotonic = now
@@ -2234,6 +2766,13 @@ class RequestHandler(serve_policy.RequestHandler):
             }[self.path]
             self._write_json(200, method(payload))
         except Exception as error:
+            print(
+                f"[http-error] endpoint={self.path} "
+                f"error={type(error).__name__} detail={error}",
+                file=sys.stderr,
+                flush=True,
+            )
+            traceback.print_exc(file=sys.stderr)
             self._write_json(422, {
                 "error": type(error).__name__, "detail": str(error),
             })
@@ -2396,16 +2935,31 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         task=args.task.strip(),
         normalizer_path=dataset_root / "normalizer_manifest.json",
     )
+    residual_cap6 = resolve_residual_cap6(
+        replay_normalizer,
+        checkpoint_config["wrist_wrench_residual_actor"],
+    )
     engine.residual_actor = WristWrenchResidualActor(
         hidden_dim=int(checkpoint_config["wrist_wrench_residual_actor"]["hidden_dim"]),
         max_normalized_residual=float(
             checkpoint_config["wrist_wrench_residual_actor"]["max_normalized_residual"]
         ),
+        residual_cap6=residual_cap6,
     ).to("cpu")
     engine.residual_actor.eval().requires_grad_(False)
     engine.metadata["online_semantics_version"] = ONLINE_SEMANTICS_VERSION
     engine.metadata["active_policy_epoch_status"] = initial_policy_epoch_status
     _load_residual_checkpoint(engine.residual_actor, residual_checkpoint)
+    physical_cap6 = (
+        residual_cap6.numpy() * replay_normalizer.delta_action7.std[:6]
+    )
+    print(
+        "[residual-cap] "
+        f"normalized={residual_cap6.tolist()} "
+        f"translation_mm={(physical_cap6[:3] * 1000.0).tolist()} "
+        f"rpy_deg={(physical_cap6[3:] * 180.0 / 3.141592653589793).tolist()}",
+        flush=True,
+    )
     return AsyncResidualActorCriticRuntime(
         engine=engine,
         machine=machine,

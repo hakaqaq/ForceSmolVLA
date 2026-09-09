@@ -33,6 +33,13 @@ class ResidualActorLoss:
     human_residual_valid_count: int
     actor_q_mapping_unavailable_count: int
     human_residual_projected_count: int
+    human_residual_projected_axis_count: int
+    candidate_q1_mean: Tensor | None
+    candidate_q2_mean: Tensor | None
+    zero_q1_mean: Tensor | None
+    zero_q2_mean: Tensor | None
+    behavior_q1_mean: Tensor | None
+    behavior_q2_mean: Tensor | None
 
 
 def accepted_candidate_for_q(
@@ -167,6 +174,9 @@ def residual_actor_loss(
     output_norm = zero
     valid_count = unavailable_count = 0
     value = residual = zero
+    candidate_q1_mean = candidate_q2_mean = None
+    zero_q1_mean = zero_q2_mean = None
+    behavior_q1_mean = behavior_q2_mean = None
     if policy_batch is not None:
         candidate_residual6 = residual_actor(
             normalized_state7=policy_batch.state7,
@@ -186,32 +196,68 @@ def residual_actor_loss(
         valid_count = int(valid.sum())
         unavailable_count = int((eligible & ~mapped.valid).sum())
         if valid_count:
-            value = -torch.minimum(
-                q1(
-                    policy_batch.state7[valid],
-                    policy_batch.wrench6[valid],
-                    policy_batch.wrench_delta6[valid],
-                    policy_batch.base_action_k6[valid],
-                    mapped.residual_k6[valid],
-                    policy_batch.action_mask[valid],
-                    policy_batch.control_source[valid],
-                    policy_batch.gripper_command[valid],
-                ),
-                q2(
-                    policy_batch.state7[valid],
-                    policy_batch.wrench6[valid],
-                    policy_batch.wrench_delta6[valid],
-                    policy_batch.base_action_k6[valid],
-                    mapped.residual_k6[valid],
-                    policy_batch.action_mask[valid],
-                    policy_batch.control_source[valid],
-                    policy_batch.gripper_command[valid],
-                ),
-            ).mean()
+            candidate_q1 = q1(
+                policy_batch.state7[valid],
+                policy_batch.wrench6[valid],
+                policy_batch.wrench_delta6[valid],
+                policy_batch.base_action_k6[valid],
+                mapped.residual_k6[valid],
+                policy_batch.action_mask[valid],
+                policy_batch.control_source[valid],
+                policy_batch.gripper_command[valid],
+            )
+            candidate_q2 = q2(
+                policy_batch.state7[valid],
+                policy_batch.wrench6[valid],
+                policy_batch.wrench_delta6[valid],
+                policy_batch.base_action_k6[valid],
+                mapped.residual_k6[valid],
+                policy_batch.action_mask[valid],
+                policy_batch.control_source[valid],
+                policy_batch.gripper_command[valid],
+            )
+            value = -torch.minimum(candidate_q1, candidate_q2).mean()
+            candidate_q1_mean = candidate_q1.detach().mean()
+            candidate_q2_mean = candidate_q2.detach().mean()
+
+        with torch.no_grad():
+            behavior_valid = eligible
+            if bool(behavior_valid.any()):
+                arguments = (
+                    policy_batch.state7[behavior_valid],
+                    policy_batch.wrench6[behavior_valid],
+                    policy_batch.wrench_delta6[behavior_valid],
+                    policy_batch.base_action_k6[behavior_valid],
+                    policy_batch.behavior_residual_k6[behavior_valid],
+                    policy_batch.action_mask[behavior_valid],
+                    policy_batch.control_source[behavior_valid],
+                    policy_batch.gripper_command[behavior_valid],
+                )
+                behavior_q1_mean = q1(*arguments).mean()
+                behavior_q2_mean = q2(*arguments).mean()
+            zero_mapped = accepted_candidate_for_q(
+                torch.zeros_like(candidate_residual6),
+                base_normalized_action6=policy_batch.base_action_k6[:, 0],
+                acceptance_context=policy_batch.acceptance_context,
+            )
+            zero_valid = eligible & zero_mapped.valid
+            if bool(zero_valid.any()):
+                arguments = (
+                    policy_batch.state7[zero_valid],
+                    policy_batch.wrench6[zero_valid],
+                    policy_batch.wrench_delta6[zero_valid],
+                    policy_batch.base_action_k6[zero_valid],
+                    zero_mapped.residual_k6[zero_valid],
+                    policy_batch.action_mask[zero_valid],
+                    policy_batch.control_source[zero_valid],
+                    policy_batch.gripper_command[zero_valid],
+                )
+                zero_q1_mean = q1(*arguments).mean()
+                zero_q2_mean = q2(*arguments).mean()
         residual = candidate_residual6.square().mean()
         output_norm = candidate_residual6.norm(dim=-1).mean()
 
-    human_count = projected_count = 0
+    human_count = projected_count = projected_axis_count = 0
     human = zero
     if human_batch is not None:
         human_valid = human_batch.human_residual_valid
@@ -226,9 +272,18 @@ def residual_actor_loss(
                 base_action6=human_batch.base_action_k6[human_valid, 0],
             )
             raw_target = human_batch.human_residual_target6[human_valid].detach()
-            cap = float(residual_actor.max_normalized_residual)
-            target_bc = raw_target.clamp(-cap, cap)
+            cap = torch.as_tensor(
+                getattr(
+                    residual_actor,
+                    "residual_cap6",
+                    [float(residual_actor.max_normalized_residual)] * 6,
+                ),
+                device=raw_target.device,
+                dtype=raw_target.dtype,
+            )
+            target_bc = torch.maximum(torch.minimum(raw_target, cap), -cap)
             projected_count = int((raw_target != target_bc).any(dim=1).sum())
+            projected_axis_count = int((raw_target != target_bc).sum())
             human = F.mse_loss(human_prediction, target_bc)
             if candidate_residual6 is None:
                 residual = human_prediction.square().mean()
@@ -250,4 +305,11 @@ def residual_actor_loss(
         human_count,
         unavailable_count,
         projected_count,
+        projected_axis_count,
+        candidate_q1_mean,
+        candidate_q2_mean,
+        zero_q1_mean,
+        zero_q2_mean,
+        behavior_q1_mean,
+        behavior_q2_mean,
     )

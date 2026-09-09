@@ -62,10 +62,21 @@ def test_online_residual_bootstrap_rejects_normalizer_parameter_drift(
 def test_online_residual_bootstrap_needs_no_critic_parent_and_starts_zero(
     tmp_path: Path, monkeypatch,
 ) -> None:
+    from forcesmolvla import training_data
+
+    normalizer = SimpleNamespace(
+        delta_action7=SimpleNamespace(std=[1.0] * 7),
+        manifest=lambda: {
+            "delta_action7": {"mean": [0.0] * 7, "std": [1.0] * 7}
+        },
+    )
     base = TinyBaseActor()
     monkeypatch.setattr(seed_tool, "_load_base_actor", lambda _path: base)
     monkeypatch.setattr(
         seed_tool, "_normalizer_parameters_match", lambda **_kwargs: True
+    )
+    monkeypatch.setattr(
+        training_data, "load_normalizer_manifest", lambda _path: normalizer
     )
     checkpoint = tmp_path / seed_tool.BOOTSTRAP_DIRECTORY_NAME
     result = seed_tool.build_online_residual_bootstrap(
@@ -123,6 +134,9 @@ def test_online_residual_bootstrap_needs_no_critic_parent_and_starts_zero(
         "residual_actor_update_attempts": 0,
         "residual_actor_updates_skipped_no_gradient": 0,
         "twin_q_target_update_steps": 0,
+        "critic_sample_draws": 0,
+        "policy_sample_draws": 0,
+        "human_sample_draws": 0,
     }
     assert runtime["replay"]["loaded_episode_keys"] == []
     assert runtime["replay"]["per_episode_critic_row_counts"] == {}
@@ -144,5 +158,4 @@ def test_online_residual_bootstrap_needs_no_critic_parent_and_starts_zero(
             (checkpoint / "models/residual_actor.pt").resolve()
         ),
         "pending_publication": None,
-        "retired_admission_cycle_budgets": {},
     }

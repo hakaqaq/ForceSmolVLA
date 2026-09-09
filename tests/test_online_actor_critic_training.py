@@ -49,7 +49,11 @@ from forcesmolvla.rft.online.training_losses import (
     residual_actor_loss,
     residual_critic_loss,
 )
-from forcesmolvla.rft.residual_actor import make_residual_actor_pair
+from forcesmolvla.rft.online.sample_credit import TdCycleCreditLedger
+from forcesmolvla.rft.residual_actor import (
+    make_residual_actor_pair,
+    resolve_residual_cap6,
+)
 
 
 class ConstantQ(torch.nn.Module):
@@ -413,6 +417,37 @@ def batch(batch_size: int = 2) -> SimpleNamespace:
     )
 
 
+def test_residual_cap6_uses_frozen_normalizer_and_zero_actor_is_exact() -> None:
+    std = np.asarray([0.02, 0.005, 0.01, 0.1, 0.01, 0.001, 1.0])
+    normalizer = SimpleNamespace(
+        delta_action7=SimpleNamespace(std=std)
+    )
+    config = {
+        "max_normalized_residual": 0.1,
+        "max_translation_residual_per_axis_m": 0.001,
+        "max_rpy_residual_per_axis_rad": np.deg2rad(0.5),
+    }
+    cap6 = resolve_residual_cap6(normalizer, config)
+    actor, target = make_residual_actor_pair(
+        hidden_dim=16,
+        max_normalized_residual=0.1,
+        residual_cap6=cap6,
+    )
+    inputs = {
+        "normalized_state7": torch.randn(5, 7),
+        "normalized_wrench6": torch.randn(5, 6),
+        "normalized_wrench_delta6": torch.randn(5, 6),
+        "base_action6": torch.randn(5, 6),
+    }
+    assert torch.equal(actor(**inputs), torch.zeros(5, 6))
+    assert torch.equal(actor.residual_cap6, target.residual_cap6)
+    physical = cap6.numpy() * std[:6]
+    assert np.all(physical[:3] <= 0.001 + 1e-9)
+    assert np.all(physical[3:] <= np.deg2rad(0.5) + 1e-9)
+    actor.layers[-1].bias.data.fill_(100.0)
+    assert torch.allclose(actor(**inputs), cap6.expand(5, -1))
+
+
 def test_residual_critic_td_target_is_ack_only_and_bootstrap_safe() -> None:
     q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
     q1_target, q2_target = ConstantQ(2.0), ConstantQ(3.0)
@@ -448,7 +483,9 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
     )
     assert losses.actor_q_valid_count == 0
     assert losses.actor_q_mapping_unavailable_count == 1
-    assert q1.batch_sizes == q2.batch_sizes == []
+    # Candidate and zero proposals are unmappable; actual accepted behavior is
+    # still reported as a diagnostic Q value.
+    assert q1.batch_sizes == q2.batch_sizes == [1]
 
     policy.acceptance_context.valid[:] = True
     policy.control_source[:] = 0.0
@@ -678,7 +715,9 @@ def test_actor_q_mask_and_invalid_human_residual_are_skipped() -> None:
     )
     assert losses.actor_q_valid_count == 1
     assert losses.human_residual_valid_count == 0
-    assert q1.batch_sizes == q2.batch_sizes == [1]
+    # Candidate, actual behavior, and zero-proposal diagnostics each use the
+    # one policy-eligible row.
+    assert q1.batch_sizes == q2.batch_sizes == [1, 1, 1]
     assert actor.batch_sizes == [2]
     assert torch.equal(losses.human, torch.zeros_like(losses.human))
 
@@ -1031,6 +1070,7 @@ def test_task_profiles_cannot_override_algorithm_parameters() -> None:
     assert task2["task"] != task3["task"]
     assert task2["residual_actor_critic_training"] == {
         "scheduling_mode": "continuous_async",
+        "new_td_rows_per_cycle": 8,
         "twin_q_updates_per_cycle": 2,
         "residual_actor_updates_per_cycle": 1,
         "residual_candidate_interval_cycles": 100,
@@ -1061,6 +1101,14 @@ def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
     learner.latest_critic_update_ms = 0.0
     learner.latest_actor_update_ms = 0.0
     learner.latest_cycle_ms = 0.0
+    learner.human_supervision_diagnostics = {}
+    learner.credit_ledger = TdCycleCreditLedger(new_td_rows_per_cycle=8)
+    for episode, count in (("a", 334), ("b", 333), ("c", 333)):
+        learner.credit_ledger.register_admission(
+            admission_id=episode,
+            episode_id=f"{episode}/episode",
+            td_uids={f"{episode}:{index}" for index in range(count)},
+        )
     learner.learner = {
         "residual_actor": actor,
         "runtime": {
@@ -1075,11 +1123,15 @@ def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
                 "residual_actor_update_attempts": 0,
                 "residual_actor_updates_skipped_no_gradient": 0,
                 "twin_q_target_update_steps": warmup_updates,
+                "critic_sample_draws": 0,
+                "policy_sample_draws": 0,
+                "human_sample_draws": 0,
             },
             "replay": {
                 "critic_td_valid_rows": 0,
                 "actor_q_valid_rows": 0,
                 "human_residual_valid_rows": 0,
+                "training_credit_ledger": learner.credit_ledger.state_dict(),
             },
             "scheduling": {
                 "mode": "continuous_async",
@@ -1092,9 +1144,60 @@ def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
     return learner
 
 
+def set_test_credit(
+    learner: learner_server.ResidualActorCriticLearner,
+    counts: tuple[int, ...],
+) -> None:
+    learner.credit_ledger = TdCycleCreditLedger(new_td_rows_per_cycle=8)
+    for episode_index, count in enumerate(counts):
+        admission = f"credit-{episode_index}"
+        learner.credit_ledger.register_admission(
+            admission_id=admission,
+            episode_id=f"{admission}/episode",
+            td_uids={f"{admission}:{index}" for index in range(count)},
+        )
+    learner.learner["runtime"]["replay"][
+        "training_credit_ledger"
+    ] = learner.credit_ledger.state_dict()
+
+
+def test_counter_snapshot_waits_for_atomic_actor_counter_update() -> None:
+    learner = tiny_continuous_learner(
+        learner_state="residual_actor_critic_training", warmup_updates=256
+    )
+    counters = learner.learner["runtime"]["counters"]
+    started = threading.Event()
+    finished = threading.Event()
+    observed: list[dict[str, object]] = []
+
+    def read_snapshot() -> None:
+        started.set()
+        observed.append(learner.counter_snapshot())
+        finished.set()
+
+    with learner._state_lock:
+        counters["residual_actor_update_attempts"] = 1
+        thread = threading.Thread(target=read_snapshot)
+        thread.start()
+        assert started.wait(1.0)
+        assert not finished.wait(0.05)
+        counters["residual_actor_updates_skipped_no_gradient"] = 1
+    thread.join(1.0)
+    assert finished.is_set()
+    assert observed[0]["residual_actor_update_attempts"] == 1
+    assert observed[0]["residual_actor_optimizer_steps"] == 0
+    assert observed[0]["residual_actor_updates_skipped_no_gradient"] == 1
+
+
 def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
     learner = tiny_continuous_learner(learner_state="ack_replay_collection")
-    learner.normalizer = object()
+    learner.credit_ledger = TdCycleCreditLedger(new_td_rows_per_cycle=8)
+    learner.learner["runtime"]["replay"][
+        "training_credit_ledger"
+    ] = learner.credit_ledger.state_dict()
+    learner.normalizer = SimpleNamespace(
+        delta_action7=SimpleNamespace(std=np.ones(7))
+    )
     learner.current_session_id = None
     learner.unique_r_count = 0
     learner.r_macro_count = 0
@@ -1109,6 +1212,7 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
     class FakeReplay:
         def __init__(self, _macros, _normalizer) -> None:
             self.counts: list[int] = []
+            self.rows: list[dict] = []
             self.next_base_missing_rows = 0
             self.quarantined_current_schema_rows = 0
             self.nonzero_behavior_residual_rows = 0
@@ -1118,6 +1222,16 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
             episode_id = macro.transition["identity"]["episode_id"]
             count = int(macro.transition["materialized_count"])
             self.counts.append(count)
+            admission_id = str(episode_id).split("/", 1)[0]
+            self.rows.extend(
+                {
+                    "transition_uid": f"{admission_id}:{index}",
+                    "episode_id": episode_id,
+                    "td_mapping_valid": True,
+                    "human_residual_valid": False,
+                }
+                for index in range(count)
+            )
             return {episode_id: count}
 
         @property
@@ -1216,6 +1330,7 @@ def test_replay_signature_ignores_uncommitted_and_rejected_records(
 
 def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
     learner = tiny_continuous_learner(learner_state="ack_replay_collection")
+    set_test_credit(learner, (395,))
     actor_before = {
         name: value.detach().clone()
         for name, value in learner.residual_actor.state_dict().items()
@@ -1234,6 +1349,9 @@ def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
         "residual_actor_update_attempts": 0,
         "residual_actor_updates_skipped_no_gradient": 0,
         "twin_q_target_update_steps": 0,
+        "critic_sample_draws": 0,
+        "policy_sample_draws": 0,
+        "human_sample_draws": 0,
     }
     assert all(
         torch.equal(actor_before[name], value)
@@ -1241,7 +1359,7 @@ def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
     )
 
 
-def test_100_rows_runs_exactly_256_critic_warmup_then_starts_residual_training(
+def test_1000_rows_three_episodes_runs_critic_warmup_then_starts_training(
     monkeypatch,
 ) -> None:
     learner = tiny_continuous_learner(learner_state="ack_replay_collection")
@@ -1250,12 +1368,12 @@ def test_100_rows_runs_exactly_256_critic_warmup_then_starts_residual_training(
         checkpoint_on_candidate_activation=False,
     )
     replay = SimpleNamespace(
-        critic_td_valid_rows=100, critic_rows_per_episode=(100,)
+        critic_td_valid_rows=1000, critic_rows_per_episode=(334, 333, 333)
     )
     monkeypatch.setattr(
         learner_server.warmup,
         "count_sealed_critic_td_valid_transitions",
-        lambda _root: 100,
+        lambda _root: 1000,
     )
     monkeypatch.setattr(learner, "_refresh_replay", lambda: replay)
     actor_before = {
@@ -1565,6 +1683,8 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
     learner.sampled_episode_ids = set()
     learner._expected_admission_id = None
     learner._admission_progress = {}
+    learner._loaded_episode_keys = set()
+    learner.replay = None
     learner.learner = {
         "residual_actor": actor,
         "residual_actor_target": actor_target,
@@ -1601,11 +1721,15 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
                 "residual_actor_update_attempts": 0,
                 "residual_actor_updates_skipped_no_gradient": 0,
                 "twin_q_target_update_steps": 256,
+                "critic_sample_draws": 0,
+                "policy_sample_draws": 0,
+                "human_sample_draws": 0,
             },
             "replay": {
                 "critic_td_valid_rows": 100,
                 "actor_q_valid_rows": 100,
                 "human_residual_valid_rows": 0,
+                "per_episode_critic_row_counts": {},
             },
             "scheduling": {
                 "mode": "continuous_async",
@@ -1615,6 +1739,8 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
             },
         },
     }
+    learner.human_supervision_diagnostics = {}
+    set_test_credit(learner, (534, 533, 533))
     return learner
 
 
@@ -1663,8 +1789,11 @@ def test_single_replay_population_continues_beyond_old_ten_cycle_limit(
         "residual_actor_optimizer_steps": 0,
         "residual_actor_update_attempts": 157,
         "residual_actor_updates_skipped_no_gradient": 157,
-        "twin_q_target_update_steps": 570,
-    }
+            "twin_q_target_update_steps": 570,
+            "critic_sample_draws": 0,
+            "policy_sample_draws": 1256,
+            "human_sample_draws": 0,
+        }
     assert learner.learner["residual_actor_optimizer"].state == {}
     assert learner.training_policy.candidate_due(100)
     assert all(

@@ -171,7 +171,7 @@ def _continuous_learner_capture_window_valid(
         == int(delta["residual_actor_update_attempts"])
     )
 POLICY_EXECUTION_SMOKE_CLASSIFICATION = "recorded_live_policy_execution_smoke"
-TRAINING_STARTS_UNIQUE_R = 100
+TRAINING_STARTS_UNIQUE_R = 1000
 UPPER_CLOCK = "upper_host_monotonic"
 POLICY_LINEAGE_FIELDS = frozenset(
     {
@@ -860,6 +860,11 @@ class FormalOnlineRAdmissionReport:
     admission_record_written: bool
     episode_seal_written: bool
     admission_timing_seconds: Mapping[str, float]
+    task_success: bool = False
+    autonomous_success: bool = False
+    assisted_success: bool = False
+    human_control_duration_s: float = 0.0
+    takeover_count: int = 0
     actor_update_count: int = 0
     critic_update_count: int = 0
     optimizer_update_count: int = 0
@@ -2886,6 +2891,13 @@ class ProductionBridge:
                 "policy_action_ack_count": len(transitions),
                 "human_override_count": len(override_sequences),
                 "human_override_executed_count": len(human_actions),
+                "takeover_count": len(completed_takeovers),
+                "human_control_duration_s": sum(
+                    int(end["receive_monotonic_ns"])
+                    - int(start["receive_monotonic_ns"])
+                    for start, end in completed_takeovers
+                )
+                / 1_000_000_000.0,
                 "intervention_count": len(interventions),
                 "stalled_contact_count": stalled_contact_count,
                 "camera_reconciliation_count": len(camera_records),
@@ -5030,10 +5042,11 @@ class ProductionBridge:
         ]
         if not candidates:
             return None
-        value = max(
+        candidate = max(
             candidates,
             key=lambda item: int(item["receive_monotonic_ns"]),
-        )["selection"].get("base_absolute_action7")
+        )
+        value = candidate["selection"].get("base_absolute_action7")
         try:
             return list(
                 _finite_vector(
@@ -5356,6 +5369,30 @@ class ProductionBridge:
         payload["pre_takeover_base_absolute_action7"] = list(
             pre_takeover_absolute
         )
+        generation = dict(source["generation"])
+        takeover_start_ns = next(
+            int(item["receive_monotonic_ns"])
+            for item in integrated.get("takeover_starts", ())
+            if int(item.get("takeover_generation", -1))
+            == int(generation["takeover_generation"])
+            and int(item.get("reset_generation", -1))
+            == int(generation["reset_generation"])
+        )
+        base_source_ns = max(
+            int(item["receive_monotonic_ns"])
+            for item in integrated.get("transitions", ())
+            if int(item.get("receive_monotonic_ns", 0)) < takeover_start_ns
+            and int(item.get("takeover_generation", -1))
+            == int(generation["takeover_generation"]) - 1
+            and int(item.get("reset_generation", -1))
+            == int(generation["reset_generation"])
+            and isinstance(item.get("selection"), Mapping)
+        )
+        payload["pre_takeover_base_source_monotonic_ns"] = base_source_ns
+        payload["takeover_start_monotonic_ns"] = takeover_start_ns
+        payload["pre_takeover_base_age_s"] = (
+            takeover_start_ns - base_source_ns
+        ) / 1_000_000_000.0
         payload["base_absolute_action_k7"] = np.repeat(
             np.asarray(pre_takeover_absolute, dtype=np.float64)[None, :],
             3,
@@ -5851,6 +5888,19 @@ class ProductionBridge:
             "episode_sealed": True,
             "operator_task_outcome": summary["operator_task_outcome"],
             "detector_outcome": summary["detector_outcome"],
+            "task_success": summary["operator_task_outcome"] == "success",
+            "autonomous_success": (
+                summary["operator_task_outcome"] == "success"
+                and int(summary.get("takeover_count", 0)) == 0
+            ),
+            "assisted_success": (
+                summary["operator_task_outcome"] == "success"
+                and int(summary.get("takeover_count", 0)) > 0
+            ),
+            "human_control_duration_s": float(
+                summary.get("human_control_duration_s", 0.0)
+            ),
+            "takeover_count": int(summary.get("takeover_count", 0)),
             "executed_action_source": "policy",
             "initial_gripper_lease": integrated[
                 "initial_gripper_lease"
@@ -6021,11 +6071,6 @@ class ProductionBridge:
             for item in committed_episodes
             if item.get("status") == "SEALED_COMMITTED"
         )
-        total_unique_policy = sum(
-            int(item["autonomous_policy_replay_count"])
-            for item in committed_episodes
-            if item.get("status") == "SEALED_COMMITTED"
-        )
         persistence_finished = time.perf_counter()
         return FormalOnlineRAdmissionReport(
             status="FORMAL_ONLINE_R_ADMITTED",
@@ -6036,9 +6081,10 @@ class ProductionBridge:
             accepted_unique_r_transition_count=len(transitions),
             total_unique_r_transition_count=total_unique,
             training_starts=TRAINING_STARTS_UNIQUE_R,
-            training_starts_reached=(
-                total_unique_policy >= TRAINING_STARTS_UNIQUE_R
-            ),
+            # Admission cannot know materialized TD eligibility, distinct
+            # episode count, or learner phase.  Runtime notification reports
+            # the authoritative training_started state.
+            training_starts_reached=False,
             human_override_count=int(summary["human_override_count"]),
             human_override_replay_count=human_replay_count,
             invalidated_proposal_replay_count=0,
@@ -6076,6 +6122,19 @@ class ProductionBridge:
                 "persistence": persistence_finished - persistence_started,
                 "total": persistence_finished - admission_started,
             },
+            task_success=summary["operator_task_outcome"] == "success",
+            autonomous_success=(
+                summary["operator_task_outcome"] == "success"
+                and int(summary.get("takeover_count", 0)) == 0
+            ),
+            assisted_success=(
+                summary["operator_task_outcome"] == "success"
+                and int(summary.get("takeover_count", 0)) > 0
+            ),
+            human_control_duration_s=float(
+                summary.get("human_control_duration_s", 0.0)
+            ),
+            takeover_count=int(summary.get("takeover_count", 0)),
         )
 
     def process_episode(

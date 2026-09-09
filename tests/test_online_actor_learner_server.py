@@ -230,6 +230,7 @@ class SchedulingEventLearner(FakeLearner):
             "checkpoint": checkpoint,
             "residual_actor_critic_cycle": cycle,
             "residual_actor_optimizer_steps": 0,
+            "activation_eligible": True,
         }
 
     def save_checkpoint(self):
@@ -586,6 +587,7 @@ def test_cycle_100_candidate_activates_only_after_episode_boundary(
             "checkpoint": candidate,
             "residual_actor_critic_cycle": 100,
             "residual_actor_optimizer_steps": 63,
+            "activation_eligible": True,
         }
     )
     assert torch.count_nonzero(service.engine.residual_actor.weight) == 0
@@ -624,6 +626,7 @@ def test_resume_restores_pending_candidate_without_auto_activation(
         "checkpoint": str(candidate),
         "residual_actor_critic_cycle": 100,
         "residual_actor_optimizer_steps": 77,
+        "activation_eligible": True,
     }
     service = drain_runtime(tmp_path, learner)
     try:

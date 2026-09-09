@@ -8,6 +8,7 @@ import pytest
 from forcesmolvla.rft.online import residual_actor_critic_runtime as runtime
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
+    ONLINE_ADAPTATION_DIRECTORY_NAME,
     training_checkpoint_path,
     select_resume_or_bootstrap_checkpoint,
 )
@@ -18,7 +19,7 @@ def test_latest_final_online_checkpoint_wins_over_seed(
 ) -> None:
     seed = tmp_path / "seed"
     seed.mkdir()
-    root = tmp_path / "online_ack_residual/training_checkpoints"
+    root = tmp_path / ONLINE_ADAPTATION_DIRECTORY_NAME / "training_checkpoints"
     first = training_checkpoint_path(root, 5)
     latest = training_checkpoint_path(root, 10)
     first.mkdir(parents=True)

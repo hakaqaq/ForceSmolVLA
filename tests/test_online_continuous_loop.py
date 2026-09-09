@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import io
 import os
 import sys
 from types import SimpleNamespace
+from urllib.error import HTTPError
 
 import numpy as np
 import pytest
@@ -675,7 +677,7 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     output = capsys.readouterr().out
     assert output.count("\n") == 1
     assert "human_expert=2" in output
-    assert "training_started=true" in output
+    assert "training_started=" not in output
     assert "prepare=1.000s detector=2.000s" in output
     assert "transitions=3.000s persistence=4.000s" in output
     assert admission_commands[0][2:6] == [
@@ -736,6 +738,30 @@ def test_admission_notification_is_identity_bound_and_fail_closed(
             },
             admission={"admission_id": "003__episode_000000"},
         )
+
+
+def test_http_error_reports_endpoint_status_and_server_detail(monkeypatch) -> None:
+    def fail(_request, timeout):
+        del timeout
+        raise HTTPError(
+            "http://127.0.0.1:8000/runtime/prepare-episode",
+            422,
+            "Unprocessable Entity",
+            {},
+            io.BytesIO(
+                b'{"error":"RuntimeError","detail":"identity conflict"}'
+            ),
+        )
+
+    monkeypatch.setattr(loop, "urlopen", fail)
+    with pytest.raises(loop.ContinuousLoopError) as captured:
+        loop._post_json(
+            "http://127.0.0.1:8000/runtime/prepare-episode", {}
+        )
+    message = str(captured.value)
+    assert "endpoint=http://127.0.0.1:8000/runtime/prepare-episode" in message
+    assert "status=422" in message
+    assert "RuntimeError: identity conflict" in message
 
 
 def test_continuous_loop_has_no_outstanding_budget_drain_helper() -> None:

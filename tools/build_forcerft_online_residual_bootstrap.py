@@ -32,10 +32,13 @@ from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: 
 from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
     ONLINE_SEMANTICS_VERSION,
 )
-from forcesmolvla.rft.residual_actor import make_residual_actor_pair  # noqa: E402
+from forcesmolvla.rft.residual_actor import (  # noqa: E402
+    make_residual_actor_pair,
+    resolve_residual_cap6,
+)
 
 
-BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_filter_leash_random_twin_q"
+BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_small_cap_td_credit_v1"
 
 
 def _load_base_actor(checkpoint: Path) -> torch.nn.Module:
@@ -77,6 +80,8 @@ def build_online_residual_bootstrap(
     online_residual_config: Path,
 ) -> Path:
     del output_root  # retained CLI path binding; no replay is read.
+    if checkpoint.exists():
+        raise RuntimeError("FORCERFT_BOOTSTRAP_DESTINATION_EXISTS")
     frozen_base_policy_checkpoint = Path(frozen_base_policy_checkpoint).resolve()
     if not _normalizer_parameters_match(
         dataset_root=Path(dataset_root).resolve(),
@@ -85,6 +90,14 @@ def build_online_residual_bootstrap(
         raise RuntimeError("FORCERFT_BOOTSTRAP_NORMALIZER_MISMATCH")
     config = yaml.safe_load(
         Path(online_residual_config).read_text(encoding="utf-8")
+    )
+    from forcesmolvla.training_data import load_normalizer_manifest
+
+    normalizer = load_normalizer_manifest(
+        Path(dataset_root).resolve() / "normalizer_manifest.json"
+    )
+    residual_cap6 = resolve_residual_cap6(
+        normalizer, config["wrist_wrench_residual_actor"]
     )
     if int(config["batching"]["command_macro_slots"]) != 3:
         raise ValueError("FORCERFT_COMMAND_MACRO_SLOTS_INVALID")
@@ -102,6 +115,7 @@ def build_online_residual_bootstrap(
             max_normalized_residual=float(
                 config["wrist_wrench_residual_actor"]["max_normalized_residual"]
             ),
+            residual_cap6=residual_cap6,
         )
         q1, q2, q1_target, q2_target = build_twin_q(
             hidden_dim=int(config["ack_residual_twin_q"]["hidden_dim"]), seed=seed + 1
@@ -142,7 +156,6 @@ def build_online_residual_bootstrap(
             "active_policy_epoch": 0,
             "active_policy_epoch_status": "bootstrap",
             "pending_publication": None,
-            "retired_admission_cycle_budgets": {},
         },
         "counters": {
             "twin_q_optimizer_steps": 0,
@@ -150,6 +163,9 @@ def build_online_residual_bootstrap(
             "residual_actor_update_attempts": 0,
             "residual_actor_updates_skipped_no_gradient": 0,
             "twin_q_target_update_steps": 0,
+            "critic_sample_draws": 0,
+            "policy_sample_draws": 0,
+            "human_sample_draws": 0,
         },
         "replay": {
             "recorded_transition_rows": 0,
@@ -159,6 +175,16 @@ def build_online_residual_bootstrap(
             "loaded_episode_keys": [],
             "per_episode_critic_row_counts": {},
             "replay_generation": 0,
+            "training_credit_ledger": {
+                "schema": "forcesmolvla-td-cycle-credit-ledger-v1",
+                "new_td_rows_per_cycle": int(
+                    config["residual_actor_critic_training"][
+                        "new_td_rows_per_cycle"
+                    ]
+                ),
+                "admissions": {},
+                "in_flight_cycle": None,
+            },
         },
     }
     return save_residual_actor_critic_checkpoint(
@@ -204,6 +230,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     result = build_online_residual_bootstrap(**vars(args))
+    config = yaml.safe_load(args.online_residual_config.read_text(encoding="utf-8"))
+    from forcesmolvla.training_data import load_normalizer_manifest
+
+    normalizer = load_normalizer_manifest(
+        args.dataset_root.resolve() / "normalizer_manifest.json"
+    )
+    cap6 = resolve_residual_cap6(
+        normalizer, config["wrist_wrench_residual_actor"]
+    ).numpy()
+    physical = cap6 * normalizer.delta_action7.std[:6]
+    print(
+        "resolved residual cap6="
+        f"{cap6.tolist()} translation_mm={(physical[:3] * 1000.0).tolist()} "
+        f"rpy_deg={(physical[3:] * 180.0 / 3.141592653589793).tolist()}"
+    )
     print(result.resolve())
     return 0
 

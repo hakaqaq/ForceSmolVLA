@@ -16,7 +16,11 @@ from forcesmolvla.rft.online.transition_authority import (
     canonical_payload_sha256,
     finalize_ack_transition,
 )
-from forcesmolvla.rft.online.sample_credit import CreditsUnavailable, UpdateCreditLedger
+from forcesmolvla.rft.online.sample_credit import (
+    CreditsUnavailable,
+    TdCycleCreditLedger,
+    UpdateCreditLedger,
+)
 from test_online_transition_authority import transition_payload
 
 
@@ -59,6 +63,50 @@ def test_credits_block_at_zero_and_round_trip_exactly() -> None:
     assert ledger.snapshot().available == 0
     restored = UpdateCreditLedger.from_state_dict(ledger.state_dict())
     assert restored.state_dict() == ledger.state_dict()
+
+
+def test_cumulative_td_cycle_credit_rounds_only_after_global_total() -> None:
+    ledger = TdCycleCreditLedger(new_td_rows_per_cycle=8)
+    ledger.register_admission(
+        admission_id="first",
+        episode_id="000/episode",
+        td_uids={f"a:{index}" for index in range(3)},
+    )
+    assert ledger.snapshot(completed_cycles=0).allowed_cycles == 0
+    ledger.register_admission(
+        admission_id="second",
+        episode_id="001/episode",
+        td_uids={f"b:{index}" for index in range(5)},
+    )
+    snapshot = ledger.snapshot(completed_cycles=0)
+    assert snapshot.unique_td_rows == 8
+    assert snapshot.allowed_cycles == snapshot.available_cycles == 1
+    assert not ledger.register_admission(
+        admission_id="second",
+        episode_id="001/episode",
+        td_uids={f"b:{index}" for index in range(5)},
+    )
+    restored = TdCycleCreditLedger.from_state_dict(ledger.state_dict())
+    assert restored.state_dict() == ledger.state_dict()
+
+
+def test_one_thousand_td_rows_allow_exactly_125_reserved_cycles() -> None:
+    ledger = TdCycleCreditLedger(new_td_rows_per_cycle=8)
+    for episode, count in (("a", 334), ("b", 333), ("c", 333)):
+        ledger.register_admission(
+            admission_id=episode,
+            episode_id=f"{episode}/episode",
+            td_uids={f"{episode}:{index}" for index in range(count)},
+        )
+    assert ledger.startup_ready(minimum_td_rows=1000, minimum_episodes=3)
+    for completed in range(125):
+        assert ledger.reserve_cycle(completed_cycles=completed)
+        assert ledger.snapshot(completed_cycles=completed).in_flight_cycle == completed + 1
+        ledger.complete_cycle(completed_cycle=completed + 1)
+    exhausted = ledger.snapshot(completed_cycles=125)
+    assert exhausted.allowed_cycles == 125
+    assert exhausted.available_cycles == 0
+    assert not ledger.reserve_cycle(completed_cycles=125)
 
 
 def test_mixed_sampler_origin_and_expert_mask_prevent_R_self_imitation() -> None:

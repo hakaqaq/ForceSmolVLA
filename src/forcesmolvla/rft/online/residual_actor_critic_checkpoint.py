@@ -87,13 +87,25 @@ def residual_actor_critic_checkpoint_is_recoverable(
             "residual_actor_updates_skipped_no_gradient"
         ]
         replay = state["replay"]
+        actor_state = torch.load(
+            checkpoint / "models/residual_actor.pt",
+            map_location="cpu",
+            weights_only=True,
+        )
         config = yaml.safe_load(
             (checkpoint / "state/config.yaml").read_text(encoding="utf-8")
         )
         online = config["residual_actor_critic_training"]
         loaded_episode_keys = replay.get("loaded_episode_keys", [])
         per_episode_counts = replay.get("per_episode_critic_row_counts", {})
-        admission_cycle_budgets = replay.get("admission_cycle_budgets", {})
+        credit = replay["training_credit_ledger"]
+        credit_admissions = credit["admissions"]
+        credited_from_admissions = [
+            str(uid)
+            for record in credit_admissions.values()
+            for uid in record["td_uids"]
+        ]
+        in_flight_cycle = credit.get("in_flight_cycle")
         continuous = online.get("scheduling_mode") == "continuous_async"
         scheduling_value = state.get("scheduling", {})
         scheduling = (
@@ -148,7 +160,6 @@ def residual_actor_critic_checkpoint_is_recoverable(
             "active_policy_epoch",
             "active_policy_epoch_status",
             "pending_publication",
-            "retired_admission_cycle_budgets",
         }
         continuous_valid = bool(
             not continuous
@@ -204,9 +215,6 @@ def residual_actor_critic_checkpoint_is_recoverable(
             and _actor_dependency_is_valid(
                 scheduling.get("active_actor_checkpoint")
             )
-            and isinstance(
-                scheduling.get("retired_admission_cycle_budgets"), Mapping
-            )
             and (
                 pending is None
                 or isinstance(pending, Mapping)
@@ -222,6 +230,11 @@ def residual_actor_critic_checkpoint_is_recoverable(
                 and _nonnegative_int(
                     pending.get("residual_actor_optimizer_steps")
                 )
+                and pending.get("activation_eligible") is True
+                and isinstance(
+                    pending.get("training_data_provenance"), Mapping
+                )
+                and isinstance(pending.get("training_contract"), Mapping)
                 and int(pending["residual_actor_optimizer_steps"])
                 <= applied_actor_steps
                 and _actor_dependency_is_valid(pending.get("checkpoint"))
@@ -266,6 +279,9 @@ def residual_actor_critic_checkpoint_is_recoverable(
                     "residual_actor_update_attempts",
                     "residual_actor_updates_skipped_no_gradient",
                     "twin_q_target_update_steps",
+                    "critic_sample_draws",
+                    "policy_sample_draws",
+                    "human_sample_draws",
                 )
             )
             and counters["twin_q_target_update_steps"] == total_q_steps
@@ -292,14 +308,47 @@ def residual_actor_critic_checkpoint_is_recoverable(
                 and _nonnegative_int(value)
                 for key, value in per_episode_counts.items()
             )
-            and isinstance(admission_cycle_budgets, dict)
+            and isinstance(actor_state, Mapping)
+            and isinstance(actor_state.get("residual_cap6"), torch.Tensor)
+            and tuple(actor_state["residual_cap6"].shape) == (6,)
+            and torch.isfinite(actor_state["residual_cap6"]).all()
+            and bool((actor_state["residual_cap6"] > 0.0).all())
+            and credit.get("schema")
+            == "forcesmolvla-td-cycle-credit-ledger-v1"
+            and int(credit["new_td_rows_per_cycle"])
+            == int(online["new_td_rows_per_cycle"])
+            and isinstance(credit_admissions, Mapping)
+            and len(credited_from_admissions)
+            == len(set(credited_from_admissions))
+            and set(credit_admissions) == set(loaded_episode_keys)
+            and set(credit_admissions) == set(per_episode_counts)
+            and int(replay["critic_td_valid_rows"])
+            == len(credited_from_admissions)
+            and sum(int(value) for value in per_episode_counts.values())
+            == len(credited_from_admissions)
             and all(
-                isinstance(key, str)
-                and key
-                and _nonnegative_int(value)
-                for key, value in admission_cycle_budgets.items()
+                isinstance(record, Mapping)
+                and isinstance(record.get("episode_id"), str)
+                and bool(record["episode_id"])
+                and _nonnegative_int(record.get("critic_td_valid_rows"))
+                and int(record["critic_td_valid_rows"])
+                == len(record.get("td_uids", ()))
+                and int(record["critic_td_valid_rows"])
+                == int(per_episode_counts[admission_id])
+                for admission_id, record in credit_admissions.items()
             )
-            and _nonnegative_int(replay.get("replay_generation", 0))
+            and completed_cycles
+            + int(in_flight_cycle is not None)
+            <= len(credited_from_admissions)
+            // int(online["new_td_rows_per_cycle"])
+            and (
+                in_flight_cycle is None
+                or _nonnegative_int(in_flight_cycle)
+                and int(in_flight_cycle) == completed_cycles + 1
+            )
+            and (partial_q == 0 or in_flight_cycle == completed_cycles + 1)
+            and int(replay.get("replay_generation", -1))
+            == len(credit_admissions)
             and continuous_valid
         )
     except (KeyError, OSError, RuntimeError, TypeError, ValueError):

@@ -17,7 +17,7 @@ import tempfile
 import threading
 import time
 from typing import Any, Callable, Mapping
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
@@ -171,7 +171,11 @@ def _admit(
         f"accepted={report.get('accepted_unique_r_transition_count')} "
         f"human_expert={report.get('human_override_replay_count')} "
         f"total={report.get('total_unique_r_transition_count')} "
-        f"training_started={str(bool(report.get('training_starts_reached'))).lower()} "
+        f"task_success={str(bool(report.get('task_success'))).lower()} "
+        f"autonomous_success={str(bool(report.get('autonomous_success'))).lower()} "
+        f"assisted_success={str(bool(report.get('assisted_success'))).lower()} "
+        f"takeovers={int(report.get('takeover_count', 0))} "
+        f"human_control_s={float(report.get('human_control_duration_s', 0.0)):.2f} "
         f"elapsed={time.monotonic() - started:.1f}s"
         f"{timing_text}"
     )
@@ -221,7 +225,9 @@ def _notify_admission_committed(
     print(
         "[admission-notify] "
         f"admission={admission_id} "
-        "status=registered learner_woken=true"
+        "status=registered learner_woken=true "
+        f"learner_state={result.get('learner_state')} "
+        f"training_started={str(result.get('learner_state') in {'ack_critic_warmup', 'residual_actor_critic_training'}).lower()}"
     )
     return result
 
@@ -235,8 +241,28 @@ def _post_json(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(request, timeout=timeout) as response:
-        value = json.loads(response.read())
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            value = json.loads(response.read())
+    except HTTPError as error:
+        raw = error.read(2048).decode("utf-8", errors="replace")
+        try:
+            body = json.loads(raw)
+        except json.JSONDecodeError:
+            body = None
+        if isinstance(body, Mapping):
+            parts = [
+                str(body[name])
+                for name in ("error", "detail")
+                if body.get(name) not in (None, "")
+            ]
+            detail = ": ".join(parts) or raw
+        else:
+            detail = raw
+        raise ContinuousLoopError(
+            f"FORCERFT_ONLINE_HTTP_ERROR endpoint={url} "
+            f"status={error.code} detail={detail}"
+        ) from error
     require(isinstance(value, dict), "FORCERFT_ONLINE_SERVER_RESPONSE_INVALID")
     return value
 
@@ -515,6 +541,42 @@ def _run_episode(
             and status.get("current_episode_sampled") is False
             and status.get("server_persistent") is True,
             "FORCERFT_ONLINE_LEARNER_INVALID",
+        )
+        probe = status.get("newest_candidate_probe", {})
+        proposal_translation = probe.get(
+            "proposal_translation_mm_mean_p95_max", [None, None, None]
+        )
+        proposal_rpy = probe.get(
+            "proposal_rpy_deg_mean_p95_max", [None, None, None]
+        )
+        base_age = status.get(
+            "pre_takeover_base_age_s_p50_p95_max", [0.0, 0.0, 0.0]
+        )
+        print(
+            "[learner] "
+            f"td={status.get('unique_td_rows', 0)} "
+            f"episodes={status.get('distinct_td_episodes', 0)} "
+            f"cycles={status.get('completed_cycles', 0)}/"
+            f"{status.get('allowed_cycles', 0)} "
+            f"in_flight={status.get('in_flight_cycle')} "
+            f"available={status.get('available_cycles', 0)} "
+            f"warmup_q={status.get('warmup_twin_q_optimizer_steps', 0)} "
+            f"joint_q={status.get('joint_twin_q_optimizer_steps', 0)} "
+            f"actor={status.get('residual_actor_update_attempts', 0)}/"
+            f"{status.get('residual_actor_optimizer_steps', 0)}/"
+            f"{status.get('residual_actor_updates_skipped_no_gradient', 0)} "
+            f"draws={status.get('actual_q_sample_draws', 0)}/"
+            f"{status.get('policy_sample_draws', 0)}/"
+            f"{status.get('human_sample_draws', 0)} "
+            f"pinned={status.get('active_actor_revision')}/"
+            f"{status.get('active_actor_online_cycle')} "
+            f"newest_candidate={status.get('newest_candidate_cycle')}/"
+            f"{status.get('newest_candidate_activation_eligible')} "
+            f"proposal_mm_p95={proposal_translation[1]} "
+            f"proposal_deg_p95={proposal_rpy[1]} "
+            f"human_projection={status.get('human_projection_row_fraction', 0.0):.3f}/"
+            f"{status.get('human_projection_axis_fraction', 0.0):.3f} "
+            f"base_age_s_p95={base_age[1]}"
         )
     except (EpisodeLocalTransientError, CaptureOperatorExit) as error:
         _discard_unsealed_capture(root)

@@ -2370,7 +2370,7 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert report.policy_execution_smoke_bridge == "PASS"
     assert report.accepted_unique_r_transition_count == 3
     assert report.total_unique_r_transition_count == 3
-    assert report.training_starts == 100
+    assert report.training_starts == 1000
     assert report.training_starts_reached is False
     assert report.human_override_count == 1
     assert report.human_override_replay_count == 1

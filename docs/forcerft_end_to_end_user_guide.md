@@ -151,7 +151,7 @@ bootstrap checkpoint 保存 frozen base policy 的路径、严格零输出 wrist
 
 ## 8. 真实 ACK Critic warm-up 与 Residual Actor–Critic 训练
 
-Learner 状态依次为 `ack_replay_collection → ack_critic_warmup → residual_actor_critic_training`。前 100 条正式 sealed ACK transition 期间 Actor/Twin-Q 均不更新；达到阈值后在同一进程执行一次 256-step Twin-Q warm-up，然后每 cycle 固定执行 `2 Twin-Q + 1 wrist-wrench residual Actor`。训练只读取低维 state/wrench/base/residual/ACK 数据，不运行第二份 base policy、Flow sampler 或图像 Critic。Twin-Q 输入为原 58 维低维特征再追加 `control_source` 与归一化的 accepted gripper command，共 60 维；Residual Actor 仍为 25 维输入且只输出 TCP6。
+Learner 状态依次为 `ack_replay_collection → ack_critic_warmup → residual_actor_critic_training`。累计不足 1000 条正式 TD 或不足 3 条有效 episode 时 Actor/Twin-Q 均不更新；同时达到阈值后在同一进程执行一次 256-step Twin-Q warm-up，然后按累计 `floor(unique_td_rows/8)` 额度执行联合 cycle，每 cycle 固定为 `2 Twin-Q + 1 wrist-wrench residual Actor attempt`。训练只读取低维 state/wrench/base/residual/ACK 数据，不运行第二份 base policy、Flow sampler 或图像 Critic。Twin-Q 输入为原 58 维低维特征再追加 `control_source` 与归一化的 accepted gripper command，共 60 维；Residual Actor 仍为 25 维输入且只输出 TCP6。
 
 Critic 的行为标签始终由同一 residual-decision pose 下的 frozen-base absolute target 与 Controller ACK accepted absolute target 重表达后相减。每次 ACK 同时记录上层 target guard/绝对目标转换、客户端 measured-pose adapter/workspace，以及机器人端 reference filter 与非对称 pose leash 所需的最小执行上下文。Actor value 与 target-Q 都通过同一份可微 PyTorch 镜像将新候选映射到 ACK accepted residual；current 使用本行上下文，target 使用真实后继上下文。映射缺失或候选被真实 guard 拒绝时，只跳过相应 value/TD 项，不改写 terminal、reward 或 bootstrap mask。
 
@@ -171,6 +171,8 @@ outputs/{task_id}/online/replay
 task2 封口物化在 30 Hz 因果网格上允许双相机样本年龄不超过 `100 ms`，以覆盖正常调度抖动和偶发丢帧；双相机 skew 仍不得超过 `33 ms`，样本年龄超过 `100 ms` 仍拒绝进入 replay。历史 checkpoint 内保存的 provenance 不重写。
 
 所有满足当前 filter/leash accepted-Q 语义且 `critic_td_valid=true` 的正式 sealed online ACK transition 进入同一个低维 Critic replay，包括 autonomous policy ACK、同一 human 控制段内的 accepted correction、success、failure 和 intervention-truncated boundary。Replay 分别记录已物化 transition 数和本次可用于 TD 的行数；缺少接受映射的非终止行可继续提供合法 BC，但不产生 TD 预算。若候选相关的 TD 暂时为空，Learner 保持等待且不推进 optimizer、warm-up 或 cycle 计数。缺少可信 frozen absolute base、真实 dispatch decision context、accepted action、filter/leash 上下文或真实后继关联的旧 transition 不自动补零，保留原始记录但排除相应训练用途。
+
+这两点是当前实现相对旧论文文字的已知差异：合格 human transition 按 `control_source` 条件化后参与 Critic，且 Q 评价 controller 接受映射后的 residual；Actor 的 Q 项仍只抽 policy 样本。本轮不删除 human TD、不改奖励，也不把 Q 改回 pre-controller proposal。
 
 只有带可靠 pre-takeover base action 的 human row 才提供 residual Actor 监督目标；缺少该基线时仅令 `human_residual_valid=false`，不拒绝 episode。人工姿态差继续使用 RPY delta，BC target 单独投影到 Residual Actor 的输出范围，原始 ACK、行为残差与 human TD 不被改写。接管开始时清空旧 chunk/pending request/旧 observation、接管期间暂停 policy dispatch、释放后 fresh observation + fresh inference 的控制语义保持不变。
 
@@ -202,49 +204,25 @@ takeover、release 与 reset 继续作为信用截断边界。因此 Q 是“给
 `/home/rlc123/ForceSmolVLA/datasets/{task_id}_forcerft_online_001`；不写入
 `/home/rlc123/fr3_client_ws/datasets`。省略 `--capture-output-root` 时也使用这一仓库内默认目录。
 
-Unified server 每次启动恢复一个 residual Actor/Twin-Q checkpoint，并在完成 checkpoint/replay 完整性验证后立即启动独立 learner worker。`minimum_ack_transitions=100` 统计 success 与 failure episode 中全部正式 `critic_td_valid` ACK（policy 与 human）；达到阈值后一次性完成 256 个 Twin-Q optimizer step，再自动进入 `residual_actor_critic_training`。每个完成的联合 learner cycle 固定为 2 次 Twin-Q optimizer update、2 次对应的 target Polyak update 和 1 次 residual Actor update 尝试；Actor 因无有效支持而跳过时仍完成本 cycle，但单独计入 skipped。warm-up 不计入联合 cycle。训练不读取 demonstration 图像或运行第二份 base policy/Flow sampler。
+Unified server 每次启动恢复一个 residual Actor/Twin-Q checkpoint，并在完成 checkpoint/replay 完整性验证后立即启动独立 learner worker。只有累计至少 1000 条唯一、正式接纳并实际物化为 `critic_td_valid` 的 transition，且这些 TD 来自至少 3 条正式 episode，才一次性完成 256 个 Twin-Q warm-up optimizer step并进入联合训练。当前协议下合格 human TD 与 policy TD 都计入；仅可用于 BC 而不能用于 TD 的 human 行不计。每个完成的联合 learner cycle 固定为 2 次 Twin-Q optimizer update、2 次对应的 target Polyak update 和 1 次 residual Actor update 尝试；Actor 因无有效支持而跳过时仍完成并消费本 cycle。warm-up 不计入联合 cycle。训练不读取 demonstration 图像或运行第二份 base policy/Flow sampler。
 
-learner 与 recorder 并行：episode 正在执行时，只要推理优先协调器留出合理空隙，Critic 更新和 Actor 尝试都可继续；训练 Actor 与被执行端 pin 的 Actor 是两个实例。replay 尚未满足启动条件或暂时不能构造 TD batch 时，learner 可中断等待新 admission 通知并低频复查，不忙轮询。正式 admission 的 HTTP 确认只校验 committed manifest、登记 admission 并唤醒 learner，不等待任何梯度更新；collector 随后即可准备下一条 episode。连续模式没有每条 episode 的 cycle 上限、UTD 预算或恢复预算债务，已有 replay 在没有新 episode 时也可持续复用。
+learner 与 recorder 并行：episode 正在执行时，只要推理优先协调器留出合理空隙，Critic 更新和 Actor 尝试都可继续；训练 Actor 与被执行端 pin 的 Actor 是两个实例。联合训练使用累计数据额度 `allowed_cycles=floor(unique_td_rows/8)`；一个 in-flight cycle 与已完成 cycle 都占用额度。没有新 TD 时墙钟时间、等待人工确认和重复 sampling 均不增加额度。正式 admission 的 HTTP 确认只校验 committed manifest 并唤醒 learner，额度仅在 replay refresh 实际物化和筛选 TD 后登记。额度耗尽或 TD 暂不可映射时 learner 通过可取消事件等待，collector 仍可直接准备下一条，不执行 drain 或前台 join。
 
-async capture manifest 可以覆盖未达 100 条、Critic warm-up、联合训练或部分 Q-cycle 进度；`current_episode_sampled_by_learner=false` 必须由 replay membership 与实际 batch provenance 共同证明。当前执行、未提交、未确认和被拒绝 episode 不得进入 replay。
+async capture manifest 可以覆盖启动数据等待、Critic warm-up、额度等待、联合训练或 partial Q-cycle 进度；`current_episode_sampled_by_learner=false` 必须由 replay membership 与实际 batch provenance 共同证明。当前执行、未提交、未确认、rejected 与 discarded episode 不得进入 replay。
 
 canonical online loop 在每个 episode 后只打印两行 capture/learner 摘要和一行 admission 摘要；完整 contract、stream quality 与 episode seal 继续保存在 session 文件中，不在终端重复展开。
 
-启动时先选择 `outputs/{task_id}/online_ack_residual_filter_leash/training_checkpoints/` 中 cycle 最大且结构完整的 exact-resume checkpoint；也可用 `--learner-resume-checkpoint` 明确选择 checkpoint。没有可恢复 checkpoint 时只接受显式 `--online-residual-bootstrap-checkpoint`。模型结构、optimizer、loss、residual cap、batch、调度与 filter/leash accepted-Q 语义全部以 checkpoint 的 `state/config.yaml` 为唯一权威；旧 recorded-point/58D/其他在线语义 checkpoint 不恢复。仓库当前公共 YAML 用于严格算法配置一致性校验。不一致时停止；若仅是已知的旧逐 episode 调度，则明确报告 `FORCERFT_SCHEDULE_MIGRATION_REQUIRED:<path>`，不会静默退回零残差 bootstrap。
+启动时先选择 `outputs/{task_id}/online_ack_residual_filter_leash/training_checkpoints/` 中 cycle 最大且结构完整的 exact-resume checkpoint；也可用 `--learner-resume-checkpoint` 明确选择 checkpoint。没有可恢复 checkpoint 时只接受显式 `--online-residual-bootstrap-checkpoint`。模型结构、optimizer、loss、residual cap、batch、调度与 filter/leash accepted-Q 语义全部以 checkpoint 的 `state/config.yaml` 为唯一权威；缺少 TD 额度 ledger、逐轴 cap 或新 loss 配置的旧 checkpoint 不恢复，也不走旧调度迁移。
 
-新 schema 的普通 resume 仍要求配置完全一致。将旧逐 episode 调度 checkpoint 迁移到 continuous async 时，必须使用一次性白名单迁移命令；它不覆盖源目录，只允许调度字段改变，模型、targets、两个 optimizer、warm-up/cycle/Q/Actor 计数、replay 与 base/normalizer 绑定保持不变：
-
-```bash
-"$MODEL_PYTHON" tools/migrate_forcerft_online_schedule_checkpoint.py \
-  --source-checkpoint \
-    "$TASK_OUTPUT_ROOT/online_ack_residual_filter_leash/training_checkpoints/residual_actor_critic_cycle_000023" \
-  --target-config configs/forcerft/online_ack_residual_actor_critic.yaml \
-  --destination \
-    "$TASK_OUTPUT_ROOT/online_ack_residual_filter_leash/training_checkpoints/migrated_continuous_async_cycle_000023"
-```
-
-迁移记录包含源 checkpoint 路径/hash、逐字段配置差异、迁移版本和迁移时 cycle；旧 admission budget 只保留为 audit metadata，不再形成训练限制或恢复债务。旧 checkpoint 缺少确切 publication cycle/policy epoch 时标记 `legacy/unknown`，迁移后在新执行代次重新绑定，不用当前 cycle 伪造历史值。首次使用迁移结果应显式选择：
-
-```bash
-"$MODEL_PYTHON" tools/run_forcerft_online_loop.py \
-  --task-id "$TASK_ID" \
-  --output-root "$TASK_OUTPUT_ROOT" \
-  --dataset-root "$LEROBOT_DATASET" \
-  --capture-output-root "$ONLINE_CAPTURE_ROOT" \
-  --learner-resume-checkpoint \
-    "$TASK_OUTPUT_ROOT/online_ack_residual_filter_leash/training_checkpoints/migrated_continuous_async_cycle_000023" \
-  --max-episodes 3 \
-  --task "Pick up the purple ring and place it onto the red peg." \
-  --episode-time 120 \
-  --tool-profile onrobot_robotiq \
-  --allow-development-policy-execution-smoke
-```
+新 schema 的普通 resume 仍要求配置完全一致。新的 TD 额度 ledger、逐轴 cap、loss 与 Actor 学习率都属于算法状态；旧 checkpoint 或旧 bootstrap 不能迁移或静默套用新 YAML，必须从冻结 SFT 先验重新构建 zero-residual bootstrap。
 
 `--allow-development-policy-execution-smoke` 是已有的显式机器人执行开关；它不选择模型，也不触发 publication、activation、candidate、profile 或 binding 流程。力限、takeover generation、stale-result rejection、ACK 和 recorder 单控制链保持不变。
 
 在线推理只对反归一化后的 gripper candidate 做有限值饱和：低于 `-0.01 m` 按闭合端处理，高于 `0.095 m` 按打开端处理，二值判定阈值保持 `0.0425 m`，随后只输出精确的 `0.0 m` 或 `0.085 m`。`NaN/Inf` 继续拒绝；TCP6、力限和 action normalizer 不做裁剪或改写。
 
-唯一发布/保存时钟是已完成的联合 learner cycle：完成 cycle 100、200、300……时发布 residual Actor candidate，完成 cycle 1000、2000、3000……时保存完整 exact-resume checkpoint。发布不取决于该 cycle 的 Actor optimizer 是否 applied；参数未变化时仍保留该周期 publication event，但相同权重 blob 可复用。候选只含残差 Actor 快照，并记录 publication cycle 与实际 Actor optimizer step。
+Residual Actor 的归一化输出逐轴为 `tanh(logit)*cap6`，其中 `cap6=min(0.1, physical_limit6/delta_action7.std[:6])`。物理 proposal 相对 frozen-base target 的每轴上限为平移 1 mm、RPY 0.5 度；这不是 TCP 实测运动、总旋转角或整条轨迹的保证。online Actor、target Actor、CPU inference 与 human BC 投影共用同一 `cap6`。真实 ACK-minus-base 行为残差保留原值，即使超过 cap 也不回写裁剪。
+
+唯一发布/保存时钟是已完成的联合 learner cycle：完成 cycle 100、200、300……时发布 residual Actor candidate，完成 cycle 1000、2000、3000……时保存完整 exact-resume checkpoint。发布不取决于该 cycle 的 Actor optimizer 是否 applied；参数未变化时仍保留该周期 publication event，但相同权重 blob 可复用。候选记录导出时的 admission/TD 覆盖、实际 sample draws、逐轴 cap/loss 合同，并对每条已加载 episode 的确定性状态做轻量 proposal probe；它不是自主成功率评估。候选自己的训练数据未达到 1000 TD/3 episode 时不得激活，不能借激活时后来加入的数据补资格。
 
 发布与执行激活是两个事件。episode 内执行 Actor 始终 pin；同一 episode 中产生多个候选时只保留最新 pending candidate，并在下一个既有 episode boundary 原子激活。激活不再触发完整训练 checkpoint。状态分别展示当前 learner cycle、last published cycle，以及 active Actor 的 publication cycle/revision/policy epoch。
 
