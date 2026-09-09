@@ -505,54 +505,46 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     ] == "/tmp/task3-detector.sock"
 
 
-def test_admission_budget_drain_is_identity_bound_and_fail_closed(
+def test_admission_notification_is_identity_bound_and_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = []
 
-    def post(url, payload, *, timeout):
+    def post(url, payload, *, timeout=10.0):
         calls.append((url, payload, timeout))
         return {
-            "status": "TRAINING_BUDGET_DRAINED",
+            "status": "FORMAL_ADMISSION_REGISTERED",
             "admission_id": "003__episode_000000",
-            "admitted_rows_for_latest_episode": 400,
-            "computed_cycle_budget": 7,
-            "completed_cycle_count": 7,
-            "remaining_cycle_budget": 0,
-            "twin_q_updates": 14,
-            "residual_actor_updates": 7,
-            "replay_refresh_ms": 20.0,
         }
 
     monkeypatch.setattr(loop, "_post_json", post)
-    result = loop._drain_admission_budget(
+    result = loop._notify_admission_committed(
         type(
             "Args",
             (),
-            {"policy_port": 8000, "training_budget_drain_timeout": 60.0},
+            {"policy_port": 8000},
         )(),
         identity={"session_id": "capture_003", "episode_id": "episode_000000"},
         admission={"admission_id": "003__episode_000000"},
     )
-    assert result["remaining_cycle_budget"] == 0
+    assert result["status"] == "FORMAL_ADMISSION_REGISTERED"
     assert calls[0][1]["admission_id"] == "003__episode_000000"
-    assert calls[0][2] == 65.0
+    assert calls[0][2] == 10.0
 
     monkeypatch.setattr(
         loop,
         "_post_json",
         lambda *_args, **_kwargs: {
-            "status": "TRAINING_BUDGET_DRAINED",
+            "status": "FORMAL_ADMISSION_REGISTERED",
             "admission_id": "wrong",
-            "remaining_cycle_budget": 0,
         },
     )
-    with pytest.raises(RuntimeError, match="TRAINING_BUDGET_NOT_DRAINED"):
-        loop._drain_admission_budget(
+    with pytest.raises(RuntimeError, match="ADMISSION_NOTIFICATION_FAILED"):
+        loop._notify_admission_committed(
             type(
                 "Args",
                 (),
-                {"policy_port": 8000, "training_budget_drain_timeout": 60.0},
+                {"policy_port": 8000},
             )(),
             identity={
                 "session_id": "capture_003",
@@ -562,40 +554,8 @@ def test_admission_budget_drain_is_identity_bound_and_fail_closed(
         )
 
 
-def test_outstanding_budget_drain_is_session_independent_and_fail_closed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = []
-
-    def post(url, payload, *, timeout):
-        calls.append((url, payload, timeout))
-        return {
-            "status": "OUTSTANDING_TRAINING_BUDGET_DRAINED",
-            "total_entitled_cycle_budget": 7,
-            "completed_cycle_count": 7,
-            "remaining_cycle_budget": 0,
-            "drained_cycle_count": 4,
-            "twin_q_updates": 8,
-            "residual_actor_updates": 4,
-            "budget_drain_elapsed_ms": 12.0,
-        }
-
-    monkeypatch.setattr(loop, "_post_json", post)
-    result = loop._drain_outstanding_budget(
-        type(
-            "Args",
-            (),
-            {"policy_port": 8000, "training_budget_drain_timeout": 60.0},
-        )()
-    )
-    assert result["drained_cycle_count"] == 4
-    assert calls == [
-        (
-            "http://127.0.0.1:8000/runtime/drain-outstanding-budget",
-            {"timeout_seconds": 60.0},
-            65.0,
-        )
-    ]
+def test_continuous_loop_has_no_outstanding_budget_drain_helper() -> None:
+    assert not hasattr(loop, "_drain_outstanding_budget")
 
 
 def test_wrench_gap_rejects_only_episode_and_writes_no_replay(capsys, monkeypatch) -> None:
@@ -689,6 +649,9 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
         "select_resume_or_bootstrap_checkpoint",
         lambda *_args, **_kwargs: type("Selected", (), {"path": resume})(),
     )
+    monkeypatch.setattr(loop, "load_checkpoint_training_config", lambda _path: {})
+    monkeypatch.setattr(loop, "load_common_actor_critic_config", lambda _task: {})
+    monkeypatch.setattr(loop, "schedule_migration_required", lambda *_args: False)
     monkeypatch.setattr(loop.subprocess, "Popen", lambda *_args, **_kwargs: Process())
     monkeypatch.setattr(
         loop, "_start_detector_worker",
@@ -729,10 +692,12 @@ def test_loop_continues_after_rejected_episode_until_one_is_admitted(
 def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    resume = tmp_path / "online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000100"
+    resume = (
+        tmp_path
+        / "online_ack_residual/training_checkpoints/residual_actor_critic_cycle_000100"
+    )
     (resume / "actor").mkdir(parents=True)
     commands: list[list[str]] = []
-    recovery_drains: list[object] = []
 
     class Process:
         pass
@@ -760,11 +725,9 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
         "policy_epoch": 0,
         "recovery_budget_drain_required": True,
     })
-    monkeypatch.setattr(
-        loop,
-        "_drain_outstanding_budget",
-        lambda args: recovery_drains.append(args),
-    )
+    monkeypatch.setattr(loop, "load_checkpoint_training_config", lambda _path: {})
+    monkeypatch.setattr(loop, "load_common_actor_critic_config", lambda _task: {})
+    monkeypatch.setattr(loop, "schedule_migration_required", lambda *_args: False)
     monkeypatch.setattr(loop, "_run_episode", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(loop, "_stop_server", lambda *_args, **_kwargs: None)
     args = type("Args", (), {
@@ -782,13 +745,46 @@ def test_loop_passes_selected_exact_resume_directly_to_unified_server(
     })()
 
     assert loop.run_loop(args) == 0
-    assert recovery_drains == [args]
     assert args.deployed_actor_checkpoint == (resume / "actor").resolve()
     command = commands[0]
     assert command[command.index("--learner-resume-checkpoint") + 1] == str(resume)
     assert "--allow-development-policy-execution-smoke" in command
     assert "--deployment-profile" not in command
     assert "--deployment-binding" not in command
+
+
+def test_loop_reports_legacy_schedule_migration_instead_of_bootstrapping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    legacy = tmp_path / "training_checkpoints/residual_actor_critic_cycle_000023"
+    monkeypatch.setattr(
+        loop,
+        "select_resume_or_bootstrap_checkpoint",
+        lambda *_args, **_kwargs: type("Selected", (), {"path": legacy})(),
+    )
+    monkeypatch.setattr(loop, "load_checkpoint_training_config", lambda _path: {})
+    monkeypatch.setattr(loop, "load_common_actor_critic_config", lambda _task: {})
+    monkeypatch.setattr(loop, "schedule_migration_required", lambda *_args: True)
+    monkeypatch.setattr(
+        loop.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: pytest.fail("server must not start"),
+    )
+    args = type(
+        "Args",
+        (),
+        {
+            "allow_development_policy_execution_smoke": True,
+            "output_root": tmp_path,
+            "task_id": "task3",
+        },
+    )()
+
+    with pytest.raises(
+        loop.ContinuousLoopError,
+        match="FORCERFT_SCHEDULE_MIGRATION_REQUIRED",
+    ):
+        loop.run_loop(args)
 
 
 def test_q_stops_before_admission_and_server_gets_graceful_signal(

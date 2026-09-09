@@ -1,11 +1,16 @@
 {
-  "generated_at": "2026-09-08T06:41:02.112446+00:00",
+  "generated_at": "2026-09-09T05:08:09.620627+00:00",
   "nodes": {
     "src::forcesmolvla_deployment_binding": {
       "code_fingerprint": "",
       "label": "deployment_binding.py",
-      "last": "2026-09-03T05:35:58.345150+00:00",
+      "last": "2026-09-09T02:16:24.026201+00:00",
       "provenance": [
+        {
+          "date": "2026-09-09T02:16:24.026201+00:00",
+          "outcome": "useful",
+          "q": "How do I deploy the task4 ForceSmolVLA SFT checkpoint?"
+        },
         {
           "date": "2026-09-03T05:35:58.345150+00:00",
           "outcome": "useful",
@@ -17,10 +22,10 @@
           "q": "我的意思是我这个文件不需要绑定hash256，修改文件我不需要这么严格的要求"
         }
       ],
-      "score": 1.778624427,
+      "score": 2.737840354,
       "source_file": "forcesmolvla/deployment_binding.py",
       "status": "preferred",
-      "uses": 2
+      "uses": 3
     },
     "src::forcesmolvla_inference": {
       "code_fingerprint": "",
@@ -33,7 +38,7 @@
           "q": "给我一下命令行也是对于task3"
         }
       ],
-      "score": 0.890004565,
+      "score": 0.870973777,
       "source_file": "forcesmolvla/inference.py",
       "status": "tentative",
       "uses": 1
@@ -54,7 +59,7 @@
           "q": "给我forcevla的那个也取消掉bounding和输入RUN FORCEVLA"
         }
       ],
-      "score": 1.779973726,
+      "score": 1.741912908,
       "source_file": "forcesmolvla/modeling_forcesmolvla.py",
       "status": "preferred",
       "uses": 2
@@ -70,7 +75,7 @@
           "q": "Remaining minimal fix: guarantee one FM-eligible row per Actor update"
         }
       ],
-      "score": 0.873896616,
+      "score": 0.855210262,
       "source_file": "forcesmolvla/rft/exact_resume.py",
       "status": "tentative",
       "uses": 1
@@ -86,8 +91,24 @@
           "q": "侧键本身不会打断policy对吧，控制夹爪是否必须保持SpaceMouse机械臂接管"
         }
       ],
-      "score": 0.998179632,
+      "score": 0.976835759,
       "source_file": "forcesmolvla/rft/online/actor_learner_runtime.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src::forcesmolvla_rft_online_integrated_capture": {
+      "code_fingerprint": "",
+      "label": "integrated_capture.py",
+      "last": "2026-09-08T07:10:09.637754+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T07:10:09.637754+00:00",
+          "outcome": "useful",
+          "q": "修复 replay_training.py 的 NumPy array not writable warning，并核对 human 相关在线计数的统计域"
+        }
+      ],
+      "score": 0.979074636,
+      "source_file": "forcesmolvla/rft/online/integrated_capture.py",
       "status": "tentative",
       "uses": 1
     },
@@ -107,7 +128,7 @@
           "q": "是我没有启动conda的原因阿妈"
         }
       ],
-      "score": 1.951788253,
+      "score": 1.91005356,
       "source_file": "forcesmolvla/rft/online/integrated_capture_backend.py",
       "status": "preferred",
       "uses": 2
@@ -123,8 +144,24 @@
           "q": "run_forcerft_online_loop.py 这条命令在线采集的数据和保存的 checkpoint 都在哪个路径"
         }
       ],
-      "score": 0.999311583,
+      "score": 0.977943506,
       "source_file": "forcesmolvla/rft/online/learner_checkpoint.py",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src::forcesmolvla_rft_online_production_bridge": {
+      "code_fingerprint": "",
+      "label": "production_bridge.py",
+      "last": "2026-09-08T07:10:09.637754+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T07:10:09.637754+00:00",
+          "outcome": "useful",
+          "q": "修复 replay_training.py 的 NumPy array not writable warning，并核对 human 相关在线计数的统计域"
+        }
+      ],
+      "score": 0.979074636,
+      "source_file": "forcesmolvla/rft/online/production_bridge.py",
       "status": "tentative",
       "uses": 1
     },
@@ -144,10 +181,26 @@
           "q": "除了大文件的，其他的也git上去"
         }
       ],
-      "score": 1.872839078,
+      "score": 1.832792538,
       "source_file": "forcesmolvla/rft/online/replay.py",
       "status": "preferred",
       "uses": 2
+    },
+    "src::forcesmolvla_rft_online_replay_training": {
+      "code_fingerprint": "",
+      "label": "replay_training.py",
+      "last": "2026-09-08T07:10:09.637754+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-08T07:10:09.637754+00:00",
+          "outcome": "useful",
+          "q": "修复 replay_training.py 的 NumPy array not writable warning，并核对 human 相关在线计数的统计域"
+        }
+      ],
+      "score": 0.979074636,
+      "source_file": "forcesmolvla/rft/online/replay_training.py",
+      "status": "tentative",
+      "uses": 1
     },
     "src::forcesmolvla_rft_training_cycle_runtime": {
       "code_fingerprint": "",
@@ -160,7 +213,7 @@
           "q": "run_forcerft_online_loop.py 这条命令在线采集的数据和保存的 checkpoint 都在哪个路径"
         }
       ],
-      "score": 0.999311583,
+      "score": 0.977943506,
       "source_file": "forcesmolvla/rft/training_cycle_runtime.py",
       "status": "tentative",
       "uses": 1
@@ -176,7 +229,7 @@
           "q": "侧键本身不会打断policy对吧，控制夹爪是否必须保持SpaceMouse机械臂接管"
         }
       ],
-      "score": 0.998179632,
+      "score": 0.976835759,
       "source_file": "",
       "status": "tentative",
       "uses": 1
@@ -192,7 +245,7 @@
           "q": "侧键本身不会打断policy对吧，控制夹爪是否必须保持SpaceMouse机械臂接管"
         }
       ],
-      "score": 0.998179632,
+      "score": 0.976835759,
       "source_file": "test_online_integrated_capture_backend.py",
       "status": "tentative",
       "uses": 1
@@ -200,18 +253,23 @@
     "tools::run_forcerft_online_loop": {
       "code_fingerprint": "",
       "label": "run_forcerft_online_loop.py",
-      "last": "2026-09-07T05:17:24.253913+00:00",
+      "last": "2026-09-09T04:30:13.578310+00:00",
       "provenance": [
+        {
+          "date": "2026-09-09T04:30:13.578310+00:00",
+          "outcome": "useful",
+          "q": "我发现现在是不是采集完才进行那个10/20次迭代"
+        },
         {
           "date": "2026-09-07T05:17:24.253913+00:00",
           "outcome": "useful",
           "q": "是我没有启动conda的原因阿妈"
         }
       ],
-      "score": 0.975849631,
+      "score": 1.954374766,
       "source_file": "run_forcerft_online_loop.py",
-      "status": "tentative",
-      "uses": 1
+      "status": "preferred",
+      "uses": 2
     },
     "tools::run_forcerft_production_bridge_oneshotfrozenrewarddetector": {
       "code_fingerprint": "",
@@ -224,7 +282,7 @@
           "q": "优先优化 ForceRFT admission：复用 PreparedEpisode、固定奖励检测 batch 并预热、增加阶段计时、修正 training_started 日志"
         }
       ],
-      "score": 0.99976528,
+      "score": 0.978387502,
       "source_file": "run_forcerft_production_bridge.py",
       "status": "tentative",
       "uses": 1
@@ -240,7 +298,7 @@
           "q": "PermissionError: DEPLOYMENT_BINDING_SERVER_SOURCE_SHA256_MISMATCH"
         }
       ],
-      "score": 0.888469278,
+      "score": 0.869471319,
       "source_file": "serve_policy.py",
       "status": "tentative",
       "uses": 1
@@ -256,7 +314,7 @@
           "q": "PermissionError: DEPLOYMENT_BINDING_SERVER_SOURCE_SHA256_MISMATCH"
         }
       ],
-      "score": 0.888469278,
+      "score": 0.869471319,
       "source_file": "serve_policy.py",
       "status": "tentative",
       "uses": 1
@@ -272,7 +330,7 @@
           "q": "PermissionError: DEPLOYMENT_BINDING_SERVER_SOURCE_SHA256_MISMATCH"
         }
       ],
-      "score": 0.888469278,
+      "score": 0.869471319,
       "source_file": "serve_policy.py",
       "status": "tentative",
       "uses": 1
@@ -288,7 +346,7 @@
           "q": "Remaining minimal fix: guarantee one FM-eligible row per Actor update"
         }
       ],
-      "score": 0.873896616,
+      "score": 0.855210262,
       "source_file": "train_forcerft_actor_critic.py",
       "status": "tentative",
       "uses": 1
@@ -304,7 +362,7 @@
           "q": "Remaining minimal fix: guarantee one FM-eligible row per Actor update"
         }
       ],
-      "score": 0.873896616,
+      "score": 0.855210262,
       "source_file": "train_forcerft_actor_critic.py",
       "status": "tentative",
       "uses": 1

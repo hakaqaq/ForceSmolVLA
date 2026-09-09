@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate ForceSmolVLA task1 v3 and compare it with legacy ForceVLA v2.1."""
+"""Validate ForceSmolVLA v3 and compare it with legacy ForceVLA v2.1."""
 
 from __future__ import annotations
 
@@ -112,7 +112,8 @@ def main() -> None:
     warnings: list[str] = []
     if v3_info.get("codebase_version") != "v3.0":
         errors.append("V3_CODEBASE_VERSION_MISMATCH")
-    if v3_info.get("total_episodes") != 50:
+    converted_episode_count = len(v3_manifest.get("episodes", ()))
+    if v3_info.get("total_episodes") != converted_episode_count:
         errors.append("V3_EPISODE_COUNT_MISMATCH")
     if v3_manifest.get("artifact_status") != "development_only":
         errors.append("V3_DEVELOPMENT_STATUS_MISSING")
@@ -126,19 +127,14 @@ def main() -> None:
         or split_sets["val"] & split_sets["test"]
     ):
         errors.append("SPLIT_NOT_DISJOINT")
-    if tuple(map(len, (split_sets["train"], split_sets["val"], split_sets["test"]))) != (
-        40,
-        5,
-        5,
-    ):
-        errors.append("SPLIT_COUNT_MISMATCH")
+    split_episodes = set().union(*split_sets.values())
     normalizer_episode_sets = {
         name: set(payload["fit_episode_ids"])
         for name, payload in normalizer["features"].items()
     }
     if any(value != split_sets["train"] for value in normalizer_episode_sets.values()):
         errors.append("NORMALIZER_NOT_TRAIN_ONLY")
-    if v3_info.get("splits") == {"train": "0:50"}:
+    if v3_info.get("splits") == {"train": f"0:{converted_episode_count}"}:
         warnings.append(
             "LEROBOT_STORAGE_META_EXPOSES_ALL_EPISODES_AS_TRAIN; "
             "ForceSmolVLA loader must enforce split_manifest.json"
@@ -146,8 +142,22 @@ def main() -> None:
 
     v2_entries = {entry["raw_episode"]: entry for entry in v2_manifest["episodes"]}
     v3_entries = {entry["raw_episode_id"]: entry for entry in v3_manifest["episodes"]}
-    if set(v2_entries) != set(v3_entries):
+    excluded_episode_ids = {
+        entry["raw_episode_id"] for entry in v3_manifest.get("excluded_episodes", ())
+    }
+    if (
+        split_episodes != set(v3_entries)
+        or set(v3_entries) & excluded_episode_ids
+        or set(v2_entries) != set(v3_entries) | excluded_episode_ids
+    ):
         errors.append("RAW_EPISODE_MAPPING_MISMATCH")
+    ordered_v3_entries = sorted(
+        v3_manifest["episodes"], key=lambda entry: entry["output_episode_index"]
+    )
+    if [entry["output_episode_index"] for entry in ordered_v3_entries] != list(
+        range(converted_episode_count)
+    ):
+        errors.append("V3_OUTPUT_EPISODE_INDEX_NOT_CONTIGUOUS")
 
     all_state: list[np.ndarray] = []
     all_wrench: list[np.ndarray] = []
@@ -170,13 +180,16 @@ def main() -> None:
 
     v3_data_files = sorted((args.v3_root / "data").rglob("file-*.parquet"))
     v2_data_files = sorted((args.v21_root / "data").rglob("episode_*.parquet"))
-    if len(v3_data_files) != 50 or len(v2_data_files) != 50:
+    if len(v3_data_files) != converted_episode_count or len(v2_data_files) != len(
+        v2_entries
+    ):
         errors.append("PARQUET_FILE_COUNT_MISMATCH")
 
-    for episode_index in range(50):
-        episode_id = f"episode_{episode_index:06d}"
+    for entry in ordered_v3_entries:
+        episode_id = entry["raw_episode_id"]
+        episode_index = int(entry["output_episode_index"])
         v3_path = args.v3_root / "data/chunk-000" / f"file-{episode_index:03d}.parquet"
-        v2_path = args.v21_root / "data/chunk-000" / f"episode_{episode_index:06d}.parquet"
+        v2_path = args.v21_root / "data/chunk-000" / f"{episode_id}.parquet"
         v3_table = pq.read_table(v3_path, columns=V3_NUMERIC_COLUMNS)
         v2_table = pq.read_table(v2_path, columns=["observation.state", "action"])
         row_count = len(v3_table)
@@ -230,7 +243,8 @@ def main() -> None:
         if not np.array_equal(global_index, np.arange(expected_global_index, expected_global_index + row_count)):
             errors.append(f"{episode_id}:GLOBAL_INDEX_NOT_CONTIGUOUS")
         expected_global_index += row_count
-        if not np.allclose(timestamp, frame_index / 30.0, atol=2e-6, rtol=0):
+        expected_timestamp = (frame_index / 30.0).astype(np.float32)
+        if not np.array_equal(timestamp.astype(np.float32), expected_timestamp):
             errors.append(f"{episode_id}:TIMESTAMP_MISMATCH")
         if np.any(camera1_ns > tuple_ns) or np.any(camera2_ns > tuple_ns) or np.any(ack_ns > tuple_ns):
             errors.append(f"{episode_id}:FUTURE_HOST_SAMPLE")
@@ -301,7 +315,9 @@ def main() -> None:
     v2_action_aligned = np.concatenate(aligned_v2_action)
 
     image_comparison: dict[str, Any] = {}
-    sample_episodes = [0, 12, 25, 37, 49]
+    sample_episodes = np.unique(
+        np.linspace(0, converted_episode_count - 1, min(5, converted_episode_count), dtype=int)
+    )
     for v3_name, v2_name in (
         ("observation.images.camera1", "observation.image"),
         ("observation.images.camera2", "observation.wrist_image"),
@@ -309,10 +325,12 @@ def main() -> None:
         exact = 0
         pixel_abs: list[np.ndarray] = []
         compared = 0
-        for episode_index in sample_episodes:
-            episode_id = f"episode_{episode_index:06d}"
+        for sample_index in sample_episodes:
+            entry = ordered_v3_entries[int(sample_index)]
+            episode_id = entry["raw_episode_id"]
+            episode_index = int(entry["output_episode_index"])
             v3_path = args.v3_root / "data/chunk-000" / f"file-{episode_index:03d}.parquet"
-            v2_path = args.v21_root / "data/chunk-000" / f"episode_{episode_index:06d}.parquet"
+            v2_path = args.v21_root / "data/chunk-000" / f"{episode_id}.parquet"
             v3_table = pq.read_table(
                 v3_path, columns=[v3_name, "provenance.tuple_host_monotonic_ns"]
             )

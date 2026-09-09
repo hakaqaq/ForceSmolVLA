@@ -126,5 +126,23 @@ def test_online_residual_bootstrap_needs_no_critic_parent_and_starts_zero(
     }
     assert runtime["replay"]["loaded_episode_keys"] == []
     assert runtime["replay"]["per_episode_critic_row_counts"] == {}
-    assert runtime["replay"]["admission_cycle_budgets"] == {}
     assert runtime["replay"]["replay_generation"] == 0
+    assert runtime["partial_cycle_q_updates"] == 0
+    assert runtime["scheduling"] == {
+        "mode": "continuous_async",
+        "last_publish_attempt_cycle": 0,
+        "last_published_cycle": None,
+        "publication_event_count": 0,
+        "last_periodic_checkpoint_cycle": 0,
+        "periodic_checkpoint_event_count": 0,
+        "last_saved_checkpoint_cycle": None,
+        "active_publication_cycle": None,
+        "active_actor_optimizer_step": 0,
+        "active_policy_epoch": 0,
+        "active_policy_epoch_status": "bootstrap",
+        "active_actor_checkpoint": str(
+            (checkpoint / "models/residual_actor.pt").resolve()
+        ),
+        "pending_publication": None,
+        "retired_admission_cycle_budgets": {},
+    }

@@ -5,8 +5,10 @@ from pathlib import Path
 import sys
 import threading
 from types import SimpleNamespace
+import warnings
 
 import numpy as np
+import pytest
 import torch
 
 
@@ -993,28 +995,33 @@ def test_replay_sampling_is_without_replacement_when_population_is_large_enough(
     assert balanced.state7[:, 0].tolist().count(1.0) == 5
 
 
-def test_online_schedule_is_2q_1actor_and_episode_bounded() -> None:
+def test_replay_sampling_copies_read_only_normalizer_stats() -> None:
+    replay = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=[[0.0] * 7 for _ in range(3)],
+    )
+    replay.normalizer.delta_action7.mean.setflags(write=False)
+    replay.normalizer.delta_action7.std.setflags(write=False)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sampled = replay.sample(1, device=torch.device("cpu"), seed=7)
+
+    assert sampled is not None
+    assert not any("not writable" in str(item.message) for item in caught)
+
+
+def test_online_schedule_is_continuous_2q_1actor_with_100_1000_cadence() -> None:
     policy = ResidualActorCriticSchedule()
+    assert policy.scheduling_mode == "continuous_async"
     assert policy.twin_q_updates_per_cycle == 2
     assert policy.residual_actor_updates_per_cycle == 1
-    assert policy.cycles_for_admission(100) == 2
-    assert policy.cycles_for_admission(400) == 7
-    assert policy.cycles_for_admission(641) == 10
-    assert policy.cycles_for_observed_admission(
-        new_critic_td_valid_rows=99,
-        total_critic_td_valid_rows=99,
-    ) == 0
-    assert policy.cycles_for_observed_admission(
-        new_critic_td_valid_rows=1,
-        total_critic_td_valid_rows=100,
-    ) == 1
-    assert policy.residual_actor_critic_cycle_budget((100, 400, 641)) == 19
-    assert not policy.candidate_due(9)
-    assert policy.candidate_due(10)
-    assert ResidualActorCriticSchedule(
-        admitted_rows_per_cycle=32,
-        max_cycles_per_admitted_episode=20,
-    ).cycles_for_admission(400) == 13
+    assert not policy.candidate_due(99)
+    assert policy.candidate_due(100)
+    assert not policy.checkpoint_due(999)
+    assert policy.checkpoint_due(1000)
+    assert not hasattr(policy, "max_cycles_per_admitted_episode")
+    assert not hasattr(policy, "admitted_rows_per_cycle")
 
 
 def test_task_profiles_cannot_override_algorithm_parameters() -> None:
@@ -1023,15 +1030,14 @@ def test_task_profiles_cannot_override_algorithm_parameters() -> None:
     assert algorithm_hyperparameters(task2) == algorithm_hyperparameters(task3)
     assert task2["task"] != task3["task"]
     assert task2["residual_actor_critic_training"] == {
-        "admitted_rows_per_cycle": 64,
+        "scheduling_mode": "continuous_async",
         "twin_q_updates_per_cycle": 2,
         "residual_actor_updates_per_cycle": 1,
-        "max_cycles_per_admitted_episode": 10,
-        "residual_candidate_interval_actor_steps": 10,
-        "training_checkpoint_interval_cycles": 20,
+        "residual_candidate_interval_cycles": 100,
+        "training_checkpoint_interval_cycles": 1000,
         "retained_training_checkpoint_count": 10,
         "checkpoint_on_warmup_complete": True,
-        "checkpoint_on_candidate_activation": True,
+        "checkpoint_on_candidate_activation": False,
     }
 
 
@@ -1044,12 +1050,13 @@ def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
     learner.replay = None
     learner.training_policy = ResidualActorCriticSchedule(
         checkpoint_on_warmup_complete=False,
-        checkpoint_on_candidate_activation=False,
     )
     learner._loaded_episode_keys = set()
     learner._admission_progress = {}
     learner._expected_admission_id = None
-    learner._joint_cycle_budget = 0
+    learner._state_lock = threading.RLock()
+    learner.sampled_session_ids = set()
+    learner.sampled_episode_ids = set()
     learner.latest_replay_refresh_ms = 0.0
     learner.latest_critic_update_ms = 0.0
     learner.latest_actor_update_ms = 0.0
@@ -1061,6 +1068,7 @@ def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
             "ack_critic_warmup_complete": learner_state == "residual_actor_critic_training",
             "ack_critic_warmup_steps": warmup_updates,
             "residual_actor_critic_cycles": 0,
+            "partial_cycle_q_updates": 0,
             "counters": {
                 "twin_q_optimizer_steps": warmup_updates,
                 "residual_actor_optimizer_steps": 0,
@@ -1072,6 +1080,12 @@ def tiny_continuous_learner(*, learner_state: str, warmup_updates: int = 0):
                 "critic_td_valid_rows": 0,
                 "actor_q_valid_rows": 0,
                 "human_residual_valid_rows": 0,
+            },
+            "scheduling": {
+                "mode": "continuous_async",
+                "candidate_export_generation": "test-generation",
+                "last_publish_attempt_cycle": 0,
+                "last_published_cycle": 0,
             },
         },
     }
@@ -1120,7 +1134,7 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
 
         def critic_td_rows_for_episode(self, episode_id):
             admission_id = str(episode_id).split("/", 1)[0]
-            return {"a": 99, "b": 1, "c": 400}[admission_id]
+            return {"a": 99, "b": 1, "c": 400, "d": 1}[admission_id]
 
         actor_q_valid_rows = property(lambda self: sum(self.counts))
         human_residual_valid_rows = property(lambda _self: 0)
@@ -1131,8 +1145,13 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
         calls.append(admission_id)
         episode_id = f"{admission_id}/episode"
         row = {
-            "identity": {"episode_id": episode_id, "session_id": "old"},
-            "materialized_count": {"a": 99, "b": 1, "c": 400}[admission_id],
+            "identity": {
+                "episode_id": episode_id,
+                "session_id": "current" if admission_id == "d" else "old",
+            },
+            "materialized_count": {"a": 99, "b": 1, "c": 400, "d": 1}[
+                admission_id
+            ],
         }
         macro = SimpleNamespace(transition=row)
         return [row], (macro,), {episode_id: Path("episode")}, []
@@ -1152,13 +1171,13 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
 
     learner._refresh_replay()
     assert calls == ["a"]
-    assert learner.admission_budget_status("a")["computed_cycle_budget"] == 0
+    assert learner._admission_progress["a"]["cycle_count_when_observed"] == 0
     signatures[0].append("b")
     learner._refresh_replay()
-    assert learner.admission_budget_status("b")["computed_cycle_budget"] == 1
+    assert learner._admission_progress["b"]["cycle_count_when_observed"] == 0
     learner.learner["runtime"]["residual_actor_critic_cycles"] = 1
     signatures[0].append("c")
-    learner.expect_admission("c")
+    learner.notify_admission("c")
     learner._refresh_replay()
     assert calls == ["a", "b", "c"]
     assert learner.learner["runtime"]["replay"]["loaded_episode_keys"] == [
@@ -1166,16 +1185,33 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
         "b",
         "c",
     ]
-    assert learner.admission_budget_status("c") == {
+    assert learner._admission_progress["c"] == {
         "episode_key": "c",
         "recorded_transition_rows": 400,
         "admitted_rows_for_latest_episode": 400,
-        "computed_cycle_budget": 7,
-        "cycle_count_at_admission_start": 1,
-        "target_cycle_count_after_admission": 8,
-        "completed_cycle_count_for_latest_admission": 0,
-        "remaining_cycle_budget": 7,
+        "cycle_count_when_observed": 1,
     }
+    learner.current_session_id = "current"
+    signatures[0].append("d")
+    with pytest.raises(
+        RuntimeError, match="CURRENT_EPISODE_ALREADY_IN_REPLAY"
+    ):
+        learner._refresh_replay()
+    assert "d" not in learner._loaded_episode_keys
+
+
+def test_replay_signature_ignores_uncommitted_and_rejected_records(
+    tmp_path: Path,
+) -> None:
+    learner = learner_server.ResidualActorCriticLearner.__new__(
+        learner_server.ResidualActorCriticLearner
+    )
+    learner.replay_root = tmp_path
+    (tmp_path / "admissions").mkdir()
+    (tmp_path / "rejected").mkdir()
+    (tmp_path / "admissions/uncommitted.json").write_text("{}")
+    (tmp_path / "rejected/rejected.json").write_text("{}")
+    assert learner._episode_signature() == ()
 
 
 def test_collecting_does_not_update_actor_or_critic(monkeypatch) -> None:
@@ -1302,7 +1338,7 @@ def test_no_currently_mappable_td_row_waits_without_advancing_critic() -> None:
     )
 
 
-def test_unavailable_td_does_not_consume_joint_cycle_budget(monkeypatch) -> None:
+def test_unavailable_td_does_not_complete_joint_cycle(monkeypatch) -> None:
     learner = tiny_continuous_learner(
         learner_state="residual_actor_critic_training", warmup_updates=256
     )
@@ -1311,7 +1347,6 @@ def test_unavailable_td_does_not_consume_joint_cycle_budget(monkeypatch) -> None
         critic_td_valid_rows=100,
     )
     monkeypatch.setattr(learner, "_refresh_replay", lambda: replay)
-    learner._joint_cycle_budget = 1
     monkeypatch.setattr(
         learner,
         "_critic_update",
@@ -1332,6 +1367,53 @@ def test_unavailable_td_does_not_consume_joint_cycle_budget(monkeypatch) -> None
     assert learner.learner["runtime"]["residual_actor_critic_cycles"] == 0
 
 
+def test_partial_q_cycle_resumes_without_claiming_or_repeating_completed_q(
+    monkeypatch,
+) -> None:
+    learner = tiny_continuous_learner(
+        learner_state="residual_actor_critic_training", warmup_updates=256
+    )
+    replay = SimpleNamespace(critic_td_valid_rows=100)
+    monkeypatch.setattr(learner, "_refresh_replay", lambda: replay)
+    outcomes = iter((0.5, None, 0.4))
+
+    def critic_update(_coordinator, _replay, *, warmup):
+        assert warmup is False
+        value = next(outcomes)
+        if value is not None:
+            counters = learner.learner["runtime"]["counters"]
+            counters["twin_q_optimizer_steps"] += 1
+            counters["twin_q_target_update_steps"] += 1
+            learner.learner["runtime"]["partial_cycle_q_updates"] += 1
+        return value
+
+    def actor_update(_coordinator, _replay):
+        counters = learner.learner["runtime"]["counters"]
+        counters["residual_actor_update_attempts"] += 1
+        counters["residual_actor_updates_skipped_no_gradient"] += 1
+        return {
+            "total": 0.1,
+            "value": 0.0,
+            "applied": False,
+            "skip_reason": "no_effective_gradient",
+            "grad_norm": 0.0,
+            "support_available": False,
+        }
+
+    monkeypatch.setattr(learner, "_critic_update", critic_update)
+    monkeypatch.setattr(learner, "_actor_update", actor_update)
+    first = learner(InferencePriorityCoordinator())
+    assert first["waiting_for_mappable_td"] is True
+    assert first["partial_cycle_q_updates"] == 1
+    assert learner.learner["runtime"]["residual_actor_critic_cycles"] == 0
+
+    second = learner(InferencePriorityCoordinator())
+    assert second["residual_actor_critic_cycle"] == 1
+    assert second["learner_critic_steps"] == 2
+    assert learner.learner["runtime"]["partial_cycle_q_updates"] == 0
+    assert learner.learner["runtime"]["counters"]["twin_q_optimizer_steps"] == 258
+
+
 def test_residual_training_cycle_is_exactly_two_critic_and_one_actor(
     monkeypatch,
 ) -> None:
@@ -1347,7 +1429,6 @@ def test_residual_training_cycle_is_exactly_two_critic_and_one_actor(
         lambda _root: 100,
     )
     monkeypatch.setattr(learner, "_refresh_replay", lambda: replay)
-    learner._joint_cycle_budget = 1
     critic_calls = []
     actor_calls = []
     monkeypatch.setattr(
@@ -1389,7 +1470,6 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
         human_residual_imitation_batch_size=8,
         training_checkpoint_interval_cycles=1_000,
         checkpoint_on_warmup_complete=False,
-        checkpoint_on_candidate_activation=False,
     )
     learner.latest_residual_actor_output_norm = 0.0
     learner.latest_actor_update_ms = 0.0
@@ -1397,7 +1477,9 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
     learner.latest_cycle_ms = 0.0
     learner.latest_replay_refresh_ms = 0.0
     learner.nonzero_behavior_residual_rows = 0
-    learner._joint_cycle_budget = 0
+    learner._state_lock = threading.RLock()
+    learner.sampled_session_ids = set()
+    learner.sampled_episode_ids = set()
     learner._expected_admission_id = None
     learner._admission_progress = {}
     learner.learner = {
@@ -1425,6 +1507,7 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
             "ack_critic_warmup_complete": True,
             "ack_critic_warmup_steps": 256,
             "residual_actor_critic_cycles": 0,
+            "partial_cycle_q_updates": 0,
             "active_residual_policy_revision": (
                 "task3-residual-policy-step-000000"
             ),
@@ -1441,12 +1524,18 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
                 "actor_q_valid_rows": 100,
                 "human_residual_valid_rows": 0,
             },
+            "scheduling": {
+                "mode": "continuous_async",
+                "candidate_export_generation": "test-generation",
+                "last_publish_attempt_cycle": 0,
+                "last_published_cycle": 0,
+            },
         },
     }
     return learner
 
 
-def test_157_zero_residual_cycles_do_not_advance_actor_optimizer_or_candidate(
+def test_single_replay_population_continues_beyond_old_ten_cycle_limit(
     monkeypatch,
 ) -> None:
     accepted = [[0.2, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0]] * 3
@@ -1456,7 +1545,6 @@ def test_157_zero_residual_cycles_do_not_advance_actor_optimizer_or_candidate(
     )
     replay.rows = replay.rows * 100
     learner = actor_update_test_learner()
-    learner._joint_cycle_budget = 157
     monkeypatch.setattr(learner, "_refresh_replay", lambda: replay)
 
     def critic_update(_coordinator, _replay, *, warmup):
@@ -1495,7 +1583,7 @@ def test_157_zero_residual_cycles_do_not_advance_actor_optimizer_or_candidate(
         "twin_q_target_update_steps": 570,
     }
     assert learner.learner["residual_actor_optimizer"].state == {}
-    assert not learner.training_policy.candidate_due(0)
+    assert learner.training_policy.candidate_due(100)
     assert all(
         torch.equal(actor_before[name], value)
         for name, value in learner.learner[
@@ -1510,7 +1598,7 @@ def test_157_zero_residual_cycles_do_not_advance_actor_optimizer_or_candidate(
     )
 
 
-def test_candidate_waits_for_ten_effective_human_residual_actor_updates(
+def test_candidate_cadence_uses_cycle_not_effective_actor_updates(
     tmp_path: Path,
 ) -> None:
     learner = actor_update_test_learner()
@@ -1525,24 +1613,24 @@ def test_candidate_waits_for_ten_effective_human_residual_actor_updates(
         metrics = learner._actor_update(coordinator, replay)
         assert metrics["applied"] is True
         assert metrics["grad_norm"] > 0.0
+        counters["residual_actor_update_attempts"] += 1
+        counters["residual_actor_optimizer_steps"] += 1
         assert counters["residual_actor_optimizer_steps"] == expected_step
-        assert learner.training_policy.candidate_due(expected_step) is (
-            expected_step == 10
-        )
+        assert not learner.training_policy.candidate_due(expected_step)
 
     assert counters["residual_actor_update_attempts"] == 167
     assert counters["residual_actor_updates_skipped_no_gradient"] == 157
     assert learner.learner["residual_actor_optimizer"].state
-    candidate = learner.export_actor_candidate(10)
+    candidate = learner.export_actor_candidate(100)
     assert candidate is not None
-    assert candidate["revision_id"].endswith("000010")
+    assert "cycle-000100" in candidate["revision_id"]
+    assert candidate["residual_actor_optimizer_steps"] == 10
     assert (candidate["checkpoint"] / "residual_actor.pt").is_file()
     candidate_state = torch.load(
         candidate["checkpoint"] / "candidate_state.pt",
         map_location="cpu",
         weights_only=False,
     )
-    assert candidate_state == {
-        "checkpoint_kind": learner_server.CANDIDATE_CHECKPOINT_KIND,
-        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
-    }
+    assert candidate_state["checkpoint_kind"] == learner_server.CANDIDATE_CHECKPOINT_KIND
+    assert candidate_state["online_semantics_version"] == ONLINE_SEMANTICS_VERSION
+    assert len(candidate_state["actor_content_sha256"]) == 64

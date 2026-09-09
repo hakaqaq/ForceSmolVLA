@@ -962,6 +962,8 @@ class HumanCorrectionReplay:
 
 @dataclass(frozen=True)
 class ResidualTransitionBatch:
+    session_ids: tuple[str, ...]
+    episode_ids: tuple[str, ...]
     state7: torch.Tensor
     wrench6: torch.Tensor
     wrench_delta6: torch.Tensor
@@ -1543,6 +1545,7 @@ class OnlineResidualReplay:
                     ),
                     "human_residual_valid": human_valid,
                     "action_source": source,
+                    "session_id": str(row["identity"].get("session_id", "")),
                     "episode_id": str(row["identity"]["episode_id"]),
                 }
             )
@@ -1567,12 +1570,12 @@ class OnlineResidualReplay:
                 )
 
             count = len(values)
-            mean6 = torch.as_tensor(
+            mean6 = torch.tensor(
                 self.normalizer.delta_action7.mean[:6],
                 dtype=torch.float32,
                 device=device,
             ).expand(count, -1)
-            std6 = torch.as_tensor(
+            std6 = torch.tensor(
                 self.normalizer.delta_action7.std[:6],
                 dtype=torch.float32,
                 device=device,
@@ -1631,6 +1634,8 @@ class OnlineResidualReplay:
             )
 
         return ResidualTransitionBatch(
+            session_ids=tuple(row["session_id"] for row in rows),
+            episode_ids=tuple(row["episode_id"] for row in rows),
             state7=tensor("state7"),
             wrench6=tensor("wrench6"),
             wrench_delta6=tensor("wrench_delta6"),

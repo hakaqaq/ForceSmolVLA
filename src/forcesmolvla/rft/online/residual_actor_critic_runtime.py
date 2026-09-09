@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
+from collections import deque
 from dataclasses import dataclass
 import math
 from pathlib import Path
@@ -39,15 +40,14 @@ class ResidualActorCriticSchedule:
     twin_q_batch_size: int = 128
     residual_policy_value_batch_size: int = 64
     human_residual_imitation_batch_size: int = 32
-    admitted_rows_per_cycle: int = 64
+    scheduling_mode: str = "continuous_async"
     twin_q_updates_per_cycle: int = 2
     residual_actor_updates_per_cycle: int = 1
-    max_cycles_per_admitted_episode: int = 10
-    residual_candidate_interval_actor_steps: int = 10
-    training_checkpoint_interval_cycles: int = 20
+    residual_candidate_interval_cycles: int = 100
+    training_checkpoint_interval_cycles: int = 1000
     retained_training_checkpoint_count: int = 10
     checkpoint_on_warmup_complete: bool = True
-    checkpoint_on_candidate_activation: bool = True
+    checkpoint_on_candidate_activation: bool = False
 
     def __post_init__(self) -> None:
         require(
@@ -56,74 +56,28 @@ class ResidualActorCriticSchedule:
             and self.twin_q_batch_size >= 1
             and self.residual_policy_value_batch_size >= 1
             and self.human_residual_imitation_batch_size >= 1
-            and self.admitted_rows_per_cycle >= 1
-            and self.twin_q_updates_per_cycle >= 1
+            and self.scheduling_mode == "continuous_async"
+            and self.twin_q_updates_per_cycle == 2
             and self.residual_actor_updates_per_cycle == 1
-            and self.max_cycles_per_admitted_episode >= 1
-            and self.residual_candidate_interval_actor_steps >= 1
-            and self.training_checkpoint_interval_cycles >= 1
+            and self.residual_candidate_interval_cycles == 100
+            and self.training_checkpoint_interval_cycles == 1000
             and self.retained_training_checkpoint_count >= 1
             and isinstance(self.checkpoint_on_warmup_complete, bool)
-            and isinstance(self.checkpoint_on_candidate_activation, bool),
+            and self.checkpoint_on_candidate_activation is False,
             "FORCERFT_RESIDUAL_ACTOR_CRITIC_SCHEDULE_INVALID",
         )
 
     def training_ready(self, online_transition_count: int) -> bool:
         return online_transition_count >= self.minimum_ack_transitions
 
-    def candidate_due(self, completed_actor_steps: int) -> bool:
+    def candidate_due(
+        self, completed_cycle: int, *, last_publish_attempt_cycle: int = 0
+    ) -> bool:
         return (
-            completed_actor_steps > 0
-            and completed_actor_steps % self.residual_candidate_interval_actor_steps == 0
+            completed_cycle > last_publish_attempt_cycle
+            and completed_cycle > 0
+            and completed_cycle % self.residual_candidate_interval_cycles == 0
         )
-
-    def cycles_for_admission(self, new_critic_td_valid_rows: int) -> int:
-        require(
-            new_critic_td_valid_rows >= 0,
-            "FORCERFT_ONLINE_ADMITTED_ROW_COUNT_INVALID",
-        )
-        if new_critic_td_valid_rows == 0:
-            return 0
-        return min(
-            self.max_cycles_per_admitted_episode,
-            max(
-                1,
-                math.ceil(
-                    new_critic_td_valid_rows / self.admitted_rows_per_cycle
-                ),
-            ),
-        )
-
-    def cycles_for_observed_admission(
-        self,
-        *,
-        new_critic_td_valid_rows: int,
-        total_critic_td_valid_rows: int,
-    ) -> int:
-        """Apply the fixed warmup-only semantics for pre-threshold admissions.
-
-        Rows admitted before the ACK threshold train the one-time Critic warmup
-        but never accrue retroactive residual Actor-Critic cycle debt.  The
-        admission that reaches the threshold receives only its own cycle budget.
-        """
-
-        require(
-            total_critic_td_valid_rows >= new_critic_td_valid_rows >= 0,
-            "FORCERFT_ONLINE_ADMITTED_ROW_COUNT_INVALID",
-        )
-        if total_critic_td_valid_rows < self.minimum_ack_transitions:
-            return 0
-        return self.cycles_for_admission(new_critic_td_valid_rows)
-
-    def residual_actor_critic_cycle_budget(self, admitted_episode_rows: int | Sequence[int]) -> int:
-        """Total deterministic budget, derivable again after checkpoint resume."""
-
-        rows = (
-            (admitted_episode_rows,)
-            if isinstance(admitted_episode_rows, int)
-            else admitted_episode_rows
-        )
-        return sum(self.cycles_for_admission(int(count)) for count in rows)
 
     def checkpoint_due(self, completed_cycle: int) -> bool:
         return (
@@ -399,14 +353,11 @@ def prepare_learner(
         twin_q_batch_size=int(batching["twin_q_batch_size"]),
         residual_policy_value_batch_size=int(batching["residual_policy_value_batch_size"]),
         human_residual_imitation_batch_size=int(batching["human_residual_imitation_batch_size"]),
-        admitted_rows_per_cycle=int(online["admitted_rows_per_cycle"]),
+        scheduling_mode=str(online["scheduling_mode"]),
         twin_q_updates_per_cycle=int(online["twin_q_updates_per_cycle"]),
         residual_actor_updates_per_cycle=int(online["residual_actor_updates_per_cycle"]),
-        max_cycles_per_admitted_episode=int(
-            online["max_cycles_per_admitted_episode"]
-        ),
-        residual_candidate_interval_actor_steps=int(
-            online["residual_candidate_interval_actor_steps"]
+        residual_candidate_interval_cycles=int(
+            online["residual_candidate_interval_cycles"]
         ),
         training_checkpoint_interval_cycles=int(online["training_checkpoint_interval_cycles"]),
         retained_training_checkpoint_count=int(online["retained_training_checkpoint_count"]),
@@ -452,8 +403,13 @@ class InferencePriorityCoordinator:
         self._alive = {"actor": 0, "learner": 0}
         self._actor_window_active = False
         self._coverage_deadline = 0.0
-        self.learner_microstep_ms: list[tuple[str, float]] = []
+        self.learner_microstep_ms: deque[tuple[str, float]] = deque(maxlen=96)
         self.concurrently_alive = False
+        self._cancelled = False
+        self._learner_wait_reason: str | None = None
+        self._learner_wait_started = 0.0
+        self._learner_wait_ms = 0.0
+        self._learner_deferrals = 0
 
     @contextmanager
     def worker_alive(self, role: str) -> Iterator[None]:
@@ -509,9 +465,14 @@ class InferencePriorityCoordinator:
         *,
         initial_estimate_s: float = 0.45,
         coverage_reserve_s: float = 0.10,
+        historical_estimate_cap_s: float = 0.65,
         episode_idle_required: bool = False,
     ) -> Iterator[None]:
-        if initial_estimate_s < 0 or coverage_reserve_s < 0:
+        if (
+            initial_estimate_s < 0
+            or coverage_reserve_s < 0
+            or historical_estimate_cap_s < initial_estimate_s
+        ):
             raise ValueError("ONLINE_REPLAY_ASYNC_LEARNER_ESTIMATE_INVALID")
         with self._condition:
             prior = [
@@ -519,12 +480,21 @@ class InferencePriorityCoordinator:
                 for name, milliseconds in self.learner_microstep_ms
                 if name == kind
             ]
-            estimate = max([initial_estimate_s, *prior])
+            historical = (
+                0.0
+                if not prior
+                else float(np.quantile(np.asarray(prior), 0.9)) * 1.25
+            )
+            estimate = min(
+                historical_estimate_cap_s,
+                max(initial_estimate_s, historical),
+            )
 
             def ready() -> bool:
                 coverage = self._coverage_deadline - time.monotonic()
                 return (
-                    self._owner is None
+                    self._cancelled
+                    or self._owner is None
                     and self._inference_waiters == 0
                     and (
                         not episode_idle_required
@@ -536,9 +506,28 @@ class InferencePriorityCoordinator:
                     )
                 )
 
-            self._condition.wait_for(
-                ready
-            )
+            coverage = self._coverage_deadline - time.monotonic()
+            if self._owner is not None:
+                reason = "gpu_owner_busy"
+            elif self._inference_waiters:
+                reason = "inference_pending"
+            elif episode_idle_required and self._actor_window_active:
+                reason = "episode_idle_required"
+            elif self._actor_window_active and coverage < estimate + coverage_reserve_s:
+                reason = "insufficient_action_coverage"
+            else:
+                reason = None
+            wait_started = time.perf_counter()
+            if reason is not None:
+                self._learner_wait_reason = reason
+                self._learner_wait_started = time.monotonic()
+                self._learner_deferrals += 1
+            self._condition.wait_for(ready)
+            self._learner_wait_ms += (time.perf_counter() - wait_started) * 1000.0
+            self._learner_wait_reason = None
+            self._learner_wait_started = 0.0
+            if self._cancelled:
+                raise AsyncRuntimeError("ONLINE_REPLAY_ASYNC_LEARNER_CANCELLED")
             self._owner = "learner"
         started = time.perf_counter()
         try:
@@ -579,6 +568,25 @@ class InferencePriorityCoordinator:
             self._actor_window_active = False
             self._coverage_deadline = 0.0
             self._condition.notify_all()
+
+    def cancel_waiters(self) -> None:
+        with self._condition:
+            self._cancelled = True
+            self._condition.notify_all()
+
+    def status_snapshot(self) -> dict[str, Any]:
+        with self._condition:
+            current_wait_ms = (
+                0.0
+                if self._learner_wait_started == 0.0
+                else (time.monotonic() - self._learner_wait_started) * 1000.0
+            )
+            return {
+                "learner_wait_reason": self._learner_wait_reason,
+                "learner_wait_ms": self._learner_wait_ms + current_wait_ms,
+                "learner_deferral_count": self._learner_deferrals,
+                "learner_microstep_history_size": len(self.learner_microstep_ms),
+            }
 
     @property
     def slowest_learner_microstep(self) -> tuple[str, float] | None:

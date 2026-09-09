@@ -1,0 +1,20 @@
+{
+  "schema_version": "forcesmolvla-live-deployment-binding-v1",
+  "artifact_status": "approved",
+  "model_sha256": "7841de8bac62a4e1f602edad54e1b326d29c095f84e30fb3e26c9c5f738f9087",
+  "rulespec_sha256": "bb1a2539789661a0b787d8cf6769768b8ef2323a08300dabdede2aeb919e8bc0",
+  "server_source_sha256": "d76a2adc806976a42e4a3a69580fab9f39a0c4f7bdd06d1702612d5496a49ec5",
+  "client_source_sha256": "b68dda9dfe0927e34d5d291baf40b9916b373ea864297ab8a2fedc01fdc8415b",
+  "state_pose_max_age_ms": 250.0,
+  "camera_max_age_ms": 250.0,
+  "max_intercamera_skew_ms": 250.0,
+  "gripper_max_age_ms": 300.0,
+  "controller_ack_timeout_ms": 20.0,
+  "approval": {
+    "status": "approved",
+    "approval_id": "forcesmolvla-live-binding-task4-sft-step010000-20260909-001",
+    "approver_identity": "rlc123",
+    "approver_role": "experiment_lead",
+    "approved_at": "2026-09-09T02:13:33Z"
+  }
+}

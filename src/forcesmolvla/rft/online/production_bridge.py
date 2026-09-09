@@ -75,6 +75,101 @@ INTEGRATED_SHADOW_SCHEMA = "forcesmolvla-stage3-integrated-shadow-backend-v1"
 INTEGRATED_POLICY_EXECUTION_SCHEMA = (
     "forcesmolvla-stage3-integrated-policy-execution-backend-v1"
 )
+
+
+def _continuous_learner_capture_window_valid(
+    seal: Mapping[str, Any]
+) -> bool:
+    window = seal.get("learner_capture_window")
+    names = (
+        "completed_learner_cycles",
+        "partial_cycle_q_updates",
+        "total_twin_q_optimizer_steps",
+        "warmup_twin_q_optimizer_steps",
+        "joint_twin_q_optimizer_steps",
+        "residual_actor_optimizer_steps",
+        "residual_actor_update_attempts",
+        "residual_actor_updates_skipped_no_gradient",
+        "actor_parameter_publication_events",
+        "periodic_checkpoint_events",
+    )
+    sampled_session_ids = (
+        window.get("sampled_session_ids")
+        if isinstance(window, Mapping)
+        else None
+    )
+    if (
+        not isinstance(window, Mapping)
+        or window.get("schema")
+        != "forcesmolvla-continuous-learner-capture-window-v1"
+        or window.get("finalized") is not True
+        or window.get("current_episode_sampled") is not False
+        or window.get("current_episode_replay_membership") is not False
+        or window.get("session_id") != seal.get("session_id")
+        or window.get("episode_id") != seal.get("episode_id")
+        or not isinstance(sampled_session_ids, list)
+        or window.get("session_id") in sampled_session_ids
+        or window.get("pinned_actor_revision")
+        != seal.get("active_actor_revision")
+        or window.get("pinned_actor_publication_cycle")
+        != seal.get("active_actor_publication_cycle")
+        or window.get("pinned_actor_policy_epoch")
+        != seal.get("active_actor_policy_epoch")
+    ):
+        return False
+    start, end, delta = (
+        window.get("start"), window.get("end"), window.get("delta")
+    )
+    if not all(isinstance(value, Mapping) for value in (start, end, delta)):
+        return False
+    assert isinstance(start, Mapping) and isinstance(end, Mapping)
+    assert isinstance(delta, Mapping)
+    if any(
+        isinstance(snapshot.get(name), bool)
+        or not isinstance(snapshot.get(name), int)
+        or int(snapshot[name]) < 0
+        for snapshot in (start, end)
+        for name in names
+    ):
+        return False
+    if any(
+        isinstance(delta.get(name), bool)
+        or not isinstance(delta.get(name), int)
+        or (
+            int(delta[name]) < 0
+            and name != "partial_cycle_q_updates"
+        )
+        or int(end[name]) - int(start[name]) != int(delta[name])
+        for name in names
+    ):
+        return False
+    if any(
+        int(snapshot["total_twin_q_optimizer_steps"])
+        != int(snapshot["warmup_twin_q_optimizer_steps"])
+        + int(snapshot["joint_twin_q_optimizer_steps"])
+        or int(snapshot["residual_actor_update_attempts"])
+        != int(snapshot["residual_actor_optimizer_steps"])
+        + int(snapshot["residual_actor_updates_skipped_no_gradient"])
+        for snapshot in (start, end)
+    ):
+        return False
+    return bool(
+        int(delta["joint_twin_q_optimizer_steps"])
+        == 2 * int(delta["completed_learner_cycles"])
+        + int(end["partial_cycle_q_updates"])
+        - int(start["partial_cycle_q_updates"])
+        and int(delta["residual_actor_update_attempts"])
+        == int(delta["completed_learner_cycles"])
+        and int(delta["residual_actor_update_attempts"])
+        == int(delta["residual_actor_optimizer_steps"])
+        + int(delta["residual_actor_updates_skipped_no_gradient"])
+        and int(seal.get("learner_critic_steps", -1))
+        == int(delta["total_twin_q_optimizer_steps"])
+        and int(seal.get("learner_actor_steps", -1))
+        == int(delta["residual_actor_optimizer_steps"])
+        and int(seal.get("learner_actor_update_attempts", -1))
+        == int(delta["residual_actor_update_attempts"])
+    )
 POLICY_EXECUTION_SMOKE_CLASSIFICATION = "recorded_live_policy_execution_smoke"
 TRAINING_STARTS_UNIQUE_R = 100
 UPPER_CLOCK = "upper_host_monotonic"
@@ -2634,11 +2729,22 @@ class ProductionBridge:
             == identity.get("policy_revision")
             and seal.get("active_actor_model_revision")
             == manifest.get("policy_metadata", {}).get("model_sha256")
-            and (learner_critic_steps, learner_actor_steps)
-            in {(0, 0), (2, 0), (2, 1)}
             and int(seal.get("critic_updates", -1)) == learner_critic_steps
             and int(seal.get("actor_updates", -1)) == learner_actor_steps
             and seal.get("current_episode_sampled_by_learner") is False
+            and (
+                (
+                    seal.get("learner_scheduling_mode")
+                    == "continuous_async"
+                    and seal.get("current_episode_replay_membership") is False
+                    and _continuous_learner_capture_window_valid(seal)
+                )
+                or (
+                    "learner_scheduling_mode" not in seal
+                    and (learner_critic_steps, learner_actor_steps)
+                    in {(0, 0), (2, 0), (2, 1)}
+                )
+            )
         )
         latest_lineage_ns = max(
             int(observations[-1].get("t_ref_ns", 0)),
@@ -3056,7 +3162,10 @@ class ProductionBridge:
             ):
                 raise ProductionBridgeError("BRIDGE_SHADOW_POLICY_REQUEST_INVALID")
             for field in lineage_fields:
-                if result.get(field) != request.get(field) or proposal.get(field) != result.get(field):
+                if (
+                    result.get(field) != request.get(field)
+                    or proposal.get(field) != result.get(field)
+                ):
                     raise ProductionBridgeError(
                         f"BRIDGE_SHADOW_POLICY_LINEAGE_MISMATCH:{field}"
                     )

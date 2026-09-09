@@ -26,7 +26,14 @@ if str(SRC) not in sys.path:
 
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
     ONLINE_ADAPTATION_DIRECTORY_NAME,
+    load_checkpoint_training_config,
     select_resume_or_bootstrap_checkpoint,
+)
+from forcesmolvla.rft.online.schedule_migration import (  # noqa: E402
+    schedule_migration_required,
+)
+from forcesmolvla.rft.online.replay_training import (  # noqa: E402
+    load_common_actor_critic_config,
 )
 
 MODEL_PYTHON = Path("/home/rlc123/anaconda3/envs/forcesmolvla/bin/python")
@@ -159,7 +166,7 @@ def _finish_episode(
     )
 
 
-def _drain_admission_budget(
+def _notify_admission_committed(
     args: argparse.Namespace,
     *,
     identity: Mapping[str, Any],
@@ -167,57 +174,24 @@ def _drain_admission_budget(
 ) -> dict[str, Any]:
     admission_id = str(admission.get("admission_id", ""))
     require(admission_id, "FORCERFT_ONLINE_ADMISSION_ID_MISSING")
-    timeout = float(getattr(args, "training_budget_drain_timeout", 60.0))
-    started = time.monotonic()
     result = _post_json(
-        f"http://127.0.0.1:{args.policy_port}/runtime/drain-admission-budget",
+        f"http://127.0.0.1:{args.policy_port}/runtime/notify-admission-committed",
         {
             "session_id": identity["session_id"],
             "episode_id": identity["episode_id"],
             "admission_id": admission_id,
-            "timeout_seconds": timeout,
         },
-        timeout=timeout + 5.0,
     )
     require(
-        result.get("status") == "TRAINING_BUDGET_DRAINED"
-        and result.get("admission_id") == admission_id
-        and int(result.get("remaining_cycle_budget", -1)) == 0,
-        "FORCERFT_ONLINE_TRAINING_BUDGET_NOT_DRAINED",
+        result.get("status")
+        in {"FORMAL_ADMISSION_REGISTERED", "FORMAL_ADMISSION_ALREADY_REGISTERED"}
+        and result.get("admission_id") == admission_id,
+        "FORCERFT_ONLINE_ADMISSION_NOTIFICATION_FAILED",
     )
     print(
-        "[training-drain] "
+        "[admission-notify] "
         f"admission={admission_id} "
-        f"rows={result.get('admitted_rows_for_latest_episode')} "
-        f"cycles={result.get('completed_cycle_count')}/"
-        f"{result.get('computed_cycle_budget')} "
-        f"q_updates={result.get('twin_q_updates')} "
-        f"actor_updates={result.get('residual_actor_updates')} "
-        f"replay_refresh_ms={float(result.get('replay_refresh_ms', 0.0)):.1f} "
-        f"elapsed={time.monotonic() - started:.2f}s"
-    )
-    return result
-
-
-def _drain_outstanding_budget(args: argparse.Namespace) -> dict[str, Any]:
-    timeout = float(getattr(args, "training_budget_drain_timeout", 60.0))
-    result = _post_json(
-        f"http://127.0.0.1:{args.policy_port}"
-        "/runtime/drain-outstanding-budget",
-        {"timeout_seconds": timeout},
-        timeout=timeout + 5.0,
-    )
-    require(
-        result.get("status") == "OUTSTANDING_TRAINING_BUDGET_DRAINED"
-        and int(result.get("remaining_cycle_budget", -1)) == 0,
-        "FORCERFT_ONLINE_OUTSTANDING_BUDGET_NOT_DRAINED",
-    )
-    print(
-        "[training-recovery-drain] "
-        f"cycles={result.get('drained_cycle_count')} "
-        f"q_updates={result.get('twin_q_updates')} "
-        f"actor_updates={result.get('residual_actor_updates')} "
-        f"elapsed_ms={float(result.get('budget_drain_elapsed_ms', 0.0)):.1f}"
+        "status=registered learner_woken=true"
     )
     return result
 
@@ -507,7 +481,7 @@ def _run_episode(
         )
         print(f"[episode] rejected session={session_id}; continuing with next capture")
         return None
-    _drain_admission_budget(
+    _notify_admission_committed(
         args,
         identity=identity,
         admission=admission,
@@ -527,10 +501,23 @@ def run_loop(args: argparse.Namespace) -> int:
         / ONLINE_ADAPTATION_DIRECTORY_NAME
         / "formal_replay",
     )
-    resume = select_resume_or_bootstrap_checkpoint(
-        args.output_root,
-        configured_bootstrap_checkpoint=getattr(args, "online_residual_bootstrap_checkpoint", None),
-    ).path
+    resume = (
+        getattr(args, "learner_resume_checkpoint", None).resolve()
+        if getattr(args, "learner_resume_checkpoint", None) is not None
+        else select_resume_or_bootstrap_checkpoint(
+            args.output_root,
+            configured_bootstrap_checkpoint=getattr(
+                args, "online_residual_bootstrap_checkpoint", None
+            ),
+        ).path
+    )
+    if schedule_migration_required(
+        load_checkpoint_training_config(resume),
+        load_common_actor_critic_config(args.task_id),
+    ):
+        raise ContinuousLoopError(
+            f"FORCERFT_SCHEDULE_MIGRATION_REQUIRED:{resume}"
+        )
     server_command = [
         str(args.model_python), str(ROOT / "tools/serve_forcerft_residual_actor_critic.py"),
         "--task-id", args.task_id, "--output-root", str(args.output_root),
@@ -572,8 +559,6 @@ def run_loop(args: argparse.Namespace) -> int:
             and args.deployed_actor_checkpoint.is_dir(),
             "FORCERFT_ONLINE_SERVER_METADATA_INVALID",
         )
-        if metadata.get("recovery_budget_drain_required") is True:
-            _drain_outstanding_budget(args)
         detector_process, detector_directory, detector_socket = (
             _start_detector_worker(args)
         )
@@ -607,6 +592,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dataset-root", type=Path)
     parser.add_argument("--safety-config", type=Path)
     parser.add_argument("--online-residual-bootstrap-checkpoint", type=Path)
+    parser.add_argument(
+        "--learner-resume-checkpoint",
+        type=Path,
+        help="explicit full checkpoint, including a reviewed schedule migration result",
+    )
     parser.add_argument("--max-episodes", type=int, required=True)
     parser.add_argument("--capture-output-root", type=Path)
     parser.add_argument("--task", required=True)
@@ -616,9 +606,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--policy-queue-low-watermark", type=int, default=7)
     parser.add_argument("--max-force-n", type=float, default=25.0)
     parser.add_argument("--max-torque-nm", type=float, default=2.0)
-    parser.add_argument(
-        "--training-budget-drain-timeout", type=float, default=60.0
-    )
     parser.add_argument("--ack-replay-root", type=Path)
     parser.add_argument(
         "--allow-development-policy-execution-smoke",
@@ -636,7 +623,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         or not 0 < args.policy_queue_low_watermark < args.policy_replan_steps <= 50
         or args.max_force_n <= 0
         or args.max_torque_nm <= 0
-        or not 0 < args.training_budget_drain_timeout <= 600
         or args.policy_port <= 0
     ):
         parser.error("invalid continuous-loop limits")

@@ -38,6 +38,68 @@ REAL_EPISODE = Path(
 )
 
 
+def test_continuous_learner_seal_accepts_cumulative_window_not_old_step_whitelist() -> None:
+    names_start = {
+        "completed_learner_cycles": 10,
+        "partial_cycle_q_updates": 0,
+        "total_twin_q_optimizer_steps": 276,
+        "warmup_twin_q_optimizer_steps": 256,
+        "joint_twin_q_optimizer_steps": 20,
+        "residual_actor_optimizer_steps": 8,
+        "residual_actor_update_attempts": 10,
+        "residual_actor_updates_skipped_no_gradient": 2,
+        "actor_parameter_publication_events": 0,
+        "periodic_checkpoint_events": 0,
+    }
+    names_end = {
+        "completed_learner_cycles": 15,
+        "partial_cycle_q_updates": 0,
+        "total_twin_q_optimizer_steps": 286,
+        "warmup_twin_q_optimizer_steps": 256,
+        "joint_twin_q_optimizer_steps": 30,
+        "residual_actor_optimizer_steps": 11,
+        "residual_actor_update_attempts": 15,
+        "residual_actor_updates_skipped_no_gradient": 4,
+        "actor_parameter_publication_events": 0,
+        "periodic_checkpoint_events": 0,
+    }
+    seal = {
+        "session_id": "capture_001",
+        "episode_id": "episode_000000",
+        "active_actor_revision": "actor-cycle-100",
+        "learner_critic_steps": 10,
+        "learner_actor_steps": 3,
+        "learner_actor_update_attempts": 5,
+        "learner_capture_window": {
+            "schema": "forcesmolvla-continuous-learner-capture-window-v1",
+            "session_id": "capture_001",
+            "episode_id": "episode_000000",
+            "pinned_actor_revision": "actor-cycle-100",
+            "finalized": True,
+            "current_episode_sampled": False,
+            "current_episode_replay_membership": False,
+            "sampled_session_ids": ["capture_000"],
+            "start": names_start,
+            "end": names_end,
+            "delta": {
+                name: names_end[name] - names_start[name]
+                for name in names_start
+            },
+        },
+    }
+    assert bridge_module._continuous_learner_capture_window_valid(seal)
+    invalid = deepcopy(seal)
+    invalid["learner_capture_window"]["delta"][
+        "joint_twin_q_optimizer_steps"
+    ] = 9
+    assert not bridge_module._continuous_learner_capture_window_valid(invalid)
+    sampled = deepcopy(seal)
+    sampled["learner_capture_window"]["sampled_session_ids"].append(
+        "capture_001"
+    )
+    assert not bridge_module._continuous_learner_capture_window_valid(sampled)
+
+
 def test_dispatch_successor_requires_persisted_identity_link() -> None:
     current_policy = {"selection": {"sequence": 4}}
     assert bridge_module._is_exact_real_decision_successor(

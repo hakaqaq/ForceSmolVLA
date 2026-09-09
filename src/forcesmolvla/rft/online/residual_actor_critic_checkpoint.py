@@ -41,6 +41,28 @@ def _nonnegative_int(value: Any) -> bool:
     return not isinstance(value, bool) and isinstance(value, int) and value >= 0
 
 
+def _actor_dependency_is_valid(value: Any) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    path = Path(value)
+    if path.is_file():
+        actor_state = torch.load(path, map_location="cpu", weights_only=True)
+        return path.name == "residual_actor.pt" and isinstance(
+            actor_state, Mapping
+        )
+    state_path = path / "candidate_state.pt"
+    actor_path = path / "residual_actor.pt"
+    if not state_path.is_file() or not actor_path.is_file():
+        return False
+    actor_state = torch.load(actor_path, map_location="cpu", weights_only=True)
+    state = torch.load(state_path, map_location="cpu", weights_only=False)
+    return bool(
+        isinstance(actor_state, Mapping)
+        and state.get("checkpoint_kind") == CANDIDATE_CHECKPOINT_KIND
+        and state.get("online_semantics_version") == ONLINE_SEMANTICS_VERSION
+    )
+
+
 def residual_actor_critic_checkpoint_is_recoverable(
     checkpoint: Path,
     *,
@@ -65,9 +87,146 @@ def residual_actor_critic_checkpoint_is_recoverable(
             "residual_actor_updates_skipped_no_gradient"
         ]
         replay = state["replay"]
+        config = yaml.safe_load(
+            (checkpoint / "state/config.yaml").read_text(encoding="utf-8")
+        )
+        online = config["residual_actor_critic_training"]
         loaded_episode_keys = replay.get("loaded_episode_keys", [])
         per_episode_counts = replay.get("per_episode_critic_row_counts", {})
         admission_cycle_budgets = replay.get("admission_cycle_budgets", {})
+        continuous = online.get("scheduling_mode") == "continuous_async"
+        scheduling_value = state.get("scheduling", {})
+        scheduling = (
+            scheduling_value
+            if isinstance(scheduling_value, Mapping)
+            else {}
+        )
+        pending = scheduling.get("pending_publication")
+        partial_q = state.get("partial_cycle_q_updates", 0)
+        completed_cycles = state["residual_actor_critic_cycles"]
+        warmup_steps = state.get("ack_critic_warmup_steps")
+        warmup_limit = int(config["ack_critic_warmup"]["optimizer_steps"])
+        total_q_steps = counters["twin_q_optimizer_steps"]
+        publish_interval = int(online.get("residual_candidate_interval_cycles", 1))
+        checkpoint_interval = int(
+            online.get("training_checkpoint_interval_cycles", 1)
+        )
+        events_not_before = scheduling.get("events_not_before_cycle", 0)
+        expected_publications = (
+            -1
+            if publish_interval < 1
+            else completed_cycles // publish_interval
+            - int(events_not_before) // publish_interval
+        )
+        expected_checkpoints = (
+            -1
+            if checkpoint_interval < 1
+            else completed_cycles // checkpoint_interval
+            - int(events_not_before) // checkpoint_interval
+        )
+        expected_last_publish = (
+            0
+            if publish_interval < 1 or expected_publications == 0
+            else completed_cycles - completed_cycles % publish_interval
+        )
+        expected_last_checkpoint = (
+            0
+            if checkpoint_interval < 1 or expected_checkpoints == 0
+            else completed_cycles - completed_cycles % checkpoint_interval
+        )
+        required_scheduling = {
+            "mode",
+            "last_publish_attempt_cycle",
+            "last_published_cycle",
+            "publication_event_count",
+            "last_periodic_checkpoint_cycle",
+            "periodic_checkpoint_event_count",
+            "last_saved_checkpoint_cycle",
+            "active_publication_cycle",
+            "active_actor_optimizer_step",
+            "active_actor_checkpoint",
+            "active_policy_epoch",
+            "active_policy_epoch_status",
+            "pending_publication",
+            "retired_admission_cycle_budgets",
+        }
+        continuous_valid = bool(
+            not continuous
+            or required_scheduling.issubset(scheduling)
+            and _nonnegative_int(events_not_before)
+            and int(events_not_before) <= completed_cycles
+            and publish_interval == 100
+            and checkpoint_interval == 1000
+            and int(online["twin_q_updates_per_cycle"]) == 2
+            and int(online["residual_actor_updates_per_cycle"]) == 1
+            and _nonnegative_int(partial_q)
+            and partial_q <= int(online["twin_q_updates_per_cycle"])
+            and total_q_steps - warmup_steps
+            == completed_cycles * int(online["twin_q_updates_per_cycle"])
+            + partial_q
+            and actor_update_attempts == completed_cycles
+            and scheduling.get("mode") == "continuous_async"
+            and scheduling["last_publish_attempt_cycle"]
+            == expected_last_publish
+            and (
+                expected_last_publish == 0
+                and scheduling["last_published_cycle"] in {None, 0}
+                or expected_last_publish > 0
+                and scheduling["last_published_cycle"]
+                == expected_last_publish
+            )
+            and scheduling["publication_event_count"]
+            == expected_publications
+            and scheduling["last_periodic_checkpoint_cycle"]
+            == expected_last_checkpoint
+            and scheduling["periodic_checkpoint_event_count"]
+            == expected_checkpoints
+            and (
+                scheduling["last_saved_checkpoint_cycle"] is None
+                or _nonnegative_int(
+                    scheduling["last_saved_checkpoint_cycle"]
+                )
+                and int(scheduling["last_saved_checkpoint_cycle"])
+                <= completed_cycles
+            )
+            and (
+                scheduling.get("active_publication_cycle") is None
+                or _nonnegative_int(scheduling["active_publication_cycle"])
+                and int(scheduling["active_publication_cycle"])
+                <= completed_cycles
+            )
+            and _nonnegative_int(scheduling.get("active_actor_optimizer_step", 0))
+            and int(scheduling.get("active_actor_optimizer_step", 0))
+            <= applied_actor_steps
+            and _nonnegative_int(scheduling.get("active_policy_epoch", 0))
+            and isinstance(scheduling.get("active_policy_epoch_status"), str)
+            and bool(scheduling.get("active_policy_epoch_status"))
+            and _actor_dependency_is_valid(
+                scheduling.get("active_actor_checkpoint")
+            )
+            and isinstance(
+                scheduling.get("retired_admission_cycle_budgets"), Mapping
+            )
+            and (
+                pending is None
+                or isinstance(pending, Mapping)
+                and isinstance(pending.get("revision_id"), str)
+                and bool(pending.get("revision_id"))
+                and _nonnegative_int(
+                    pending.get("residual_actor_critic_cycle")
+                )
+                and int(pending["residual_actor_critic_cycle"])
+                == scheduling.get("last_published_cycle")
+                and int(pending["residual_actor_critic_cycle"])
+                <= completed_cycles
+                and _nonnegative_int(
+                    pending.get("residual_actor_optimizer_steps")
+                )
+                and int(pending["residual_actor_optimizer_steps"])
+                <= applied_actor_steps
+                and _actor_dependency_is_valid(pending.get("checkpoint"))
+            )
+        )
         return bool(
             state.get("checkpoint_kind") in CHECKPOINT_KINDS
             and (expected_kind is None or state["checkpoint_kind"] == expected_kind)
@@ -81,6 +240,17 @@ def residual_actor_critic_checkpoint_is_recoverable(
             }
             and isinstance(state["ack_critic_warmup_complete"], bool)
             and _nonnegative_int(state.get("ack_critic_warmup_steps"))
+            and warmup_steps <= warmup_limit
+            and (
+                state["ack_critic_warmup_complete"] is False
+                or warmup_steps == warmup_limit
+                and state["learner_state"]
+                == "residual_actor_critic_training"
+            )
+            and (
+                state["learner_state"] != "residual_actor_critic_training"
+                or state["ack_critic_warmup_complete"] is True
+            )
             and _nonnegative_int(state["residual_actor_critic_cycles"])
             and isinstance(state["frozen_base_policy_checkpoint"], str)
             and bool(state["frozen_base_policy_checkpoint"])
@@ -98,6 +268,7 @@ def residual_actor_critic_checkpoint_is_recoverable(
                     "twin_q_target_update_steps",
                 )
             )
+            and counters["twin_q_target_update_steps"] == total_q_steps
             and actor_update_attempts
             == applied_actor_steps + skipped_actor_updates
             and all(
@@ -129,6 +300,7 @@ def residual_actor_critic_checkpoint_is_recoverable(
                 for key, value in admission_cycle_budgets.items()
             )
             and _nonnegative_int(replay.get("replay_generation", 0))
+            and continuous_valid
         )
     except (KeyError, OSError, RuntimeError, TypeError, ValueError):
         return False

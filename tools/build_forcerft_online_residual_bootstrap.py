@@ -120,11 +120,30 @@ def build_online_residual_bootstrap(
         "critic_input_spec": CRITIC_INPUT_SPEC,
         "frozen_base_policy_checkpoint": str(frozen_base_policy_checkpoint),
         "residual_actor_critic_cycles": 0,
+        "partial_cycle_q_updates": 0,
         "learner_state": "ack_replay_collection",
         "ack_critic_warmup_complete": False,
         "ack_critic_warmup_steps": 0,
         "active_residual_policy_revision": f"{task_id}-residual-policy-step-000000",
         "online_adaptation_id": f"{task_id}-ack-filter-leash-residual-{time.time_ns()}",
+        "scheduling": {
+            "mode": "continuous_async",
+            "last_publish_attempt_cycle": 0,
+            "last_published_cycle": None,
+            "publication_event_count": 0,
+            "last_periodic_checkpoint_cycle": 0,
+            "periodic_checkpoint_event_count": 0,
+            "last_saved_checkpoint_cycle": None,
+            "active_publication_cycle": None,
+            "active_actor_optimizer_step": 0,
+            "active_actor_checkpoint": str(
+                checkpoint.resolve() / "models/residual_actor.pt"
+            ),
+            "active_policy_epoch": 0,
+            "active_policy_epoch_status": "bootstrap",
+            "pending_publication": None,
+            "retired_admission_cycle_budgets": {},
+        },
         "counters": {
             "twin_q_optimizer_steps": 0,
             "residual_actor_optimizer_steps": 0,
@@ -139,7 +158,6 @@ def build_online_residual_bootstrap(
             "human_residual_valid_rows": 0,
             "loaded_episode_keys": [],
             "per_episode_critic_row_counts": {},
-            "admission_cycle_budgets": {},
             "replay_generation": 0,
         },
     }

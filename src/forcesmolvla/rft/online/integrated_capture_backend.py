@@ -141,13 +141,99 @@ def _async_runtime_identity(
 
 def _pinned_actor_seal_identity(
     metadata: Mapping[str, Any], contract: IntegratedCaptureContract
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Return the Actor identity pinned when this episode started."""
 
     return {
         "active_actor_revision": str(metadata["active_actor_revision"]),
         "active_actor_model_revision": contract.identity.policy_revision,
+        "active_actor_publication_cycle": metadata.get(
+            "active_actor_online_cycle"
+        ),
+        "active_actor_policy_epoch": metadata.get("policy_epoch"),
     }
+
+
+def _validated_learner_capture_window(
+    status: Mapping[str, Any], identity: Mapping[str, Any]
+) -> dict[str, Any]:
+    window = status.get("capture_window")
+    counter_names = (
+        "completed_learner_cycles",
+        "partial_cycle_q_updates",
+        "total_twin_q_optimizer_steps",
+        "warmup_twin_q_optimizer_steps",
+        "joint_twin_q_optimizer_steps",
+        "residual_actor_optimizer_steps",
+        "residual_actor_update_attempts",
+        "residual_actor_updates_skipped_no_gradient",
+        "actor_parameter_publication_events",
+        "periodic_checkpoint_events",
+    )
+    sampled_session_ids = (
+        window.get("sampled_session_ids")
+        if isinstance(window, Mapping)
+        else None
+    )
+    if (
+        not isinstance(window, Mapping)
+        or window.get("schema")
+        != "forcesmolvla-continuous-learner-capture-window-v1"
+        or window.get("session_id") != identity["session_id"]
+        or window.get("episode_id") != identity["episode_id"]
+        or window.get("finalized") is not True
+        or window.get("current_episode_sampled") is not False
+        or window.get("current_episode_replay_membership") is not False
+        or not isinstance(sampled_session_ids, list)
+        or identity["session_id"] in sampled_session_ids
+    ):
+        raise IntegratedCaptureError("ASYNC_LEARNER_CAPTURE_WINDOW_INVALID")
+    snapshots = []
+    for key in ("start", "end", "delta"):
+        value = window.get(key)
+        if not isinstance(value, Mapping) or any(
+            isinstance(value.get(name), bool)
+            or not isinstance(value.get(name), int)
+            or (
+                int(value[name]) < 0
+                and (
+                    key != "delta"
+                    or name != "partial_cycle_q_updates"
+                )
+            )
+            for name in counter_names
+        ):
+            raise IntegratedCaptureError("ASYNC_LEARNER_CAPTURE_COUNTER_INVALID")
+        snapshots.append(value)
+    start, end, delta = snapshots
+    if any(
+        int(end[name]) - int(start[name]) != int(delta[name])
+        for name in counter_names
+    ):
+        raise IntegratedCaptureError("ASYNC_LEARNER_CAPTURE_DELTA_INVALID")
+    for snapshot in (start, end):
+        if (
+            int(snapshot["total_twin_q_optimizer_steps"])
+            != int(snapshot["warmup_twin_q_optimizer_steps"])
+            + int(snapshot["joint_twin_q_optimizer_steps"])
+            or int(snapshot["residual_actor_update_attempts"])
+            != int(snapshot["residual_actor_optimizer_steps"])
+            + int(snapshot["residual_actor_updates_skipped_no_gradient"])
+        ):
+            raise IntegratedCaptureError("ASYNC_LEARNER_CAPTURE_COUNTER_INVALID")
+    if (
+        int(delta["joint_twin_q_optimizer_steps"])
+        != 2 * int(delta["completed_learner_cycles"])
+        + int(end["partial_cycle_q_updates"])
+        - int(start["partial_cycle_q_updates"])
+        or int(delta["residual_actor_update_attempts"])
+        != int(delta["completed_learner_cycles"])
+        or int(delta["residual_actor_update_attempts"])
+        != int(delta["residual_actor_optimizer_steps"])
+        + int(delta["residual_actor_updates_skipped_no_gradient"])
+    ):
+        raise IntegratedCaptureError("ASYNC_LEARNER_CAPTURE_CYCLE_ACCOUNTING_INVALID")
+    return dict(window)
 
 
 def _complete_async_runtime(
@@ -176,10 +262,12 @@ def _complete_async_runtime(
         or int(status.get("learner_actor_steps", -1)) < 0
         or int(status.get("learner_polyak_steps", -1)) < 0
         or status.get("current_episode_sampled") is not False
+        or status.get("current_episode_replay_membership") is not False
         or int(status.get("nonfinite_count", -1)) != 0
         or int(status.get("oom_count", -1)) != 0
     ):
         raise IntegratedCaptureError("ASYNC_POLICY_LEARNER_COMPLETION_INVALID")
+    _validated_learner_capture_window(status, identity)
     return status
 
 
@@ -2723,9 +2811,18 @@ class IntegratedCaptureBackend:
             }
         )
         if async_status is not None:
+            learner_window = _validated_learner_capture_window(
+                async_status,
+                {
+                    "session_id": contract.identity.session_id,
+                    "episode_id": contract.identity.episode_id,
+                },
+            )
+            learner_delta = learner_window["delta"]
             seal.update(
                 {
                     "learner_started": True,
+                    "learner_scheduling_mode": "continuous_async",
                     "learner_resume_checkpoint": async_status[
                         "learner_resume_checkpoint"
                     ],
@@ -2733,17 +2830,24 @@ class IntegratedCaptureBackend:
                     # episode-end; the seal stays bound to the Actor used.
                     **_pinned_actor_seal_identity(metadata, contract),
                     "learner_critic_steps": int(
-                        async_status["learner_critic_steps"]
+                        learner_delta["total_twin_q_optimizer_steps"]
                     ),
                     "learner_actor_steps": int(
-                        async_status["learner_actor_steps"]
+                        learner_delta["residual_actor_optimizer_steps"]
+                    ),
+                    "learner_actor_update_attempts": int(
+                        learner_delta["residual_actor_update_attempts"]
                     ),
                     "learner_state": async_status["learner_state"],
                     "ack_critic_warmup_steps": int(
                         async_status.get("ack_critic_warmup_steps", 0)
                     ),
-                    "actor_updates": int(async_status["learner_actor_steps"]),
-                    "critic_updates": int(async_status["learner_critic_steps"]),
+                    "actor_updates": int(
+                        learner_delta["residual_actor_optimizer_steps"]
+                    ),
+                    "critic_updates": int(
+                        learner_delta["total_twin_q_optimizer_steps"]
+                    ),
                     "training_checkpoint_path": async_status.get(
                         "latest_checkpoint_path"
                     ),
@@ -2761,7 +2865,13 @@ class IntegratedCaptureBackend:
                     ),
                     "latest_actor_loss": async_status.get("latest_actor_loss"),
                     "latest_min_twin_q": async_status.get("latest_min_twin_q"),
-                    "current_episode_sampled_by_learner": False,
+                    "learner_capture_window": learner_window,
+                    "current_episode_sampled_by_learner": bool(
+                        learner_window["current_episode_sampled"]
+                    ),
+                    "current_episode_replay_membership": bool(
+                        learner_window["current_episode_replay_membership"]
+                    ),
                 }
             )
         store.write("policy_execute_episode_seal.json", seal)
