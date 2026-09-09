@@ -17,7 +17,7 @@ import torch
 import yaml
 
 from forcesmolvla.rft.online.controller_acceptance import (
-    ControllerAcceptanceBatch,
+    CandidateGuardBatch,
     HILSERL_ACCEPTANCE_MAPPING_KIND,
 )
 from forcesmolvla.rft.online.action_representation import (
@@ -326,13 +326,45 @@ def build_ack_macros(
                 row.get("accepted_absolute_action_k7"), dtype=np.float64
             )
             mask = tuple(bool(value) for value in persisted.get("behavior_mask", ()))
+            dispatches = tuple(
+                int(value) for value in persisted.get("source_dispatch_sequences", ())
+            )
+            model_indices = tuple(
+                int(value) for value in persisted.get("source_model_indices", ())
+            )
+            chunk_ids = tuple(
+                str(value) for value in persisted.get("source_chunk_ids", ())
+            )
+            ack_ids = tuple(
+                str(value) for value in persisted.get("source_ack_ids", ())
+            )
+            command_ids = tuple(
+                str(value) for value in persisted.get("source_command_ids", ())
+            )
             if (
                 accepted.shape != (3, 7)
                 or not np.isfinite(accepted).all()
                 or mask != (True, True, True)
+                or not np.allclose(accepted, accepted[0])
+                or any(
+                    len(values) != 3
+                    for values in (
+                        dispatches,
+                        model_indices,
+                        chunk_ids,
+                        ack_ids,
+                        command_ids,
+                    )
+                )
+                or len(set(dispatches)) != 1
+                or dispatches[0] != int(row["identity"]["decision_id"])
+                or len(set(model_indices)) != 1
+                or len(set(chunk_ids)) != 1
+                or len(set(ack_ids)) != 1
+                or len(set(command_ids)) != 1
             ):
                 raise RuntimeError(
-                    "FORCERFT_ONLINE_REPLAY_DISPATCH_ACTION_INVALID"
+                    "FORCERFT_ONLINE_REPLAY_DISPATCH_COMPRESSION_INVALID"
                 )
             behavior = AckMacro(
                 grid_monotonic_ns=tuple(
@@ -607,10 +639,11 @@ def _validated_formal_row(
         and eligibility.get("formal_training_replay_eligible") is True
         and eligibility.get("real_online_r") is True
         and eligibility.get("replay_membership") == "R_online"
-        and critic_td_valid is True,
+        and isinstance(critic_td_valid, bool)
+        and (source == "policy" or critic_td_valid is False),
         "FORCERFT_ONLINE_REPLAY_MEMBERSHIP",
     )
-    eligibility["critic_td_valid"] = True
+    eligibility["critic_td_valid"] = critic_td_valid
     row["action_source"] = source
     row.setdefault("expert", source == "human")
     row.setdefault("intervention", source == "human")
@@ -776,20 +809,23 @@ def count_sealed_critic_td_valid_transitions(root: Path) -> int:
             == ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION
             and row.get("online_semantics_version")
             == ONLINE_SEMANTICS_VERSION
-            and source in {"policy", "human"}
+            and source == "policy"
             and row.get("action_authority", {}).get("executed_action_source")
             == source
             and eligibility.get("formal_replay") is True
             and eligibility.get("formal_training_replay_eligible") is True
             and eligibility.get("real_online_r") is True
             and eligibility.get("replay_membership") == "R_online"
-            and eligibility.get("td_eligible") is True
+            and eligibility.get(
+                "critic_td_valid", eligibility.get("td_eligible")
+            )
+            is True
         )
     return count
 
 
 def count_sealed_autonomous_policy_transitions(root: Path) -> int:
-    """Compatibility alias; warm-up is now based on all valid online ACK rows."""
+    """Compatibility alias for the policy-only TD startup population."""
 
     return count_sealed_critic_td_valid_transitions(root)
 
@@ -946,10 +982,10 @@ class HumanCorrectionReplay:
             "identity": f"H:{uid}",
             "expert": fm_eligible,
             "action_source": "human",
-            "td_eligible": True,
+            "td_eligible": False,
             "fm_eligible": fm_eligible,
-            "actor_q_valid": macro.actor_q_eligibility.valid,
-            "actor_q_eligibility_reason": macro.actor_q_eligibility.reason,
+            "actor_q_valid": False,
+            "actor_q_eligibility_reason": "human_bc_only",
             "action_target": action_target,
             "action_valid_mask": feature_mask,
             "human_action_target_h50": action_target,
@@ -967,21 +1003,17 @@ class ResidualTransitionBatch:
     state7: torch.Tensor
     wrench6: torch.Tensor
     wrench_delta6: torch.Tensor
-    base_action_k6: torch.Tensor
-    behavior_residual_k6: torch.Tensor
-    action_mask: torch.Tensor
-    control_source: torch.Tensor
-    gripper_command: torch.Tensor
-    acceptance_context: ControllerAcceptanceBatch
+    base_action6: torch.Tensor
+    base_gripper: torch.Tensor
+    behavior_proposal6: torch.Tensor
+    candidate_guard: CandidateGuardBatch
     next_state7: torch.Tensor
     next_wrench6: torch.Tensor
     next_wrench_delta6: torch.Tensor
-    next_base_action_k6: torch.Tensor
-    next_action_mask: torch.Tensor
+    next_base_action6: torch.Tensor
+    next_base_gripper: torch.Tensor
     next_base_valid: torch.Tensor
-    next_control_source: torch.Tensor
-    next_gripper_command: torch.Tensor
-    next_acceptance_context: ControllerAcceptanceBatch
+    next_candidate_guard: CandidateGuardBatch
     reward: torch.Tensor
     terminated: torch.Tensor
     truncated: torch.Tensor
@@ -998,6 +1030,7 @@ class OnlineResidualReplay:
         self.next_base_missing_rows = 0
         self.quarantined_current_schema_rows = 0
         self.candidate_acceptance_unavailable_rows = 0
+        self.candidate_guard_unknown_rows = 0
         self.rows = tuple(self._materialize_all(tuple(macros)))
 
     def append_macros(
@@ -1333,6 +1366,240 @@ class OnlineResidualReplay:
         except (TypeError, ValueError):
             return unavailable()
 
+    def _candidate_guard(
+        self,
+        context: Mapping[str, Any],
+        source: str,
+        *,
+        count_unknown: bool = True,
+    ) -> dict[str, Any]:
+        fallback = {
+            "valid": False,
+            "decision_state7": np.zeros(7, dtype=np.float32),
+            "upper_position3": np.zeros(3, dtype=np.float32),
+            "upper_quaternion4": np.asarray(
+                [0.0, 0.0, 0.0, 1.0], dtype=np.float32
+            ),
+            "policy_workspace_min3": np.full(3, -1.0, dtype=np.float32),
+            "policy_workspace_max3": np.full(3, 1.0, dtype=np.float32),
+            "policy_orientation_min3": np.full(3, -np.pi, dtype=np.float32),
+            "policy_orientation_max3": np.full(3, np.pi, dtype=np.float32),
+            "policy_gimbal_margin_rad": np.zeros(1, dtype=np.float32),
+            "policy_gripper_width_m": np.zeros(1, dtype=np.float32),
+            "policy_gripper_min_m": np.zeros(1, dtype=np.float32),
+            "policy_gripper_max_m": np.ones(1, dtype=np.float32),
+            "policy_continuity_max_xyz_m": np.ones(1, dtype=np.float32),
+            "policy_continuity_max_rotation_rad": np.ones(1, dtype=np.float32),
+            "policy_continuity_max_gripper_delta_m": np.ones(
+                1, dtype=np.float32
+            ),
+        }
+
+        def unknown() -> dict[str, Any]:
+            if count_unknown and source == "policy":
+                self.candidate_guard_unknown_rows += 1
+            return fallback
+
+        raw = context.get("candidate_acceptance_mapping")
+        if source != "policy" or not isinstance(raw, Mapping):
+            return unknown()
+        guard = raw.get("policy_single_action_guard")
+        if not isinstance(guard, Mapping):
+            return unknown()
+
+        def vector(
+            source_value: Mapping[str, Any], name: str, width: int
+        ) -> np.ndarray:
+            value = np.asarray(source_value.get(name), dtype=np.float32)
+            if value.shape != (width,) or not np.isfinite(value).all():
+                raise ValueError(name)
+            return value
+
+        def scalar(name: str) -> np.ndarray:
+            value = np.asarray([guard.get(name)], dtype=np.float32)
+            if value.shape != (1,) or not np.isfinite(value).all():
+                raise ValueError(name)
+            return value
+
+        try:
+            decision_state7 = vector(context, "state7_absolute", 7)
+            raw_decision_state7 = raw.get("decision_state7")
+            if raw_decision_state7 is not None and not np.allclose(
+                vector(raw, "decision_state7", 7),
+                decision_state7,
+                rtol=1.0e-5,
+                atol=1.0e-6,
+            ):
+                raise ValueError("decision_state7")
+            result = {
+                "valid": True,
+                "decision_state7": decision_state7,
+                "upper_position3": vector(raw, "upper_execution_position_m", 3),
+                "upper_quaternion4": vector(
+                    raw, "upper_execution_quaternion_xyzw", 4
+                ),
+                "policy_workspace_min3": vector(
+                    guard, "workspace_min_xyz_m", 3
+                ),
+                "policy_workspace_max3": vector(
+                    guard, "workspace_max_xyz_m", 3
+                ),
+                "policy_orientation_min3": vector(
+                    guard, "orientation_min_rpy_rad", 3
+                ),
+                "policy_orientation_max3": vector(
+                    guard, "orientation_max_rpy_rad", 3
+                ),
+                "policy_gimbal_margin_rad": scalar("gimbal_margin_rad"),
+                "policy_gripper_width_m": scalar("gripper_width_m"),
+                "policy_gripper_min_m": scalar("gripper_min_width_m"),
+                "policy_gripper_max_m": scalar("gripper_max_width_m"),
+                "policy_continuity_max_xyz_m": scalar("continuity_max_xyz_m"),
+                "policy_continuity_max_rotation_rad": scalar(
+                    "continuity_max_rotation_rad"
+                ),
+                "policy_continuity_max_gripper_delta_m": scalar(
+                    "continuity_max_gripper_delta_m"
+                ),
+            }
+            if (
+                np.linalg.norm(result["upper_quaternion4"]) <= 0.0
+                or np.any(
+                    result["policy_workspace_min3"]
+                    >= result["policy_workspace_max3"]
+                )
+                or np.any(
+                    result["policy_orientation_min3"]
+                    >= result["policy_orientation_max3"]
+                )
+                or result["policy_gimbal_margin_rad"][0] < 0.0
+                or result["policy_gripper_min_m"][0]
+                > result["policy_gripper_max_m"][0]
+                or result["policy_continuity_max_xyz_m"][0] < 0.0
+                or result["policy_continuity_max_rotation_rad"][0] < 0.0
+                or result["policy_continuity_max_gripper_delta_m"][0] < 0.0
+            ):
+                raise ValueError("candidate guard bounds")
+            return result
+        except (TypeError, ValueError):
+            return unknown()
+
+    @staticmethod
+    def _policy_proposal(
+        row: Mapping[str, Any],
+        context: Mapping[str, Any],
+        normalized_base_k7: np.ndarray,
+    ) -> tuple[np.ndarray, bool, str | None]:
+        if row.get("action_source") != "policy":
+            return np.zeros(6, dtype=np.float32), False, "not_policy"
+        try:
+            proposal = np.asarray(
+                row.get("applied_residual_tcp6"), dtype=np.float32
+            )
+            base_k7 = np.asarray(
+                row.get("base_normalized_action_k7"), dtype=np.float32
+            )
+            composed_k7 = np.asarray(
+                row.get("composed_normalized_action_k7"), dtype=np.float32
+            )
+            selection = row.get("policy_lineage", {}).get("selection", {})
+            selection_proposal = np.asarray(
+                selection.get("applied_residual_tcp6"), dtype=np.float32
+            )
+            selection_base = np.asarray(
+                selection.get("base_normalized_action7"), dtype=np.float32
+            )
+            selection_composed = np.asarray(
+                selection.get("composed_normalized_action7"), dtype=np.float32
+            )
+            selection_base_absolute = np.asarray(
+                selection.get("base_absolute_action7"), dtype=np.float64
+            )
+            decision_id = int(row.get("identity", {}).get("decision_id"))
+            selection_sequence = int(selection.get("sequence"))
+            selection_context = selection.get("residual_decision_context")
+            if not isinstance(selection_context, Mapping):
+                raise ValueError("selection_context")
+            selection_decision_ns = int(
+                selection_context.get("decision_monotonic_ns")
+            )
+            context_decision_ns = int(context.get("decision_monotonic_ns"))
+        except (TypeError, ValueError):
+            return np.zeros(6, dtype=np.float32), False, "proposal_missing"
+        expected_composed = normalized_base_k7.copy()
+        expected_composed[:, :6] += proposal
+        context_base6 = np.asarray(
+            context.get("base_normalized_action6"), dtype=np.float32
+        )
+        valid = bool(
+            proposal.shape == (6,)
+            and base_k7.shape == (3, 7)
+            and composed_k7.shape == (3, 7)
+            and selection_proposal.shape == (6,)
+            and selection_base.shape == (7,)
+            and selection_composed.shape == (7,)
+            and selection_base_absolute.shape == (7,)
+            and context_base6.shape == (6,)
+            and all(
+                np.isfinite(value).all()
+                for value in (
+                    proposal,
+                    base_k7,
+                    composed_k7,
+                    selection_proposal,
+                    selection_base,
+                    selection_composed,
+                    selection_base_absolute,
+                    context_base6,
+                )
+            )
+            and decision_id == selection_sequence
+            and selection_decision_ns == context_decision_ns
+            and row.get("policy_lineage", {}).get("revision")
+            == selection.get("policy_revision")
+            and np.allclose(
+                selection_base_absolute,
+                np.asarray(context.get("base_absolute_action7")),
+                rtol=1.0e-5,
+                atol=1.0e-6,
+            )
+            and np.allclose(
+                base_k7, normalized_base_k7, rtol=1.0e-5, atol=1.0e-6
+            )
+            and np.allclose(
+                selection_base,
+                normalized_base_k7[0],
+                rtol=1.0e-5,
+                atol=1.0e-6,
+            )
+            and np.allclose(
+                context_base6,
+                normalized_base_k7[0, :6],
+                rtol=1.0e-5,
+                atol=1.0e-6,
+            )
+            and np.allclose(
+                proposal, selection_proposal, rtol=1.0e-5, atol=1.0e-6
+            )
+            and np.allclose(
+                composed_k7, expected_composed, rtol=1.0e-5, atol=1.0e-6
+            )
+            and np.allclose(
+                selection_composed,
+                expected_composed[0],
+                rtol=1.0e-5,
+                atol=1.0e-6,
+            )
+            and np.allclose(
+                composed_k7[:, 6], base_k7[:, 6], rtol=0.0, atol=1.0e-6
+            )
+        )
+        return (
+            proposal if valid else np.zeros(6, dtype=np.float32),
+            valid,
+            None if valid else "proposal_anchor_or_composition_mismatch",
+        )
+
     def _materialize_all(
         self, macros: tuple[ProductionAckMacro, ...]
     ) -> list[dict[str, Any]]:
@@ -1404,8 +1671,11 @@ class OnlineResidualReplay:
                 source in {"policy", "human"},
                 "FORCERFT_ONLINE_REPLAY_CONTROL_SOURCE_INVALID",
             )
-            control_source = 0.0 if source == "policy" else 1.0
             acceptance_mapping = self._acceptance_mapping(context, source)
+            candidate_guard = self._candidate_guard(context, source)
+            behavior_proposal6, proposal_valid, proposal_invalid_reason = (
+                self._policy_proposal(row, context, base)
+            )
             outcome = row["outcome"]
             terminal_boundary = bool(
                 outcome["terminated"] or outcome["truncated"]
@@ -1414,18 +1684,19 @@ class OnlineResidualReplay:
             if next_context is None:
                 if not terminal_boundary:
                     self.next_base_missing_rows += 1
-                    continue
                 next_state, next_wrench = self._normalized_observation(
                     row["next_observation"]
                 )
                 next_wrench_delta = np.zeros(6, dtype=np.float32)
-                next_base = base.copy()
+                next_base_one = base_one.copy()
                 next_base_valid = False
-                next_control_source = control_source
-                next_gripper_command = float(accepted[np.flatnonzero(mask)[0], 6])
                 next_acceptance_mapping = self._acceptance_mapping(
                     {}, source, count_unavailable=False
                 )
+                next_candidate_guard = self._candidate_guard(
+                    {}, source, count_unknown=False
+                )
+                next_proposal_valid = False
             else:
                 require(
                     not terminal_boundary and isinstance(next_context, Mapping),
@@ -1437,7 +1708,6 @@ class OnlineResidualReplay:
                     next_wrench_delta,
                     next_base_one,
                 ) = self._decision_features(next_context)
-                next_base = np.repeat(next_base_one[None, :], 3, axis=0)
                 next_base_valid = True
                 next_source = row.get("next_action_source")
                 next_accepted_absolute = row.get("next_accepted_absolute_action7")
@@ -1456,39 +1726,57 @@ class OnlineResidualReplay:
                     next_context,
                     str(next_source),
                 )
-                if next_accepted_valid:
-                    _next_base, next_accepted, _next_behavior = (
-                        normalized_behavior_residual(
-                            base_absolute_k7=np.repeat(
-                                np.asarray(next_context["base_absolute_action7"])[
-                                    None, :
-                                ],
-                                3,
-                                axis=0,
-                            ),
-                            accepted_absolute_k7=np.repeat(
-                                next_accepted_one[None, :], 3, axis=0
-                            ),
-                            decision_state7=np.asarray(
-                                next_context["state7_absolute"], dtype=np.float64
-                            ),
-                            normalize_delta7=self.normalizer.delta_action7.apply,
-                            valid_mask=np.ones(3, dtype=np.bool_),
-                        )
+                next_candidate_guard = self._candidate_guard(
+                    next_context, str(next_source)
+                )
+                try:
+                    next_proposal = np.asarray(
+                        row.get("next_applied_residual_tcp6"), dtype=np.float32
                     )
-                    next_gripper_command = float(next_accepted[0, 6])
-                    next_control_source = (
-                        1.0 if next_source == "human" else 0.0
+                except (TypeError, ValueError):
+                    next_proposal = np.empty(0, dtype=np.float32)
+                next_proposal_valid = bool(
+                    next_source == "policy"
+                    and next_proposal.shape == (6,)
+                    and np.isfinite(next_proposal).all()
+                    and next_context.get("previous_policy_dispatch_sequence")
+                    == int(row["identity"]["decision_id"])
+                )
+                if next_accepted_valid:
+                    normalized_behavior_residual(
+                        base_absolute_k7=np.repeat(
+                            np.asarray(next_context["base_absolute_action7"])[
+                                None, :
+                            ],
+                            3,
+                            axis=0,
+                        ),
+                        accepted_absolute_k7=np.repeat(
+                            next_accepted_one[None, :], 3, axis=0
+                        ),
+                        decision_state7=np.asarray(
+                            next_context["state7_absolute"], dtype=np.float64
+                        ),
+                        normalize_delta7=self.normalizer.delta_action7.apply,
+                        valid_mask=np.ones(3, dtype=np.bool_),
                     )
                 else:
                     next_acceptance_mapping = {
                         **next_acceptance_mapping,
                         "valid": False,
                     }
-                    next_gripper_command = 0.0
-                    next_control_source = (
-                        1.0 if next_source == "human" else 0.0
-                    )
+                    next_proposal_valid = False
+            static_td_valid = bool(
+                source == "policy"
+                and row.get("eligibility", {}).get("critic_td_valid") is True
+                and proposal_valid
+                and (
+                    terminal_boundary
+                    or next_base_valid
+                    and next_proposal_valid
+                    and next_candidate_guard["valid"]
+                )
+            )
             human_valid = bool(
                 row.get("action_source") == "human"
                 and row.get("human_residual_valid") is True
@@ -1508,14 +1796,14 @@ class OnlineResidualReplay:
                     "wrench_delta_interval_ns": int(
                         context.get("wrench_delta_interval_ns", 0)
                     ),
-                    "base_action_k6": base[..., :6],
-                    "behavior_residual_k6": residual,
-                    "action_mask": mask,
-                    "control_source": np.asarray([control_source], dtype=np.float32),
-                    "gripper_command": np.asarray(
-                        [accepted[np.flatnonzero(mask)[0], 6]], dtype=np.float32
-                    ),
+                    "base_action6": base_one[:6],
+                    "base_gripper": np.asarray([base_one[6]], dtype=np.float32),
+                    "behavior_proposal6": behavior_proposal6,
+                    "policy_proposal_valid": proposal_valid,
+                    "policy_proposal_invalid_reason": proposal_invalid_reason,
+                    "accepted_residual_k6": residual,
                     "acceptance_context": acceptance_mapping,
+                    "candidate_guard": candidate_guard,
                     "next_state7": next_state,
                     "next_wrench6": next_wrench,
                     "next_wrench_delta6": next_wrench_delta,
@@ -1524,26 +1812,23 @@ class OnlineResidualReplay:
                         if next_context is None
                         else int(next_context.get("wrench_delta_interval_ns", 0))
                     ),
-                    "next_base_action_k6": next_base[..., :6],
-                    "next_action_mask": np.ones(3, dtype=np.bool_),
+                    "next_base_action6": next_base_one[:6],
+                    "next_base_gripper": np.asarray(
+                        [next_base_one[6]], dtype=np.float32
+                    ),
                     "next_base_valid": next_base_valid,
-                    "next_control_source": np.asarray(
-                        [next_control_source], dtype=np.float32
-                    ),
-                    "next_gripper_command": np.asarray(
-                        [next_gripper_command], dtype=np.float32
-                    ),
                     "next_acceptance_context": next_acceptance_mapping,
-                    "td_mapping_valid": bool(
-                        terminal_boundary or next_acceptance_mapping["valid"]
-                    ),
+                    "next_candidate_guard": next_candidate_guard,
+                    "critic_td_valid": static_td_valid,
+                    "td_mapping_valid": static_td_valid,
                     "reward": float(outcome["reward"]),
                     "terminated": bool(outcome["terminated"]),
                     "truncated": bool(outcome["truncated"]),
                     "actor_q_valid": bool(
                         source == "policy"
                         and macro.actor_q_eligibility.valid
-                        and acceptance_mapping["valid"]
+                        and proposal_valid
+                        and candidate_guard["valid"]
                     ),
                     "human_residual_target6": (
                         residual[0].copy()
@@ -1576,7 +1861,7 @@ class OnlineResidualReplay:
                 np.stack([row[name] for row in rows]), dtype=dtype, device=device
             )
 
-        def acceptance(name: str) -> ControllerAcceptanceBatch:
+        def candidate_guard(name: str) -> CandidateGuardBatch:
             values = [row[name] for row in rows]
 
             def field(field_name: str, dtype=torch.float32) -> torch.Tensor:
@@ -1603,32 +1888,15 @@ class OnlineResidualReplay:
                 and bool((std6 > 0.0).all()),
                 "FORCERFT_ACCEPTANCE_NORMALIZER_INVALID",
             )
-            return ControllerAcceptanceBatch(
+            return CandidateGuardBatch(
                 valid=torch.tensor(
                     [value["valid"] for value in values],
                     dtype=torch.bool,
                     device=device,
                 ),
-                control_source=field("control_source")[:, None],
                 decision_state7=field("decision_state7"),
                 upper_position3=field("upper_position3"),
                 upper_quaternion4=field("upper_quaternion4"),
-                adapter_position3=field("adapter_position3"),
-                adapter_quaternion4=field("adapter_quaternion4"),
-                translation_scale3=field("translation_scale3"),
-                rotation_scale3=field("rotation_scale3"),
-                workspace_min3=field("workspace_min3"),
-                workspace_max3=field("workspace_max3"),
-                filter_position_before3=field("filter_position_before3"),
-                filter_quaternion_before4=field("filter_quaternion_before4"),
-                actual_position3=field("actual_position3"),
-                actual_quaternion4=field("actual_quaternion4"),
-                step_dt_s=field("step_dt_s"),
-                filter_time_constant_s=field("filter_time_constant_s"),
-                translation_clip_positive3=field("translation_clip_positive3"),
-                translation_clip_negative3=field("translation_clip_negative3"),
-                rotation_clip_positive3=field("rotation_clip_positive3"),
-                rotation_clip_negative3=field("rotation_clip_negative3"),
                 policy_workspace_min3=field("policy_workspace_min3"),
                 policy_workspace_max3=field("policy_workspace_max3"),
                 policy_orientation_min3=field("policy_orientation_min3"),
@@ -1656,25 +1924,21 @@ class OnlineResidualReplay:
             state7=tensor("state7"),
             wrench6=tensor("wrench6"),
             wrench_delta6=tensor("wrench_delta6"),
-            base_action_k6=tensor("base_action_k6"),
-            behavior_residual_k6=tensor("behavior_residual_k6"),
-            action_mask=tensor("action_mask", torch.bool),
-            control_source=tensor("control_source"),
-            gripper_command=tensor("gripper_command"),
-            acceptance_context=acceptance("acceptance_context"),
+            base_action6=tensor("base_action6"),
+            base_gripper=tensor("base_gripper"),
+            behavior_proposal6=tensor("behavior_proposal6"),
+            candidate_guard=candidate_guard("candidate_guard"),
             next_state7=tensor("next_state7"),
             next_wrench6=tensor("next_wrench6"),
             next_wrench_delta6=tensor("next_wrench_delta6"),
-            next_base_action_k6=tensor("next_base_action_k6"),
-            next_action_mask=tensor("next_action_mask", torch.bool),
+            next_base_action6=tensor("next_base_action6"),
+            next_base_gripper=tensor("next_base_gripper"),
             next_base_valid=torch.tensor(
                 [row["next_base_valid"] for row in rows],
                 dtype=torch.bool,
                 device=device,
             ),
-            next_control_source=tensor("next_control_source"),
-            next_gripper_command=tensor("next_gripper_command"),
-            next_acceptance_context=acceptance("next_acceptance_context"),
+            next_candidate_guard=candidate_guard("next_candidate_guard"),
             reward=torch.tensor(
                 [row["reward"] for row in rows], dtype=torch.float32, device=device
             ),
@@ -1718,7 +1982,7 @@ class OnlineResidualReplay:
             if (not human_only or row["human_residual_valid"])
             and (not policy_only or row["action_source"] == "policy")
             and (not actor_q_valid_only or row["actor_q_valid"])
-            and (not td_mappable_only or row["td_mapping_valid"])
+            and (not td_mappable_only or row["critic_td_valid"])
         ]
         if not population:
             return None
@@ -1753,7 +2017,7 @@ class OnlineResidualReplay:
         self, batch_size: int, *, device: torch.device, seed: int
     ) -> Iterable[ResidualTransitionBatch]:
         population = [
-            index for index, row in enumerate(self.rows) if row["td_mapping_valid"]
+            index for index, row in enumerate(self.rows) if row["critic_td_valid"]
         ]
         generator = random.Random(int(seed))
         generator.shuffle(population)
@@ -1765,7 +2029,7 @@ class OnlineResidualReplay:
 
     @property
     def critic_td_valid_rows(self) -> int:
-        return sum(int(row["td_mapping_valid"]) for row in self.rows)
+        return sum(int(row["critic_td_valid"]) for row in self.rows)
 
     @property
     def recorded_transition_rows(self) -> int:
@@ -1781,8 +2045,25 @@ class OnlineResidualReplay:
 
     @property
     def nonzero_behavior_residual_rows(self) -> int:
+        """Compatibility metric for nonzero ACK-minus-base diagnostics."""
+
+        return self.nonzero_accepted_residual_rows
+
+    @property
+    def nonzero_policy_proposal_rows(self) -> int:
         return sum(
-            int(np.any(np.abs(row["behavior_residual_k6"]) > 1.0e-8))
+            int(
+                row["action_source"] == "policy"
+                and row["policy_proposal_valid"]
+                and np.any(np.abs(row["behavior_proposal6"]) > 1.0e-8)
+            )
+            for row in self.rows
+        )
+
+    @property
+    def nonzero_accepted_residual_rows(self) -> int:
+        return sum(
+            int(np.any(np.abs(row["accepted_residual_k6"]) > 1.0e-8))
             for row in self.rows
         )
 
@@ -1791,12 +2072,12 @@ class OnlineResidualReplay:
         counts: dict[str, int] = {}
         for row in self.rows:
             counts.setdefault(row["episode_id"], 0)
-            counts[row["episode_id"]] += int(row["td_mapping_valid"])
+            counts[row["episode_id"]] += int(row["critic_td_valid"])
         return tuple(counts.values())
 
     def critic_td_rows_for_episode(self, episode_id: str) -> int:
         return sum(
-            int(row["td_mapping_valid"])
+            int(row["critic_td_valid"])
             for row in self.rows
             if row["episode_id"] == episode_id
         )

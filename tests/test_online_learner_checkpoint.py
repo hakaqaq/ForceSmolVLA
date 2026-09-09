@@ -7,7 +7,14 @@ import pytest
 import torch
 import yaml
 
-from forcesmolvla.rft.critic import CRITIC_INPUT_SPEC, build_twin_q, state_exact
+from forcesmolvla.rft.critic import (
+    CRITIC_ACTION_REPRESENTATION,
+    CRITIC_CANDIDATE_FEASIBILITY,
+    CRITIC_INPUT_SPEC,
+    CRITIC_TD_SOURCE_MODE,
+    build_twin_q,
+    state_exact,
+)
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
     load_checkpoint_training_config,
@@ -27,6 +34,17 @@ from forcesmolvla.rft.residual_actor import make_residual_actor_pair
 
 
 ROOT = Path(__file__).parents[1]
+
+
+def _runtime_contract(config: dict) -> dict:
+    return {
+        "critic_action_representation": CRITIC_ACTION_REPRESENTATION,
+        "critic_td_source_mode": CRITIC_TD_SOURCE_MODE,
+        "critic_candidate_feasibility": CRITIC_CANDIDATE_FEASIBILITY,
+        "residual_bound_mode": config["wrist_wrench_residual_actor"][
+            "residual_bound_mode"
+        ],
+    }
 
 
 def _credit_replay(per_episode_counts: dict[str, int]) -> dict:
@@ -69,7 +87,11 @@ def test_residual_checkpoint_restores_learner_state_and_warmup_progress(
         (ROOT / "configs/forcerft/online_ack_residual_actor_critic.yaml").read_text()
     )
     actor, actor_target = make_residual_actor_pair(
-        hidden_dim=256, max_normalized_residual=0.1
+        hidden_dim=256,
+        max_normalized_residual=0.1,
+        residual_bound_mode=config["wrist_wrench_residual_actor"][
+            "residual_bound_mode"
+        ],
     )
     q1, q2, q1_target, q2_target = build_twin_q(hidden_dim=256, seed=3)
     actor_optimizer = torch.optim.Adam(actor.parameters(), lr=1e-4)
@@ -80,6 +102,7 @@ def test_residual_checkpoint_restores_learner_state_and_warmup_progress(
         "checkpoint_kind": TRAINING_CHECKPOINT_KIND,
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "critic_input_spec": CRITIC_INPUT_SPEC,
+        **_runtime_contract(config),
         "frozen_base_policy_checkpoint": "/fixed/base",
         "learner_state": "ack_critic_warmup",
         "ack_critic_warmup_complete": False,
@@ -185,7 +208,11 @@ def test_exact_resume_rejects_current_yaml_algorithm_drift(
         (ROOT / "configs/forcerft/online_ack_residual_actor_critic.yaml").read_text()
     )
     actor, actor_target = make_residual_actor_pair(
-        hidden_dim=256, max_normalized_residual=0.1
+        hidden_dim=256,
+        max_normalized_residual=0.1,
+        residual_bound_mode=config["wrist_wrench_residual_actor"][
+            "residual_bound_mode"
+        ],
     )
     q1, q2, q1_target, q2_target = build_twin_q(hidden_dim=256, seed=3)
     checkpoint = tmp_path / "residual_actor_critic_cycle_000000"
@@ -205,6 +232,7 @@ def test_exact_resume_rejects_current_yaml_algorithm_drift(
             "checkpoint_kind": TRAINING_CHECKPOINT_KIND,
             "online_semantics_version": ONLINE_SEMANTICS_VERSION,
             "critic_input_spec": CRITIC_INPUT_SPEC,
+            **_runtime_contract(config),
             "frozen_base_policy_checkpoint": "/fixed/base",
             "learner_state": "ack_replay_collection",
             "ack_critic_warmup_complete": False,
@@ -267,6 +295,21 @@ def test_exact_resume_rejects_current_yaml_algorithm_drift(
         checkpoint, expected_kind=TRAINING_CHECKPOINT_KIND
     )
 
+    old_q_contract = deepcopy(original)
+    old_q_contract["critic_action_representation"] = "accepted_residual6"
+    torch.save(old_q_contract, state_path)
+    assert not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=TRAINING_CHECKPOINT_KIND
+    )
+
+    old_td_or_bound = deepcopy(original)
+    old_td_or_bound["critic_td_source_mode"] = "policy_and_human"
+    old_td_or_bound["residual_bound_mode"] = "axiswise_physical_limit"
+    torch.save(old_td_or_bound, state_path)
+    assert not residual_actor_critic_checkpoint_is_recoverable(
+        checkpoint, expected_kind=TRAINING_CHECKPOINT_KIND
+    )
+
     missing_pending_dependency = deepcopy(original)
     missing_pending_dependency["scheduling"]["pending_publication"] = {
         "revision_id": "task3-residual-policy-cycle-000000-gmissing",
@@ -310,7 +353,11 @@ def test_exact_resume_preserves_reserved_partial_cycle(
     )
     checkpoint = tmp_path / f"partial-{partial_q}"
     actor, actor_target = make_residual_actor_pair(
-        hidden_dim=256, max_normalized_residual=0.1
+        hidden_dim=256,
+        max_normalized_residual=0.1,
+        residual_bound_mode=config["wrist_wrench_residual_actor"][
+            "residual_bound_mode"
+        ],
     )
     q1, q2, q1_target, q2_target = build_twin_q(hidden_dim=256, seed=3)
     replay = _credit_replay(
@@ -329,6 +376,7 @@ def test_exact_resume_preserves_reserved_partial_cycle(
         "checkpoint_kind": TRAINING_CHECKPOINT_KIND,
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "critic_input_spec": CRITIC_INPUT_SPEC,
+        **_runtime_contract(config),
         "frozen_base_policy_checkpoint": "/fixed/base",
         "learner_state": "residual_actor_critic_training",
         "ack_critic_warmup_complete": True,
@@ -394,6 +442,7 @@ def test_legacy_checkpoint_without_td_credit_cannot_be_saved_or_resumed(
         "checkpoint_kind": TRAINING_CHECKPOINT_KIND,
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "critic_input_spec": CRITIC_INPUT_SPEC,
+        **_runtime_contract(config),
         "frozen_base_policy_checkpoint": "/fixed/base",
         "learner_state": "residual_actor_critic_training",
         "ack_critic_warmup_complete": True,

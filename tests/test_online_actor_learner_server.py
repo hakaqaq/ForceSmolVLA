@@ -12,6 +12,11 @@ import torch
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import serve_forcerft_residual_actor_critic as learner_server  # noqa: E402
+from forcesmolvla.rft.critic import (  # noqa: E402
+    CRITIC_ACTION_REPRESENTATION,
+    CRITIC_CANDIDATE_FEASIBILITY,
+    CRITIC_TD_SOURCE_MODE,
+)
 from serve_forcerft_residual_actor_critic import (  # noqa: E402
     AsyncResidualActorCriticRuntime,
     ResidualActorCriticLearner,
@@ -32,9 +37,23 @@ from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
 from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
     ONLINE_SEMANTICS_VERSION,
 )
+from forcesmolvla.rft.residual_actor import (  # noqa: E402
+    RESIDUAL_BOUND_MODE_SCALAR,
+)
 
 
 BASE_MODEL_ID = "a" * 64
+
+
+def candidate_state() -> dict[str, str]:
+    return {
+        "checkpoint_kind": CANDIDATE_CHECKPOINT_KIND,
+        "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+        "critic_action_representation": CRITIC_ACTION_REPRESENTATION,
+        "critic_td_source_mode": CRITIC_TD_SOURCE_MODE,
+        "critic_candidate_feasibility": CRITIC_CANDIDATE_FEASIBILITY,
+        "residual_bound_mode": RESIDUAL_BOUND_MODE_SCALAR,
+    }
 
 
 class FakeEngine:
@@ -47,6 +66,7 @@ class FakeEngine:
         self._residual_lock = threading.Lock()
         self.policy = torch.nn.Linear(1, 1)
         self.residual_actor = torch.nn.Linear(1, 1)
+        self.residual_actor.residual_bound_mode = RESIDUAL_BOUND_MODE_SCALAR
         torch.nn.init.zeros_(self.residual_actor.weight)
         torch.nn.init.zeros_(self.residual_actor.bias)
         self.reset_count = 0
@@ -213,13 +233,7 @@ class SchedulingEventLearner(FakeLearner):
         checkpoint = self.root / f"candidate-{cycle}"
         checkpoint.mkdir()
         torch.save(torch.nn.Linear(1, 1).state_dict(), checkpoint / "residual_actor.pt")
-        torch.save(
-            {
-                "checkpoint_kind": CANDIDATE_CHECKPOINT_KIND,
-                "online_semantics_version": ONLINE_SEMANTICS_VERSION,
-            },
-            checkpoint / "candidate_state.pt",
-        )
+        torch.save(candidate_state(), checkpoint / "candidate_state.pt")
         scheduling = self.learner["runtime"]["scheduling"]
         scheduling["last_publish_attempt_cycle"] = cycle
         scheduling["last_published_cycle"] = cycle
@@ -445,13 +459,7 @@ def test_resume_keeps_fixed_base_and_restores_active_residual(tmp_path: Path) ->
     )
     candidate.mkdir(parents=True)
     torch.save({}, candidate / "residual_actor.pt")
-    torch.save(
-        {
-            "checkpoint_kind": CANDIDATE_CHECKPOINT_KIND,
-            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
-        },
-        candidate / "candidate_state.pt",
-    )
+    torch.save(candidate_state(), candidate / "candidate_state.pt")
     selected = _select_deployed_actor_for_resume(resume_checkpoint=resume)
     assert selected == (
         base.resolve(),
@@ -472,6 +480,11 @@ def test_candidate_contains_only_residual_actor_state(tmp_path: Path) -> None:
     learner._state_lock = threading.RLock()
     learner.learner = {
         "residual_actor": torch.nn.Linear(2, 1),
+        "config": {
+            "wrist_wrench_residual_actor": {
+                "residual_bound_mode": RESIDUAL_BOUND_MODE_SCALAR
+            }
+        },
         "runtime": {
             "active_residual_policy_revision": "task3-residual-policy-step-000000",
             "online_adaptation_id": "task3-ack-residual-test",
@@ -492,6 +505,15 @@ def test_candidate_contains_only_residual_actor_state(tmp_path: Path) -> None:
     }
     assert candidate["revision_id"] == "task3-residual-policy-cycle-000100-g123"
     assert files == {"residual_actor.pt", "candidate_state.pt"}
+    metadata = torch.load(
+        candidate["checkpoint"] / "candidate_state.pt",
+        map_location="cpu",
+        weights_only=False,
+    )
+    assert metadata["critic_action_representation"] == CRITIC_ACTION_REPRESENTATION
+    assert metadata["critic_td_source_mode"] == CRITIC_TD_SOURCE_MODE
+    assert metadata["critic_candidate_feasibility"] == CRITIC_CANDIDATE_FEASIBILITY
+    assert metadata["residual_bound_mode"] == RESIDUAL_BOUND_MODE_SCALAR
     repeated = learner.export_actor_candidate(200)
     assert repeated["checkpoint"] == candidate["checkpoint"]
     assert repeated["revision_id"] != candidate["revision_id"]
@@ -509,6 +531,11 @@ def test_unchanged_residual_actor_still_records_cycle_publication(tmp_path: Path
     active.load_state_dict(actor.state_dict())
     learner.learner = {
         "residual_actor": actor,
+        "config": {
+            "wrist_wrench_residual_actor": {
+                "residual_bound_mode": RESIDUAL_BOUND_MODE_SCALAR
+            }
+        },
         "runtime": {
             "active_residual_policy_revision": "task3-residual-policy-step-000000",
             "online_adaptation_id": "task3-ack-residual-test",
@@ -572,13 +599,7 @@ def test_cycle_100_candidate_activates_only_after_episode_boundary(
     torch.nn.init.constant_(replacement.weight, 2.0)
     torch.nn.init.constant_(replacement.bias, 3.0)
     torch.save(replacement.state_dict(), candidate / "residual_actor.pt")
-    torch.save(
-        {
-            "checkpoint_kind": CANDIDATE_CHECKPOINT_KIND,
-            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
-        },
-        candidate / "candidate_state.pt",
-    )
+    torch.save(candidate_state(), candidate / "candidate_state.pt")
 
     service.start_episode(identity())
     service._stage_actor_candidate(
@@ -613,13 +634,7 @@ def test_resume_restores_pending_candidate_without_auto_activation(
     replacement = torch.nn.Linear(1, 1)
     torch.nn.init.constant_(replacement.weight, 4.0)
     torch.save(replacement.state_dict(), candidate / "residual_actor.pt")
-    torch.save(
-        {
-            "checkpoint_kind": CANDIDATE_CHECKPOINT_KIND,
-            "online_semantics_version": ONLINE_SEMANTICS_VERSION,
-        },
-        candidate / "candidate_state.pt",
-    )
+    torch.save(candidate_state(), candidate / "candidate_state.pt")
     learner = FakeLearner()
     learner.learner["runtime"]["scheduling"]["pending_publication"] = {
         "revision_id": "task3-residual-policy-cycle-000100-grestore",
@@ -662,6 +677,28 @@ def test_runtime_identity_and_graceful_checkpoint(tmp_path: Path) -> None:
         service.prepare_episode(
             {"session_id": "session-2", "episode_id": "episode-2"}
         )
+
+
+def test_capture_window_excludes_non_counter_status_metrics(tmp_path: Path) -> None:
+    service = runtime(tmp_path)
+    service._active_actor_online_cycle = None
+    counters = service._learner_counter_snapshot()
+    service.learner_job.counter_snapshot = lambda: {
+        **counters,
+        "in_flight_cycle": None,
+        "human_projection_row_fraction": 0.0,
+        "pre_takeover_base_age_s_p50_p95_max": [0.0, 0.0, 0.0],
+    }
+    try:
+        status = service.start_episode(identity())
+        window = status["capture_window"]
+        assert window["pinned_actor_publication_cycle"] is None
+        assert tuple(window["start"]) == service._CAPTURE_COUNTER_NAMES
+        assert tuple(window["end"]) == service._CAPTURE_COUNTER_NAMES
+        assert tuple(window["delta"]) == service._CAPTURE_COUNTER_NAMES
+        service.abort_episode(identity())
+    finally:
+        service.stop()
 
 
 def test_same_generation_checkpoint_save_is_idempotent_but_binding_change_is_not(

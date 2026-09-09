@@ -38,6 +38,28 @@ REAL_EPISODE = Path(
 )
 
 
+def _proposal_guard_context(state7: list[float]) -> dict:
+    """Upper deployment guard evidence; lower filter/leash mirror is absent."""
+
+    return {
+        "upper_execution_position_m": state7[:3],
+        "upper_execution_quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
+        "policy_single_action_guard": {
+            "workspace_min_xyz_m": [-1.0, -1.0, -1.0],
+            "workspace_max_xyz_m": [1.0, 1.0, 1.0],
+            "orientation_min_rpy_rad": [-np.pi, -np.pi, -np.pi],
+            "orientation_max_rpy_rad": [np.pi, np.pi, np.pi],
+            "gimbal_margin_rad": np.deg2rad(2.0),
+            "gripper_width_m": state7[6],
+            "gripper_min_width_m": 0.0,
+            "gripper_max_width_m": 0.1,
+            "continuity_max_xyz_m": 0.08,
+            "continuity_max_rotation_rad": np.deg2rad(25.0),
+            "continuity_max_gripper_delta_m": 0.1,
+        },
+    }
+
+
 def test_continuous_learner_seal_accepts_cumulative_window_not_old_step_whitelist() -> None:
     names_start = {
         "completed_learner_cycles": 10,
@@ -743,6 +765,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
         },
     }
     selected_action7 = [0.5, 0.0, 0.2, 0.0, 0.0, 0.0, 0.085]
+    normalized_base7 = [-0.04] * 6 + [-0.023]
     for sequence, lineage in lineage_by_sequence.items():
         raw = raw_rows[sequence]["payload"]
         raw.update(
@@ -774,12 +797,12 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
             "result_recorded_monotonic_ns": lineage["t_ref_ns"] + 2_000_000,
             "action_index": 0,
             "sequence": sequence,
-            "normalized_action7": [0.0] * 7,
+            "normalized_action7": normalized_base7,
             "selected_post_adapter_absolute7": selected_action7,
-            "base_normalized_action7": [0.0] * 7,
+            "base_normalized_action7": normalized_base7,
             "base_absolute_action7": selected_action7,
             "applied_residual_tcp6": [0.0] * 6,
-            "composed_normalized_action7": [0.0] * 7,
+            "composed_normalized_action7": normalized_base7,
             "residual_decision_context": {
                 "online_semantics_version": ONLINE_SEMANTICS_VERSION,
                 "valid_for_residual_training": True,
@@ -792,6 +815,10 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
                 "wrench_delta6_calibrated_tcp_100ms": [0.0] * 6,
                 "wrench_delta_interval_ns": 0,
                 "base_absolute_action7": selected_action7,
+                "base_normalized_action6": normalized_base7[:6],
+                "candidate_acceptance_mapping": _proposal_guard_context(
+                    selected_action7
+                ),
             },
         }
         requested_rows[sequence]["source"] = "policy"
@@ -2364,7 +2391,11 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
             delta_action7=_Affine([0.2] * 7, [5.0] * 7),
         ),
     )
-    assert residual_replay.critic_td_valid_rows == 3
+    assert residual_replay.critic_td_valid_rows == 2
+    assert residual_replay.actor_q_valid_rows == 2
+    assert residual_replay.human_residual_valid_rows == 1
+    assert residual_replay.candidate_acceptance_unavailable_rows == 3
+    assert residual_replay.candidate_guard_unknown_rows == 0
     assert residual_replay.nonzero_behavior_residual_rows == 0
     assert set(source_episodes) == {report.episode_id}
     assert report.policy_execution_smoke_bridge == "PASS"
@@ -2374,6 +2405,7 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert report.training_starts_reached is False
     assert report.human_override_count == 1
     assert report.human_override_replay_count == 1
+    assert report.autonomous_policy_replay_count == 2
     assert report.invalidated_proposal_replay_count == 0
     assert report.observation_warmup_excluded_count == 0
     assert report.wal_written_count == 3
@@ -2381,6 +2413,13 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     assert report.replay_written_count == 3
     assert report.actor_update_count == 0
     assert report.critic_update_count == 0
+
+    corrupted = deepcopy(policy_rows[0])
+    corrupted["critic_action_contract"]["source_dispatch_sequences"][1] += 1
+    with pytest.raises(
+        RuntimeError, match="FORCERFT_ONLINE_REPLAY_DISPATCH_COMPRESSION_INVALID"
+    ):
+        replay_training.build_ack_macros((corrupted,))
     assert report.optimizer_update_count == 0
     assert report.checkpoint_update_count == 0
     assert set(report.admission_timing_seconds) == {
@@ -2930,7 +2969,11 @@ def test_complete_failure_episode_is_td_admitted(
 
     assert report.status == "FORMAL_ONLINE_R_ADMITTED"
     assert report.accepted_unique_r_transition_count == len(payloads) == 3
-    assert all(item["eligibility"]["td_eligible"] is True for item in payloads)
+    assert all(
+        item["eligibility"]["td_eligible"]
+        == (item["action_source"] == "policy")
+        for item in payloads
+    )
 
 
 def test_failure_terminal_reward_is_zero(
@@ -2964,13 +3007,15 @@ def test_failure_policy_rows_have_zero_fm_mask(
     assert all(item["expert"] is False for item in policy)
 
 
-def test_failed_episode_human_rows_are_td_only(
+def test_failed_episode_human_rows_are_residual_bc_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _report, payloads = _admit_complete_failure(tmp_path, monkeypatch)
     human = next(item for item in payloads if item["action_source"] == "human")
 
-    assert human["eligibility"]["td_eligible"] is True
+    assert human["eligibility"]["td_eligible"] is False
+    assert human["eligibility"]["critic_td_valid"] is False
+    assert human["human_residual_valid"] is True
     assert human["eligibility"]["fm_eligible"] is False
     assert human["expert"] is False
 

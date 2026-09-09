@@ -38,7 +38,7 @@ optimizer:
 
 objective:
   # Discount per real dispatch-to-successor decision transition. K=3 remains
-  # the accepted-command ZOH encoding, not a fixed 100 ms transition clock.
+  # a storage/ACK validation adapter, not three decisions or a fixed 100 ms clock.
   command_macro_discount: 0.99
   value_objective_weight: 0.1
   residual_magnitude_penalty_weight: 0.1
@@ -46,14 +46,20 @@ objective:
 
 wrist_wrench_residual_actor:
   hidden_dim: 256
+  residual_bound_mode: scalar_min_axis_cap
   max_normalized_residual: 0.1
   max_translation_residual_per_axis_m: 0.001
   max_rpy_residual_per_axis_rad: 0.008726646259971648
 
 ack_residual_twin_q:
   hidden_dim: 256
-  input_dim: 60
-  condition_order:
-    - control_source
-    - gripper_command
-  candidate_acceptance_mapping: differentiable_hilserl_adapter_filter_leash
+  input_dim: 32
+  context_order:
+    - state7
+    - wrench6
+    - wrench_delta6
+    - base_tcp6
+    - base_gripper1
+  action_representation: normalized_policy_residual_proposal6
+  td_source_mode: policy_only
+  candidate_feasibility: deployed_policy_single_action_guard

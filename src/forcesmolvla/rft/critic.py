@@ -9,26 +9,38 @@ import torch
 from torch import Tensor, nn
 
 
-ACTION_SLOTS = 3
 TCP_DIM = 6
-CRITIC_INPUT_DIM = 60
+CRITIC_CONTEXT_DIM = 26
+CRITIC_INPUT_DIM = 32
 CRITIC_INPUT_SPEC = (
-    "state7+wrench6+wrench_delta6+base_action_k6+residual_action_k6+"
-    "action_mask_k+control_source+gripper_command=60"
+    "state7+wrench6+wrench_delta6+base_tcp6+base_gripper1+"
+    "policy_residual_proposal6=32"
 )
-CRITIC_CONDITION_ORDER = ("control_source", "gripper_command")
+CRITIC_CONTEXT_ORDER = (
+    "state7",
+    "wrench6",
+    "wrench_delta6",
+    "base_tcp6",
+    "base_gripper1",
+)
+CRITIC_ACTION_REPRESENTATION = "normalized_policy_residual_proposal6"
+CRITIC_TD_SOURCE_MODE = "policy_only"
+CRITIC_CANDIDATE_FEASIBILITY = "deployed_policy_single_action_guard"
 
 
 def require_critic_input_config(config: Mapping[str, Any]) -> None:
     if (
         int(config.get("input_dim", -1)) != CRITIC_INPUT_DIM
-        or tuple(config.get("condition_order", ())) != CRITIC_CONDITION_ORDER
-        or config.get("candidate_acceptance_mapping")
-        != "differentiable_hilserl_adapter_filter_leash"
+        or tuple(config.get("context_order", ())) != CRITIC_CONTEXT_ORDER
+        or config.get("action_representation")
+        != CRITIC_ACTION_REPRESENTATION
+        or config.get("td_source_mode") != CRITIC_TD_SOURCE_MODE
+        or config.get("candidate_feasibility")
+        != CRITIC_CANDIDATE_FEASIBILITY
     ):
         raise ValueError("FORCERFT_CRITIC_INPUT_SPEC_MISMATCH")
-RESIDUAL_ACTION_OFFSET = 7 + 6 + 6 + ACTION_SLOTS * TCP_DIM
-RESIDUAL_ACTION_WIDTH = ACTION_SLOTS * TCP_DIM
+RESIDUAL_ACTION_OFFSET = CRITIC_CONTEXT_DIM
+RESIDUAL_ACTION_WIDTH = TCP_DIM
 
 
 def _float_tensor(value: Tensor, shape: tuple[int, ...], name: str) -> Tensor:
@@ -45,7 +57,7 @@ def _float_tensor(value: Tensor, shape: tuple[int, ...], name: str) -> Tensor:
 
 
 class ResidualQHead(nn.Module):
-    """ACK value conditioned on control source and accepted gripper command."""
+    """Proposal value conditioned on the compact decision context."""
 
     def __init__(self, hidden_dim: int = 256) -> None:
         super().__init__()
@@ -74,11 +86,9 @@ class ResidualQHead(nn.Module):
         normalized_state7: Tensor,
         normalized_wrench6: Tensor,
         normalized_wrench_delta6: Tensor,
-        base_action_k6: Tensor,
-        residual_action_k6: Tensor,
-        action_mask_k: Tensor,
-        control_source: Tensor,
-        gripper_command: Tensor,
+        base_action6: Tensor,
+        base_gripper: Tensor,
+        residual_proposal6: Tensor,
     ) -> Tensor:
         batch = int(normalized_state7.shape[0])
         if batch < 1:
@@ -88,33 +98,19 @@ class ResidualQHead(nn.Module):
         wrench_delta = _float_tensor(
             normalized_wrench_delta6, (batch, 6), "WRENCH_DELTA6"
         )
-        base = _float_tensor(base_action_k6, (batch, ACTION_SLOTS, TCP_DIM), "BASE_ACTION")
-        residual = _float_tensor(
-            residual_action_k6,
-            (batch, ACTION_SLOTS, TCP_DIM),
-            "RESIDUAL_ACTION",
+        base = _float_tensor(base_action6, (batch, TCP_DIM), "BASE_ACTION")
+        gripper = _float_tensor(base_gripper, (batch, 1), "BASE_GRIPPER")
+        proposal = _float_tensor(
+            residual_proposal6, (batch, TCP_DIM), "RESIDUAL_PROPOSAL"
         )
-        if (
-            not isinstance(action_mask_k, Tensor)
-            or action_mask_k.dtype != torch.bool
-            or tuple(action_mask_k.shape) != (batch, ACTION_SLOTS)
-        ):
-            raise ValueError("FORCERFT_CRITIC_ACTION_MASK_INVALID")
-        if not bool(action_mask_k.any(dim=1).all()):
-            raise ValueError("FORCERFT_CRITIC_ACTION_MASK_EMPTY")
-        source = _float_tensor(control_source, (batch, 1), "CONTROL_SOURCE")
-        gripper = _float_tensor(gripper_command, (batch, 1), "GRIPPER_COMMAND")
-        mask = action_mask_k.to(dtype=torch.float32)
         features = torch.cat(
             (
                 state,
                 wrench,
                 wrench_delta,
-                (base * mask.unsqueeze(-1)).flatten(1),
-                (residual * mask.unsqueeze(-1)).flatten(1),
-                mask,
-                source,
+                base,
                 gripper,
+                proposal,
             ),
             dim=1,
         )

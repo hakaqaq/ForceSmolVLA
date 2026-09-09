@@ -652,6 +652,7 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
         "status": "FORMAL_ONLINE_R_ADMITTED",
         "admission_id": "003__episode_000000",
         "accepted_unique_r_transition_count": 364,
+        "autonomous_policy_replay_count": 362,
         "human_override_replay_count": 2,
         "total_unique_r_transition_count": 748,
         "training_starts_reached": True,
@@ -676,7 +677,7 @@ def test_capture_and_admission_output_is_compact(capsys, monkeypatch) -> None:
     assert admission["admission_id"] == "003__episode_000000"
     output = capsys.readouterr().out
     assert output.count("\n") == 1
-    assert "human_expert=2" in output
+    assert "policy_rows=362 human_rows=2" in output
     assert "training_started=" not in output
     assert "prepare=1.000s detector=2.000s" in output
     assert "transitions=3.000s persistence=4.000s" in output

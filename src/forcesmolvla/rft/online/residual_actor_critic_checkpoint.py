@@ -10,8 +10,15 @@ from typing import Any, Mapping
 import torch
 import yaml
 
-from forcesmolvla.rft.critic import CRITIC_INPUT_SPEC
+from forcesmolvla.rft.critic import (
+    CRITIC_ACTION_REPRESENTATION,
+    CRITIC_CANDIDATE_FEASIBILITY,
+    CRITIC_INPUT_SPEC,
+    CRITIC_TD_SOURCE_MODE,
+    require_critic_input_config,
+)
 from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
+from forcesmolvla.rft.residual_actor import RESIDUAL_BOUND_MODE_SCALAR
 
 
 class OnlineCheckpointSchemaError(ValueError):
@@ -60,6 +67,12 @@ def _actor_dependency_is_valid(value: Any) -> bool:
         isinstance(actor_state, Mapping)
         and state.get("checkpoint_kind") == CANDIDATE_CHECKPOINT_KIND
         and state.get("online_semantics_version") == ONLINE_SEMANTICS_VERSION
+        and state.get("critic_action_representation")
+        == CRITIC_ACTION_REPRESENTATION
+        and state.get("critic_td_source_mode") == CRITIC_TD_SOURCE_MODE
+        and state.get("critic_candidate_feasibility")
+        == CRITIC_CANDIDATE_FEASIBILITY
+        and state.get("residual_bound_mode") == RESIDUAL_BOUND_MODE_SCALAR
     )
 
 
@@ -95,6 +108,10 @@ def residual_actor_critic_checkpoint_is_recoverable(
         config = yaml.safe_load(
             (checkpoint / "state/config.yaml").read_text(encoding="utf-8")
         )
+        require_critic_input_config(config["ack_residual_twin_q"])
+        residual_bound_mode = config["wrist_wrench_residual_actor"][
+            "residual_bound_mode"
+        ]
         online = config["residual_actor_critic_training"]
         loaded_episode_keys = replay.get("loaded_episode_keys", [])
         per_episode_counts = replay.get("per_episode_critic_row_counts", {})
@@ -245,6 +262,13 @@ def residual_actor_critic_checkpoint_is_recoverable(
             and (expected_kind is None or state["checkpoint_kind"] == expected_kind)
             and state.get("online_semantics_version") == ONLINE_SEMANTICS_VERSION
             and state.get("critic_input_spec") == CRITIC_INPUT_SPEC
+            and state.get("critic_action_representation")
+            == CRITIC_ACTION_REPRESENTATION
+            and state.get("critic_td_source_mode") == CRITIC_TD_SOURCE_MODE
+            and state.get("critic_candidate_feasibility")
+            == CRITIC_CANDIDATE_FEASIBILITY
+            and state.get("residual_bound_mode") == residual_bound_mode
+            and residual_bound_mode == RESIDUAL_BOUND_MODE_SCALAR
             and state["learner_state"]
             in {
                 "ack_replay_collection",
@@ -313,6 +337,12 @@ def residual_actor_critic_checkpoint_is_recoverable(
             and tuple(actor_state["residual_cap6"].shape) == (6,)
             and torch.isfinite(actor_state["residual_cap6"]).all()
             and bool((actor_state["residual_cap6"] > 0.0).all())
+            and torch.equal(
+                actor_state["residual_cap6"],
+                actor_state["residual_cap6"][0].expand_as(
+                    actor_state["residual_cap6"]
+                ),
+            )
             and credit.get("schema")
             == "forcesmolvla-td-cycle-credit-ledger-v1"
             and int(credit["new_td_rows_per_cycle"])
@@ -379,6 +409,26 @@ def save_residual_actor_critic_checkpoint(
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_SEMANTICS_INVALID")
     if runtime_state.get("critic_input_spec") != CRITIC_INPUT_SPEC:
         raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_CRITIC_INPUT_SPEC_INVALID")
+    if (
+        runtime_state.get("critic_action_representation")
+        != CRITIC_ACTION_REPRESENTATION
+        or runtime_state.get("critic_td_source_mode") != CRITIC_TD_SOURCE_MODE
+        or runtime_state.get("critic_candidate_feasibility")
+        != CRITIC_CANDIDATE_FEASIBILITY
+        or runtime_state.get("residual_bound_mode")
+        != config.get("wrist_wrench_residual_actor", {}).get(
+            "residual_bound_mode"
+        )
+        or runtime_state.get("residual_bound_mode")
+        != RESIDUAL_BOUND_MODE_SCALAR
+    ):
+        raise OnlineCheckpointSchemaError("FORCERFT_CHECKPOINT_Q_CONTRACT_INVALID")
+    try:
+        require_critic_input_config(config["ack_residual_twin_q"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise OnlineCheckpointSchemaError(
+            "FORCERFT_CHECKPOINT_CRITIC_CONFIG_INVALID"
+        ) from error
     if checkpoint.exists() and not residual_actor_critic_checkpoint_is_recoverable(
         checkpoint, expected_kind=expected_kind
     ):

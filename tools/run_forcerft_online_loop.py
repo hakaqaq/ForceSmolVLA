@@ -169,7 +169,8 @@ def _admit(
     print(
         f"[admission] status={report['status']} "
         f"accepted={report.get('accepted_unique_r_transition_count')} "
-        f"human_expert={report.get('human_override_replay_count')} "
+        f"policy_rows={report.get('autonomous_policy_replay_count')} "
+        f"human_rows={report.get('human_override_replay_count')} "
         f"total={report.get('total_unique_r_transition_count')} "
         f"task_success={str(bool(report.get('task_success'))).lower()} "
         f"autonomous_success={str(bool(report.get('autonomous_success'))).lower()} "

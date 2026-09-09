@@ -1153,7 +1153,18 @@ def test_episode_seal_keeps_start_actor_when_next_actor_activates() -> None:
     }
 
 
-def test_async_runtime_completion_records_only_pending_candidate() -> None:
+@pytest.mark.parametrize(
+    "worker_state",
+    (
+        "complete",
+        "waiting_for_startup_data",
+        "waiting_for_credit",
+        "waiting_for_mappable_td",
+    ),
+)
+def test_async_runtime_completion_accepts_stable_worker_states(
+    worker_state: str,
+) -> None:
     class Client:
         def __init__(self) -> None:
             self.calls = []
@@ -1162,7 +1173,7 @@ def test_async_runtime_completion_records_only_pending_candidate() -> None:
             self.calls.append((method, path, payload))
             if path == "/runtime/status":
                 return {
-                    "learner_worker_state": "complete",
+                    "learner_worker_state": worker_state,
                     "learner_state": "residual_actor_critic_training",
                     "learner_started": True,
                     "learner_critic_steps": 2,

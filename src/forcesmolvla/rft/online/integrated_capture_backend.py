@@ -262,7 +262,15 @@ def _complete_async_runtime(
         )
     if (
         worker_state
-        not in {"waiting_for_replay", "ready", "running", "complete"}
+        not in {
+            "waiting_for_replay",
+            "waiting_for_startup_data",
+            "waiting_for_credit",
+            "waiting_for_mappable_td",
+            "ready",
+            "running",
+            "complete",
+        }
         or status.get("learner_state")
         not in {
             "ack_replay_collection",

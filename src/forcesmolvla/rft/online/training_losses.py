@@ -10,8 +10,7 @@ from torch import Tensor, nn
 import torch.nn.functional as F
 
 from forcesmolvla.rft.online.controller_acceptance import (
-    AcceptedResidual,
-    map_residual_to_controller_ack,
+    policy_candidate_guard_valid,
 )
 
 
@@ -19,7 +18,8 @@ from forcesmolvla.rft.online.controller_acceptance import (
 class ResidualCriticLoss:
     total: Tensor
     td_valid_count: int
-    target_candidate_unavailable_count: int
+    target_candidate_guard_rejected_count: int
+    target_candidate_guard_unknown_count: int
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,8 @@ class ResidualActorLoss:
     output_norm: Tensor
     actor_q_valid_count: int
     human_residual_valid_count: int
-    actor_q_mapping_unavailable_count: int
+    actor_q_guard_rejected_count: int
+    actor_q_guard_unknown_count: int
     human_residual_projected_count: int
     human_residual_projected_axis_count: int
     candidate_q1_mean: Tensor | None
@@ -40,21 +41,6 @@ class ResidualActorLoss:
     zero_q2_mean: Tensor | None
     behavior_q1_mean: Tensor | None
     behavior_q2_mean: Tensor | None
-
-
-def accepted_candidate_for_q(
-    candidate_residual6: Tensor,
-    *,
-    base_normalized_action6: Tensor,
-    acceptance_context: Any,
-) -> AcceptedResidual:
-    """Map a residual proposal through the recorded real execution context."""
-
-    return map_residual_to_controller_ack(
-        candidate_residual6,
-        base_normalized_action6,
-        acceptance_context,
-    )
 
 
 def residual_critic_loss(
@@ -68,14 +54,16 @@ def residual_critic_loss(
     *,
     return_details: bool = False,
 ) -> Tensor | ResidualCriticLoss:
-    """ACK TD loss with current behavior and successor candidate in ACK space."""
+    """Policy-only TD loss in residual-proposal action space."""
 
     boundary = batch.terminated | batch.truncated
     bootstrap = ~boundary
     if torch.any(bootstrap & ~batch.next_base_valid):
         raise ValueError("FORCERFT_TD_NEXT_BASE_MISSING")
     target = batch.reward.float().clone()
-    target_mapping_valid = torch.zeros_like(bootstrap)
+    target_candidate_valid = torch.zeros_like(bootstrap)
+    target_guard_rejected = torch.zeros_like(bootstrap)
+    target_guard_unknown = torch.zeros_like(bootstrap)
     with torch.no_grad():
         if bool(bootstrap.any()):
             indices = torch.nonzero(bootstrap, as_tuple=False).squeeze(1)
@@ -83,64 +71,57 @@ def residual_critic_loss(
                 normalized_state7=batch.next_state7[indices],
                 normalized_wrench6=batch.next_wrench6[indices],
                 normalized_wrench_delta6=batch.next_wrench_delta6[indices],
-                base_action6=batch.next_base_action_k6[indices, 0],
+                base_action6=batch.next_base_action6[indices],
             )
-            mapped = accepted_candidate_for_q(
+            context = batch.next_candidate_guard.select(indices)
+            guard_valid = policy_candidate_guard_valid(
                 next_residual6,
-                base_normalized_action6=batch.next_base_action_k6[indices, 0],
-                acceptance_context=batch.next_acceptance_context.select(indices),
+                batch.next_base_action6[indices],
+                context,
             )
-            if bool(mapped.valid.any()):
-                mapped_indices = indices[mapped.valid]
-                mapped_residual = mapped.residual_k6[mapped.valid]
+            target_guard_unknown[indices] = ~context.valid
+            target_guard_rejected[indices] = context.valid & ~guard_valid
+            if bool(guard_valid.any()):
+                valid_indices = indices[guard_valid]
                 next_q = torch.minimum(
                     q1_target(
-                        batch.next_state7[mapped_indices],
-                        batch.next_wrench6[mapped_indices],
-                        batch.next_wrench_delta6[mapped_indices],
-                        batch.next_base_action_k6[mapped_indices],
-                        mapped_residual,
-                        batch.next_action_mask[mapped_indices],
-                        batch.next_control_source[mapped_indices],
-                        batch.next_gripper_command[mapped_indices],
+                        batch.next_state7[valid_indices],
+                        batch.next_wrench6[valid_indices],
+                        batch.next_wrench_delta6[valid_indices],
+                        batch.next_base_action6[valid_indices],
+                        batch.next_base_gripper[valid_indices],
+                        next_residual6[guard_valid],
                     ),
                     q2_target(
-                        batch.next_state7[mapped_indices],
-                        batch.next_wrench6[mapped_indices],
-                        batch.next_wrench_delta6[mapped_indices],
-                        batch.next_base_action_k6[mapped_indices],
-                        mapped_residual,
-                        batch.next_action_mask[mapped_indices],
-                        batch.next_control_source[mapped_indices],
-                        batch.next_gripper_command[mapped_indices],
+                        batch.next_state7[valid_indices],
+                        batch.next_wrench6[valid_indices],
+                        batch.next_wrench_delta6[valid_indices],
+                        batch.next_base_action6[valid_indices],
+                        batch.next_base_gripper[valid_indices],
+                        next_residual6[guard_valid],
                     ),
                 )
-                target[mapped_indices] += float(gamma) * next_q
-                target_mapping_valid[mapped_indices] = True
+                target[valid_indices] += float(gamma) * next_q
+                target_candidate_valid[valid_indices] = True
 
-    td_valid = boundary | target_mapping_valid
+    td_valid = boundary | target_candidate_valid
     valid_count = int(td_valid.sum())
-    unavailable_count = int((bootstrap & ~target_mapping_valid).sum())
     if valid_count:
         q1_value = q1(
             batch.state7[td_valid],
             batch.wrench6[td_valid],
             batch.wrench_delta6[td_valid],
-            batch.base_action_k6[td_valid],
-            batch.behavior_residual_k6[td_valid],
-            batch.action_mask[td_valid],
-            batch.control_source[td_valid],
-            batch.gripper_command[td_valid],
+            batch.base_action6[td_valid],
+            batch.base_gripper[td_valid],
+            batch.behavior_proposal6[td_valid],
         )
         q2_value = q2(
             batch.state7[td_valid],
             batch.wrench6[td_valid],
             batch.wrench_delta6[td_valid],
-            batch.base_action_k6[td_valid],
-            batch.behavior_residual_k6[td_valid],
-            batch.action_mask[td_valid],
-            batch.control_source[td_valid],
-            batch.gripper_command[td_valid],
+            batch.base_action6[td_valid],
+            batch.base_gripper[td_valid],
+            batch.behavior_proposal6[td_valid],
         )
         selected_target = target[td_valid]
         loss = 0.5 * (
@@ -152,7 +133,12 @@ def residual_critic_loss(
         loss += sum(parameter.sum() * 0.0 for parameter in q2.parameters())
     if loss.ndim or not torch.isfinite(loss):
         raise FloatingPointError("FORCERFT_CRITIC_LOSS_NONFINITE")
-    details = ResidualCriticLoss(loss, valid_count, unavailable_count)
+    details = ResidualCriticLoss(
+        loss,
+        valid_count,
+        int(target_guard_rejected.sum()),
+        int(target_guard_unknown.sum()),
+    )
     return details if return_details else details.total
 
 
@@ -172,7 +158,7 @@ def residual_actor_loss(
     zero = next(residual_actor.parameters()).sum() * 0.0
     candidate_residual6 = None
     output_norm = zero
-    valid_count = unavailable_count = 0
+    valid_count = guard_rejected_count = guard_unknown_count = 0
     value = residual = zero
     candidate_q1_mean = candidate_q2_mean = None
     zero_q1_mean = zero_q2_mean = None
@@ -182,39 +168,40 @@ def residual_actor_loss(
             normalized_state7=policy_batch.state7,
             normalized_wrench6=policy_batch.wrench6,
             normalized_wrench_delta6=policy_batch.wrench_delta6,
-            base_action6=policy_batch.base_action_k6[:, 0],
+            base_action6=policy_batch.base_action6,
         )
         eligible = policy_batch.actor_q_valid
         if eligible.dtype != torch.bool or eligible.shape != (candidate_residual6.shape[0],):
             raise ValueError("FORCERFT_ACTOR_Q_VALID_MASK_INVALID")
-        mapped = accepted_candidate_for_q(
+        guard_valid = policy_candidate_guard_valid(
             candidate_residual6,
-            base_normalized_action6=policy_batch.base_action_k6[:, 0],
-            acceptance_context=policy_batch.acceptance_context,
+            policy_batch.base_action6,
+            policy_batch.candidate_guard,
         )
-        valid = eligible & mapped.valid
+        valid = eligible & guard_valid
         valid_count = int(valid.sum())
-        unavailable_count = int((eligible & ~mapped.valid).sum())
+        guard_unknown_count = int(
+            (eligible & ~policy_batch.candidate_guard.valid).sum()
+        )
+        guard_rejected_count = int(
+            (eligible & policy_batch.candidate_guard.valid & ~guard_valid).sum()
+        )
         if valid_count:
             candidate_q1 = q1(
                 policy_batch.state7[valid],
                 policy_batch.wrench6[valid],
                 policy_batch.wrench_delta6[valid],
-                policy_batch.base_action_k6[valid],
-                mapped.residual_k6[valid],
-                policy_batch.action_mask[valid],
-                policy_batch.control_source[valid],
-                policy_batch.gripper_command[valid],
+                policy_batch.base_action6[valid],
+                policy_batch.base_gripper[valid],
+                candidate_residual6[valid],
             )
             candidate_q2 = q2(
                 policy_batch.state7[valid],
                 policy_batch.wrench6[valid],
                 policy_batch.wrench_delta6[valid],
-                policy_batch.base_action_k6[valid],
-                mapped.residual_k6[valid],
-                policy_batch.action_mask[valid],
-                policy_batch.control_source[valid],
-                policy_batch.gripper_command[valid],
+                policy_batch.base_action6[valid],
+                policy_batch.base_gripper[valid],
+                candidate_residual6[valid],
             )
             value = -torch.minimum(candidate_q1, candidate_q2).mean()
             candidate_q1_mean = candidate_q1.detach().mean()
@@ -227,30 +214,27 @@ def residual_actor_loss(
                     policy_batch.state7[behavior_valid],
                     policy_batch.wrench6[behavior_valid],
                     policy_batch.wrench_delta6[behavior_valid],
-                    policy_batch.base_action_k6[behavior_valid],
-                    policy_batch.behavior_residual_k6[behavior_valid],
-                    policy_batch.action_mask[behavior_valid],
-                    policy_batch.control_source[behavior_valid],
-                    policy_batch.gripper_command[behavior_valid],
+                    policy_batch.base_action6[behavior_valid],
+                    policy_batch.base_gripper[behavior_valid],
+                    policy_batch.behavior_proposal6[behavior_valid],
                 )
                 behavior_q1_mean = q1(*arguments).mean()
                 behavior_q2_mean = q2(*arguments).mean()
-            zero_mapped = accepted_candidate_for_q(
-                torch.zeros_like(candidate_residual6),
-                base_normalized_action6=policy_batch.base_action_k6[:, 0],
-                acceptance_context=policy_batch.acceptance_context,
+            zero_proposal = torch.zeros_like(candidate_residual6)
+            zero_guard_valid = policy_candidate_guard_valid(
+                zero_proposal,
+                policy_batch.base_action6,
+                policy_batch.candidate_guard,
             )
-            zero_valid = eligible & zero_mapped.valid
+            zero_valid = eligible & zero_guard_valid
             if bool(zero_valid.any()):
                 arguments = (
                     policy_batch.state7[zero_valid],
                     policy_batch.wrench6[zero_valid],
                     policy_batch.wrench_delta6[zero_valid],
-                    policy_batch.base_action_k6[zero_valid],
-                    zero_mapped.residual_k6[zero_valid],
-                    policy_batch.action_mask[zero_valid],
-                    policy_batch.control_source[zero_valid],
-                    policy_batch.gripper_command[zero_valid],
+                    policy_batch.base_action6[zero_valid],
+                    policy_batch.base_gripper[zero_valid],
+                    zero_proposal[zero_valid],
                 )
                 zero_q1_mean = q1(*arguments).mean()
                 zero_q2_mean = q2(*arguments).mean()
@@ -269,8 +253,11 @@ def residual_actor_loss(
                 normalized_state7=human_batch.state7[human_valid],
                 normalized_wrench6=human_batch.wrench6[human_valid],
                 normalized_wrench_delta6=human_batch.wrench_delta6[human_valid],
-                base_action6=human_batch.base_action_k6[human_valid, 0],
+                base_action6=human_batch.base_action6[human_valid],
             )
+            if candidate_residual6 is None:
+                residual = human_prediction.square().mean()
+                output_norm = human_prediction.norm(dim=-1).mean()
             raw_target = human_batch.human_residual_target6[human_valid].detach()
             cap = torch.as_tensor(
                 getattr(
@@ -303,7 +290,8 @@ def residual_actor_loss(
         output_norm,
         valid_count,
         human_count,
-        unavailable_count,
+        guard_rejected_count,
+        guard_unknown_count,
         projected_count,
         projected_axis_count,
         candidate_q1_mean,

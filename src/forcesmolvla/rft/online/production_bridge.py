@@ -847,6 +847,7 @@ class FormalOnlineRAdmissionReport:
     training_starts_reached: bool
     human_override_count: int
     human_override_replay_count: int
+    autonomous_policy_replay_count: int
     invalidated_proposal_replay_count: int
     observation_warmup_excluded_count: int
     command_effective_phase_quarantined_count: int
@@ -4870,6 +4871,7 @@ class ProductionBridge:
                 "real_online_r": True,
                 "replay_membership": "R_online",
                 "td_eligible": True,
+                "critic_td_valid": True,
                 "fm_eligible": False,
             },
             "commit": {
@@ -5274,7 +5276,8 @@ class ProductionBridge:
                 "formal_replay": True,
                 "real_online_r": True,
                 "replay_membership": "R_online",
-                "td_eligible": True,
+                "td_eligible": False,
+                "critic_td_valid": False,
                 "fm_eligible": (
                     integrated["summary"]["operator_task_outcome"] == "success"
                 ),
@@ -6087,6 +6090,7 @@ class ProductionBridge:
             training_starts_reached=False,
             human_override_count=int(summary["human_override_count"]),
             human_override_replay_count=human_replay_count,
+            autonomous_policy_replay_count=policy_replay_count,
             invalidated_proposal_replay_count=0,
             observation_warmup_excluded_count=(
                 observation_warmup_excluded_count

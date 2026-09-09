@@ -18,7 +18,10 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from forcesmolvla.rft.critic import (  # noqa: E402
+    CRITIC_ACTION_REPRESENTATION,
+    CRITIC_CANDIDATE_FEASIBILITY,
     CRITIC_INPUT_SPEC,
+    CRITIC_TD_SOURCE_MODE,
     build_twin_q,
     require_critic_input_config,
 )
@@ -38,7 +41,7 @@ from forcesmolvla.rft.residual_actor import (  # noqa: E402
 )
 
 
-BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_small_cap_td_credit_v1"
+BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_filter_leash_random_twin_q"
 
 
 def _load_base_actor(checkpoint: Path) -> torch.nn.Module:
@@ -116,6 +119,9 @@ def build_online_residual_bootstrap(
                 config["wrist_wrench_residual_actor"]["max_normalized_residual"]
             ),
             residual_cap6=residual_cap6,
+            residual_bound_mode=str(
+                config["wrist_wrench_residual_actor"]["residual_bound_mode"]
+            ),
         )
         q1, q2, q1_target, q2_target = build_twin_q(
             hidden_dim=int(config["ack_residual_twin_q"]["hidden_dim"]), seed=seed + 1
@@ -132,6 +138,12 @@ def build_online_residual_bootstrap(
         "checkpoint_kind": BOOTSTRAP_CHECKPOINT_KIND,
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "critic_input_spec": CRITIC_INPUT_SPEC,
+        "critic_action_representation": CRITIC_ACTION_REPRESENTATION,
+        "critic_td_source_mode": CRITIC_TD_SOURCE_MODE,
+        "critic_candidate_feasibility": CRITIC_CANDIDATE_FEASIBILITY,
+        "residual_bound_mode": config["wrist_wrench_residual_actor"][
+            "residual_bound_mode"
+        ],
         "frozen_base_policy_checkpoint": str(frozen_base_policy_checkpoint),
         "residual_actor_critic_cycles": 0,
         "partial_cycle_q_updates": 0,
@@ -172,6 +184,8 @@ def build_online_residual_bootstrap(
             "critic_td_valid_rows": 0,
             "actor_q_valid_rows": 0,
             "human_residual_valid_rows": 0,
+            "nonzero_policy_proposal_rows": 0,
+            "nonzero_accepted_residual_rows": 0,
             "loaded_episode_keys": [],
             "per_episode_critic_row_counts": {},
             "replay_generation": 0,

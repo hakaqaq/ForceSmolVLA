@@ -21,9 +21,11 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     ResidualActorCriticSchedule,
 )
 from forcesmolvla.rft.online.controller_acceptance import (
+    CandidateGuardBatch,
     ControllerAcceptanceBatch,
     HILSERL_ACCEPTANCE_MAPPING_KIND,
     map_residual_to_controller_ack,
+    policy_candidate_guard_valid,
 )
 from forcesmolvla.rft.online.replay_training import (
     ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
@@ -51,6 +53,7 @@ from forcesmolvla.rft.online.training_losses import (
 )
 from forcesmolvla.rft.online.sample_credit import TdCycleCreditLedger
 from forcesmolvla.rft.residual_actor import (
+    RESIDUAL_BOUND_MODE_SCALAR,
     make_residual_actor_pair,
     resolve_residual_cap6,
 )
@@ -62,18 +65,16 @@ class ConstantQ(torch.nn.Module):
         self.value = torch.nn.Parameter(torch.tensor(value))
         self.batch_sizes: list[int] = []
         self.residuals: list[torch.Tensor] = []
-        self.sources: list[torch.Tensor] = []
         self.grippers: list[torch.Tensor] = []
 
     def forward(
-        self, state, wrench, wrench_delta, base, residual, mask, source, gripper
+        self, state, wrench, wrench_delta, base, gripper, proposal
     ):
-        del wrench, wrench_delta, base, mask
+        del wrench, wrench_delta, base
         self.batch_sizes.append(len(state))
-        self.residuals.append(residual.detach().clone())
-        self.sources.append(source.detach().clone())
+        self.residuals.append(proposal.detach().clone())
         self.grippers.append(gripper.detach().clone())
-        return self.value.expand(len(state)) + residual.flatten(1).mean(1) * 0.0
+        return self.value.expand(len(state)) + proposal.mean(1) * 0.0
 
 
 class TargetActor(torch.nn.Module):
@@ -210,6 +211,12 @@ def acceptance_batch(
     )
 
 
+def candidate_guard_batch(
+    batch_size: int, *, valid: bool = True
+) -> CandidateGuardBatch:
+    return acceptance_batch(batch_size, valid=valid).candidate_guard()
+
+
 def decision_context(
     *,
     timestamp_ns: int,
@@ -277,7 +284,7 @@ def human_replay(
             "terminated": terminated,
             "truncated": False,
         },
-        "eligibility": {"actor_q_valid": True},
+        "eligibility": {"actor_q_valid": True, "critic_td_valid": False},
         "human_residual_valid": True,
         "pre_takeover_base_absolute_action7": base,
         "base_absolute_action_k7": np.repeat(
@@ -320,7 +327,16 @@ def human_replay(
     return OnlineResidualReplay((macro,), normalizer)
 
 
-def policy_replay(*, schema_version: str, base_action: object) -> OnlineResidualReplay:
+def policy_replay(
+    *,
+    schema_version: str,
+    base_action: object,
+    selection_sequence: int = 7,
+    selection_decision_ns: int = 1_000_000_000,
+    selection_revision: str = "test-revision",
+    proposal_present: bool = True,
+    terminated: bool = True,
+) -> OnlineResidualReplay:
     observation = {
         "state7_absolute": [0.0] * 7,
         "wrench6_calibrated_tcp": [0.0] * 6,
@@ -336,27 +352,58 @@ def policy_replay(*, schema_version: str, base_action: object) -> OnlineResidual
             if schema_version == ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION
             else None
         ),
-        "identity": {"episode_id": "policy-episode"},
+        "identity": {"episode_id": "policy-episode", "decision_id": 7},
         "action_source": "policy",
         "observation": observation,
         "next_observation": {
             **observation,
             "materialized_timestamp_monotonic_ns": 1_100_000_000,
         },
-        "outcome": {"reward": 0.0, "terminated": True, "truncated": False},
-        "eligibility": {"actor_q_valid": True},
+        "outcome": {
+            "reward": 0.0,
+            "terminated": terminated,
+            "truncated": False,
+        },
+        "eligibility": {"actor_q_valid": True, "critic_td_valid": True},
         "accepted_absolute_action_k7": accepted.tolist(),
         "next_residual_decision_context": None,
     }
     if base_action is not None:
         base_absolute = np.asarray(base_action, dtype=np.float64)[0].tolist()
+        proposal = np.asarray([0.01] * 6, dtype=np.float64)
+        normalized_base = np.repeat(
+            np.asarray(base_absolute)[None, :], 3, axis=0
+        )
+        composed = normalized_base.copy()
+        composed[:, :6] += proposal
         transition["base_absolute_action_k7"] = np.repeat(
             np.asarray(base_absolute)[None, :], 3, axis=0
         ).tolist()
-        transition["residual_decision_context"] = decision_context(
+        transition["base_normalized_action_k7"] = normalized_base.tolist()
+        transition["applied_residual_tcp6"] = proposal.tolist()
+        transition["composed_normalized_action_k7"] = composed.tolist()
+        transition["policy_lineage"] = {
+            "revision": "test-revision",
+            "selection": {
+                "sequence": selection_sequence,
+                "policy_revision": selection_revision,
+                "applied_residual_tcp6": proposal.tolist(),
+                "base_normalized_action7": normalized_base[0].tolist(),
+                "base_absolute_action7": base_absolute,
+                "composed_normalized_action7": composed[0].tolist(),
+                "residual_decision_context": {
+                    "decision_monotonic_ns": selection_decision_ns
+                },
+            }
+        }
+        context = decision_context(
             timestamp_ns=1_000_000_000,
             base_absolute=base_absolute,
         )
+        context["base_normalized_action6"] = normalized_base[0, :6].tolist()
+        transition["residual_decision_context"] = context
+        if not proposal_present:
+            transition.pop("applied_residual_tcp6")
     else:
         transition["controller_normalized_action_k7"] = accepted.tolist()
         transition["composed_normalized_action_k7"] = accepted.tolist()
@@ -393,21 +440,17 @@ def batch(batch_size: int = 2) -> SimpleNamespace:
         state7=zeros7,
         wrench6=zeros6,
         wrench_delta6=zeros6,
-        base_action_k6=zeros_k6,
-        behavior_residual_k6=zeros_k6,
-        action_mask=mask,
-        control_source=torch.zeros(batch_size, 1),
-        gripper_command=torch.zeros(batch_size, 1),
-        acceptance_context=acceptance_batch(batch_size),
+        base_action6=zeros6,
+        base_gripper=torch.zeros(batch_size, 1),
+        behavior_proposal6=zeros6,
+        candidate_guard=candidate_guard_batch(batch_size),
         next_state7=zeros7,
         next_wrench6=zeros6,
         next_wrench_delta6=zeros6,
-        next_base_action_k6=zeros_k6,
-        next_action_mask=mask,
+        next_base_action6=zeros6,
+        next_base_gripper=torch.zeros(batch_size, 1),
         next_base_valid=torch.ones(batch_size, dtype=torch.bool),
-        next_control_source=torch.zeros(batch_size, 1),
-        next_gripper_command=torch.zeros(batch_size, 1),
-        next_acceptance_context=acceptance_batch(batch_size),
+        next_candidate_guard=candidate_guard_batch(batch_size),
         reward=torch.ones(batch_size),
         terminated=torch.tensor([False, True][:batch_size]),
         truncated=torch.zeros(batch_size, dtype=torch.bool),
@@ -424,6 +467,7 @@ def test_residual_cap6_uses_frozen_normalizer_and_zero_actor_is_exact() -> None:
     )
     config = {
         "max_normalized_residual": 0.1,
+        "residual_bound_mode": RESIDUAL_BOUND_MODE_SCALAR,
         "max_translation_residual_per_axis_m": 0.001,
         "max_rpy_residual_per_axis_rad": np.deg2rad(0.5),
     }
@@ -432,6 +476,7 @@ def test_residual_cap6_uses_frozen_normalizer_and_zero_actor_is_exact() -> None:
         hidden_dim=16,
         max_normalized_residual=0.1,
         residual_cap6=cap6,
+        residual_bound_mode=RESIDUAL_BOUND_MODE_SCALAR,
     )
     inputs = {
         "normalized_state7": torch.randn(5, 7),
@@ -441,6 +486,7 @@ def test_residual_cap6_uses_frozen_normalizer_and_zero_actor_is_exact() -> None:
     }
     assert torch.equal(actor(**inputs), torch.zeros(5, 6))
     assert torch.equal(actor.residual_cap6, target.residual_cap6)
+    assert torch.equal(cap6, cap6[0].expand_as(cap6))
     physical = cap6.numpy() * std[:6]
     assert np.all(physical[:3] <= 0.001 + 1e-9)
     assert np.all(physical[3:] <= np.deg2rad(0.5) + 1e-9)
@@ -448,7 +494,7 @@ def test_residual_cap6_uses_frozen_normalizer_and_zero_actor_is_exact() -> None:
     assert torch.allclose(actor(**inputs), cap6.expand(5, -1))
 
 
-def test_residual_critic_td_target_is_ack_only_and_bootstrap_safe() -> None:
+def test_residual_critic_td_target_is_proposal_space_and_bootstrap_safe() -> None:
     q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
     q1_target, q2_target = ConstantQ(2.0), ConstantQ(3.0)
     target_actor = TargetActor()
@@ -466,11 +512,11 @@ def test_residual_critic_td_target_is_ack_only_and_bootstrap_safe() -> None:
     )
 
 
-def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
+def test_current_and_target_q_use_proposals_with_independent_guard() -> None:
     actor = ScalarResidualActor()
     q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
     policy = batch(1)
-    policy.acceptance_context.valid[:] = False
+    policy.candidate_guard.valid[:] = False
     losses = residual_actor_loss(
         q1,
         q2,
@@ -482,14 +528,12 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
         human_residual_weight=1.0,
     )
     assert losses.actor_q_valid_count == 0
-    assert losses.actor_q_mapping_unavailable_count == 1
-    # Candidate and zero proposals are unmappable; actual accepted behavior is
-    # still reported as a diagnostic Q value.
+    assert losses.actor_q_guard_unknown_count == 1
+    # The saved behavior proposal remains independently reportable.
     assert q1.batch_sizes == q2.batch_sizes == [1]
 
-    policy.acceptance_context.valid[:] = True
-    policy.control_source[:] = 0.0
-    policy.gripper_command[:] = 0.75
+    policy.candidate_guard.valid[:] = True
+    policy.base_gripper[:] = 0.75
     losses = residual_actor_loss(
         q1,
         q2,
@@ -501,11 +545,10 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
         human_residual_weight=1.0,
     )
     assert losses.actor_q_valid_count == 1
-    assert torch.equal(q1.sources[-1], torch.zeros(1, 1))
     assert torch.equal(q1.grippers[-1], torch.full((1, 1), 0.75))
 
     critic_batch = batch(1)
-    critic_batch.next_gripper_command[:] = -0.4
+    critic_batch.next_base_gripper[:] = -0.4
     target_q1, target_q2 = ConstantQ(2.0), ConstantQ(3.0)
     details = residual_critic_loss(
         q1,
@@ -518,10 +561,11 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
         return_details=True,
     )
     assert details.td_valid_count == 1
-    assert details.target_candidate_unavailable_count == 0
+    assert details.target_candidate_guard_rejected_count == 0
+    assert details.target_candidate_guard_unknown_count == 0
     assert torch.allclose(
         target_q1.residuals[-1],
-        torch.full((1, 3, 6), 0.02),
+        torch.full((1, 6), 0.02),
         atol=1.0e-5,
     )
     assert torch.equal(target_q1.grippers[-1], torch.full((1, 1), -0.4))
@@ -530,12 +574,9 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
     # earlier single-action check rejects x=0.797 instead of dispatching it.
     actor.value.data.fill_(0.002)
     policy = batch(1)
-    for context in (policy.acceptance_context, policy.next_acceptance_context):
+    for context in (policy.candidate_guard, policy.next_candidate_guard):
         context.decision_state7[:, 0] = 0.795
         context.upper_position3[:, 0] = 0.795
-        context.adapter_position3[:, 0] = 0.795
-        context.filter_position_before3[:, 0] = 0.795
-        context.actual_position3[:, 0] = 0.795
         context.policy_workspace_max3[:, 0] = 0.796
     rejected = residual_actor_loss(
         ConstantQ(0.0),
@@ -548,7 +589,7 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
         human_residual_weight=1.0,
     )
     assert rejected.actor_q_valid_count == 0
-    assert rejected.actor_q_mapping_unavailable_count == 1
+    assert rejected.actor_q_guard_rejected_count == 1
 
     target_q1, target_q2 = ConstantQ(2.0), ConstantQ(3.0)
     rejected_target = residual_critic_loss(
@@ -562,13 +603,34 @@ def test_current_and_target_q_use_only_proven_accepted_candidates() -> None:
         return_details=True,
     )
     assert rejected_target.td_valid_count == 0
-    assert rejected_target.target_candidate_unavailable_count == 1
+    assert rejected_target.target_candidate_guard_rejected_count == 1
     assert target_q1.batch_sizes == target_q2.batch_sizes == []
 
 
-def test_unmappable_successor_is_not_relabelled_as_terminal() -> None:
+def test_candidate_guard_uses_decision_anchor_and_normalizes_proposal_once() -> None:
+    context = candidate_guard_batch(1)
+    request_pose_x = 0.45
+    decision_pose_x = 0.50
+    measured_ack_pose_x = 0.51
+    assert len({request_pose_x, decision_pose_x, measured_ack_pose_x}) == 3
+    context.decision_state7[:, 0] = decision_pose_x
+    context.upper_position3[:, 0] = decision_pose_x
+    context.delta_action_mean6[:, 0] = 0.03
+    context.delta_action_std6[:, 0] = 0.02
+    context.policy_workspace_max3[:, 0] = 0.55
+    base = torch.zeros(1, 6)
+    base[:, 0] = 0.5  # (0.04 m - mean 0.03 m) / std 0.02 m
+    proposal = torch.zeros(1, 6)
+    proposal[:, 0] = 0.1
+
+    physical_correction = proposal[0, 0] * context.delta_action_std6[0, 0]
+    assert torch.isclose(physical_correction, torch.tensor(0.002))
+    assert policy_candidate_guard_valid(proposal, base, context).item() is True
+
+
+def test_unknown_successor_guard_is_not_relabelled_as_terminal() -> None:
     critic_batch = batch(1)
-    critic_batch.next_acceptance_context.valid[:] = False
+    critic_batch.next_candidate_guard.valid[:] = False
     q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
     q1_target, q2_target = ConstantQ(2.0), ConstantQ(3.0)
     target_actor = TargetActor(0.01)
@@ -583,7 +645,7 @@ def test_unmappable_successor_is_not_relabelled_as_terminal() -> None:
         return_details=True,
     )
     assert details.td_valid_count == 0
-    assert details.target_candidate_unavailable_count == 1
+    assert details.target_candidate_guard_unknown_count == 1
     assert critic_batch.terminated.item() is False
     assert q1.batch_sizes == q2.batch_sizes == []
     assert q1_target.batch_sizes == q2_target.batch_sizes == []
@@ -620,32 +682,34 @@ def test_filter_leash_mapping_is_differentiable_and_not_a_recorded_point() -> No
     assert torch.count_nonzero(proposal.grad) == 6
 
 
-def test_nonterminal_human_successor_participates_in_td() -> None:
+def test_same_visible_context_and_proposal_can_have_different_accepted_actions() -> None:
+    context = acceptance_batch(2)
+    context.step_dt_s[:] = 0.01
+    context.filter_time_constant_s[:] = 1.0
+    context.filter_position_before3[1, 0] = 0.05
+    proposal = torch.zeros(2, 6)
+    proposal[:, 0] = 0.01
+    mapped = map_residual_to_controller_ack(
+        proposal,
+        torch.zeros(2, 6),
+        context,
+    )
+    assert mapped.valid.tolist() == [True, True]
+    assert torch.equal(proposal[0], proposal[1])
+    assert not torch.equal(mapped.residual_k6[0], mapped.residual_k6[1])
+
+
+def test_nonterminal_human_successor_is_bc_only() -> None:
     replay = human_replay(terminated=False)
-    assert replay.critic_td_valid_rows == 1
+    assert replay.critic_td_valid_rows == 0
+    assert replay.human_residual_valid_rows == 1
     critic_batch = replay.sample(
         1,
         device=torch.device("cpu"),
         seed=1,
         td_mappable_only=True,
     )
-    assert critic_batch is not None
-    assert critic_batch.control_source.item() == 1.0
-    assert critic_batch.next_control_source.item() == 1.0
-    q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
-    q1_target, q2_target = ConstantQ(2.0), ConstantQ(3.0)
-    details = residual_critic_loss(
-        q1,
-        q2,
-        q1_target,
-        q2_target,
-        TargetActor(0.01),
-        critic_batch,
-        gamma=0.99,
-        return_details=True,
-    )
-    assert details.td_valid_count == 1
-    assert q1_target.sources[-1].item() == 1.0
+    assert critic_batch is None
 
 
 def test_recorded_rows_are_distinct_from_currently_usable_td_rows() -> None:
@@ -658,17 +722,43 @@ def test_recorded_rows_are_distinct_from_currently_usable_td_rows() -> None:
     ) == []
 
 
-def test_critic_conditions_policy_and_human_on_accepted_gripper() -> None:
+def test_recorded_policy_proposal_is_not_replaced_by_ack_minus_base() -> None:
+    replay = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=[[0.0] * 7 for _ in range(3)],
+    )
+    row = replay.rows[0]
+    assert np.allclose(row["behavior_proposal6"], 0.01)
+    assert np.allclose(
+        row["accepted_residual_k6"][:, [0, 3]],
+        [[0.2, 0.1]] * 3,
+    )
+    critic_batch = replay.sample(
+        1, device=torch.device("cpu"), seed=5, td_mappable_only=True
+    )
+    assert critic_batch is not None
+    q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
+    residual_critic_loss(
+        q1,
+        q2,
+        ConstantQ(2.0),
+        ConstantQ(3.0),
+        TargetActor(0.04),
+        critic_batch,
+        gamma=0.99,
+    )
+    assert torch.allclose(q1.residuals[-1], torch.full((1, 6), 0.01))
+
+
+def test_critic_context_uses_base_gripper_without_control_source() -> None:
     critic_batch = batch(2)
     critic_batch.terminated[:] = True
-    critic_batch.control_source[:] = torch.tensor([[0.0], [1.0]])
-    critic_batch.gripper_command[:] = torch.tensor([[0.85], [-0.25]])
+    critic_batch.base_gripper[:] = torch.tensor([[0.085], [0.0]])
     q1, q2 = ConstantQ(0.0), ConstantQ(1.0)
     residual_critic_loss(
         q1, q2, ConstantQ(2.0), ConstantQ(3.0), TargetActor(), critic_batch, 0.99
     )
-    assert torch.equal(q1.sources[-1], torch.tensor([[0.0], [1.0]]))
-    assert torch.equal(q1.grippers[-1], torch.tensor([[0.85], [-0.25]]))
+    assert torch.equal(q1.grippers[-1], torch.tensor([[0.085], [0.0]]))
 
 
 def test_human_imitation_projects_only_bc_target() -> None:
@@ -676,9 +766,9 @@ def test_human_imitation_projects_only_bc_target() -> None:
     human = batch(2)
     human.human_residual_valid[:] = True
     human.human_residual_target6[:] = 0.8
-    human.behavior_residual_k6[:] = 0.8
+    human.behavior_proposal6[:] = 0.8
     raw_target = human.human_residual_target6.clone()
-    raw_behavior = human.behavior_residual_k6.clone()
+    raw_behavior = human.behavior_proposal6.clone()
     losses = residual_actor_loss(
         ConstantQ(0.0),
         ConstantQ(1.0),
@@ -693,7 +783,7 @@ def test_human_imitation_projects_only_bc_target() -> None:
     assert losses.human_residual_valid_count == 2
     assert torch.isclose(losses.human, torch.tensor(0.25))
     assert torch.equal(human.human_residual_target6, raw_target)
-    assert torch.equal(human.behavior_residual_k6, raw_behavior)
+    assert torch.equal(human.behavior_proposal6, raw_behavior)
 
 
 def test_actor_q_mask_and_invalid_human_residual_are_skipped() -> None:
@@ -722,11 +812,11 @@ def test_actor_q_mask_and_invalid_human_residual_are_skipped() -> None:
     assert torch.equal(losses.human, torch.zeros_like(losses.human))
 
 
-def test_valid_human_residual_reaches_critic_and_unlocks_action_columns() -> None:
+def test_human_bc_updates_actor_but_never_critic_action_columns() -> None:
     replay = human_replay()
     row = replay.rows[0]
     assert row["human_residual_valid"] is True
-    assert np.count_nonzero(row["behavior_residual_k6"]) > 0
+    assert np.count_nonzero(row["accepted_residual_k6"]) > 0
     assert np.count_nonzero(row["human_residual_target6"]) > 0
 
     q1, q2, q1_target, q2_target = build_twin_q(hidden_dim=16, seed=13)
@@ -735,17 +825,125 @@ def test_valid_human_residual_reaches_critic_and_unlocks_action_columns() -> Non
     before = q1.layers[0].weight[
         :, RESIDUAL_ACTION_OFFSET : RESIDUAL_ACTION_OFFSET + RESIDUAL_ACTION_WIDTH
     ].detach().clone()
-    critic_batch = replay.sample(8, device=torch.device("cpu"), seed=1)
+    critic_batch = replay.sample(
+        8, device=torch.device("cpu"), seed=1, td_mappable_only=True
+    )
+    assert critic_batch is None
+    after = q1.layers[0].weight[
+        :, RESIDUAL_ACTION_OFFSET : RESIDUAL_ACTION_OFFSET + RESIDUAL_ACTION_WIDTH
+    ].detach()
+    assert torch.equal(before, after)
+    actor = ScalarResidualActor()
+    human_batch = replay.sample(
+        8, device=torch.device("cpu"), seed=2, human_only=True
+    )
+    assert human_batch is not None
+    loss = residual_actor_loss(
+        q1,
+        q2,
+        actor,
+        None,
+        human_batch,
+        actor_q_weight=0.1,
+        residual_l2_weight=0.1,
+        human_residual_weight=1.0,
+    )
+    loss.total.backward()
+    assert actor.value.grad is not None and actor.value.grad.abs() > 0
+
+
+def test_human_context_supplies_l2_when_no_policy_context_exists() -> None:
+    replay = human_replay()
+    human_batch = replay.sample(
+        8, device=torch.device("cpu"), seed=2, human_only=True
+    )
+    assert human_batch is not None
+    actor = ScalarResidualActor()
+    with torch.no_grad():
+        actor.value.fill_(0.25)
+    loss = residual_actor_loss(
+        ConstantQ(0.0),
+        ConstantQ(0.0),
+        actor,
+        None,
+        human_batch,
+        actor_q_weight=0.1,
+        residual_l2_weight=0.1,
+        human_residual_weight=1.0,
+    )
+    assert torch.isclose(loss.residual, torch.tensor(0.25**2))
+    assert torch.isclose(loss.output_norm, torch.tensor(6 * 0.25**2).sqrt())
+
+
+def test_nonzero_policy_proposal_can_train_critic_action_columns() -> None:
+    replay = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=[[0.0] * 7 for _ in range(3)],
+    )
+    critic_batch = replay.sample(
+        8, device=torch.device("cpu"), seed=1, td_mappable_only=True
+    )
     assert critic_batch is not None
+    # A non-zero proposal only identifies its Q dependence when the TD error is
+    # non-zero.  The terminal fixture otherwise has both reward and initial Q
+    # exactly zero, which correctly produces no optimizer update at all.
+    critic_batch.reward.fill_(1.0)
+    q1, q2, q1_target, q2_target = build_twin_q(hidden_dim=16, seed=13)
+    optimizer = torch.optim.Adam((*q1.parameters(), *q2.parameters()), lr=3e-4)
+    before = q1.layers[0].weight[
+        :, RESIDUAL_ACTION_OFFSET : RESIDUAL_ACTION_OFFSET + RESIDUAL_ACTION_WIDTH
+    ].detach().clone()
     optimizer.zero_grad(set_to_none=True)
     residual_critic_loss(
-        q1, q2, q1_target, q2_target, target_actor, critic_batch, gamma=0.99
+        q1, q2, q1_target, q2_target, TargetActor(), critic_batch, gamma=0.99
     ).backward()
     optimizer.step()
     after = q1.layers[0].weight[
         :, RESIDUAL_ACTION_OFFSET : RESIDUAL_ACTION_OFFSET + RESIDUAL_ACTION_WIDTH
     ].detach()
     assert not torch.equal(before, after)
+
+
+def test_zero_policy_proposals_leave_zero_initialized_action_columns_zero() -> None:
+    replay = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=[[0.0] * 7 for _ in range(3)],
+    )
+    replay.rows[0]["behavior_proposal6"][:] = 0.0
+    critic_batch = replay.sample(
+        8, device=torch.device("cpu"), seed=1, td_mappable_only=True
+    )
+    assert critic_batch is not None
+    q1, q2, q1_target, q2_target = build_twin_q(hidden_dim=16, seed=13)
+    optimizer = torch.optim.Adam((*q1.parameters(), *q2.parameters()), lr=3e-4)
+    optimizer.zero_grad(set_to_none=True)
+    residual_critic_loss(
+        q1, q2, q1_target, q2_target, TargetActor(), critic_batch, gamma=0.99
+    ).backward()
+    optimizer.step()
+    for q in (q1, q2):
+        columns = q.layers[0].weight[
+            :, RESIDUAL_ACTION_OFFSET : RESIDUAL_ACTION_OFFSET + RESIDUAL_ACTION_WIDTH
+        ]
+        assert torch.count_nonzero(columns) == 0
+
+
+def test_zero_initialized_q_has_no_initial_value_gradient_on_zero_actor() -> None:
+    actor, _target = make_residual_actor_pair(hidden_dim=16)
+    q1, q2, _q1_target, _q2_target = build_twin_q(hidden_dim=16, seed=9)
+    losses = residual_actor_loss(
+        q1,
+        q2,
+        actor,
+        batch(4),
+        None,
+        actor_q_weight=0.1,
+        residual_l2_weight=0.1,
+        human_residual_weight=1.0,
+    )
+    losses.total.backward()
+    assert torch.count_nonzero(actor.layers[-1].weight.grad) == 0
+    assert torch.count_nonzero(actor.layers[-1].bias.grad) == 0
 
 
 def test_same_decision_anchor_removes_motion_from_behavior_residual() -> None:
@@ -884,6 +1082,7 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
         "candidate_acceptance_mapping": acceptance_mapping(
             decision_state7=state
         ),
+        "previous_policy_dispatch_sequence": 9,
     }
     accepted = np.repeat(
         np.asarray(response["composed_absolute_action7"])[None, :], 3, axis=0
@@ -908,7 +1107,7 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
     transition = {
         "schema_version": ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
-        "identity": {"episode_id": "dispatch-episode"},
+        "identity": {"episode_id": "dispatch-episode", "decision_id": 9},
         "action_source": "policy",
         "observation": {
             "state7_absolute": state,
@@ -919,9 +1118,35 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
             "wrench6_calibrated_tcp": [2.0] * 6,
         },
         "outcome": {"reward": 0.0, "terminated": False, "truncated": False},
+        "eligibility": {"critic_td_valid": True, "actor_q_valid": True},
         "base_absolute_action_k7": np.repeat(
             np.asarray(chunk[2])[None, :], 3, axis=0
         ).tolist(),
+        "base_normalized_action_k7": np.repeat(
+            np.asarray(response["base_normalized_action7"])[None, :], 3, axis=0
+        ).tolist(),
+        "applied_residual_tcp6": response["applied_residual_tcp6"],
+        "composed_normalized_action_k7": np.repeat(
+            np.asarray(response["composed_normalized_action7"])[None, :],
+            3,
+            axis=0,
+        ).tolist(),
+        "policy_lineage": {
+            "revision": "test-revision",
+            "selection": {
+                "sequence": 9,
+                "policy_revision": "test-revision",
+                "applied_residual_tcp6": response["applied_residual_tcp6"],
+                "base_normalized_action7": response["base_normalized_action7"],
+                "base_absolute_action7": chunk[2],
+                "composed_normalized_action7": response[
+                    "composed_normalized_action7"
+                ],
+                "residual_decision_context": {
+                    "decision_monotonic_ns": 1_000_000_000
+                },
+            }
+        },
         "accepted_absolute_action_k7": accepted.tolist(),
         "residual_decision_context": current_context,
         "next_residual_decision_context": next_context,
@@ -946,13 +1171,29 @@ def test_dispatch_actor_context_is_the_replay_context_and_hold_has_no_fake_step(
     row = replay.rows[0]
     assert np.array_equal(row["wrench_delta6"], np.full(6, 5.0))
     assert np.array_equal(row["next_wrench_delta6"], np.full(6, 7.0))
-    assert np.allclose(row["behavior_residual_k6"], 0.01)
+    assert np.allclose(row["behavior_proposal6"], 0.01)
+    assert np.allclose(row["accepted_residual_k6"], 0.01)
     assert row["next_base_valid"] is True
-    assert np.array_equal(row["control_source"], [0.0])
-    assert np.allclose(row["gripper_command"], [0.085])
-    assert row["next_acceptance_context"]["valid"] is True
-    assert np.array_equal(row["next_control_source"], [0.0])
-    assert np.allclose(row["next_gripper_command"], [0.085])
+    assert np.allclose(row["base_gripper"], [0.085])
+    assert row["next_candidate_guard"]["valid"] is True
+    assert np.allclose(row["next_base_gripper"], [0.085])
+
+    missing_next_proposal = dict(transition)
+    missing_next_proposal.pop("next_applied_residual_tcp6")
+    invalid = OnlineResidualReplay(
+        (
+            ProductionAckMacro(
+                transition=missing_next_proposal,
+                behavior=behavior,
+                next_grid_monotonic_ns=1_400_000_000,
+                ack_provenance=(),
+                actor_q_eligibility=ActorQEligibility(True, "valid"),
+            ),
+        ),
+        normalizer,
+    )
+    assert invalid.recorded_transition_rows == 1
+    assert invalid.critic_td_valid_rows == 0
 
 
 def test_policy_value_sampling_excludes_human_and_missing_next_base() -> None:
@@ -969,8 +1210,25 @@ def test_policy_value_sampling_excludes_human_and_missing_next_base() -> None:
     ) is not None
 
     missing_next_base = human_replay(terminated=False, include_successor=False)
-    assert missing_next_base.rows == ()
+    assert missing_next_base.recorded_transition_rows == 1
+    assert missing_next_base.critic_td_valid_rows == 0
+    assert missing_next_base.human_residual_valid_rows == 1
+    assert missing_next_base.sample(
+        1, device=torch.device("cpu"), seed=0, human_only=True
+    ) is not None
     assert missing_next_base.next_base_missing_rows == 1
+
+
+def test_nonterminal_policy_without_direct_successor_is_kept_but_not_td() -> None:
+    replay = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=[[0.0] * 7 for _ in range(3)],
+        terminated=False,
+    )
+    assert replay.recorded_transition_rows == 1
+    assert replay.critic_td_valid_rows == 0
+    assert replay.actor_q_valid_rows == 1
+    assert replay.next_base_missing_rows == 1
 
 
 def test_missing_or_legacy_policy_base_is_not_a_valid_dispatch_row() -> None:
@@ -1000,6 +1258,26 @@ def test_missing_or_legacy_policy_base_is_not_a_valid_dispatch_row() -> None:
     )
     assert current.critic_td_valid_rows == 1
     assert current.nonzero_behavior_residual_rows == 1
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    (
+        {"selection_sequence": 8},
+        {"selection_decision_ns": 1_000_000_001},
+        {"selection_revision": "wrong-revision"},
+        {"proposal_present": False},
+    ),
+)
+def test_wrong_policy_proposal_lineage_is_not_td_valid(overrides) -> None:
+    replay = policy_replay(
+        schema_version=ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
+        base_action=[[0.0] * 7 for _ in range(3)],
+        **overrides,
+    )
+    assert replay.recorded_transition_rows == 1
+    assert replay.critic_td_valid_rows == 0
+    assert replay.rows[0]["policy_proposal_valid"] is False
 
 
 def test_replay_sampling_is_without_replacement_when_population_is_large_enough() -> None:
@@ -1061,6 +1339,44 @@ def test_online_schedule_is_continuous_2q_1actor_with_100_1000_cadence() -> None
     assert policy.checkpoint_due(1000)
     assert not hasattr(policy, "max_cycles_per_admitted_episode")
     assert not hasattr(policy, "admitted_rows_per_cycle")
+
+
+def test_human_bc_rows_do_not_count_toward_policy_td_startup_or_credit() -> None:
+    policy = ResidualActorCriticSchedule()
+    ledger = TdCycleCreditLedger(new_td_rows_per_cycle=8)
+    ledger.register_admission(
+        admission_id="episode-a",
+        episode_id="episode-a",
+        td_uids={f"policy:{index}" for index in range(700)},
+    )
+    snapshot = ledger.snapshot(completed_cycles=0)
+    assert snapshot.unique_td_rows == 700
+    assert snapshot.allowed_cycles == 87
+    assert not policy.training_ready(
+        snapshot.unique_td_rows, snapshot.distinct_td_episodes
+    )
+    # Three hundred legal human BC rows are deliberately absent from td_uids.
+    ledger.register_admission(
+        admission_id="episode-b-human-only",
+        episode_id="episode-b-human-only",
+        td_uids=set(),
+    )
+    assert ledger.snapshot(completed_cycles=0) == snapshot
+
+    ledger.register_admission(
+        admission_id="episode-b",
+        episode_id="episode-b",
+        td_uids={f"policy-b:{index}" for index in range(150)},
+    )
+    ledger.register_admission(
+        admission_id="episode-c",
+        episode_id="episode-c",
+        td_uids={f"policy-c:{index}" for index in range(150)},
+    )
+    ready = ledger.snapshot(completed_cycles=0)
+    assert policy.training_ready(ready.unique_td_rows, ready.distinct_td_episodes)
+    assert ready.unique_td_rows == 1000
+    assert ready.allowed_cycles == 125
 
 
 def test_task_profiles_cannot_override_algorithm_parameters() -> None:
@@ -1204,6 +1520,8 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
     learner.next_base_missing_rows = 0
     learner.quarantined_current_schema_rows = 0
     learner.nonzero_behavior_residual_rows = 0
+    learner.nonzero_policy_proposal_rows = 0
+    learner.nonzero_accepted_residual_rows = 0
     signatures = [["a"]]
     monkeypatch.setattr(
         learner, "_episode_signature", lambda: tuple(signatures[0])
@@ -1216,6 +1534,9 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
             self.next_base_missing_rows = 0
             self.quarantined_current_schema_rows = 0
             self.nonzero_behavior_residual_rows = 0
+            self.nonzero_policy_proposal_rows = 0
+            self.nonzero_accepted_residual_rows = 0
+            self.candidate_guard_unknown_rows = 0
 
         def append_macros(self, macros):
             macro = tuple(macros)[0]
@@ -1227,7 +1548,7 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
                 {
                     "transition_uid": f"{admission_id}:{index}",
                     "episode_id": episode_id,
-                    "td_mapping_valid": True,
+                    "critic_td_valid": True,
                     "human_residual_valid": False,
                 }
                 for index in range(count)
@@ -1303,6 +1624,9 @@ def test_replay_refresh_loads_only_newly_sealed_episodes(monkeypatch) -> None:
         "episode_key": "c",
         "recorded_transition_rows": 400,
         "admitted_rows_for_latest_episode": 400,
+        "policy_rows_for_latest_episode": 1,
+        "human_rows_for_latest_episode": 0,
+        "human_bc_rows_for_latest_episode": 0,
         "cycle_count_when_observed": 1,
     }
     learner.current_session_id = "current"
@@ -1412,7 +1736,7 @@ def test_1000_rows_three_episodes_runs_critic_warmup_then_starts_training(
     )
 
 
-def test_no_currently_mappable_td_row_waits_without_advancing_critic() -> None:
+def test_no_currently_guard_eligible_td_row_waits_without_advancing_critic() -> None:
     learner = actor_update_test_learner()
     q1_target, q2_target = build_twin_q(hidden_dim=16, seed=31)[2:]
     learner.learner["q1_target"] = q1_target
@@ -1428,10 +1752,11 @@ def test_no_currently_mappable_td_row_waits_without_advancing_critic() -> None:
         "grad_clip_norm": 10.0
     }
     learner.learner["config"]["objective"]["command_macro_discount"] = 0.99
-    learner.latest_target_candidate_unavailable_count = 0
+    learner.latest_target_candidate_guard_rejected_count = 0
+    learner.latest_target_candidate_guard_unknown_count = 0
     learner.latest_critic_td_available_count = 0
     critic_batch = batch(1)
-    critic_batch.next_acceptance_context.valid[:] = False
+    critic_batch.next_candidate_guard.valid[:] = False
 
     class SparseReplay:
         @staticmethod
@@ -1448,7 +1773,7 @@ def test_no_currently_mappable_td_row_waits_without_advancing_critic() -> None:
     )
     assert result is None
     assert learner.latest_critic_td_available_count == 0
-    assert learner.latest_target_candidate_unavailable_count == 1
+    assert learner.latest_target_candidate_guard_unknown_count == 1
     assert learner.learner["runtime"]["counters"] == counters_before
     assert all(
         torch.equal(q_before[name], value)
@@ -1663,7 +1988,12 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
     learner = learner_server.ResidualActorCriticLearner.__new__(
         learner_server.ResidualActorCriticLearner
     )
-    actor, actor_target = make_residual_actor_pair(hidden_dim=16)
+    actor, actor_target = make_residual_actor_pair(
+        hidden_dim=16,
+        max_normalized_residual=0.1,
+        residual_cap6=[0.1] * 6,
+        residual_bound_mode=RESIDUAL_BOUND_MODE_SCALAR,
+    )
     q1, q2, _q1_target, _q2_target = build_twin_q(hidden_dim=16, seed=17)
     learner.device = torch.device("cpu")
     learner.training_policy = ResidualActorCriticSchedule(
@@ -1695,6 +2025,9 @@ def actor_update_test_learner() -> learner_server.ResidualActorCriticLearner:
         ),
         "config": {
             "environment": {"random_seed": 4404},
+            "wrist_wrench_residual_actor": {
+                "residual_bound_mode": RESIDUAL_BOUND_MODE_SCALAR
+            },
             "optimizer": {
                 "residual_actor": {"grad_clip_norm": 1.0},
                 "twin_q_polyak_tau": 0.005,

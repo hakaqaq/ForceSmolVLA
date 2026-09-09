@@ -1,14 +1,14 @@
 # ForceSmolVLA
 
-**Current production path: frozen ForceSmolVLA base policy with real-ACK Critic
-warm-up and wrist-wrench residual Actor–Critic adaptation.** Numbered Stage-1/
+**Current production path: frozen ForceSmolVLA base policy with autonomous
+proposal-space Critic warm-up and wrist-wrench residual Actor–Critic adaptation.** Numbered Stage-1/
 Stage-2 releases are retained only as historical offline baselines; see
 [`PHASE2_RELEASE.md`](PHASE2_RELEASE.md) for that archived development scope.
 
 独立工程根目录：`/home/rlc123/ForceSmolVLA`  
 独立 Conda 环境：`/home/rlc123/anaconda3/envs/forcesmolvla`
 
-从原生采集、LeRobot v3 转换、SFT、reward detector，到真实 ACK warm-up 与 wrist-wrench residual Actor–Critic 持续在线训练的完整操作说明见
+从原生采集、LeRobot v3 转换、SFT、reward detector，到真机采集与持续 Actor/Learner 循环的完整操作说明见
 [`docs/forcerft_end_to_end_user_guide.md`](docs/forcerft_end_to_end_user_guide.md)。
 
 本工程基于固定的 LeRobot v0.6.0 commit 和 SmolVLA base revision，实现约
@@ -26,9 +26,12 @@ flow timestep，在原生 prefix K/V cache 之外查询固定的 Force Context�
 不接收、不拼接或修改 `past_key_values`。
 
 v4.2 的离线范围是全参数 Force-conditioned Actor。当前在线方法冻结该 base policy，
-只训练零初始化 wrist-wrench residual Actor 与无图像 ACK-aligned residual Twin-Q；
-先收集 100 条真实 ACK，完成 256-step Critic warm-up，再进入每 cycle 2Q:1Actor。
+只训练零初始化 wrist-wrench residual Actor 与无图像 proposal-space residual Twin-Q；
+至少收集来自 3 条正式 episode 的 1000 条有效自主 policy TD，完成 256-step
+Critic warm-up，再按累计数据额度进入每 cycle 2Q:1Actor。人工记录只用于合法 BC，
+不进入 Critic 或产生训练额度。
 在线更新不调用 Flow sampler、相机输入、SFT reference Actor 或 Q-gradient controller。
+离线契约与回归通过不等同于 formal detector validation，也不构成真机稳定性证明。
 
 ## 环境
 

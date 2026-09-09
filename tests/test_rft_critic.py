@@ -17,32 +17,28 @@ from forcesmolvla.rft.critic import (
 )
 
 
-def inputs(batch: int = 4, mask=(True, True, True)) -> tuple[torch.Tensor, ...]:
+def inputs(batch: int = 4) -> tuple[torch.Tensor, ...]:
     generator = torch.Generator().manual_seed(7)
     return (
         torch.randn(batch, 7, generator=generator),
         torch.randn(batch, 6, generator=generator),
         torch.randn(batch, 6, generator=generator),
-        torch.randn(batch, 3, 6, generator=generator),
-        torch.randn(batch, 3, 6, generator=generator),
-        torch.tensor(mask, dtype=torch.bool).repeat(batch, 1),
+        torch.randn(batch, 6, generator=generator),
         torch.zeros(batch, 1),
-        torch.randn(batch, 1, generator=generator),
+        torch.randn(batch, 6, generator=generator),
     )
 
 
-def test_residual_q_is_a_60_dimensional_image_free_mlp() -> None:
+def test_residual_q_is_a_32_dimensional_proposal_space_mlp() -> None:
     q = ResidualQHead(hidden_dim=32)
-    assert CRITIC_INPUT_DIM == 60
+    assert CRITIC_INPUT_DIM == 32
     assert tuple(inspect.signature(q.forward).parameters) == (
         "normalized_state7",
         "normalized_wrench6",
         "normalized_wrench_delta6",
-        "base_action_k6",
-        "residual_action_k6",
-        "action_mask_k",
-        "control_source",
-        "gripper_command",
+        "base_action6",
+        "base_gripper",
+        "residual_proposal6",
     )
     assert not any("camera" in name or "image" in name for name in q.state_dict())
     result = q(*inputs())
@@ -85,19 +81,17 @@ def test_residual_action_input_columns_start_at_zero() -> None:
     assert torch.count_nonzero(other_columns) > 0
     values = list(inputs(batch=1))
     first_output = q(*values)
-    values[4] = values[4] + 1000.0
+    values[5] = values[5] + 1000.0
     assert torch.equal(first_output, q(*values))
 
 
-def test_masked_slots_do_not_affect_q_and_empty_masks_fail() -> None:
+def test_base_gripper_and_proposal_are_separate_critic_inputs() -> None:
     q = ResidualQHead(hidden_dim=32)
-    values = list(inputs(batch=1, mask=(True, False, False)))
-    expected = q(*values)
-    values[3][:, 1:] = 1000.0
-    values[4][:, 1:] = -1000.0
-    assert torch.equal(expected, q(*values))
-    with pytest.raises(ValueError, match="ACTION_MASK_EMPTY"):
-        q(*inputs(batch=1, mask=(False, False, False)))
+    values = list(inputs(batch=1))
+    assert q(*values).shape == (1,)
+    values[4] = torch.zeros(1, 2)
+    with pytest.raises(ValueError, match="BASE_GRIPPER"):
+        q(*values)
 
 
 def test_polyak_update_is_simple_in_place_interpolation() -> None:

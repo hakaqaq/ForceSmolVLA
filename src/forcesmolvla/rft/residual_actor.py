@@ -10,6 +10,14 @@ import torch
 from torch import Tensor, nn
 
 
+RESIDUAL_BOUND_MODE_AXISWISE = "axiswise_physical_limit"
+RESIDUAL_BOUND_MODE_SCALAR = "scalar_min_axis_cap"
+RESIDUAL_BOUND_MODES = {
+    RESIDUAL_BOUND_MODE_AXISWISE,
+    RESIDUAL_BOUND_MODE_SCALAR,
+}
+
+
 def resolve_residual_cap6(
     normalizer: object, actor_config: Mapping[str, object]
 ) -> Tensor:
@@ -36,7 +44,15 @@ def resolve_residual_cap6(
         or not 0.0 < normalized_limit <= 1.0
     ):
         raise ValueError("FORCERFT_RESIDUAL_ACTOR_CAP_CONFIG_INVALID")
-    cap6 = np.minimum(normalized_limit, physical_limit6 / sigma6)
+    mode = actor_config.get("residual_bound_mode")
+    if mode not in RESIDUAL_BOUND_MODES:
+        raise ValueError("FORCERFT_RESIDUAL_ACTOR_BOUND_MODE_INVALID")
+    axis_caps = np.minimum(normalized_limit, physical_limit6 / sigma6)
+    cap6 = (
+        np.full(6, float(axis_caps.min()), dtype=np.float64)
+        if mode == RESIDUAL_BOUND_MODE_SCALAR
+        else axis_caps
+    )
     return torch.tensor(cap6, dtype=torch.float32)
 
 
@@ -48,11 +64,17 @@ class WristWrenchResidualActor(nn.Module):
         hidden_dim: int = 256,
         max_normalized_residual: float = 0.5,
         residual_cap6: Sequence[float] | Tensor | None = None,
+        residual_bound_mode: str = RESIDUAL_BOUND_MODE_AXISWISE,
     ) -> None:
         super().__init__()
-        if hidden_dim < 1 or not 0.0 < max_normalized_residual <= 1.0:
+        if (
+            hidden_dim < 1
+            or not 0.0 < max_normalized_residual <= 1.0
+            or residual_bound_mode not in RESIDUAL_BOUND_MODES
+        ):
             raise ValueError("FORCERFT_RESIDUAL_ACTOR_CONFIG_INVALID")
         self.max_normalized_residual = float(max_normalized_residual)
+        self.residual_bound_mode = residual_bound_mode
         cap6 = torch.as_tensor(
             [self.max_normalized_residual] * 6
             if residual_cap6 is None
@@ -64,6 +86,8 @@ class WristWrenchResidualActor(nn.Module):
             or not torch.isfinite(cap6).all()
             or not bool((cap6 > 0.0).all())
             or not bool((cap6 <= self.max_normalized_residual).all())
+            or residual_bound_mode == RESIDUAL_BOUND_MODE_SCALAR
+            and not bool(torch.equal(cap6, cap6[0].expand_as(cap6)))
         ):
             raise ValueError("FORCERFT_RESIDUAL_ACTOR_CAP6_INVALID")
         self.register_buffer("residual_cap6", cap6.detach().clone())
@@ -125,9 +149,13 @@ def make_residual_actor_pair(
     hidden_dim: int = 256,
     max_normalized_residual: float = 0.5,
     residual_cap6: Sequence[float] | Tensor | None = None,
+    residual_bound_mode: str = RESIDUAL_BOUND_MODE_AXISWISE,
 ) -> tuple[WristWrenchResidualActor, WristWrenchResidualActor]:
     actor = WristWrenchResidualActor(
-        hidden_dim, max_normalized_residual, residual_cap6
+        hidden_dim,
+        max_normalized_residual,
+        residual_cap6,
+        residual_bound_mode,
     )
     target = deepcopy(actor).eval()
     target.requires_grad_(False)

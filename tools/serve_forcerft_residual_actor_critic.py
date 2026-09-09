@@ -43,6 +43,11 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E40
     select_resume_or_bootstrap_checkpoint,
 )
 from forcesmolvla.rft.critic import (  # noqa: E402
+    CRITIC_ACTION_REPRESENTATION,
+    CRITIC_CANDIDATE_FEASIBILITY,
+    CRITIC_CONTEXT_DIM,
+    CRITIC_INPUT_DIM,
+    CRITIC_TD_SOURCE_MODE,
     RESIDUAL_ACTION_OFFSET,
     RESIDUAL_ACTION_WIDTH,
     polyak_update,
@@ -110,6 +115,20 @@ def _load_residual_checkpoint(policy: Any, checkpoint: Path) -> None:
             and metadata.get("online_semantics_version")
             == ONLINE_SEMANTICS_VERSION,
             "FORCERFT_RESIDUAL_CANDIDATE_SEMANTICS_MISMATCH",
+        )
+        require(
+            metadata.get("critic_action_representation")
+            == CRITIC_ACTION_REPRESENTATION
+            and metadata.get("critic_td_source_mode")
+            == CRITIC_TD_SOURCE_MODE,
+            "FORCERFT_RESIDUAL_CANDIDATE_Q_CONTRACT_MISMATCH",
+        )
+        require(
+            metadata.get("critic_candidate_feasibility")
+            == CRITIC_CANDIDATE_FEASIBILITY
+            and metadata.get("residual_bound_mode")
+            == getattr(policy, "residual_bound_mode", None),
+            "FORCERFT_RESIDUAL_CANDIDATE_GUARD_OR_BOUND_MISMATCH",
         )
     state = torch.load(
         path, map_location=next(policy.parameters()).device, weights_only=True
@@ -275,14 +294,18 @@ class ResidualActorCriticLearner:
         self.next_base_missing_rows = 0
         self.quarantined_current_schema_rows = 0
         self.nonzero_behavior_residual_rows = 0
+        self.nonzero_policy_proposal_rows = 0
+        self.nonzero_accepted_residual_rows = 0
         self.latest_residual_actor_output_norm = 0.0
         self.latest_replay_refresh_ms = 0.0
         self.latest_critic_update_ms = 0.0
         self.latest_actor_update_ms = 0.0
         self.latest_cycle_ms = 0.0
-        self.latest_target_candidate_unavailable_count = 0
+        self.latest_target_candidate_guard_rejected_count = 0
+        self.latest_target_candidate_guard_unknown_count = 0
         self.latest_critic_td_available_count = 0
-        self.latest_actor_q_mapping_unavailable_count = 0
+        self.latest_actor_q_guard_rejected_count = 0
+        self.latest_actor_q_guard_unknown_count = 0
         self.latest_human_residual_projected_count = 0
         self.latest_human_residual_valid_count = 0
         self.human_supervision_diagnostics: dict[str, Any] = {}
@@ -380,6 +403,7 @@ class ResidualActorCriticLearner:
             "max_normalized_residual": float(
                 actor["max_normalized_residual"]
             ),
+            "residual_bound_mode": str(actor["residual_bound_mode"]),
             "max_translation_residual_per_axis_m": float(
                 actor["max_translation_residual_per_axis_m"]
             ),
@@ -398,6 +422,11 @@ class ResidualActorCriticLearner:
             "human_residual_imitation_weight": float(
                 objective["human_residual_imitation_weight"]
             ),
+            "critic_input_dim": CRITIC_INPUT_DIM,
+            "critic_context_dim": CRITIC_CONTEXT_DIM,
+            "critic_action_representation": CRITIC_ACTION_REPRESENTATION,
+            "critic_td_source_mode": CRITIC_TD_SOURCE_MODE,
+            "critic_candidate_feasibility": CRITIC_CANDIDATE_FEASIBILITY,
         }
 
     def set_current_session(self, session_id: str) -> None:
@@ -659,6 +688,15 @@ class ResidualActorCriticLearner:
                 "admitted_rows_for_latest_episode": (
                     0 if status is None else status["admitted_rows_for_latest_episode"]
                 ),
+                "policy_rows_for_latest_episode": (
+                    0 if status is None else status["policy_rows_for_latest_episode"]
+                ),
+                "human_rows_for_latest_episode": (
+                    0 if status is None else status["human_rows_for_latest_episode"]
+                ),
+                "human_bc_rows_for_latest_episode": (
+                    0 if status is None else status["human_bc_rows_for_latest_episode"]
+                ),
                 "recorded_rows_for_latest_episode": (
                     0 if status is None else status["recorded_transition_rows"]
                 ),
@@ -713,11 +751,18 @@ class ResidualActorCriticLearner:
                 admitted_rows = self.replay.critic_td_rows_for_episode(
                     episode_id
                 )
+                human_bc_rows = sum(
+                    int(
+                        row["episode_id"] == episode_id
+                        and row["human_residual_valid"]
+                    )
+                    for row in self.replay.rows
+                )
                 td_uids = {
                     str(row["transition_uid"])
                     for row in self.replay.rows
                     if row["episode_id"] == episode_id
-                    and row["td_mapping_valid"]
+                    and row["critic_td_valid"]
                 }
                 require(
                     len(td_uids) == admitted_rows,
@@ -732,6 +777,9 @@ class ResidualActorCriticLearner:
                     "episode_key": admission_id,
                     "recorded_transition_rows": recorded_rows,
                     "admitted_rows_for_latest_episode": admitted_rows,
+                    "policy_rows_for_latest_episode": len(policy_rows),
+                    "human_rows_for_latest_episode": len(human_rows),
+                    "human_bc_rows_for_latest_episode": human_bc_rows,
                     "cycle_count_when_observed": int(
                         self.learner["runtime"][
                             "residual_actor_critic_cycles"
@@ -758,12 +806,21 @@ class ResidualActorCriticLearner:
             self.nonzero_behavior_residual_rows = (
                 self.replay.nonzero_behavior_residual_rows
             )
+            self.nonzero_policy_proposal_rows = (
+                self.replay.nonzero_policy_proposal_rows
+            )
+            self.nonzero_accepted_residual_rows = (
+                self.replay.nonzero_accepted_residual_rows
+            )
             runtime_replay = self.learner["runtime"]["replay"]
             runtime_replay.update(
                 recorded_transition_rows=self.replay.recorded_transition_rows,
                 critic_td_valid_rows=self.replay.critic_td_valid_rows,
                 actor_q_valid_rows=self.replay.actor_q_valid_rows,
                 human_residual_valid_rows=self.replay.human_residual_valid_rows,
+                nonzero_policy_proposal_rows=self.nonzero_policy_proposal_rows,
+                nonzero_accepted_residual_rows=self.nonzero_accepted_residual_rows,
+                candidate_guard_unknown_rows=self.replay.candidate_guard_unknown_rows,
                 loaded_episode_keys=sorted(self._loaded_episode_keys),
                 per_episode_critic_row_counts={
                     admission_id: int(
@@ -812,7 +869,8 @@ class ResidualActorCriticLearner:
             optimizer = learner["critic_optimizer"]
             optimizer.zero_grad(set_to_none=True)
             loss_result = None
-            unavailable_count = 0
+            rejected_count = 0
+            unknown_count = 0
             seed = int(learner["config"]["environment"]["random_seed"]) + step
             for batch in replay.iter_td_batches(
                 self.training_policy.twin_q_batch_size,
@@ -831,8 +889,11 @@ class ResidualActorCriticLearner:
                     ),
                     return_details=True,
                 )
-                unavailable_count += int(
-                    candidate.target_candidate_unavailable_count
+                rejected_count += int(
+                    candidate.target_candidate_guard_rejected_count
+                )
+                unknown_count += int(
+                    candidate.target_candidate_guard_unknown_count
                 )
                 if candidate.td_valid_count:
                     loss_result = candidate
@@ -843,7 +904,8 @@ class ResidualActorCriticLearner:
                         ) + len(batch.session_ids)
                     break
             if loss_result is None:
-                self.latest_target_candidate_unavailable_count = unavailable_count
+                self.latest_target_candidate_guard_rejected_count = rejected_count
+                self.latest_target_candidate_guard_unknown_count = unknown_count
                 self.latest_critic_td_available_count = 0
                 self.latest_critic_update_ms = (
                     time.perf_counter() - started
@@ -871,7 +933,8 @@ class ResidualActorCriticLearner:
                 learner["runtime"]["partial_cycle_q_updates"] = int(
                     learner["runtime"].get("partial_cycle_q_updates", 0)
                 ) + 1
-        self.latest_target_candidate_unavailable_count = int(unavailable_count)
+        self.latest_target_candidate_guard_rejected_count = int(rejected_count)
+        self.latest_target_candidate_guard_unknown_count = int(unknown_count)
         self.latest_critic_td_available_count = int(loss_result.td_valid_count)
         value = float(loss_result.total.detach())
         self.latest_critic_update_ms = (
@@ -978,8 +1041,11 @@ class ResidualActorCriticLearner:
                     float(learner["config"]["optimizer"]["twin_q_polyak_tau"]),
                 )
         self.latest_residual_actor_output_norm = float(losses.output_norm.detach())
-        self.latest_actor_q_mapping_unavailable_count = int(
-            losses.actor_q_mapping_unavailable_count
+        self.latest_actor_q_guard_rejected_count = int(
+            losses.actor_q_guard_rejected_count
+        )
+        self.latest_actor_q_guard_unknown_count = int(
+            losses.actor_q_guard_unknown_count
         )
         self.latest_human_residual_projected_count = int(
             losses.human_residual_projected_count
@@ -1007,8 +1073,11 @@ class ResidualActorCriticLearner:
             ),
             "grad_norm": actor_grad_norm,
             "support_available": support_available,
-            "actor_q_mapping_unavailable_count": int(
-                losses.actor_q_mapping_unavailable_count
+            "actor_q_guard_rejected_count": int(
+                losses.actor_q_guard_rejected_count
+            ),
+            "actor_q_guard_unknown_count": int(
+                losses.actor_q_guard_unknown_count
             ),
             "human_residual_projected_count": int(
                 losses.human_residual_projected_count
@@ -1146,6 +1215,12 @@ class ResidualActorCriticLearner:
                 "latest_critic_td_loss": losses[-1] if losses else None,
                 "nonzero_behavior_residual_rows": int(
                     getattr(self, "nonzero_behavior_residual_rows", 0)
+                ),
+                "nonzero_policy_proposal_rows": int(
+                    getattr(self, "nonzero_policy_proposal_rows", 0)
+                ),
+                "nonzero_accepted_residual_rows": int(
+                    getattr(self, "nonzero_accepted_residual_rows", 0)
                 ),
                 "human_residual_valid_rows": int(
                     getattr(replay, "human_residual_valid_rows", 0)
@@ -1289,11 +1364,19 @@ class ResidualActorCriticLearner:
             "zero_q2_mean": actor_metrics.get("zero_q2_mean"),
             "behavior_q1_mean": actor_metrics.get("behavior_q1_mean"),
             "behavior_q2_mean": actor_metrics.get("behavior_q2_mean"),
-            "target_candidate_mapping_unavailable_count": int(
-                getattr(self, "latest_target_candidate_unavailable_count", 0)
+            "target_candidate_guard_rejected_count": int(
+                getattr(
+                    self, "latest_target_candidate_guard_rejected_count", 0
+                )
             ),
-            "actor_q_mapping_unavailable_count": int(
-                actor_metrics.get("actor_q_mapping_unavailable_count", 0)
+            "target_candidate_guard_unknown_count": int(
+                getattr(self, "latest_target_candidate_guard_unknown_count", 0)
+            ),
+            "actor_q_guard_rejected_count": int(
+                actor_metrics.get("actor_q_guard_rejected_count", 0)
+            ),
+            "actor_q_guard_unknown_count": int(
+                actor_metrics.get("actor_q_guard_unknown_count", 0)
             ),
             "human_residual_projected_count": int(
                 actor_metrics.get("human_residual_projected_count", 0)
@@ -1308,6 +1391,12 @@ class ResidualActorCriticLearner:
             * int(actor_metrics.get("human_residual_valid_count", 0)),
             "nonzero_behavior_residual_rows": int(
                 getattr(self, "nonzero_behavior_residual_rows", 0)
+            ),
+            "nonzero_policy_proposal_rows": int(
+                getattr(self, "nonzero_policy_proposal_rows", 0)
+            ),
+            "nonzero_accepted_residual_rows": int(
+                getattr(self, "nonzero_accepted_residual_rows", 0)
             ),
             "human_residual_valid_rows": int(
                 getattr(replay, "human_residual_valid_rows", 0)
@@ -1368,6 +1457,9 @@ class ResidualActorCriticLearner:
                     "per_episode_critic_row_counts": dict(
                         runtime_replay.get("per_episode_critic_row_counts", {})
                     ),
+                    "per_episode_policy_td_row_counts": dict(
+                        runtime_replay.get("per_episode_critic_row_counts", {})
+                    ),
                     "sampled_episode_ids": sorted(
                         getattr(self, "sampled_episode_ids", set())
                     ),
@@ -1425,6 +1517,16 @@ class ResidualActorCriticLearner:
                 == CANDIDATE_CHECKPOINT_KIND
                 and stored_metadata.get("online_semantics_version")
                 == ONLINE_SEMANTICS_VERSION
+                and stored_metadata.get("critic_action_representation")
+                == CRITIC_ACTION_REPRESENTATION
+                and stored_metadata.get("critic_td_source_mode")
+                == CRITIC_TD_SOURCE_MODE
+                and stored_metadata.get("critic_candidate_feasibility")
+                == CRITIC_CANDIDATE_FEASIBILITY
+                and stored_metadata.get("residual_bound_mode")
+                == self.learner["config"]["wrist_wrench_residual_actor"][
+                    "residual_bound_mode"
+                ]
                 and stored_metadata.get("actor_content_sha256")
                 == actor_sha256,
                 "FORCERFT_RESIDUAL_CANDIDATE_BLOB_INVALID",
@@ -1440,6 +1542,16 @@ class ResidualActorCriticLearner:
                     {
                         "checkpoint_kind": CANDIDATE_CHECKPOINT_KIND,
                         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
+                        "critic_action_representation": (
+                            CRITIC_ACTION_REPRESENTATION
+                        ),
+                        "critic_td_source_mode": CRITIC_TD_SOURCE_MODE,
+                        "critic_candidate_feasibility": (
+                            CRITIC_CANDIDATE_FEASIBILITY
+                        ),
+                        "residual_bound_mode": self.learner["config"][
+                            "wrist_wrench_residual_actor"
+                        ]["residual_bound_mode"],
                         "actor_content_sha256": actor_sha256,
                     },
                     temporary / "candidate_state.pt",
@@ -1501,6 +1613,7 @@ class ResidualActorCriticLearner:
             hidden_dim=int(config["hidden_dim"]),
             max_normalized_residual=float(config["max_normalized_residual"]),
             residual_cap6=state["residual_cap6"],
+            residual_bound_mode=str(config["residual_bound_mode"]),
         ).eval()
         actor.load_state_dict(state, strict=True)
 
@@ -1517,7 +1630,7 @@ class ResidualActorCriticLearner:
                         [row["wrench_delta6"] for row in rows], dtype=torch.float32
                     ),
                     base_action6=torch.as_tensor(
-                        [row["base_action_k6"][0] for row in rows],
+                        [row["base_action6"] for row in rows],
                         dtype=torch.float32,
                     ),
                 )
@@ -1561,6 +1674,7 @@ class ResidualActorCriticLearner:
                 hidden_dim=int(config["hidden_dim"]),
                 max_normalized_residual=float(config["max_normalized_residual"]),
                 residual_cap6=state["residual_cap6"],
+                residual_bound_mode=str(config["residual_bound_mode"]),
             ).eval()
             _load_residual_checkpoint(active, active_path)
             difference = (candidate - proposals(active)) * sigma6
@@ -1647,6 +1761,19 @@ class ResidualActorCriticLearner:
 
 class AsyncResidualActorCriticRuntime:
     """One episode pin around HTTP inference and one background Learner cycle."""
+
+    _CAPTURE_COUNTER_NAMES = (
+        "completed_learner_cycles",
+        "partial_cycle_q_updates",
+        "total_twin_q_optimizer_steps",
+        "warmup_twin_q_optimizer_steps",
+        "joint_twin_q_optimizer_steps",
+        "residual_actor_optimizer_steps",
+        "residual_actor_update_attempts",
+        "residual_actor_updates_skipped_no_gradient",
+        "actor_parameter_publication_events",
+        "periodic_checkpoint_events",
+    )
 
     def __init__(
         self,
@@ -1802,6 +1929,12 @@ class AsyncResidualActorCriticRuntime:
             **actor,
         }
 
+    def _capture_counter_snapshot(self) -> dict[str, int]:
+        snapshot = self._learner_counter_snapshot()
+        return {
+            name: int(snapshot[name]) for name in self._CAPTURE_COUNTER_NAMES
+        }
+
     @staticmethod
     def _counter_delta(
         start: Mapping[str, int], end: Mapping[str, int]
@@ -1814,7 +1947,7 @@ class AsyncResidualActorCriticRuntime:
             return None
         if window.get("finalized") is True:
             return dict(window)
-        end = self._learner_counter_snapshot()
+        end = self._capture_counter_snapshot()
         provenance_reader = getattr(
             self.learner_job, "sampling_provenance", None
         )
@@ -2048,6 +2181,26 @@ class AsyncResidualActorCriticRuntime:
                         "recorded_transition_rows", 0
                     )
                 ),
+                "nonzero_policy_proposal_rows": int(
+                    result.get(
+                        "nonzero_policy_proposal_rows",
+                        getattr(
+                            self.learner_job,
+                            "nonzero_policy_proposal_rows",
+                            0,
+                        ),
+                    )
+                ),
+                "nonzero_accepted_residual_rows": int(
+                    result.get(
+                        "nonzero_accepted_residual_rows",
+                        getattr(
+                            self.learner_job,
+                            "nonzero_accepted_residual_rows",
+                            0,
+                        ),
+                    )
+                ),
                 "critic_td_valid_rows": int(
                     learner_runtime.get("replay", {}).get(
                         "critic_td_valid_rows", 0
@@ -2086,22 +2239,42 @@ class AsyncResidualActorCriticRuntime:
                 "residual_actor_output_norm": result.get(
                     "residual_actor_output_norm", 0.0
                 ),
-                "target_candidate_mapping_unavailable_count": int(
+                "target_candidate_guard_rejected_count": int(
                     result.get(
-                        "target_candidate_mapping_unavailable_count",
+                        "target_candidate_guard_rejected_count",
                         getattr(
                             self.learner_job,
-                            "latest_target_candidate_unavailable_count",
+                            "latest_target_candidate_guard_rejected_count",
                             0,
                         ),
                     )
                 ),
-                "actor_q_mapping_unavailable_count": int(
+                "target_candidate_guard_unknown_count": int(
                     result.get(
-                        "actor_q_mapping_unavailable_count",
+                        "target_candidate_guard_unknown_count",
                         getattr(
                             self.learner_job,
-                            "latest_actor_q_mapping_unavailable_count",
+                            "latest_target_candidate_guard_unknown_count",
+                            0,
+                        ),
+                    )
+                ),
+                "actor_q_guard_rejected_count": int(
+                    result.get(
+                        "actor_q_guard_rejected_count",
+                        getattr(
+                            self.learner_job,
+                            "latest_actor_q_guard_rejected_count",
+                            0,
+                        ),
+                    )
+                ),
+                "actor_q_guard_unknown_count": int(
+                    result.get(
+                        "actor_q_guard_unknown_count",
+                        getattr(
+                            self.learner_job,
+                            "latest_actor_q_guard_unknown_count",
                             0,
                         ),
                     )
@@ -2144,6 +2317,15 @@ class AsyncResidualActorCriticRuntime:
                 ),
                 "admitted_rows_for_latest_episode": int(
                     result.get("admitted_rows_for_latest_episode", 0)
+                ),
+                "policy_rows_for_latest_episode": int(
+                    result.get("policy_rows_for_latest_episode", 0)
+                ),
+                "human_rows_for_latest_episode": int(
+                    result.get("human_rows_for_latest_episode", 0)
+                ),
+                "human_bc_rows_for_latest_episode": int(
+                    result.get("human_bc_rows_for_latest_episode", 0)
                 ),
                 "cycle_count_when_admission_observed": int(
                     result.get("cycle_count_when_admission_observed", 0)
@@ -2194,7 +2376,7 @@ class AsyncResidualActorCriticRuntime:
                 "pinned_actor_model_revision": self.active_model_revision,
                 "pinned_actor_publication_cycle": self._active_actor_online_cycle,
                 "pinned_actor_policy_epoch": int(self.machine.policy_epoch),
-                "start": self._learner_counter_snapshot(),
+                "start": self._capture_counter_snapshot(),
             }
             self._episode_active = True
         return self.status()
@@ -2409,8 +2591,10 @@ class AsyncResidualActorCriticRuntime:
                         ):
                             print(
                                 f"[{label}] cycle={cycle} "
-                                f"nonzero_behavior_residual_rows="
-                                f"{result.get('nonzero_behavior_residual_rows', 0)} "
+                                f"nonzero_policy_proposal_rows="
+                                f"{result.get('nonzero_policy_proposal_rows', 0)} "
+                                f"nonzero_accepted_residual_rows="
+                                f"{result.get('nonzero_accepted_residual_rows', 0)} "
                                 f"human_residual_valid_rows="
                                 f"{result.get('human_residual_valid_rows', 0)} "
                                 f"critic_residual_column_norm="
@@ -2945,6 +3129,11 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
             checkpoint_config["wrist_wrench_residual_actor"]["max_normalized_residual"]
         ),
         residual_cap6=residual_cap6,
+        residual_bound_mode=str(
+            checkpoint_config["wrist_wrench_residual_actor"][
+                "residual_bound_mode"
+            ]
+        ),
     ).to("cpu")
     engine.residual_actor.eval().requires_grad_(False)
     engine.metadata["online_semantics_version"] = ONLINE_SEMANTICS_VERSION

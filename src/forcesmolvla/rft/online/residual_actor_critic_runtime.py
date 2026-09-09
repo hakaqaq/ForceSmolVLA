@@ -255,14 +255,20 @@ def prepare_learner(
     """Restore only the residual Actor, target Actor, and image-free Twin-Q."""
 
     from forcesmolvla.rft.critic import (
+        CRITIC_ACTION_REPRESENTATION,
+        CRITIC_CANDIDATE_FEASIBILITY,
         CRITIC_INPUT_SPEC,
+        CRITIC_TD_SOURCE_MODE,
         build_twin_q,
         require_critic_input_config,
     )
     from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (
         load_residual_actor_critic_checkpoint,
     )
-    from forcesmolvla.rft.residual_actor import make_residual_actor_pair
+    from forcesmolvla.rft.residual_actor import (
+        RESIDUAL_BOUND_MODE_SCALAR,
+        make_residual_actor_pair,
+    )
 
     resume_checkpoint = Path(resume_checkpoint).resolve()
     config = load_checkpoint_training_config(resume_checkpoint)
@@ -286,6 +292,9 @@ def prepare_learner(
             config["wrist_wrench_residual_actor"]["max_normalized_residual"]
         ),
         residual_cap6=actor_state["residual_cap6"],
+        residual_bound_mode=str(
+            config["wrist_wrench_residual_actor"]["residual_bound_mode"]
+        ),
     )
     q1, q2, q1_target, q2_target = build_twin_q(
         hidden_dim=int(config["ack_residual_twin_q"]["hidden_dim"]),
@@ -331,8 +340,19 @@ def prepare_learner(
     )
     counters = runtime["counters"]
     require(
-        runtime.get("critic_input_spec") == CRITIC_INPUT_SPEC,
+        runtime.get("critic_input_spec") == CRITIC_INPUT_SPEC
+        and runtime.get("critic_action_representation")
+        == CRITIC_ACTION_REPRESENTATION
+        and runtime.get("critic_td_source_mode") == CRITIC_TD_SOURCE_MODE
+        and runtime.get("critic_candidate_feasibility")
+        == CRITIC_CANDIDATE_FEASIBILITY
+        and runtime.get("residual_bound_mode")
+        == config["wrist_wrench_residual_actor"]["residual_bound_mode"],
         "FORCERFT_CHECKPOINT_CRITIC_INPUT_SPEC_MISMATCH",
+    )
+    require(
+        runtime.get("residual_bound_mode") == RESIDUAL_BOUND_MODE_SCALAR,
+        "FORCERFT_CHECKPOINT_RESIDUAL_BOUND_MODE_MISMATCH",
     )
     applied_actor_steps = int(counters["residual_actor_optimizer_steps"])
     actor_update_attempts = int(counters["residual_actor_update_attempts"])

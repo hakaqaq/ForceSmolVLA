@@ -66,6 +66,42 @@ class ControllerAcceptanceBatch:
             **{name: getattr(self, name)[indices] for name in self.__dataclass_fields__}
         )
 
+    def candidate_guard(self) -> "CandidateGuardBatch":
+        return CandidateGuardBatch(
+            **{
+                name: getattr(self, name)
+                for name in CandidateGuardBatch.__dataclass_fields__
+            }
+        )
+
+
+@dataclass(frozen=True)
+class CandidateGuardBatch:
+    """Saved upper dispatch/profile guard context, without lower filter state."""
+
+    valid: Tensor
+    decision_state7: Tensor
+    upper_position3: Tensor
+    upper_quaternion4: Tensor
+    policy_workspace_min3: Tensor
+    policy_workspace_max3: Tensor
+    policy_orientation_min3: Tensor
+    policy_orientation_max3: Tensor
+    policy_gimbal_margin_rad: Tensor
+    policy_gripper_width_m: Tensor
+    policy_gripper_min_m: Tensor
+    policy_gripper_max_m: Tensor
+    policy_continuity_max_xyz_m: Tensor
+    policy_continuity_max_rotation_rad: Tensor
+    policy_continuity_max_gripper_delta_m: Tensor
+    delta_action_mean6: Tensor
+    delta_action_std6: Tensor
+
+    def select(self, indices: Tensor) -> "CandidateGuardBatch":
+        return CandidateGuardBatch(
+            **{name: getattr(self, name)[indices] for name in self.__dataclass_fields__}
+        )
+
 
 @dataclass(frozen=True)
 class AcceptedResidual:
@@ -191,6 +227,83 @@ def _wrap_to_pi(value: Tensor) -> Tensor:
     return torch.atan2(torch.sin(value), torch.cos(value))
 
 
+def policy_candidate_guard_valid(
+    candidate_residual6: Tensor,
+    base_normalized_action6: Tensor,
+    context: CandidateGuardBatch,
+) -> Tensor:
+    """Check the deployed upper dispatch/profile rejection domain only."""
+
+    batch = int(candidate_residual6.shape[0])
+    if candidate_residual6.shape != (batch, 6) or base_normalized_action6.shape != (
+        batch,
+        6,
+    ):
+        raise ValueError("FORCERFT_CANDIDATE_GUARD_ACTION_SHAPE_INVALID")
+    if context.valid.dtype != torch.bool or context.valid.shape != (batch,):
+        raise ValueError("FORCERFT_CANDIDATE_GUARD_CONTEXT_MASK_INVALID")
+    if not bool(context.valid.any()):
+        return context.valid
+
+    normalized_action = base_normalized_action6 + candidate_residual6
+    delta = normalized_action * context.delta_action_std6 + context.delta_action_mean6
+    target_position = context.decision_state7[:, :3] + delta[:, :3]
+    target_rpy = context.decision_state7[:, 3:6] + delta[:, 3:6]
+    target_quaternion = _rpy_to_quaternion(target_rpy)
+    target_distance = (target_position - context.upper_position3).norm(dim=1)
+    target_angle = _quaternion_to_rotvec(
+        _quaternion_multiply(
+            _quaternion_inverse(context.upper_quaternion4), target_quaternion
+        )
+    ).norm(dim=1)
+    dispatch_guard_valid = (target_distance <= 0.08) & (
+        target_angle <= torch.deg2rad(target_angle.new_tensor(25.0))
+    )
+    canonical_target_rpy = _quaternion_to_rpy(target_quaternion)
+    profile_rotation_delta = _quaternion_to_rotvec(
+        _quaternion_multiply(
+            _quaternion_inverse(
+                _rpy_to_quaternion(context.decision_state7[:, 3:6])
+            ),
+            target_quaternion,
+        )
+    ).norm(dim=1)
+    profile_guard_valid = (
+        (
+            (target_position >= context.policy_workspace_min3)
+            & (target_position <= context.policy_workspace_max3)
+        ).all(dim=1)
+        & (
+            (canonical_target_rpy >= context.policy_orientation_min3)
+            & (canonical_target_rpy <= context.policy_orientation_max3)
+        ).all(dim=1)
+        & (
+            (canonical_target_rpy[:, 1].abs() - torch.pi / 2.0).abs()
+            >= context.policy_gimbal_margin_rad.squeeze(1)
+        )
+        & (context.policy_gripper_width_m >= context.policy_gripper_min_m).squeeze(1)
+        & (context.policy_gripper_width_m <= context.policy_gripper_max_m).squeeze(1)
+        & (
+            (target_position - context.decision_state7[:, :3]).norm(dim=1)
+            <= context.policy_continuity_max_xyz_m.squeeze(1)
+        )
+        & (
+            profile_rotation_delta
+            <= context.policy_continuity_max_rotation_rad.squeeze(1)
+        )
+        & (
+            (context.policy_gripper_width_m - context.decision_state7[:, 6:7])
+            .abs()
+            .squeeze(1)
+            <= context.policy_continuity_max_gripper_delta_m.squeeze(1)
+        )
+    )
+    finite = torch.isfinite(target_position).all(dim=1) & torch.isfinite(
+        target_quaternion
+    ).all(dim=1)
+    return context.valid & finite & dispatch_guard_valid & profile_guard_valid
+
+
 def map_residual_to_controller_ack(
     candidate_residual6: Tensor,
     base_normalized_action6: Tensor,
@@ -287,51 +400,14 @@ def map_residual_to_controller_ack(
     accepted_residual = accepted_normalized - base_normalized_action6
     finite = torch.isfinite(accepted_residual).all(dim=1)
 
-    target_distance = (target_position - context.upper_position3).norm(dim=1)
-    target_angle = _quaternion_to_rotvec(
-        _quaternion_multiply(_quaternion_inverse(context.upper_quaternion4), target_quaternion)
-    ).norm(dim=1)
-    dispatch_guard_valid = (target_distance <= 0.08) & (
-        target_angle <= torch.deg2rad(target_angle.new_tensor(25.0))
-    )
-    canonical_target_rpy = _quaternion_to_rpy(target_quaternion)
-    profile_rotation_delta = _quaternion_to_rotvec(
-        _quaternion_multiply(
-            _quaternion_inverse(_rpy_to_quaternion(context.decision_state7[:, 3:6])),
-            target_quaternion,
-        )
-    ).norm(dim=1)
-    profile_guard_valid = (
-        ((target_position >= context.policy_workspace_min3) & (
-            target_position <= context.policy_workspace_max3
-        )).all(dim=1)
-        & ((canonical_target_rpy >= context.policy_orientation_min3) & (
-            canonical_target_rpy <= context.policy_orientation_max3
-        )).all(dim=1)
-        & (
-            (canonical_target_rpy[:, 1].abs() - torch.pi / 2.0).abs()
-            >= context.policy_gimbal_margin_rad.squeeze(1)
-        )
-        & (context.policy_gripper_width_m >= context.policy_gripper_min_m).squeeze(1)
-        & (context.policy_gripper_width_m <= context.policy_gripper_max_m).squeeze(1)
-        & (
-            (target_position - context.decision_state7[:, :3]).norm(dim=1)
-            <= context.policy_continuity_max_xyz_m.squeeze(1)
-        )
-        & (
-            profile_rotation_delta
-            <= context.policy_continuity_max_rotation_rad.squeeze(1)
-        )
-        & (
-            (context.policy_gripper_width_m - context.decision_state7[:, 6:7])
-            .abs()
-            .squeeze(1)
-            <= context.policy_continuity_max_gripper_delta_m.squeeze(1)
-        )
-    )
     human_source = context.control_source.squeeze(1) > 0.5
     accepted_valid = context.valid & finite & (
-        human_source | (dispatch_guard_valid & profile_guard_valid)
+        human_source
+        | policy_candidate_guard_valid(
+            candidate_residual6,
+            base_normalized_action6,
+            context.candidate_guard(),
+        )
     )
     residual_k6 = accepted_residual[:, None, :].expand(-1, 3, -1)
     return AcceptedResidual(residual_k6, accepted_valid)

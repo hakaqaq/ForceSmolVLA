@@ -8,7 +8,14 @@ import pytest
 import torch
 import yaml
 
-from forcesmolvla.rft.critic import CRITIC_INPUT_SPEC, build_twin_q, state_exact
+from forcesmolvla.rft.critic import (
+    CRITIC_ACTION_REPRESENTATION,
+    CRITIC_CANDIDATE_FEASIBILITY,
+    CRITIC_INPUT_SPEC,
+    CRITIC_TD_SOURCE_MODE,
+    build_twin_q,
+    state_exact,
+)
 from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
     InferencePriorityCoordinator,
@@ -44,6 +51,9 @@ def write_checkpoint(
         hidden_dim=256,
         max_normalized_residual=0.1,
         residual_cap6=[0.1] * 6,
+        residual_bound_mode=config["wrist_wrench_residual_actor"][
+            "residual_bound_mode"
+        ],
     )
     q1, q2, q1_target, q2_target = build_twin_q(hidden_dim=256, seed=4)
     actor_optimizer = torch.optim.Adam(actor.parameters(), lr=3e-5)
@@ -73,6 +83,12 @@ def write_checkpoint(
         "checkpoint_kind": checkpoint_kind,
         "online_semantics_version": ONLINE_SEMANTICS_VERSION,
         "critic_input_spec": CRITIC_INPUT_SPEC,
+        "critic_action_representation": CRITIC_ACTION_REPRESENTATION,
+        "critic_td_source_mode": CRITIC_TD_SOURCE_MODE,
+        "critic_candidate_feasibility": CRITIC_CANDIDATE_FEASIBILITY,
+        "residual_bound_mode": config["wrist_wrench_residual_actor"][
+            "residual_bound_mode"
+        ],
         "frozen_base_policy_checkpoint": "/fixed/base",
         "learner_state": learner_state,
         "ack_critic_warmup_complete": learner_state == "residual_actor_critic_training",

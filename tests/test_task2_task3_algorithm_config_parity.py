@@ -19,10 +19,12 @@ def test_task2_and_task3_share_one_algorithm_contract() -> None:
 def test_task_profiles_cannot_override_algorithm_hyperparameters() -> None:
     task2 = load_common_actor_critic_config("task2")
 
-    assert task2["optimizer"]["residual_actor"]["lr"] == 1.0e-4
+    assert task2["optimizer"]["residual_actor"]["lr"] == 3.0e-5
     assert task2["ack_critic_warmup"] == {
-        "minimum_ack_transitions": 100,
+        "minimum_ack_transitions": 1000,
+        "minimum_admitted_episodes": 3,
         "optimizer_steps": 256,
     }
+    assert task2["residual_actor_critic_training"]["new_td_rows_per_cycle"] == 8
     assert "q_gradient_controller" not in task2
     assert "actor_unlock" not in task2
