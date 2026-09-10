@@ -8,9 +8,9 @@ def test_v42_freezes_inheritance_innovation_and_online_scope():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     required = (
         "ForcePrior SFT",
-        "自主 proposal Critic warm-up",
-        "持续在线 Actor/Learner",
-        "1000 条有效自主 policy TD",
+        "Autonomous Proposal Critic Warm-Up",
+        "Continuous Online Actor/Learner",
+        "1,000 valid autonomous policy TD transitions",
         "2 Twin-Q + 1 wrist-wrench residual Actor",
     )
     for statement in required:
@@ -20,6 +20,6 @@ def test_v42_freezes_inheritance_innovation_and_online_scope():
 def test_readme_describes_development_online_scope_without_production_claim():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     normalized = " ".join(text.split())
-    assert "实际 adapter、filter、leash、workspace、力/力矩限制与 ACK 链均保持" in normalized
-    assert "它不是自主成功率评估" in normalized
-    assert "CPU 测试只验证调度与并发语义" in normalized
+    assert "actual adapter, filter, leash, workspace limits, force/torque limits, and ACK chain remain active" in normalized
+    assert "This probe is not an autonomous-success evaluation" in normalized
+    assert "CPU tests validate scheduling and concurrency semantics only" in normalized
