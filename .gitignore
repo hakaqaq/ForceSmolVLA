@@ -1,20 +1,17 @@
 .venv/
 .cache/
-assets/
-datasets/
-
-# Keep lightweight final manifests reviewable; model and parquet payloads stay local.
-!assets/
 assets/*
 !assets/reward_classifier/
 assets/reward_classifier/*
 !assets/reward_classifier/resnet10_manifest.json
-!datasets/
-datasets/*
-!datasets/*_forcerft_offline_reward_transitions/
-datasets/*_forcerft_offline_reward_transitions/*
-!datasets/*_forcerft_offline_reward_transitions/dataset_manifest.json
+datasets/
+artifacts/
 outputs/
+graphify-out/
+graphify_memory/
+tools/graphify-out/
+log/
+environment-manifest/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
@@ -28,32 +25,3 @@ __pycache__/
 test/
 releases/
 configs/trust/
-
-# Stage-2 evidence keeps lightweight manifests in Git; model/data binaries stay
-# in the content-addressed local artifact store referenced by those manifests.
-artifacts/development/stage2/**/*.pt
-artifacts/development/stage2/**/*.msgpack
-artifacts/development/stage2/**/*.parquet
-artifacts/development/stage2/**/*.npz
-artifacts/development/stage2/**/*.pkl
-artifacts/development/stage2/**/*.npy
-artifacts/development/stage2/**/*.safetensors
-artifacts/development/stage2/.g7a_work.*/
-
-# This directory is mutated by the currently running 0.5-pass job. Its final
-# lightweight report and manifest are added only after the cycle-210 boundary.
-artifacts/development/stage2/stage2b_long_run_half_pass/
-artifacts/development/stage2/stage2b_long_run_half_pass_checkpoints/
-artifacts/development/stage2/stage2b_interrupted_pilot_cycle136/
-artifacts/development/stage2/stage2b_interrupted_pilot_cycle136_checkpoints/
-
-# v2.1.0 keeps source, configs, reports, and SHA-bound summaries in Git. Large
-# local training/evaluation payloads and disposable throughput traces stay local.
-artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/
-artifacts/development/stage2/stage2b_throughput_v2_half_pass_run.v1/
-artifacts/development/stage2/stage2b_throughput_v2_one_pass_continuation.v1/
-artifacts/development/stage2/throughput_v2/
-artifacts/development/stage2/throughput_v2_aborted_for_shorter_screen_20260827_01/
-artifacts/development/stage2/throughput_v2_aborted_for_trainability_clarification_20260827_01/
-artifacts/development/stage2/throughput_v2_failed_attempt_20260827_01/
-artifacts/development/stage2/throughput_v2_long_run/

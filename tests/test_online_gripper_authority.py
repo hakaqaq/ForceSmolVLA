@@ -659,6 +659,8 @@ def test_recorded_offline_episode_pairs_real_goals_held_feedback_and_terminal_se
     target_path = episode / "streams/gripper_target.jsonl"
     status_path = episode / "streams/gripper_goal_status.jsonl"
     state_path = episode / "streams/gripper_state.jsonl"
+    if not result_path.is_file():
+        pytest.skip("private recorded episode is not distributed with the source tree")
     result = json.loads(result_path.read_text(encoding="utf-8"))
     targets = [json.loads(line) for line in target_path.read_text().splitlines() if line]
     statuses = [json.loads(line) for line in status_path.read_text().splitlines() if line]

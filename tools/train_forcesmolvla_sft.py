@@ -21,11 +21,9 @@ import time
 from forcesmolvla.training_runtime import (
     build_training_batch as _make_batch,
     build_validation_fixture as _build_validation_fixture,
-    canonical_sha256 as _canonical_sha256,
     file_sha256 as _sha256,
     require_offline_environment as _require_offline,
     tree_sha256 as _tree_sha256,
-    validate_action_target_population_prerequisite,
     validation_scalar as _validation_scalar,
 )
 
@@ -46,152 +44,41 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _resolve_path(root: Path, value: str) -> Path:
-    path = Path(value).expanduser()
-    return (path if path.is_absolute() else root / path).resolve()
-
-
 def _load_config(path: Path) -> dict:
     config = json.loads(path.read_text(encoding="utf-8"))
-    required = {
-        "name",
-        "output_dir",
-        "data_scope",
-        "dataset_validation",
-        "converter_runtime_spec",
-        "training_readiness",
-        "logging",
-    }
-    training_readiness = config.get("training_readiness")
+    required = {"name", "output_dir", "training", "logging"}
+    training = config.get("training")
     logging = config.get("logging")
     if (
-        config.get("schema_version") != "1.0"
+        config.get("schema_version") != "2.0"
         or config.get("acceptance_status") != "development_only"
         or config.get("formal_eligible") is not False
         or not required.issubset(config)
         or not isinstance(config["name"], str)
         or not config["name"]
+        or not isinstance(config["output_dir"], str)
+        or not config["output_dir"]
+        or not isinstance(training, dict)
         or any(
-            not isinstance(config.get(field), str) or not config[field]
+            not isinstance(training.get(field), int) or training[field] <= 0
             for field in (
-                "output_dir",
-                "data_scope",
-                "dataset_validation",
-                "converter_runtime_spec",
+                "target_samples",
+                "validation_interval_samples",
+                "checkpoint_interval_samples",
             )
         )
-        or not isinstance(training_readiness, dict)
-        or not isinstance(training_readiness.get("gate_report"), str)
-        or not isinstance(training_readiness.get("source_binding"), str)
-        or not isinstance(
-            config.get(
-                "action_target_population_parity",
-                "artifacts/development/action_target_population_parity_r1.json",
-            ),
-            str,
-        )
-        or not config.get(
-            "action_target_population_parity",
-            "artifacts/development/action_target_population_parity_r1.json",
-        )
-        or not isinstance(
-            training_readiness.get("reuse_validated_architecture_gate", False), bool
-        )
+        or training["target_samples"] % (BATCH_SIZE * MICROBATCHES) != 0
+        or training["validation_interval_samples"] % (BATCH_SIZE * MICROBATCHES)
+        != 0
+        or training["checkpoint_interval_samples"] % (BATCH_SIZE * MICROBATCHES)
+        != 0
         or not isinstance(logging, dict)
         or not isinstance(logging.get("interval_samples"), int)
         or logging["interval_samples"] <= 0
+        or logging["interval_samples"] % (BATCH_SIZE * MICROBATCHES) != 0
     ):
         raise RuntimeError("TRAIN_CONFIG_INVALID")
     return config
-
-
-def _load_data_scope(
-    root: Path,
-    dataset_root: Path,
-    repo_id: str,
-    config: dict,
-) -> tuple[dict, str]:
-    path = _resolve_path(root, config["data_scope"])
-    scope_sha256 = _sha256(path)
-    scope = json.loads(path.read_text(encoding="utf-8"))
-    dataset = scope.get("dataset", {})
-    session = scope.get("session_provenance", {})
-    budget = scope.get("training_budget", {})
-    schedule = budget.get("effective_schedule", {})
-    raw_session_path = _resolve_path(root, session.get("raw_session_manifest_path", ""))
-    recipe_path = _resolve_path(root, budget.get("recipe_path", ""))
-    if (
-        scope.get("acceptance_status") != "development_only"
-        or scope.get("formal_eligible") is not False
-        or dataset_root != _resolve_path(root, dataset.get("path", ""))
-        or repo_id != dataset.get("repo_id")
-        or _sha256(dataset_root / "conversion_manifest.json")
-        != dataset.get("conversion_manifest_sha256")
-        or _sha256(raw_session_path) != session.get("raw_session_manifest_sha256")
-        or _sha256(recipe_path) != budget.get("recipe_sha256")
-        or not isinstance(budget.get("target_samples"), int)
-        or budget.get("target_samples", 0) <= 0
-        or budget.get("batch_per_gpu") != BATCH_SIZE
-        or budget.get("gradient_accumulation_microbatches") != MICROBATCHES
-        or budget.get("effective_samples_per_update") != BATCH_SIZE * MICROBATCHES
-        or budget.get("target_samples") % (BATCH_SIZE * MICROBATCHES) != 0
-        or budget.get("derived_optimizer_updates")
-        != budget.get("target_samples") // (BATCH_SIZE * MICROBATCHES)
-        or budget.get("checkpoint_policy") != "final_update_only"
-        or budget.get("final_checkpoint_training_samples") != budget.get("target_samples")
-        or schedule.get("peak_lr") != SCHEDULER_PEAK_LR
-        or schedule.get("final_lr") != SCHEDULER_FINAL_LR
-        or not isinstance(budget.get("validation_interval_samples"), int)
-        or budget.get("validation_interval_samples", 0) <= 0
-    ):
-        raise RuntimeError("DATA_SCOPE_DRIFT")
-    updates = budget["derived_optimizer_updates"]
-    expected_warmup = (
-        int(SCHEDULER_PRESET_WARMUP_UPDATES * updates / SCHEDULER_PRESET_DECAY_UPDATES)
-        if updates < SCHEDULER_PRESET_DECAY_UPDATES
-        else SCHEDULER_PRESET_WARMUP_UPDATES
-    )
-    expected_decay = min(updates, SCHEDULER_PRESET_DECAY_UPDATES)
-    if (
-        schedule.get("warmup_updates") != expected_warmup
-        or schedule.get("decay_end_update") != expected_decay
-        or schedule.get("lerobot_short_run_auto_scale")
-        != (updates < SCHEDULER_PRESET_DECAY_UPDATES)
-    ):
-        raise RuntimeError("DATA_SCOPE_SCHEDULE_DRIFT")
-    raw_session = json.loads(raw_session_path.read_text(encoding="utf-8"))
-    if (
-        raw_session.get("raw_format_version") != session.get("raw_format_version")
-        or raw_session.get("created_at") != session.get("created_at")
-    ):
-        raise RuntimeError("RAW_SESSION_PROVENANCE_DRIFT")
-    return scope, scope_sha256
-
-
-def _bind_fixture_provenance(fixture: dict, data_scope: dict) -> None:
-    session = data_scope["session_provenance"]
-    legacy_session_id = session.get("legacy_fixture_session_id")
-    collection_scope_id = session.get("collection_scope_id")
-    if legacy_session_id is None or collection_scope_id is None:
-        return
-    chunk_context = fixture["chunk_context"]
-    if set(chunk_context["session_id"]) != {legacy_session_id}:
-        raise RuntimeError("VALIDATION_FIXTURE_SESSION_ID_DRIFT")
-    chunk_context["session_id"] = [collection_scope_id] * len(
-        chunk_context["session_id"]
-    )
-    for provenance in chunk_context["selected_provenance"]:
-        provenance.update(
-            {
-                "collection_scope_id": collection_scope_id,
-                "physical_session_id": None,
-                "session_id_semantics": session["collection_scope_id_semantics"],
-                "replaced_legacy_fixture_session_id": session[
-                    "legacy_fixture_session_id"
-                ],
-            }
-        )
-    fixture["chunk_context_sha256"] = _canonical_sha256(chunk_context)
 
 
 def _final_checkpoint_due(step: int, max_updates: int) -> bool:
@@ -204,44 +91,17 @@ def _source_binding(
     repo_id: str,
     config_path: Path,
     config: dict,
-    *,
-    readiness_report: Path,
-    readiness_source_binding: Path,
 ) -> dict:
-    configured_files = [
-        config_path,
-        _resolve_path(root, config["data_scope"]),
-        _resolve_path(root, config["dataset_validation"]),
-        _resolve_path(root, config["converter_runtime_spec"]),
-        _resolve_path(
-            root,
-            config.get(
-                "action_target_population_parity",
-                "artifacts/development/action_target_population_parity_r1.json",
-            ),
-        ),
-    ]
-    data_scope = json.loads(configured_files[1].read_text(encoding="utf-8"))
-    configured_files.append(
-        _resolve_path(root, data_scope["training_budget"]["recipe_path"])
-    )
-    try:
-        configured_relative = [
-            path.relative_to(root).as_posix() for path in configured_files
-        ]
-    except ValueError as error:
-        raise RuntimeError("TRAIN_CONFIG_ARTIFACT_OUTSIDE_PROJECT") from error
     files = sorted(
         path.relative_to(root).as_posix()
         for path in (root / "src/forcesmolvla").glob("*.py")
     ) + [
         "src/forcesmolvla/training_runtime.py",
-        "tools/action_target_population_parity_gate.py",
         "tools/train_forcesmolvla_sft.py",
-        "configs/forcesmolvla_sft_recipe.development.yaml",
+        config_path.relative_to(root).as_posix(),
+        "configs/action_delta_spec.json",
         "configs/training_checkpoint_contract.development.json",
-        "ForceSmolVLA_Implementation_Spec_v4_2.md",
-    ] + configured_relative
+    ]
     files = sorted(set(files))
     project_hashes = {relative: _sha256(root / relative) for relative in files}
     dataset_hashes = {
@@ -280,7 +140,6 @@ def _source_binding(
         "dataset_manifest_sha256": dataset_hashes,
         "experiment_name": config["name"],
         "train_config_sha256": _sha256(config_path),
-        "data_scope_sha256": _sha256(_resolve_path(root, config["data_scope"])),
         "project_file_sha256": project_hashes,
         "base_checkpoint_model_sha256": _sha256(
             root / "assets/base_checkpoint/model.safetensors"
@@ -289,10 +148,6 @@ def _source_binding(
             root / "assets/base_checkpoint/config.json"
         ),
         "constructor_assets_tree_sha256": _tree_sha256(root / "assets/smolvlm_constructor"),
-        "training_readiness_report_sha256": _sha256(readiness_report),
-        "training_readiness_source_binding_sha256": _sha256(
-            readiness_source_binding
-        ),
         "lerobot_commit": lerobot_commit,
         "lerobot_dirty_worktree": False,
         "lerobot_file_sha256": {
@@ -312,8 +167,6 @@ def _resolved_config(
     run_root: Path,
     binding_sha256: str,
     budget: dict,
-    data_scope: dict,
-    data_scope_sha256: str,
 ) -> dict:
     return {
         "schema_version": "1.0",
@@ -328,8 +181,6 @@ def _resolved_config(
         "all_parameters_trainable": True,
         "expected_parameter_count": EXPECTED_PARAMETERS,
         "training_budget": budget,
-        "data_scope_sha256": data_scope_sha256,
-        "session_provenance": data_scope["session_provenance"],
         "optimizer": {
             "type": "AdamW",
             "lr": 1e-4,
@@ -369,15 +220,6 @@ def _resolved_config(
         "best_metric_tracking": "fixed single-pass validation L_flow; metrics only",
         "seeds": {"initialization": 42, "validation": 43, "training": 44},
         "source_binding_sha256": binding_sha256,
-        "training_readiness_report_sha256": _sha256(
-            _resolve_path(root, config["training_readiness"]["gate_report"])
-        ),
-        "training_readiness_source_binding_sha256": _sha256(
-            _resolve_path(root, config["training_readiness"]["source_binding"])
-        ),
-        "training_readiness_contract_version": (
-            "v4.2-b4x1-single-pass-exact-resume"
-        ),
         "cpu_fallback": "forbidden",
         "robot_actions_sent": 0,
         "detached_signature": None,
@@ -393,56 +235,23 @@ def _copy_checkpoint_payloads(
     experiment_config_path: Path,
     experiment_config: dict,
 ) -> None:
-    data_scope_path = _resolve_path(root, experiment_config["data_scope"])
-    data_scope = json.loads(data_scope_path.read_text(encoding="utf-8"))
-    recipe_path = _resolve_path(
-        root, data_scope["training_budget"]["recipe_path"]
-    )
     sources = {
         "manifests/training_checkpoint_contract.development.json": root
         / "configs/training_checkpoint_contract.development.json",
         "manifests/resolved_training_config.json": run_root / "resolved_training_config.json",
         "manifests/source_binding.json": run_root / "source_binding.json",
-        "manifests/implementation_spec_v4_2.md": root
-        / "ForceSmolVLA_Implementation_Spec_v4_2.md",
         "manifests/train_config.json": experiment_config_path,
         "manifests/fixed_validation_fixture.json": run_root / "fixed_validation_fixture.json",
-        "manifests/dataset_validation.json": _resolve_path(
-            root, experiment_config["dataset_validation"]
-        ),
         "manifests/normalizer_manifest.json": dataset_root / "normalizer_manifest.json",
         "manifests/conversion_manifest.json": dataset_root / "conversion_manifest.json",
         "manifests/split_manifest.json": dataset_root / "split_manifest.json",
-        "manifests/converter_runtime_spec.json": _resolve_path(
-            root, experiment_config["converter_runtime_spec"]
-        ),
-        "manifests/data_scope.json": data_scope_path,
-        "manifests/action_delta_spec.json": root / "artifacts/development/action_delta_spec.json",
-        "manifests/feature_mask_spec.json": root / "artifacts/development/feature_mask_spec.json",
-        "manifests/processor_graph_manifest.json": root
-        / "artifacts/development/processor_graph_manifest.json",
-        "manifests/visual_language_manifest.json": root
-        / "artifacts/development/visual_language_manifest.json",
+        "manifests/action_delta_spec.json": root / "configs/action_delta_spec.json",
         "manifests/wrench_geometry_spec.development.json": root
         / "configs/wrench_geometry_spec.development.json",
         "manifests/calibration_bundle.development.json": root
         / "configs/calibration_bundle.development.json",
         "manifests/training_stage.development.json": root
         / "configs/training_stage.development.json",
-        "manifests/p7_training_recipe.development.yaml": root
-        / "configs/p7_training_recipe.development.yaml",
-        "manifests/forcesmolvla_sft_recipe.development.yaml": root
-        / "configs/forcesmolvla_sft_recipe.development.yaml",
-        "manifests/offline_sft_training_recipe.development.yaml": recipe_path,
-        "manifests/parity_acceptance.development.json": root
-        / "configs/parity_acceptance.development.json",
-        "manifests/environment_manifest.json": root
-        / "artifacts/development/environment_manifest.json",
-        "environment/conda-explicit.txt": root / "environment-manifest/conda-explicit.txt",
-        "environment/conda-from-history.yml": root
-        / "environment-manifest/conda-from-history.yml",
-        "environment/pip-freeze.txt": root / "environment-manifest/pip-freeze.txt",
-        "environment/requirements.lock": root / "environment-manifest/requirements.lock",
     }
     for relative, source in sources.items():
         if not source.is_file():
@@ -624,62 +433,12 @@ def main() -> None:
     repo_id = conversion.get("repo_id")
     if not isinstance(repo_id, str) or not repo_id:
         raise RuntimeError("DATASET_REPO_ID_MISSING")
-    validate_action_target_population_prerequisite(
-        root,
-        dataset_root,
-        artifact_relative=config.get(
-            "action_target_population_parity",
-            "artifacts/development/action_target_population_parity_r1.json",
-        ),
-    )
-    data_scope, data_scope_sha256 = _load_data_scope(
-        root, dataset_root, repo_id, config
-    )
     if (
         conversion.get("artifact_status") != "development_only"
         or conversion.get("formal_ready") is not False
         or len(conversion.get("episodes", ())) < 3
     ):
         raise RuntimeError("CONVERSION_MANIFEST_GATE_FAILED")
-    readiness_report_path = _resolve_path(
-        root, config["training_readiness"]["gate_report"]
-    )
-    readiness_report = json.loads(
-        readiness_report_path.read_text(encoding="utf-8")
-    )
-    readiness_binding_path = _resolve_path(
-        root, config["training_readiness"]["source_binding"]
-    )
-    checkpoint_path = Path(
-        readiness_report.get("checkpoint", {}).get("path", "")
-    )
-    if (
-        readiness_report.get("gate") != "P8"  # persisted artifact ABI
-        or readiness_report.get("gate_status") != "pass"
-        or readiness_report.get("acceptance_status") != "development_only"
-        or readiness_report.get("formal_eligible") is not False
-        or readiness_report.get("gate_contract_version")
-        != "v4.2-b4x1-single-pass-exact-resume"
-        or readiness_report.get("exact_resume_dry_run") is not True
-        or readiness_report.get("long_development_sft_unlocked") is not True
-        or set(readiness_report.get("force_full_parity", {}))
-        != {"fp32", "bf16"}
-        or (
-            readiness_report.get("real_data", {}).get("repo_id") != repo_id
-            and not config["training_readiness"].get(
-                "reuse_validated_architecture_gate", False
-            )
-        )
-        or readiness_report.get("real_data", {}).get("batch_per_gpu")
-        != BATCH_SIZE
-        or readiness_report.get("real_data", {}).get("microbatches")
-        != MICROBATCHES
-        or readiness_report.get("source_binding_sha256")
-        != _sha256(readiness_binding_path)
-        or not checkpoint_path.is_dir()
-        or not (checkpoint_path / "artifact_manifest.json").is_file()
-    ):
-        raise RuntimeError("LONG_SFT_REQUIRES_CURRENT_P8_B4X1_EXACT_RESUME_GATE")
     if run_root.exists() and args.resume is None:
         raise FileExistsError(f"refusing to overwrite training run: {run_root}")
     run_root.mkdir(parents=True, exist_ok=True)
@@ -690,8 +449,6 @@ def main() -> None:
         repo_id,
         config_path,
         config,
-        readiness_report=readiness_report_path,
-        readiness_source_binding=readiness_binding_path,
     )
     binding_path = run_root / "source_binding.json"
     if binding_path.exists():
@@ -729,19 +486,16 @@ def main() -> None:
         dataset_root,
         calibration_bundle_path=root / "configs/calibration_bundle.development.json",
         wrench_geometry_spec_path=root / "configs/wrench_geometry_spec.development.json",
-        action_delta_spec_path=root / "artifacts/development/action_delta_spec.json",
+        action_delta_spec_path=root / "configs/action_delta_spec.json",
         expected_repo_id=repo_id,
     )
     normalizer = runtime_artifacts.normalizer
     sampler = SerializableUniformSampler(list(range(len(train_dataset))), seed=42)
     effective_samples_per_update = BATCH_SIZE * MICROBATCHES
-    scope_budget = data_scope["training_budget"]
-    target_samples = scope_budget["target_samples"]
-    checkpoint_interval_samples = scope_budget.get(
-        "checkpoint_interval_samples",
-        scope_budget.get("legacy_recipe_checkpoint_interval_samples", target_samples),
-    )
-    validation_interval_samples = scope_budget["validation_interval_samples"]
+    training_config = config["training"]
+    target_samples = training_config["target_samples"]
+    checkpoint_interval_samples = training_config["checkpoint_interval_samples"]
+    validation_interval_samples = training_config["validation_interval_samples"]
     log_interval_samples = config["logging"].get("interval_samples")
     if (
         not isinstance(log_interval_samples, int)
@@ -792,37 +546,6 @@ def main() -> None:
         "validation_interval_samples": validation_interval_samples,
         "log_interval_samples": log_interval_samples,
     }
-    offline_recipe_path = _resolve_path(
-        root, data_scope["training_budget"]["recipe_path"]
-    )
-    offline_recipe = json.loads(offline_recipe_path.read_text())
-    if (
-        offline_recipe.get("training_stage") != "offline_full_finetune"
-        or offline_recipe.get("all_existing_parameters_require_grad") is not True
-        or offline_recipe["schedule"]["primary_budget_unit"] != "samples"
-        or offline_recipe["schedule"]["target_samples"] != target_samples
-        or offline_recipe["schedule"]["derived_optimizer_updates"] != max_updates
-        or offline_recipe["schedule"]["derived_warmup_updates"]
-        != effective_warmup_updates
-        or offline_recipe["schedule"]["derived_decay_end_update"]
-        != effective_decay_updates
-        or offline_recipe["schedule"]["peak_lr"] != SCHEDULER_PEAK_LR
-        or offline_recipe["schedule"]["decay_lr"] != SCHEDULER_FINAL_LR
-        or offline_recipe["batching"]["effective_samples_per_gpu_update"]
-        != effective_samples_per_update
-        or offline_recipe["checkpoint_interval_samples"]
-        != checkpoint_interval_samples
-        or offline_recipe["validation_interval_samples"]
-        != validation_interval_samples
-        or offline_recipe["loss"]["router_algorithm"] != "single_pass_batch_local"
-        or offline_recipe["optimizer"].get("parameter_partition")
-        != "each_trainable_parameter_exactly_once"
-        or "learned_action_slot" not in offline_recipe["optimizer"].get("no_decay", ())
-        or offline_recipe["exact_two_pass_validation"]["active_sft_loop"] is not False
-        or offline_recipe["exact_two_pass_validation"]["long_running_sft_allowed"]
-        is not False
-    ):
-        raise RuntimeError("OFFLINE_SINGLE_PASS_SAMPLE_BUDGET_CONTRACT_DRIFT")
     resolved = _resolved_config(
         root,
         config,
@@ -831,8 +554,6 @@ def main() -> None:
         run_root,
         _sha256(binding_path),
         budget,
-        data_scope,
-        data_scope_sha256,
     )
     resolved_path = run_root / "resolved_training_config.json"
     if resolved_path.exists():
@@ -910,7 +631,6 @@ def main() -> None:
         noise=validation_noise,
         timestep=validation_time,
     )
-    _bind_fixture_provenance(fixture, data_scope)
     fixture_path = run_root / "fixed_validation_fixture.json"
     if fixture_path.exists():
         if json.loads(fixture_path.read_text()) != fixture:

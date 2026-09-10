@@ -15,7 +15,7 @@ ForceSmolVLA SFT
 ## 1. 目录与环境
 
 ```bash
-export FORCESMOLVLA_ROOT=/home/rlc123/ForceSmolVLA
+export FORCESMOLVLA_ROOT="$(pwd)"
 export FR3_WS=/home/rlc123/fr3_client_ws
 export TASK_ID=task2
 export TASK_OUTPUT_ROOT="$FORCESMOLVLA_ROOT/outputs/$TASK_ID"
@@ -118,20 +118,7 @@ production detector checkpoint 固定在：
 outputs/{task_id}/reward_classifier/checkpoints/best/best_checkpoint.msgpack
 ```
 
-## 6. 历史离线 reward/terminal 物化（不属于当前生产训练链）
-
-```bash
-"$MODEL_PYTHON" tools/materialize_reward_transitions.py \
-  build --task-id "$TASK_ID" \
-  --config "configs/tasks/$TASK_ID/forcerft_offline_reward_transitions.json" \
-  --dataset-root "$LEROBOT_DATASET" \
-  --reward-transition-root \
-    "$FORCESMOLVLA_ROOT/datasets/${TASK_ID}_forcerft_offline_reward_transitions"
-```
-
-该产物只保留给旧方法实验对照，不用于 proposal-space residual Twin-Q、Residual Actor、Actor-Q 更新或 online replay 混合。当前生产训练链不执行本节命令。
-
-## 7. 构建 online ACK-residual bootstrap checkpoint
+## 6. 构建 online ACK-residual bootstrap checkpoint
 
 ```bash
 "$MODEL_PYTHON" tools/build_forcerft_online_residual_bootstrap.py \
@@ -149,7 +136,7 @@ outputs/{task_id}/online_ack_residual_filter_leash/bootstrap_checkpoints/base_po
 
 bootstrap checkpoint 保存 frozen base policy 的路径、严格零输出 wrist-wrench residual Actor、随机 proposal-space residual Twin-Q、targets、两个 optimizer 与运行计数；不读取 demonstration、旧 offline Critic 或旧 accepted-Q checkpoint。
 
-## 8. 自主 proposal Critic warm-up 与 Residual Actor–Critic 训练
+## 7. 自主 proposal Critic warm-up 与 Residual Actor–Critic 训练
 
 Learner 状态依次为 `ack_replay_collection → ack_critic_warmup → residual_actor_critic_training`。累计不足 1000 条有效自主 policy TD，或这些 TD 不足 3 条正式 episode 时，Actor/Twin-Q 均不更新；同时达到阈值后在同一进程执行一次 256-step Twin-Q warm-up，然后按累计 `floor(unique_policy_td_rows/8)` 额度执行联合 cycle，每 cycle 固定为 `2 Twin-Q + 1 wrist-wrench residual Actor attempt`。人工记录可以提供 BC，但不进入 warm-up、联合 TD 或额度计数。训练只读取低维 state/wrench/base/proposal/ACK 数据，不运行第二份 base policy、Flow sampler 或图像 Critic。Twin-Q 输入为 26 维 context（state7、wrench6、wrench increment6、base TCP6、base gripper1）与 6 维 policy proposal，共 32 维；Residual Actor 仍为 25 维输入且只输出 TCP6。
 
@@ -157,7 +144,7 @@ Critic 的 behavior action 使用真实 dispatch 前记录的 `applied_residual_
 
 Q 动作值不经过下层 filter/leash 镜像，不表示真实执行绕过控制器。实际 adapter、filter、leash、workspace、力/力矩限制与 ACK 链均保持。Actor-Q 在当前保存的上层 dispatch/profile guard context 中检查候选，target-Q 在真实 next-decision guard context 中检查候选；非法候选跳过本次 value/TD，guard context 未知单独报告。真正 `beta=0` 的 terminal/truncated 行只使用 `y=r`，不查询 target Actor、target Q 或 next guard。缺少下层 filter 镜像本身不再排除 proposal-Q，但缺真实 proposal、ACK、同锚 base/composed、合法后继或必要上层 guard 仍会排除相应用途。该候选资格限制是实现细节，不代表 32 维 context 已成为完整 Markov 状态；相同 context/proposal 在不同 filter 历史下仍可能产生不同 accepted 动作。
 
-## 9. HIL 与 online replay
+## 8. HIL 与 online replay
 
 `tools/serve_forcerft_residual_actor_critic.py` 是唯一 GPU owner；`tools/run_forcerft_integrated_capture.py` 是唯一机器人控制链。当前 chunk/slot 映射为：第 `n` 次真实 dispatch 使用当前已采纳 chunk `i(n)`，再按该 chunk 的 `t_ref_ns` 与 dispatch selection time 在 30 Hz 有理数时基上取 `j(n)=ceil(30(selection_ns-t_ref_ns))`；超出缓存 H50 便丢弃并重规划。模型在 request pose 下生成的 delta 先还原为 absolute chunk，选中槽位再以真实 decision pose 重表达给 Residual Actor。异步新 chunk 只在完成 lineage 检查后生效；最多从一个 chunk 派发 8 次，当前 CLI 的 replan/low-watermark 为 8/7；接管使旧 chunk 与 pending request 失效，释放后必须 fresh observation + fresh inference。只有实际发送且获得 Controller ACK 的 decision 才形成后继，HOLD 或被拒绝命令不虚构 transition。
 若 inference 期间 wrench causal filter 因源间隙重置并切换 generation，旧 request/result 和未执行 chunk 会被作废；等待现有 250-sample warmup 完成后，同一 episode 使用 fresh observation 重新 inference，恢复等待期间不生成 transition。
@@ -180,7 +167,7 @@ K=3 仅保留为同一真实 dispatch 的存储与 ACK 验证适配，不计作�
 
 takeover、release 与 reset 继续作为信用截断边界。因此 Q 是自主 policy proposal 在当前控制段内的折扣终端成功反馈代理，而不是完整 episode 自主成功率的无偏估计：在 `自主 A → 人工 B → 自主 C → 成功` 中，成功只沿 C 的 policy TD 链传播；B 只提供有界 BC。若始终由人工完成最后一步，自主 Q 不会凭空得到 terminal 正例，早期变化可能主要来自 BC。
 
-## 10. 持续在线 Actor/Learner
+## 9. 持续在线 Actor/Learner
 
 ```bash
 "$MODEL_PYTHON" tools/run_forcerft_online_loop.py \
@@ -202,9 +189,9 @@ takeover、release 与 reset 继续作为信用截断边界。因此 Q 是自主
   --allow-development-policy-execution-smoke
 ```
 
-在线 native episode 固定保存在 ForceSmolVLA 数据目录下，例如第一个 session 为
-`/home/rlc123/ForceSmolVLA/datasets/{task_id}_forcerft_online_001`；不写入
-`/home/rlc123/fr3_client_ws/datasets`。省略 `--capture-output-root` 时也使用这一仓库内默认目录。
+在线 native episode 固定保存在仓库数据目录下，例如第一个 session 为
+`$FORCESMOLVLA_ROOT/datasets/{task_id}_forcerft_online_001`；不写入机器人工作区的数据目录。
+省略 `--capture-output-root` 时也使用这一仓库内默认目录。
 
 Unified server 每次启动恢复一个 residual Actor/Twin-Q checkpoint，并在完成 checkpoint/replay 完整性验证后立即启动独立 learner worker。只有累计至少 1000 条唯一、正式接纳并实际物化为 `critic_td_valid` 的自主 policy transition，且这些 TD 来自至少 3 条正式 episode，才一次性完成 256 个 Twin-Q warm-up optimizer step并进入联合训练。human BC 行不进入 Critic，也不增加 TD 行数、贡献 episode 数或 cycle 额度。每个完成的联合 learner cycle固定为 2 次 Twin-Q optimizer update、2 次对应的 target Polyak update 和 1 次 residual Actor update 尝试；Actor 因无有效支持而跳过时仍完成并消费本 cycle。warm-up 不计入联合 cycle。训练不读取 demonstration 图像或运行第二份 base policy/Flow sampler。
 
@@ -257,8 +244,8 @@ capture_window.current_episode_sampled=false
 learner_wait_reason=insufficient_action_coverage learner_wait_ms=18.4
 ```
 
-## 11. 保留与故障处理
+## 10. 保留与故障处理
 
-必须保留：原始 D 数据和 LeRobot v3、SFT、reward classifier、materialized demo replay、历史 offline Critic 实验记录、最新十个 online exact-resume，以及 formal replay/WAL/outbox/admission 引用的所有 raw episode。
+本仓库不跟踪运行时数据、模型、checkpoint、日志或开发审计输出。实际实验中必须自行备份原始 D 数据和 LeRobot v3、SFT、reward classifier、当前 replay、最新十个 online exact-resume，以及 formal replay/WAL/outbox/admission 引用的所有 raw episode。
 
 常见 fail-closed 原因：exact-resume checkpoint 不完整、推理 Actor 与 Learner checkpoint 不同源、原始 JPEG 缺失、takeover 后旧 result、gripper origin 不完整、ACK 缺失、checkpoint/replay UID 或 credit 不一致。不得用其他 episode 图片、虚假 command ID/ACK、重绑旧 generation 或修改原始 episode绕过。

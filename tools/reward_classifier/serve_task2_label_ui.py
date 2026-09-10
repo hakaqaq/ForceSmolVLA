@@ -21,7 +21,7 @@ import pyarrow.parquet as pq
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_BUNDLE = ROOT / "artifacts/development/stage2/task2_reward_review_bundle_v1"
+DEFAULT_BUNDLE = ROOT / "outputs/task2/reward_labeling"
 DEFAULT_DATASET = ROOT / "datasets/task2_lerobotv3"
 DEFAULT_UI = ROOT / "tools/reward_classifier/task2_label_ui.html"
 DEFAULT_LABEL_TEMPLATE = DEFAULT_BUNDLE / "label_template.json"

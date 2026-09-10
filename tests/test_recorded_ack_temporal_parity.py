@@ -220,6 +220,16 @@ def _synthetic_fixture(tmp_path: Path) -> dict:
             "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
         },
     })
+    normalizer = tmp_path / "normalizer_manifest.json"
+    _write_json(normalizer, {
+        "features": {
+            "delta_action7": {
+                "mean": [0.0] * 7,
+                "std": [1.0] * 7,
+                "fit_episode_ids": ["synthetic-tool-test"],
+            }
+        }
+    })
 
     return {
         "schema_version": "forcesmolvla_stage3_recorded_ack_fixture.v1",
@@ -241,9 +251,7 @@ def _synthetic_fixture(tmp_path: Path) -> dict:
             "stage2_temporal": _binding("src/forcesmolvla/temporal.py"),
             "action_delta": _binding("src/forcesmolvla/action_delta.py"),
             "normalizer_source": _binding("src/forcesmolvla/normalizer.py"),
-            "normalizer_manifest": _binding(
-                "artifacts/development/stage2/stage2b_cycle210_evaluation_smoke_checkpoint.v1/manifests/normalizer_manifest.json"
-            ),
+            "normalizer_manifest": _path_binding(normalizer),
             "action_contract_v2": _binding("configs/stage2_action_contract.v2.development.json"),
             "stage2_runtime_contract": _path_binding(runtime),
             "calibration_bundle": _path_binding(calibration),

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,12 @@ ASSET = (
 )
 BUNDLE = ROOT / "artifacts/development/stage2/task2_reward_review_bundle_v1"
 TEMPLATE = BUNDLE / "label_template.json"
+
+
+pytestmark = pytest.mark.skipif(
+    not BRIDGE.is_file(),
+    reason="historical offline audit bundle is not distributed with the source tree",
+)
 
 
 def sha256(path: Path) -> str:

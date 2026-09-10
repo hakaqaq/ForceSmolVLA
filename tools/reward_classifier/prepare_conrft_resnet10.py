@@ -30,8 +30,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=ROOT
-        / "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.pkl",
+        default=ROOT / "assets/reward_classifier/resnet10_params.pkl",
     )
     args = parser.parse_args()
     output = args.output.resolve()

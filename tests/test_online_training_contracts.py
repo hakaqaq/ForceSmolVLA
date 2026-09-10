@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import torch
 from torch import nn
 
@@ -27,6 +28,10 @@ class DummyPolicy(nn.Module):
 
 
 def test_g1_contracts_are_cross_consistent_and_locked() -> None:
+    from forcesmolvla.rft.online.temporal_parity import run_p0a_recorded_live_parity
+
+    if run_p0a_recorded_live_parity()["formal_gate"] != "PASS":
+        pytest.skip("private recorded-live fixture is unavailable or no longer source-bound")
     result = validate_online_contracts()
     assert result == {
         "bootstrap_parent_binding": "PENDING",

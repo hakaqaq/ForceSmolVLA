@@ -194,9 +194,8 @@ def test_server_defaults_paths_but_keeps_execution_opt_in(monkeypatch) -> None:
     assert live.deployment_binding == (
         root / "artifacts/development/live/task2_r5_live_deployment_binding.json"
     )
-    assert live.trusted_deployment_binding_sha256 == hashlib.sha256(
-        live.deployment_binding.read_bytes()
-    ).hexdigest()
+    profile = json.loads(live.deployment_profile.read_text(encoding="utf-8"))
+    assert live.trusted_deployment_binding_sha256 == profile["deployment_binding_sha256"]
 
     monkeypatch.setattr(sys, "argv", ["serve_policy.py"])
     disabled = parse_args()

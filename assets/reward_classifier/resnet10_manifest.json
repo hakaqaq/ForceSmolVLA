@@ -951,7 +951,7 @@
     "controlled_load_backend": "cpu",
     "controlled_load_environment": "conrft_reward",
     "file_size": 21677915,
-    "relative_path": "artifacts/development/stage2/reward_classifier/pretrained/resnet10_params.pkl",
+    "relative_path": "assets/reward_classifier/resnet10_params.pkl",
     "sha256": "175745d43d30233eb01b5369465d1c24c11b8ee71ccb734cc1c1bca13e07f57b"
   }
 }
