@@ -3,7 +3,7 @@
 本文只描述最终固定 pipeline：
 
 ```text
-ForceSmolVLA SFT
+ForcePrior SFT
 → 人工奖励标注
 → 奖励分类器训练
 → 构建 frozen base policy + zero wrist-wrench residual actor + random Twin-Q bootstrap
@@ -15,14 +15,14 @@ ForceSmolVLA SFT
 ## 1. 目录与环境
 
 ```bash
-export FORCESMOLVLA_ROOT="$(pwd)"
+export FORCERFT_ROOT="$(pwd)"
 export FR3_WS=/home/rlc123/fr3_client_ws
 export TASK_ID=task2
-export TASK_OUTPUT_ROOT="$FORCESMOLVLA_ROOT/outputs/$TASK_ID"
-export ONLINE_CAPTURE_ROOT="$FORCESMOLVLA_ROOT/datasets/${TASK_ID}_forcerft_online"
+export TASK_OUTPUT_ROOT="$FORCERFT_ROOT/outputs/$TASK_ID"
+export ONLINE_CAPTURE_ROOT="$FORCERFT_ROOT/datasets/${TASK_ID}_forcerft_online"
 export RAW_ROOT="$FR3_WS/datasets/$TASK_ID"
-export LEROBOT_DATASET="$FORCESMOLVLA_ROOT/datasets/${TASK_ID}_lerobotv3"
-export MODEL_PYTHON=/home/rlc123/anaconda3/envs/forcesmolvla/bin/python
+export LEROBOT_DATASET="$FORCERFT_ROOT/datasets/${TASK_ID}_lerobotv3"
+export MODEL_PYTHON="$(command -v python)"
 export ROBOT_PYTHON="$FR3_WS/.venv/bin/python"
 ```
 
@@ -58,18 +58,20 @@ export ROS_DOMAIN_ID=30 ROS_LOCALHOST_ONLY=0
 
 ```bash
 "$MODEL_PYTHON" tools/convert_franka_raw_to_lerobot_v3.py \
-  --input-root "$RAW_ROOT" \
+  --raw-root "$RAW_ROOT" \
   --output-root "$LEROBOT_DATASET" \
-  --repo-id "${TASK_ID}_lerobotv3"
+  --repo-id "${TASK_ID}_lerobotv3" \
+  --development-only \
+  --runtime-spec "configs/converter_runtime_spec.${TASK_ID}.json"
 ```
 
 转换结果必须包含双相机、state7、wrench6、action7、episode/frame 索引、split、conversion manifest 和 normalizer manifest。normalization 在训练输入处只应用一次；已归一化数据不得再次归一化。
 
-## 4. ForceSmolVLA 全量 SFT
+## 4. ForcePrior 全量 SFT
 
 ```bash
 export PYTHONHASHSEED=42 CUBLAS_WORKSPACE_CONFIG=:4096:8
-"$MODEL_PYTHON" tools/train_forcesmolvla_sft.py \
+"$MODEL_PYTHON" tools/train_forceprior_sft.py \
   --dataset "$LEROBOT_DATASET" \
   --config "configs/train/${TASK_ID}.json" \
   --task-id "$TASK_ID" \
@@ -79,7 +81,7 @@ export PYTHONHASHSEED=42 CUBLAS_WORKSPACE_CONFIG=:4096:8
 最终 SFT checkpoint：
 
 ```text
-outputs/{task_id}/sft/checkpoints/forcesmolvla_sft_step_010000
+outputs/{task_id}/sft/checkpoints/forceprior_sft_step_010000
 ```
 
 它包含 Actor、optimizer/scheduler、RNG、sampler 和运行 manifests。需要续训时使用该 CLI 的 `--resume`；不要只加载 `model.safetensors` 后重建 optimizer。
@@ -102,14 +104,19 @@ outputs/{task_id}/sft/checkpoints/forcesmolvla_sft_step_010000
 "$MODEL_PYTHON" tools/reward_classifier/train_reward_classifier.py \
   --task-id "$TASK_ID" --output-root "$TASK_OUTPUT_ROOT" \
   --dataset-root "$LEROBOT_DATASET" \
-  --reviewed-labels "$FORCESMOLVLA_ROOT/labels/${TASK_ID}_reward_frame_labels.json" \
+  --reviewed-labels "$FORCERFT_ROOT/labels/${TASK_ID}_reward_frame_labels.json" \
   prepare-cache --cache-dir /absolute/path/to/reward_cache
 
 "$MODEL_PYTHON" tools/reward_classifier/train_reward_classifier.py \
   --task-id "$TASK_ID" --output-root "$TASK_OUTPUT_ROOT" \
   --dataset-root "$LEROBOT_DATASET" \
-  --reviewed-labels "$FORCESMOLVLA_ROOT/labels/${TASK_ID}_reward_frame_labels.json" \
+  --reviewed-labels "$FORCERFT_ROOT/labels/${TASK_ID}_reward_frame_labels.json" \
   train --cache-dir /absolute/path/to/reward_cache
+
+"$MODEL_PYTHON" tools/reward_classifier/calibrate_reward_detector.py \
+  --task-id "$TASK_ID" --output-root "$TASK_OUTPUT_ROOT" \
+  --dataset-root "$LEROBOT_DATASET" \
+  --cache-dir /absolute/path/to/reward_cache
 ```
 
 production detector checkpoint 固定在：
@@ -125,7 +132,7 @@ outputs/{task_id}/reward_classifier/checkpoints/best/best_checkpoint.msgpack
   --task-id "$TASK_ID" --output-root "$TASK_OUTPUT_ROOT" \
   --dataset-root "$LEROBOT_DATASET" \
   --frozen-base-policy-checkpoint \
-    "outputs/$TASK_ID/sft/checkpoints/forcesmolvla_sft_step_010000"
+    "outputs/$TASK_ID/sft/checkpoints/forceprior_sft_step_010000"
 ```
 
 输出：
@@ -190,7 +197,7 @@ takeover、release 与 reset 继续作为信用截断边界。因此 Q 是自主
 ```
 
 在线 native episode 固定保存在仓库数据目录下，例如第一个 session 为
-`$FORCESMOLVLA_ROOT/datasets/{task_id}_forcerft_online_001`；不写入机器人工作区的数据目录。
+`$FORCERFT_ROOT/datasets/{task_id}_forcerft_online_001`；不写入机器人工作区的数据目录。
 省略 `--capture-output-root` 时也使用这一仓库内默认目录。
 
 Unified server 每次启动恢复一个 residual Actor/Twin-Q checkpoint，并在完成 checkpoint/replay 完整性验证后立即启动独立 learner worker。只有累计至少 1000 条唯一、正式接纳并实际物化为 `critic_td_valid` 的自主 policy transition，且这些 TD 来自至少 3 条正式 episode，才一次性完成 256 个 Twin-Q warm-up optimizer step并进入联合训练。human BC 行不进入 Critic，也不增加 TD 行数、贡献 episode 数或 cycle 额度。每个完成的联合 learner cycle固定为 2 次 Twin-Q optimizer update、2 次对应的 target Polyak update 和 1 次 residual Actor update 尝试；Actor 因无有效支持而跳过时仍完成并消费本 cycle。warm-up 不计入联合 cycle。训练不读取 demonstration 图像或运行第二份 base policy/Flow sampler。

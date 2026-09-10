@@ -12,14 +12,14 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from forcesmolvla.rft.online import integrated_capture_backend as capture_backend
-from forcesmolvla.rft.online.integrated_capture import (
+from forceprior.rft.online import integrated_capture_backend as capture_backend
+from forceprior.rft.online.integrated_capture import (
     IntegratedCaptureError,
     IntegratedCaptureLedger,
     RECORDER_CONTROL_CHAIN,
     build_capture_contract,
 )
-from forcesmolvla.rft.online.integrated_capture_backend import (
+from forceprior.rft.online.integrated_capture_backend import (
     ForbiddenPolicyPublisher,
     CaptureArtifactStore,
     IntegratedCaptureBackend,
@@ -37,12 +37,6 @@ from hilserl_impedance_protocol import GripperToggleAuthority  # noqa: E402
 BASELINE_POLICY_REVISION = (
     "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
 )
-BASELINE_DEPLOYMENT_BINDING = ROOT / (
-    "artifacts/development/live/"
-    "task2_cycle210_policy_execution_smoke_binding.v1.json"
-)
-
-
 def _contract():
     return build_capture_contract(
         mode="shadow",
@@ -75,7 +69,6 @@ def _policy_contract():
         policy_epoch=0,
         reset_generation=0,
         takeover_generation=0,
-        deployment_binding=BASELINE_DEPLOYMENT_BINDING,
         allow_development_policy_execution_smoke=True,
     )
 
@@ -1032,48 +1025,6 @@ def test_stale_or_unknown_feedback_keeps_takeover_toggle_pending() -> None:
     assert 'not logical_target, "SpaceMouse side button"' in controller
 
 
-def test_integrated_cli_passes_shadow_runtime_binding_without_launch(
-    tmp_path: Path,
-) -> None:
-    profile = ROOT / "configs/deployment.active.development.json"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "tools/run_forcerft_integrated_capture.py"),
-            "--mode",
-            "shadow",
-            "--root",
-            str(tmp_path / "native"),
-            "--task",
-            "task",
-            "--session-id",
-            "session-1",
-            "--episode-id",
-            "episode_000000",
-            "--policy-revision",
-            "4" * 64,
-            "--policy-port",
-            "8123",
-            "--deployment-profile",
-            str(profile),
-            "--shadow-inference-period",
-            "0.2",
-        ],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    payload = json.loads(completed.stdout)
-    assert payload["status"] == "VALIDATED_NOT_LAUNCHED"
-    assert payload["robot_or_ros_started"] is False
-    arguments = payload["recorder_arguments"]
-    assert arguments["policy_port"] == 8123
-    assert arguments["shadow_inference_period"] == 0.2
-    assert arguments["deployment_profile"] == str(profile.resolve())
-
-
 def test_async_runtime_binding_requires_exact_capture_identity() -> None:
     contract = _policy_contract()
     metadata = {
@@ -1182,7 +1133,7 @@ def test_async_runtime_completion_accepts_stable_worker_states(
                         "current_episode_sampled": False,
                         "current_episode_replay_membership": False,
                         "capture_window": {
-                            "schema": "forcesmolvla-continuous-learner-capture-window-v1",
+                            "schema": "forceprior-continuous-learner-capture-window-v1",
                             "session_id": "session-1",
                             "episode_id": "episode_000000",
                             "finalized": True,

@@ -7,7 +7,7 @@ ROOT = Path(__file__).parents[1]
 def test_v42_freezes_inheritance_innovation_and_online_scope():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     required = (
-        "ForceSmolVLA SFT",
+        "ForcePrior SFT",
         "自主 proposal Critic warm-up",
         "持续在线 Actor/Learner",
         "1000 条有效自主 policy TD",

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from forcesmolvla.rft.online import residual_actor_critic_runtime as runtime
-from forcesmolvla.rft.online.residual_actor_critic_runtime import (
+from forceprior.rft.online import residual_actor_critic_runtime as runtime
+from forceprior.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
     ONLINE_ADAPTATION_DIRECTORY_NAME,
     training_checkpoint_path,

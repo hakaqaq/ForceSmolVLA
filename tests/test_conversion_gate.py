@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from forcesmolvla.conversion_gate import formal_conversion_preflight
+from forceprior.conversion_gate import formal_conversion_preflight
 
 
 ROOT = Path(__file__).parents[1]

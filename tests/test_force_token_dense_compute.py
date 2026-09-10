@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import torch
 
-from forcesmolvla.force_token import (
+from forceprior.force_token import (
     CAMERA1_SPAN,
     CAMERA2_SPAN,
     FORCE_SLOT_INDEX,
@@ -17,7 +17,7 @@ from forcesmolvla.force_token import (
     ForceTokenDenseCompute,
     module_state_sha256,
 )
-from forcesmolvla.modeling_forcesmolvla import ForceVLAFlowMatching
+from forceprior.modeling_forceprior import ForceVLAFlowMatching
 
 
 def _context(values: torch.Tensor, valid: torch.Tensor | None = None) -> ForceContext:

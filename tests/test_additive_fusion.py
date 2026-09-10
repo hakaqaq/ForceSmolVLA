@@ -3,12 +3,12 @@ import math
 
 import torch
 
-from forcesmolvla.configuration_forcesmolvla import (
+from forceprior.configuration_forceprior import (
     FORCE_TOKEN_MOE,
     FORCE_TOKEN_MOE_ADDITIVE,
     load_force_config,
 )
-from forcesmolvla.force_token import ForceActionAdapter, ForceContext, module_state_sha256
+from forceprior.force_token import ForceActionAdapter, ForceContext, module_state_sha256
 
 
 ROOT = Path(__file__).parents[1]

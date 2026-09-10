@@ -5,6 +5,7 @@ assets/*
 assets/reward_classifier/*
 !assets/reward_classifier/resnet10_manifest.json
 datasets/
+labels/
 artifacts/
 outputs/
 graphify-out/

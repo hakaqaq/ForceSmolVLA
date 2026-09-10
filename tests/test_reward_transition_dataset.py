@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
-from forcesmolvla.rft.detector_reward_transitions import load_training_transitions
+from forceprior.rft.detector_reward_transitions import load_training_transitions
 
 
 ROOT = Path(__file__).resolve().parents[1]

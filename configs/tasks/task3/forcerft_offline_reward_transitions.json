@@ -1,7 +1,7 @@
 {
   "action_contract": {
     "action_horizon": 50,
-    "delta_owner": "forcesmolvla.action_delta.ActionDeltaProcessor",
+    "delta_owner": "forceprior.action_delta.ActionDeltaProcessor",
     "executed_slots": "first_executed_steps",
     "features": 7,
     "normalizer": "frozen_actor_action_normalizer",
@@ -21,7 +21,7 @@
     "trigger_timestamp": "current_confirming_frame"
   },
   "inputs": {
-    "actor_checkpoint": "outputs/task3/sft/checkpoints/forcesmolvla_sft_step_010000",
+    "actor_checkpoint": "outputs/task3/sft/checkpoints/forceprior_sft_step_010000",
     "adapter_source": "tools/reward_classifier/conrft_lerobot_v3_adapter.py",
     "classifier_checkpoint": "outputs/task3/reward_classifier/checkpoints/best/best_checkpoint.msgpack",
     "classifier_training_source": "tools/reward_classifier/train_reward_classifier.py",
@@ -44,7 +44,7 @@
     "reward_source": "frozen_classifier_detector",
     "terminal_source": "causal_current_confirming_frame"
   },
-  "schema": "forcesmolvla.forcerft_offline_reward_transition_materialization",
+  "schema": "forceprior.forcerft_offline_reward_transition_materialization",
   "status": "final",
   "task_id": "task3",
   "temporal_contract": {

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch
 
-from forcesmolvla.checkpoint import (
+from forceprior.checkpoint import (
     export_development_actor_checkpoint,
     load_sft_training_state,
     optimizer_state_sha256,
@@ -18,9 +18,9 @@ from forcesmolvla.checkpoint import (
     validate_training_payload_contract,
     write_development_artifact_manifest,
 )
-from forcesmolvla.configuration_forcesmolvla import OFFLINE_FULL_FINETUNE
-from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
-from forcesmolvla.router_training import SerializableUniformSampler
+from forceprior.configuration_forceprior import OFFLINE_FULL_FINETUNE
+from forceprior.modeling_forceprior import ForcePriorPolicy
+from forceprior.router_training import SerializableUniformSampler
 
 
 def _artifact(tmp_path: Path):
@@ -45,9 +45,9 @@ def test_development_manifest_accepts_training_checkpoint_type(tmp_path):
     manifest = write_development_artifact_manifest(
         tmp_path,
         metadata={"optimizer_update": 1},
-        artifact_type="forcesmolvla_training_checkpoint",
+        artifact_type="forceprior_training_checkpoint",
     )
-    assert manifest["artifact_type"] == "forcesmolvla_training_checkpoint"
+    assert manifest["artifact_type"] == "forceprior_training_checkpoint"
     validate_force_artifact_manifest(tmp_path, artifact_use="development")
 
 
@@ -55,11 +55,11 @@ def test_training_payload_contract_requires_bound_files_and_constructor(tmp_path
     contract = {
         "acceptance_status": "development_only",
         "formal_eligible": False,
-        "artifact_type": "forcesmolvla_training_checkpoint",
+        "artifact_type": "forceprior_training_checkpoint",
         "training_stage": OFFLINE_FULL_FINETUNE,
         "required_payloads": ["model.safetensors", "base_assets/smolvlm_constructor"],
     }
-    contract_path = tmp_path / "manifests/training_checkpoint_contract.development.json"
+    contract_path = tmp_path / "manifests/training_checkpoint_contract.json"
     contract_path.parent.mkdir(parents=True)
     contract_path.write_text(json.dumps(contract), encoding="utf-8")
     (tmp_path / "model.safetensors").write_bytes(b"model")
@@ -80,7 +80,7 @@ def test_actor_checkpoint_export_does_not_duplicate_candidate_payload(tmp_path):
     (parent / "config.json").write_text("{}", encoding="utf-8")
     (parent / "model.safetensors").write_bytes(b"parent")
     (parent / "candidate.json").write_text("{}", encoding="utf-8")
-    contract_path = parent / "manifests/training_checkpoint_contract.development.json"
+    contract_path = parent / "manifests/training_checkpoint_contract.json"
     contract_path.parent.mkdir(parents=True)
     contract_path.write_text(json.dumps({
         "schema_version": "1.0",
@@ -89,7 +89,7 @@ def test_actor_checkpoint_export_does_not_duplicate_candidate_payload(tmp_path):
             "config.json",
             "model.safetensors",
             "base_assets/smolvlm_constructor",
-            "manifests/training_checkpoint_contract.development.json",
+            "manifests/training_checkpoint_contract.json",
             "candidate.json",
         ],
     }), encoding="utf-8")
@@ -113,7 +113,7 @@ def test_actor_checkpoint_export_does_not_duplicate_candidate_payload(tmp_path):
     )
 
     exported = json.loads(
-        (destination / "manifests/training_checkpoint_contract.development.json").read_text()
+        (destination / "manifests/training_checkpoint_contract.json").read_text()
     )
     assert exported["required_payloads"].count("candidate.json") == 1
     validate_training_payload_contract(destination)
@@ -148,7 +148,7 @@ def test_force_checkpoint_requires_local_strict_arguments(tmp_path, kwargs):
 
 def test_force_policy_from_pretrained_rejects_remote_identifier_before_hub_call():
     with pytest.raises(RuntimeError, match="LOCAL_DIRECTORY"):
-        ForceSmolVLAPolicy.from_pretrained("owner/remote-repo")
+        ForcePriorPolicy.from_pretrained("owner/remote-repo")
 
 
 def test_trainability_manifest_has_exact_names_shapes_and_hash():

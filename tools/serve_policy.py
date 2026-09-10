@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ForceSmolVLA model inference service.
+"""ForcePrior model inference service.
 
 This process owns PyTorch/LeRobot/checkpoint loading only.  It never imports
 ROS, opens cameras, connects to Franky, or sends robot commands.
@@ -22,24 +22,24 @@ from typing import Any
 import numpy as np
 import torch
 
-from forcesmolvla.checkpoint import sha256_file
-from forcesmolvla.action_delta import (
+from forceprior.checkpoint import sha256_file
+from forceprior.action_delta import (
     ActionDeltaProcessor,
     ActionSafetyProfile,
     MODEL_GRIPPER_CANDIDATE_RANGE_M,
     decode_binary_gripper_width,
 )
-from forcesmolvla.inference import (
+from forceprior.inference import (
     CLOCK_DOMAIN,
     HORIZON,
     PROTOCOL_VERSION,
     load_checkpoint_inference_contract,
     prepare_policy_inputs,
 )
-from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
-from forcesmolvla.rules import load_and_validate_rulespec
-from forcesmolvla.training_data import load_checkpoint_runtime_artifacts
-from forcesmolvla.rft.online.transition_authority import (
+from forceprior.modeling_forceprior import ForcePriorPolicy
+from forceprior.rules import load_and_validate_rulespec
+from forceprior.training_data import load_checkpoint_runtime_artifacts
+from forceprior.rft.online.transition_authority import (
     ONLINE_SEMANTICS_VERSION,
     normalized_behavior_residual,
 )
@@ -54,7 +54,7 @@ def source_tree_sha256(root: Path) -> str:
     """Hash the exact local Python implementation used by model inference."""
     root = root.resolve()
     files = [root / "tools/serve_policy.py"]
-    files.extend(sorted((root / "src/forcesmolvla").glob("*.py")))
+    files.extend(sorted((root / "src/forceprior").glob("*.py")))
     files.extend(sorted((root / "vendor/lerobot/src/lerobot/policies/smolvla").glob("*.py")))
     mapping = {
         str(path.relative_to(root)): sha256_file(path)
@@ -216,7 +216,7 @@ def development_live_contract(contract: Any, binding: dict[str, Any] | None) -> 
 
 
 def bind_policy_action_safety(
-    policy: ForceSmolVLAPolicy,
+    policy: ForcePriorPolicy,
     rulespec: dict[str, Any],
     *,
     rules_sha256: str,
@@ -300,7 +300,7 @@ class InferenceEngine:
         self.contract = development_live_contract(
             self.checkpoint_contract, self.deployment_binding
         )
-        self.policy = ForceSmolVLAPolicy.from_pretrained(
+        self.policy = ForcePriorPolicy.from_pretrained(
             self.checkpoint,
             local_files_only=True,
             strict=True,
@@ -556,7 +556,7 @@ class InferenceEngine:
 
 
 class RequestHandler(BaseHTTPRequestHandler):
-    server_version = "ForceSmolVLA/1"
+    server_version = "ForcePrior/1"
 
     @property
     def engine(self) -> InferenceEngine:
@@ -656,8 +656,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--deployment-profile",
         type=Path,
-        default=root / "configs/deployment.active.development.json",
-        help="shared task/checkpoint/data deployment profile",
+        help="optional explicit task/checkpoint/data deployment profile",
     )
     parser.add_argument(
         "--checkpoint",
@@ -694,18 +693,35 @@ def parse_args() -> argparse.Namespace:
         help="optional explicit SHA256 override; defaults to the selected binding file",
     )
     args = parser.parse_args()
-    try:
-        profile = load_deployment_profile(args.deployment_profile, root)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
-        parser.error(str(error))
+    profile = None
+    if args.deployment_profile is not None:
+        try:
+            profile = load_deployment_profile(args.deployment_profile, root)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            parser.error(str(error))
     if args.checkpoint is None:
+        if profile is None:
+            parser.error("--checkpoint or --deployment-profile is required")
         args.checkpoint = profile["checkpoint"]
     if args.allow_development_robot_execution:
         if args.rulespec is None:
+            if profile is None:
+                parser.error(
+                    "--rulespec is required without --deployment-profile"
+                )
             args.rulespec = profile["rulespec"]
         if args.deployment_binding is None:
+            if profile is None:
+                parser.error(
+                    "--deployment-binding is required without --deployment-profile"
+                )
             args.deployment_binding = profile["deployment_binding"]
         if args.trusted_deployment_binding_sha256 is None:
+            if profile is None:
+                parser.error(
+                    "--trusted-deployment-binding-sha256 is required without "
+                    "--deployment-profile"
+                )
             args.trusted_deployment_binding_sha256 = profile[
                 "deployment_binding_sha256"
             ]
@@ -722,7 +738,7 @@ def parse_args() -> argparse.Namespace:
     if args.host not in {"127.0.0.1", "localhost"}:
         parser.error("only loopback binding is allowed until a clock-map protocol is approved")
     if args.device != "cuda":
-        parser.error("ForceSmolVLA inference is GPU-only")
+        parser.error("ForcePrior inference is GPU-only")
     if not torch.cuda.is_available():
         parser.error("CUDA is unavailable")
     return args
@@ -746,7 +762,7 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
     server.engine = engine  # type: ignore[attr-defined]
     print(
-        f"[model] ForceSmolVLA ready checkpoint={engine.checkpoint} "
+        f"[model] ForcePrior ready checkpoint={engine.checkpoint} "
         f"acceptance={engine.metadata['checkpoint_acceptance_status']}",
         flush=True,
     )

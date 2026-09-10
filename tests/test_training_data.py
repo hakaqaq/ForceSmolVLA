@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 import torch
 
-from forcesmolvla.normalizer import CartesianNormalizerBundle, FrozenFeatureNormalizer
-from forcesmolvla.training_data import load_normalizer_bundle, prepare_training_sample
+from forceprior.normalizer import CartesianNormalizerBundle, FrozenFeatureNormalizer
+from forceprior.training_data import load_normalizer_bundle, prepare_training_sample
 
 
 def _normalizer(name, width):

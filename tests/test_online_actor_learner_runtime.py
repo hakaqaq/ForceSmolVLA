@@ -8,7 +8,7 @@ import pytest
 import torch
 import yaml
 
-from forcesmolvla.rft.critic import (
+from forceprior.rft.critic import (
     CRITIC_ACTION_REPRESENTATION,
     CRITIC_CANDIDATE_FEASIBILITY,
     CRITIC_INPUT_SPEC,
@@ -16,7 +16,7 @@ from forcesmolvla.rft.critic import (
     build_twin_q,
     state_exact,
 )
-from forcesmolvla.rft.online.residual_actor_critic_runtime import (
+from forceprior.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
     InferencePriorityCoordinator,
     ONLINE_ADAPTATION_DIRECTORY_NAME,
@@ -26,13 +26,13 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (
     retain_latest_training_checkpoints,
     select_resume_or_bootstrap_checkpoint,
 )
-from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (
+from forceprior.rft.online.residual_actor_critic_checkpoint import (
     BOOTSTRAP_CHECKPOINT_KIND,
     TRAINING_CHECKPOINT_KIND,
     save_residual_actor_critic_checkpoint,
 )
-from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
-from forcesmolvla.rft.residual_actor import make_residual_actor_pair
+from forceprior.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
+from forceprior.rft.residual_actor import make_residual_actor_pair
 
 
 ROOT = Path(__file__).parents[1]
@@ -132,7 +132,7 @@ def write_checkpoint(
             "per_episode_critic_row_counts": episode_counts,
             "replay_generation": len(episode_counts),
             "training_credit_ledger": {
-                "schema": "forcesmolvla-td-cycle-credit-ledger-v1",
+                "schema": "forceprior-td-cycle-credit-ledger-v1",
                 "new_td_rows_per_cycle": 8,
                 "admissions": credit_admissions,
                 "in_flight_cycle": None,

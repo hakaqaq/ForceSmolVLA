@@ -1,6 +1,6 @@
 import torch
 
-from forcesmolvla.force_token import (
+from forceprior.force_token import (
     ForceContext,
     ForceCrossAttention,
     PreparedForceContextBinding,

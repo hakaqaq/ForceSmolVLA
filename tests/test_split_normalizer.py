@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from forcesmolvla.split import EpisodeSplit, fit_train_only_normalizer, split_episodes
+from forceprior.split import EpisodeSplit, fit_train_only_normalizer, split_episodes
 
 
 def test_episode_split_is_deterministic_and_disjoint():

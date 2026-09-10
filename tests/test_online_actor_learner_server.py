@@ -12,7 +12,7 @@ import torch
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import serve_forcerft_residual_actor_critic as learner_server  # noqa: E402
-from forcesmolvla.rft.critic import (  # noqa: E402
+from forceprior.rft.critic import (  # noqa: E402
     CRITIC_ACTION_REPRESENTATION,
     CRITIC_CANDIDATE_FEASIBILITY,
     CRITIC_TD_SOURCE_MODE,
@@ -22,22 +22,22 @@ from serve_forcerft_residual_actor_critic import (  # noqa: E402
     ResidualActorCriticLearner,
     _select_deployed_actor_for_resume,
 )
-from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+from forceprior.rft.online.residual_actor_critic_runtime import (  # noqa: E402
     ONLINE_ADAPTATION_DIRECTORY_NAME,
     ResidualActorCriticSchedule,
 )
-from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
+from forceprior.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
     CANDIDATE_CHECKPOINT_KIND,
 )
-from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
+from forceprior.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
     RevisionRecord,
     RevisionState,
 )
-from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
+from forceprior.rft.online.transition_authority import (  # noqa: E402
     ONLINE_SEMANTICS_VERSION,
 )
-from forcesmolvla.rft.residual_actor import (  # noqa: E402
+from forceprior.rft.residual_actor import (  # noqa: E402
     RESIDUAL_BOUND_MODE_SCALAR,
 )
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://forcesmolvla.local/schemas/ack_residual_transition.v2.schema.json",
-  "title": "ForceSmolVLA ACK-residual authoritative transition",
+  "$id": "https://forceprior.local/schemas/ack_residual_transition.v2.schema.json",
+  "title": "ForcePrior ACK-residual authoritative transition",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -23,7 +23,7 @@
     "integrity"
   ],
   "properties": {
-    "schema_version": {"const": "forcesmolvla_ack_residual_transition.v2"},
+    "schema_version": {"const": "forceprior_ack_residual_transition.v2"},
     "identity": {
       "type": "object",
       "additionalProperties": false,

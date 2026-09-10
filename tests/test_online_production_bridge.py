@@ -8,17 +8,17 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from forcesmolvla.rft.online import production_bridge as bridge_module
-from forcesmolvla.rft.online import replay_training
-from forcesmolvla.raw_to_lerobot_v3 import PreparedEpisode
-from forcesmolvla.rft.detector_reward_transitions import (
+from forceprior.rft.online import production_bridge as bridge_module
+from forceprior.rft.online import replay_training
+from forceprior.raw_to_lerobot_v3 import PreparedEpisode
+from forceprior.rft.detector_reward_transitions import (
     causal_detection_trace,
     detector_macro_transitions,
 )
-from forcesmolvla.rft.online.gripper_authority import GripperGeneration
-from forcesmolvla.rft.online.policy_lineage import InitialGripperAuthority
-from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
-from forcesmolvla.rft.online.production_bridge import (
+from forceprior.rft.online.gripper_authority import GripperGeneration
+from forceprior.rft.online.policy_lineage import InitialGripperAuthority
+from forceprior.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
+from forceprior.rft.online.production_bridge import (
     BridgeConfig,
     BridgeDigestCollisionError,
     EpisodeMaterialization,
@@ -32,7 +32,7 @@ from forcesmolvla.rft.online.production_bridge import (
 
 
 ROOT = Path(__file__).parents[1]
-CONFIG = ROOT / "configs/online_replay_production_bridge.v1.development.yaml"
+CONFIG = ROOT / "configs/online_replay_production_bridge.v1.yaml"
 REAL_EPISODE = Path(
     "/home/rlc123/fr3_client_ws/datasets/task2/episodes/episode_000018"
 )
@@ -93,7 +93,7 @@ def test_continuous_learner_seal_accepts_cumulative_window_not_old_step_whitelis
         "learner_actor_steps": 3,
         "learner_actor_update_attempts": 5,
         "learner_capture_window": {
-            "schema": "forcesmolvla-continuous-learner-capture-window-v1",
+            "schema": "forceprior-continuous-learner-capture-window-v1",
             "session_id": "capture_001",
             "episode_id": "episode_000000",
             "pinned_actor_revision": "actor-cycle-100",
@@ -435,9 +435,9 @@ def _integrated_shadow_fixture(episode: Path) -> None:
     _write_json(
         dataset / "integrated_capture_session.json",
         {
-            "schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+            "schema": "forceprior-stage3-integrated-shadow-backend-v1",
             "contract": {
-                "schema": "forcesmolvla-stage3-integrated-capture-v1",
+                "schema": "forceprior-stage3-integrated-capture-v1",
                 "mode": "shadow",
                 "identity": identity,
                 "actual_action_source": "human",
@@ -482,7 +482,7 @@ def _integrated_shadow_fixture(episode: Path) -> None:
     t_ref_ns = 1_101_000_000
     observation_id = f"{episode.name}:observation:000000"
     observation = {
-        "schema": "forcesmolvla-stage3-integrated-capture-v1",
+        "schema": "forceprior-stage3-integrated-capture-v1",
         **identity,
         "observation_id": observation_id,
         "t_ref_ns": t_ref_ns,
@@ -511,7 +511,7 @@ def _integrated_shadow_fixture(episode: Path) -> None:
         },
     }
     request = {
-        "schema": "forcesmolvla-stage3-policy-lineage-v1",
+        "schema": "forceprior-stage3-policy-lineage-v1",
         **identity,
         "observation_id": observation_id,
         "request_id": "request-1",
@@ -523,7 +523,7 @@ def _integrated_shadow_fixture(episode: Path) -> None:
     }
     result = {
         **request,
-        "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+        "lineage_schema": "forceprior-stage3-policy-lineage-v1",
         "result_id": "policy-result:request-1",
         "result_recorded_monotonic_ns": 1_103_000_000,
         "shadow_proposal": True,
@@ -531,7 +531,7 @@ def _integrated_shadow_fixture(episode: Path) -> None:
     }
     proposal = {
         **result,
-        "schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+        "schema": "forceprior-stage3-integrated-shadow-backend-v1",
         "actual_action_source": "human",
         "policy_inference": True,
         "policy_execution": False,
@@ -563,7 +563,7 @@ def _integrated_shadow_fixture(episode: Path) -> None:
         stamp = int(ack["payload"]["request_stamp_ns"])
         human_acks.append(
             {
-                "schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+                "schema": "forceprior-stage3-integrated-shadow-backend-v1",
                 **identity,
                 "ack_id": f"human-ack:{stamp}",
                 "observation_id": ack_observation,
@@ -622,7 +622,7 @@ def _integrated_shadow_fixture(episode: Path) -> None:
     _write_json(
         stream_root / "policy_shadow_camera_reconciliation.json",
         {
-            "schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+            "schema": "forceprior-stage3-integrated-shadow-backend-v1",
             "native_episode": str(episode),
             "records": camera_records,
         },
@@ -631,9 +631,9 @@ def _integrated_shadow_fixture(episode: Path) -> None:
     _write_json(
         stream_root / "policy_shadow_episode_seal.json",
         {
-            "schema": "forcesmolvla-stage3-integrated-capture-v1",
+            "schema": "forceprior-stage3-integrated-capture-v1",
             **identity,
-            "backend_schema": "forcesmolvla-stage3-integrated-shadow-backend-v1",
+            "backend_schema": "forceprior-stage3-integrated-shadow-backend-v1",
             "seal_id": "shadow-seal:fixture",
             "sealed_monotonic_ns": 1_500_000_000,
             "terminal_observation_id": observation_id,
@@ -690,9 +690,9 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
     _write_json(
         dataset / "integrated_capture_session.json",
         {
-            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "schema": "forceprior-stage3-integrated-policy-execution-backend-v1",
             "contract": {
-                "schema": "forcesmolvla-stage3-integrated-capture-v1",
+                "schema": "forceprior-stage3-integrated-capture-v1",
                 "mode": "policy-execute",
                 "identity": identity,
                 "actual_action_source": "policy",
@@ -791,7 +791,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
         )
         safe["forcesmolvla_chunk_selection"] = {
             **lineage,
-            "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "lineage_schema": "forceprior-stage3-policy-lineage-v1",
             "request_clock_domain_id": "upper_host_monotonic_ns",
             "request_recorded_monotonic_ns": lineage["t_ref_ns"] + 1_000_000,
             "result_recorded_monotonic_ns": lineage["t_ref_ns"] + 2_000_000,
@@ -922,7 +922,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
         t_ref_ns = 1_101_000_000 + index * 100_000_000
         observations.append(
             {
-                "schema": "forcesmolvla-stage3-integrated-capture-v1",
+                "schema": "forceprior-stage3-integrated-capture-v1",
                 **identity,
                 "policy_epoch": generation,
                 "takeover_generation": generation,
@@ -959,7 +959,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
     for sequence, lineage in lineage_by_sequence.items():
         observation_index = 0 if sequence == 1 else 2
         request = {
-            "schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "schema": "forceprior-stage3-policy-lineage-v1",
             **identity,
             **lineage,
             "observation_id": f"{episode.name}:observation:{observation_index:06d}",
@@ -969,7 +969,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
         result = {
             **request,
             "result_id": lineage["result_id"],
-            "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "lineage_schema": "forceprior-stage3-policy-lineage-v1",
             "result_recorded_monotonic_ns": lineage["t_ref_ns"] + 2_000_000,
             "policy_execution_candidate": True,
             "shadow_proposal": False,
@@ -977,7 +977,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
         }
         proposal = {
             **result,
-            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "schema": "forceprior-stage3-integrated-policy-execution-backend-v1",
             "actual_action_source": "policy",
             "policy_inference": True,
             "policy_execution": True,
@@ -990,7 +990,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
         }
         chunk = {
             **result,
-            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "schema": "forceprior-stage3-integrated-policy-execution-backend-v1",
             "executed_action_source": "policy",
             "formal_replay": False,
             "real_online_r": False,
@@ -1015,7 +1015,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
         feedback = sensor_rows["gripper_state"][observation_indices[observation_index]]
         gripper = {
             **lineage,
-            "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "lineage_schema": "forceprior-stage3-policy-lineage-v1",
             "request_clock_domain_id": "upper_host_monotonic_ns",
             "request_recorded_monotonic_ns": lineage["t_ref_ns"] + 1_000_000,
             "result_recorded_monotonic_ns": lineage["t_ref_ns"] + 2_000_000,
@@ -1072,10 +1072,10 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
             "upper_receive_monotonic_ns": integrated_ack_receive_ns,
         }
         transition = {
-            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "schema": "forceprior-stage3-integrated-policy-execution-backend-v1",
             **identity,
             **lineage,
-            "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "lineage_schema": "forceprior-stage3-policy-lineage-v1",
             "request_clock_domain_id": "upper_host_monotonic_ns",
             "request_recorded_monotonic_ns": lineage["t_ref_ns"] + 1_000_000,
             "result_recorded_monotonic_ns": lineage["t_ref_ns"] + 2_000_000,
@@ -1113,7 +1113,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
 
     intervention_rows = [
         {
-            "schema": "forcesmolvla-stage3-integrated-capture-v1",
+            "schema": "forceprior-stage3-integrated-capture-v1",
             **identity,
             "policy_epoch": 1,
             "takeover_generation": 1,
@@ -1136,7 +1136,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
             },
         },
         {
-            "schema": "forcesmolvla-stage3-integrated-capture-v1",
+            "schema": "forceprior-stage3-integrated-capture-v1",
             **identity,
             "policy_epoch": 1,
             "takeover_generation": 1,
@@ -1193,7 +1193,7 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
     _write_json(
         stream_root / "policy_execute_camera_reconciliation.json",
         {
-            "schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "schema": "forceprior-stage3-integrated-policy-execution-backend-v1",
             "native_episode": str(episode),
             "records": camera_records,
         },
@@ -1201,9 +1201,9 @@ def _integrated_policy_execution_fixture(episode: Path) -> None:
     _write_json(
         stream_root / "policy_execute_episode_seal.json",
         {
-            "schema": "forcesmolvla-stage3-integrated-capture-v1",
+            "schema": "forceprior-stage3-integrated-capture-v1",
             **identity,
-            "backend_schema": "forcesmolvla-stage3-integrated-policy-execution-backend-v1",
+            "backend_schema": "forceprior-stage3-integrated-policy-execution-backend-v1",
             "technical_seal": "complete",
             "seal_id": "policy-execute-seal:fixture",
             "sealed_monotonic_ns": 1_600_000_000,
@@ -1325,7 +1325,7 @@ def _add_canceled_policy_request(
                 "proposal_id": f"policy-proposal:{request_id}",
             }
         )
-        if value.get("schema") == "forcesmolvla-stage3-policy-lineage-v1" and (
+        if value.get("schema") == "forceprior-stage3-policy-lineage-v1" and (
             "result_recorded_monotonic_ns" not in value
         ):
             value.pop("result_id")
@@ -1585,7 +1585,7 @@ def test_config_is_json_compatible_yaml_and_development_only() -> None:
 
 def test_online_materialization_uses_100ms_camera_age_boundary(tmp_path: Path) -> None:
     payload = json.loads(
-        (ROOT / "configs/converter_runtime_spec.task2.development.json").read_text(
+        (ROOT / "configs/converter_runtime_spec.task2.json").read_text(
             encoding="utf-8"
         )
     )
@@ -1600,7 +1600,7 @@ def test_online_materialization_uses_100ms_camera_age_boundary(tmp_path: Path) -
 
 
 def test_core_source_has_no_ros_network_robot_or_cuda_imports() -> None:
-    source = (ROOT / "src/forcesmolvla/rft/online/production_bridge.py").read_text()
+    source = (ROOT / "src/forceprior/rft/online/production_bridge.py").read_text()
     for forbidden in ("import rclpy", "import requests", "import torch", "import socket"):
         assert forbidden not in source
 
@@ -2453,7 +2453,7 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     )
     assert [item["identity"]["decision_id"] for item in payloads] == [1, 2, 3]
     assert all(
-        item["schema_version"] == "forcesmolvla_ack_residual_transition.v2"
+        item["schema_version"] == "forceprior_ack_residual_transition.v2"
         and item["classification"] == "recorded_live_policy_execution_smoke"
         and item["absolute_action_rotation_representation"] == "rpy_xyz"
         and item["eligibility"]["formal_replay"] is True
@@ -2526,7 +2526,7 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     admission = json.loads(next((state / "admissions").glob("*.json")).read_text())
     assert (
         admission["schema_version"]
-        == "forcesmolvla_ack_residual_production_bridge_report.v2"
+        == "forceprior_ack_residual_production_bridge_report.v2"
     )
     assert admission["source_episode_semantics"] == {
         "formal_replay": False,
@@ -2540,7 +2540,7 @@ def test_formal_online_r_admission_materializes_policy_and_human_transitions(
     episode_seal = json.loads(next((state / "episodes").glob("*.json")).read_text())
     assert (
         episode_seal["schema_version"]
-        == "forcesmolvla_ack_residual_production_bridge_report.v2"
+        == "forceprior_ack_residual_production_bridge_report.v2"
     )
     assert episode_seal["accepted_unique_r_transition_count"] == 3
     assert episode_seal["human_override_replay_count"] == 1
@@ -3562,7 +3562,7 @@ def test_episode_initial_real_gripper_lease_closes_early_policy_transitions(
         raw = safe_records[index]["payload"]["arbitration"]["raw_action"]
         raw["source"] = "policy"
         safe_records[index]["payload"]["forcesmolvla_chunk_selection"] = {
-            "lineage_schema": "forcesmolvla-stage3-policy-lineage-v1",
+            "lineage_schema": "forceprior-stage3-policy-lineage-v1",
             "request_id": f"request-{index}",
             "result_id": f"result-{index}",
             "chunk_id": "chunk-1",
@@ -3667,7 +3667,7 @@ def test_invalid_initial_gripper_origin_quarantines_whole_episode(tmp_path: Path
     path = episode / "streams/safe_action.jsonl"
     records = [json.loads(line) for line in path.read_text().splitlines()]
     records[0]["payload"]["stage3_initial_gripper_authority"] = {
-        "schema": "forcesmolvla-stage3-initial-gripper-authority-v1",
+        "schema": "forceprior-stage3-initial-gripper-authority-v1",
         "origin_action_goal_id": "",
     }
     _write_jsonl(path, records)

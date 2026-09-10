@@ -19,7 +19,7 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG = ROOT / "configs/online_replay_production_bridge.v1.development.yaml"
+DEFAULT_CONFIG = ROOT / "configs/online_replay_production_bridge.v1.yaml"
 REWARD_CLASSIFIER_TOOL = ROOT / "tools/reward_classifier/train_reward_classifier.py"
 CONRFT_RUNTIME_ROOT = Path("/home/rlc123/conrft/serl_launcher")
 CAMERA_KEYS = ("d435_third_person", "d405_wrist")
@@ -299,7 +299,7 @@ class OneShotFrozenRewardDetector:
         self.worker_socket = worker_socket
 
     def __call__(self, prepared):
-        from forcesmolvla.rft.online.production_bridge import FrozenDetectorScores
+        from forceprior.rft.online.production_bridge import FrozenDetectorScores
 
         with tempfile.TemporaryDirectory(prefix="online-frozen-detector-") as directory:
             root = Path(directory)
@@ -382,7 +382,7 @@ def _resolve_actor_checkpoint(
             "--deployed-actor-checkpoint is required for formal online-R admission"
         )
     return (
-        output_root / "sft/checkpoints/forcesmolvla_sft_step_010000"
+        output_root / "sft/checkpoints/forceprior_sft_step_010000"
     ).resolve()
 
 
@@ -413,13 +413,13 @@ def main(argv: list[str] | None = None) -> int:
             int(reward_transition_spec["classifier_train_state_step"]),
         )
         return 0
-    from forcesmolvla.rft.online.production_bridge import (
+    from forceprior.rft.online.production_bridge import (
         ProductionBridge,
         ProductionBridgeError,
         frozen_episode_materializer,
         load_bridge_config,
     )
-    from forcesmolvla.training_runtime import resolve_task_output_root
+    from forceprior.training_runtime import resolve_task_output_root
 
     output_root = resolve_task_output_root(
         ROOT, task_id=args.task_id, output_root=args.output_root
@@ -450,7 +450,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--dry-run and --admit-formal-online-r are mutually exclusive")
     if not args.dry_run and args.state_root is None:
         raise SystemExit("--state-root is required unless --dry-run is used")
-    state_root = args.state_root or Path("/tmp/forcesmolvla_stage3_bridge_dry_run")
+    state_root = args.state_root or Path("/tmp/forceprior_stage3_bridge_dry_run")
     policy_execution_smoke = (
         (args.dry_run or args.admit_formal_online_r)
         and (

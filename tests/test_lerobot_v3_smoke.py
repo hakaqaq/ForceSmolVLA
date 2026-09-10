@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from forcesmolvla.dataset_v3 import (
+from forceprior.dataset_v3 import (
     create_dataset,
     load_dataset_split,
     split_episode_indices,
@@ -24,7 +24,7 @@ def test_feature_contract_splits_state7_and_wrench6():
 
 def test_lerobot_v3_two_camera_writer_smoke(tmp_path):
     root = tmp_path / "dataset"
-    dataset = create_dataset(root, repo_id="local/task1_forcesmolvla_v4_1_smoke", height=8, width=8)
+    dataset = create_dataset(root, repo_id="local/task1_forceprior_v4_1_smoke", height=8, width=8)
     frame = {
         "task": "fixture task",
         "observation.images.camera1": np.zeros((8, 8, 3), dtype=np.uint8),

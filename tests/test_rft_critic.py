@@ -5,7 +5,7 @@ import inspect
 import pytest
 import torch
 
-from forcesmolvla.rft.critic import (
+from forceprior.rft.critic import (
     CRITIC_INPUT_DIM,
     RESIDUAL_ACTION_OFFSET,
     RESIDUAL_ACTION_WIDTH,

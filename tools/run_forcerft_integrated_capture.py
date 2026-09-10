@@ -15,17 +15,17 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 DEFAULT_SHADOW_BACKEND = (
-    "forcesmolvla.rft.online.integrated_capture_backend:IntegratedCaptureBackend"
+    "forceprior.rft.online.integrated_capture_backend:IntegratedCaptureBackend"
 )
 
-from forcesmolvla.rft.online.integrated_capture import (  # noqa: E402
+from forceprior.rft.online.integrated_capture import (  # noqa: E402
     IntegratedCaptureError,
     build_capture_contract,
     capture_mode_semantics,
     run_integrated_capture,
     validate_development_policy_package,
 )
-from forcesmolvla.rft.online.integrated_capture_backend import (  # noqa: E402
+from forceprior.rft.online.integrated_capture_backend import (  # noqa: E402
     CAPTURE_DISCARDED_EXIT_CODE,
     CAPTURE_EXITED_EXIT_CODE,
     CAPTURE_TIMED_OUT_EXIT_CODE,

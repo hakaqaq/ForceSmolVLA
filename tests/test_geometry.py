@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from forcesmolvla.geometry import (
+from forceprior.geometry import (
     StaticWrenchCalibration,
     calibrated_tcp_wrench_conditioned_on_measured_tcp_pose,
 )

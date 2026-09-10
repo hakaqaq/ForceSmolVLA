@@ -64,7 +64,7 @@ def configure_task_inputs(
 ) -> None:
     """Select the task dataset and its explicitly reviewed label subset."""
 
-    from forcesmolvla.training_runtime import resolve_task_dataset_root
+    from forceprior.training_runtime import resolve_task_dataset_root
 
     global TASK_ID, DATASET_ROOT, REVIEWED_PATH, SPLIT_PATH
     TASK_ID = task_id
@@ -282,7 +282,7 @@ def verify_frozen_inputs(config_path: Path, *, hash_dataset: bool) -> dict[str, 
     )
 
     config = load_json(config_path)
-    require(config.get("schema") == "forcesmolvla.reward_classifier_training", "config schema mismatch")
+    require(config.get("schema") == "forceprior.reward_classifier_training", "config schema mismatch")
     require(config.get("status") == "final", "training config is not final")
     require(config.get("task_id") == TASK_ID, "training config task_id mismatch")
     require(config["optimizer"]["optimizer_updates"] == OPTIMIZER_UPDATES, "optimizer update count mismatch")
@@ -529,7 +529,7 @@ def prepare_cache(cache_dir: Path, config_path: Path) -> None:
             path = staging / name
             file_bindings[name] = {"file_size": path.stat().st_size, "sha256": sha256_file(path)}
         manifest = {
-            "schema": "forcesmolvla.reward_classifier_training_cache",
+            "schema": "forceprior.reward_classifier_training_cache",
             "status": "complete",
             "created_at": utc_now(),
             "cache_frame_count": len(all_rows),
@@ -600,7 +600,7 @@ def install_type_only_octo_shim() -> None:
         "octo.utils": utils,
         "octo.utils.typing": typing_module,
     }.items():
-        module.__dict__["__forcesmolvla_type_only_shim__"] = True
+        module.__dict__["__forceprior_type_only_shim__"] = True
         sys.modules[name] = module
 
 
@@ -1196,7 +1196,7 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
         )
         access = cache_manifest["source_access_audit"]
         report = {
-            "schema": "forcesmolvla.reward_classifier_training_report",
+            "schema": "forceprior.reward_classifier_training_report",
             "status": "complete",
             "completed_at": utc_now(),
             "task_id": TASK_ID,
@@ -1325,7 +1325,7 @@ def run_training(cache_dir: Path, output_dir: Path, config_path: Path) -> None:
             "sha256": sha256_file(report_path),
         }, **{f"checkpoint_{name.removesuffix('.msgpack')}": value for name, value in checkpoint_bindings.items()}}
         manifest = {
-            "schema": "forcesmolvla.reward_classifier_artifact_manifest",
+            "schema": "forceprior.reward_classifier_artifact_manifest",
             "status": "complete",
             "created_at": utc_now(),
             "self_included": False,
@@ -1380,7 +1380,7 @@ def main() -> None:
     if args.command == "prepare-cache":
         prepare_cache(args.cache_dir.resolve(), config_path)
     else:
-        from forcesmolvla.training_runtime import resolve_task_output_root
+        from forceprior.training_runtime import resolve_task_output_root
 
         root = Path(__file__).resolve().parents[2]
         output_dir = (

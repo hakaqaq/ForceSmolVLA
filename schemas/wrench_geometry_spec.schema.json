@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://local.forcesmolvla/schemas/wrench-geometry-spec-v4.1.schema.json",
-  "title": "ForceSmolVLA v4.1 measured-TCP wrench geometry",
+  "$id": "https://local.forceprior/schemas/wrench-geometry-spec-v4.1.schema.json",
+  "title": "ForcePrior v4.1 measured-TCP wrench geometry",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,7 +12,7 @@
   "properties": {
     "schema_version": {"const": "1.0.0"},
     "artifact_status": {"enum": ["development_only", "approved"]},
-    "profile": {"const": "forcesmolvla-v4.1-available-sensor"},
+    "profile": {"const": "forceprior-v4.1-available-sensor"},
     "wording": {"const": "calibrated TCP wrench conditioned on measured TCP pose"},
     "frames": {
       "type": "object", "additionalProperties": false,

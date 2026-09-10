@@ -4,8 +4,8 @@ from dataclasses import replace
 
 import numpy as np
 
-from forcesmolvla.rft.critic_action_adapter_v2 import CRITIC_ACTION_CONTRACT
-from forcesmolvla.rft.online.transition_authority import (
+from forceprior.rft.critic_action_adapter_v2 import CRITIC_ACTION_CONTRACT
+from forceprior.rft.online.transition_authority import (
     AckMacro,
     derive_actor_q_eligibility,
 )

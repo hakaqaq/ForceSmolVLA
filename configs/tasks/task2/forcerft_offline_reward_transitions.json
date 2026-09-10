@@ -1,5 +1,5 @@
 {
-  "schema": "forcesmolvla.forcerft_offline_reward_transition_materialization",
+  "schema": "forceprior.forcerft_offline_reward_transition_materialization",
   "status": "final",
   "task_id": "task2",
   "classifier_train_state_step": 150,
@@ -35,7 +35,7 @@
   },
   "action_contract": {
     "source": "recorded_absolute_action7",
-    "delta_owner": "forcesmolvla.action_delta.ActionDeltaProcessor",
+    "delta_owner": "forceprior.action_delta.ActionDeltaProcessor",
     "normalizer": "frozen_actor_action_normalizer",
     "normalizer_refit": false,
     "action_horizon": 50,
@@ -46,7 +46,7 @@
     "classifier_checkpoint": "outputs/task2/reward_classifier/checkpoints/best/best_checkpoint.msgpack",
     "safe_resnet10_npz": "assets/reward_classifier/resnet10_parameters.npz",
     "safe_resnet10_manifest": "assets/reward_classifier/resnet10_manifest.json",
-    "actor_checkpoint": "outputs/task2/sft/checkpoints/forcesmolvla_sft_step_010000",
+    "actor_checkpoint": "outputs/task2/sft/checkpoints/forceprior_sft_step_010000",
     "classifier_training_source": "tools/reward_classifier/train_reward_classifier.py",
     "adapter_source": "tools/reward_classifier/conrft_lerobot_v3_adapter.py"
   },

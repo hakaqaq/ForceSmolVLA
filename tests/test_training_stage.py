@@ -3,12 +3,12 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from forcesmolvla.checkpoint import validate_resume_training_stage
-from forcesmolvla.configuration_forcesmolvla import (
+from forceprior.checkpoint import validate_resume_training_stage
+from forceprior.configuration_forceprior import (
     OFFLINE_FULL_FINETUNE,
     ONLINE_HIL_VLM_FROZEN,
 )
-from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
+from forceprior.modeling_forceprior import ForcePriorPolicy
 
 
 class _FakeVLMWithExpert(torch.nn.Module):
@@ -26,7 +26,7 @@ class _FakeFlow(torch.nn.Module):
 
 
 def _policy(stage):
-    policy = object.__new__(ForceSmolVLAPolicy)
+    policy = object.__new__(ForcePriorPolicy)
     torch.nn.Module.__init__(policy)
     policy.config = SimpleNamespace(training_stage=stage)
     policy.model = _FakeFlow()

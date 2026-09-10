@@ -26,9 +26,9 @@ for path in (SRC, ROOT / "tools"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from forcesmolvla.rft.online import replay_training as warmup  # noqa: E402
+from forceprior.rft.online import replay_training as warmup  # noqa: E402
 import serve_policy  # noqa: E402
-from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+from forceprior.rft.online.residual_actor_critic_runtime import (  # noqa: E402
     ONLINE_ADAPTATION_DIRECTORY_NAME,
     ResidualActorCriticSchedule,
     exact_resume_checkpoint_is_recoverable,
@@ -42,7 +42,7 @@ from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E40
     require_exact_resume_algorithm_config,
     select_resume_or_bootstrap_checkpoint,
 )
-from forcesmolvla.rft.critic import (  # noqa: E402
+from forceprior.rft.critic import (  # noqa: E402
     CRITIC_ACTION_REPRESENTATION,
     CRITIC_CANDIDATE_FEASIBILITY,
     CRITIC_CONTEXT_DIM,
@@ -52,31 +52,31 @@ from forcesmolvla.rft.critic import (  # noqa: E402
     RESIDUAL_ACTION_WIDTH,
     polyak_update,
 )
-from forcesmolvla.rft.residual_actor import (  # noqa: E402
+from forceprior.rft.residual_actor import (  # noqa: E402
     WristWrenchResidualActor,
     resolve_residual_cap6,
 )
-from forcesmolvla.rft.online.sample_credit import (  # noqa: E402
+from forceprior.rft.online.sample_credit import (  # noqa: E402
     TdCycleCreditLedger,
 )
-from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
+from forceprior.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
     CANDIDATE_CHECKPOINT_KIND,
     TRAINING_CHECKPOINT_KIND,
     save_residual_actor_critic_checkpoint,
 )
-from forcesmolvla.rft.online.training_losses import (  # noqa: E402
+from forceprior.rft.online.training_losses import (  # noqa: E402
     residual_actor_loss,
     residual_critic_loss,
 )
-from forcesmolvla.rft.online.policy_revision import (  # noqa: E402
+from forceprior.rft.online.policy_revision import (  # noqa: E402
     InMemoryRevisionStateMachine,
     RevisionRecord,
     RevisionState,
 )
-from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
+from forceprior.rft.online.transition_authority import (  # noqa: E402
     ONLINE_SEMANTICS_VERSION,
 )
-from forcesmolvla.rft.online.schedule_migration import (  # noqa: E402
+from forceprior.rft.online.schedule_migration import (  # noqa: E402
     schedule_migration_required,
 )
 
@@ -251,7 +251,7 @@ class ResidualActorCriticLearner:
         task: str,
         normalizer_path: Path | None = None,
     ) -> None:
-        from forcesmolvla.training_data import load_normalizer_manifest
+        from forceprior.training_data import load_normalizer_manifest
 
         self.device = device
         self.resume_checkpoint = resume_checkpoint.resolve()
@@ -1569,7 +1569,7 @@ class ResidualActorCriticLearner:
                     shutil.rmtree(temporary)
                 raise
         event = {
-            "schema": "forcesmolvla-residual-publication-event-v1",
+            "schema": "forceprior-residual-publication-event-v1",
             "revision_id": revision_id,
             "checkpoint": str(destination.resolve()),
             "residual_actor_critic_cycle": int(completed_cycle),
@@ -2373,7 +2373,7 @@ class AsyncResidualActorCriticRuntime:
             self._actor_alive.__enter__()
             self.coordinator.begin_actor_window(0.8)
             self._capture_window = {
-                "schema": "forcesmolvla-continuous-learner-capture-window-v1",
+                "schema": "forceprior-continuous-learner-capture-window-v1",
                 "session_id": self.session_id,
                 "episode_id": self.episode_id,
                 "pinned_actor_revision": self.active_revision_id,
@@ -2992,7 +2992,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
-    from forcesmolvla.training_runtime import (
+    from forceprior.training_runtime import (
         resolve_task_dataset_root,
         resolve_task_output_root,
     )
@@ -3067,7 +3067,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
     )
     device = torch.device("cuda:0")
     safety_config = (
-        ROOT / f"configs/live_action_safety.{args.task_id}.development.yaml"
+        ROOT / f"configs/live_action_safety.{args.task_id}.yaml"
         if args.safety_config is None
         else args.safety_config.resolve()
     )
@@ -3086,7 +3086,7 @@ def build_runtime(args: argparse.Namespace) -> AsyncResidualActorCriticRuntime:
         "controller_ack_timeout_ms": 20.0,
     })
     engine.policy.eval().requires_grad_(False)
-    from forcesmolvla.training_data import load_normalizer_manifest
+    from forceprior.training_data import load_normalizer_manifest
 
     replay_normalizer = load_normalizer_manifest(
         dataset_root / "normalizer_manifest.json"

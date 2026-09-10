@@ -7,11 +7,11 @@ import pytest
 import torch
 import yaml
 
-from forcesmolvla.action_delta import ActionSafetyProfile
-from forcesmolvla.context import ChunkContext
-from forcesmolvla.modeling_forcesmolvla import ActionInferenceError, ForceSmolVLAPolicy
-from forcesmolvla.normalizer import CartesianNormalizerBundle, FrozenFeatureNormalizer
-from forcesmolvla.training_data import RuntimeArtifactBundle
+from forceprior.action_delta import ActionSafetyProfile
+from forceprior.context import ChunkContext
+from forceprior.modeling_forceprior import ActionInferenceError, ForcePriorPolicy
+from forceprior.normalizer import CartesianNormalizerBundle, FrozenFeatureNormalizer
+from forceprior.training_data import RuntimeArtifactBundle
 
 
 def _feature(name: str, width: int) -> FrozenFeatureNormalizer:
@@ -34,7 +34,7 @@ def _artifacts(digest: str) -> RuntimeArtifactBundle:
         split_sha256=digest,
         action_delta_spec_sha256=digest,
         action_delta_source_sha256=hashlib.sha256(
-            (Path(__file__).parents[1] / "src/forcesmolvla/action_delta.py").read_bytes()
+            (Path(__file__).parents[1] / "src/forceprior/action_delta.py").read_bytes()
         ).hexdigest(),
     )
 
@@ -67,8 +67,8 @@ def _context(digest: str) -> ChunkContext:
 
 
 class _PredictionHarness(torch.nn.Module):
-    _predict_action_chunks = ForceSmolVLAPolicy._predict_action_chunks
-    predict_action_chunk = ForceSmolVLAPolicy.predict_action_chunk
+    _predict_action_chunks = ForcePriorPolicy._predict_action_chunks
+    predict_action_chunk = ForcePriorPolicy.predict_action_chunk
 
     def __init__(self, normalized_delta7, artifacts, safety_profile):
         super().__init__()

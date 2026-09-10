@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from forcesmolvla.training_runtime import resolve_task_dataset_root  # noqa: E402
+from forceprior.training_runtime import resolve_task_dataset_root  # noqa: E402
 from serve_task2_label_ui import FrameStore, make_handler  # noqa: E402
 
 
@@ -180,7 +180,7 @@ def build_workspace(
     _write_json(
         index_path,
         {
-            "schema": "forcesmolvla.reward_frame_review_index",
+            "schema": "forceprior.reward_frame_review_index",
             "status": "ready_for_manual_review",
             "task_id": task_id,
             "task_prompt": task_prompt,
@@ -199,7 +199,7 @@ def build_workspace(
     _write_json(
         template_path,
         {
-            "schema": "forcesmolvla.reward_frame_labels",
+            "schema": "forceprior.reward_frame_labels",
             "status": "manual_review_in_progress",
             "task_id": task_id,
             "canonical_task_prompt": task_prompt,

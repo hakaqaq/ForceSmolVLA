@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from forcesmolvla.rft.online.replay_training import (
+from forceprior.rft.online.replay_training import (
     algorithm_hyperparameters,
     load_common_actor_critic_config,
 )

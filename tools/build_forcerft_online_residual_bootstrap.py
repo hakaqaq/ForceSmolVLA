@@ -17,7 +17,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from forcesmolvla.rft.critic import (  # noqa: E402
+from forceprior.rft.critic import (  # noqa: E402
     CRITIC_ACTION_REPRESENTATION,
     CRITIC_CANDIDATE_FEASIBILITY,
     CRITIC_INPUT_SPEC,
@@ -25,17 +25,17 @@ from forcesmolvla.rft.critic import (  # noqa: E402
     build_twin_q,
     require_critic_input_config,
 )
-from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+from forceprior.rft.online.residual_actor_critic_runtime import (  # noqa: E402
     ONLINE_ADAPTATION_DIRECTORY_NAME,
 )
-from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
+from forceprior.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
     BOOTSTRAP_CHECKPOINT_KIND,
     save_residual_actor_critic_checkpoint,
 )
-from forcesmolvla.rft.online.transition_authority import (  # noqa: E402
+from forceprior.rft.online.transition_authority import (  # noqa: E402
     ONLINE_SEMANTICS_VERSION,
 )
-from forcesmolvla.rft.residual_actor import (  # noqa: E402
+from forceprior.rft.residual_actor import (  # noqa: E402
     make_residual_actor_pair,
     resolve_residual_cap6,
 )
@@ -45,9 +45,9 @@ BOOTSTRAP_DIRECTORY_NAME = "base_policy_zero_residual_filter_leash_random_twin_q
 
 
 def _load_base_actor(checkpoint: Path) -> torch.nn.Module:
-    from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
+    from forceprior.modeling_forceprior import ForcePriorPolicy
 
-    return ForceSmolVLAPolicy.from_pretrained(
+    return ForcePriorPolicy.from_pretrained(
         checkpoint,
         local_files_only=True,
         force_download=False,
@@ -59,7 +59,7 @@ def _load_base_actor(checkpoint: Path) -> torch.nn.Module:
 def _normalizer_parameters_match(
     *, dataset_root: Path, frozen_base_policy_checkpoint: Path
 ) -> bool:
-    from forcesmolvla.training_data import (
+    from forceprior.training_data import (
         load_checkpoint_runtime_artifacts,
         load_normalizer_manifest,
     )
@@ -94,7 +94,7 @@ def build_online_residual_bootstrap(
     config = yaml.safe_load(
         Path(online_residual_config).read_text(encoding="utf-8")
     )
-    from forcesmolvla.training_data import load_normalizer_manifest
+    from forceprior.training_data import load_normalizer_manifest
 
     normalizer = load_normalizer_manifest(
         Path(dataset_root).resolve() / "normalizer_manifest.json"
@@ -190,7 +190,7 @@ def build_online_residual_bootstrap(
             "per_episode_critic_row_counts": {},
             "replay_generation": 0,
             "training_credit_ledger": {
-                "schema": "forcesmolvla-td-cycle-credit-ledger-v1",
+                "schema": "forceprior-td-cycle-credit-ledger-v1",
                 "new_td_rows_per_cycle": int(
                     config["residual_actor_critic_training"][
                         "new_td_rows_per_cycle"
@@ -245,7 +245,7 @@ def main() -> int:
     args = parse_args()
     result = build_online_residual_bootstrap(**vars(args))
     config = yaml.safe_load(args.online_residual_config.read_text(encoding="utf-8"))
-    from forcesmolvla.training_data import load_normalizer_manifest
+    from forceprior.training_data import load_normalizer_manifest
 
     normalizer = load_normalizer_manifest(
         args.dataset_root.resolve() / "normalizer_manifest.json"

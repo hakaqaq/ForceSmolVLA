@@ -1,4 +1,4 @@
-name: forcesmolvla
+name: forceprior
 channels:
   - defaults
 dependencies:

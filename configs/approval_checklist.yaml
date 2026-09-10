@@ -1,5 +1,5 @@
 schema_version: 1.0.0
-profile: forcesmolvla-v4.1-available-sensor
+profile: forceprior-v4.1-available-sensor
 status: approval_pending
 thresholds_requiring_experiment_lead_decision:
   - field: max_pose_age_ms
@@ -39,9 +39,9 @@ thresholds_requiring_experiment_lead_decision:
     candidate: null
   - field: filter_family_order_coefficients_warmup_samples
     candidate: scipy 1.16.3 butterworth_sos_causal order=4 cutoff=8Hz fs=500Hz; apply once per source-ordered valid sample without timing interpolation; per-episode reset; first-valid steady-state init; warmup=250 samples invalid; max source gap=9ms
-    evidence: exact two-section SOS is in wrench_filter_resample_spec.development.json; task1 wrench max-gap P50/P95/P99/max=6.577/8.353/8.625/8.654 ms
+    evidence: exact two-section SOS is in wrench_filter_resample_spec.json; task1 wrench max-gap P50/P95/P99/max=6.577/8.353/8.625/8.654 ms
   - field: episode_split_ratios_and_seed
-    candidate: ratios=[0.8,0.1,0.1], seed=forcesmolvla-v4.1-task1-split-1
+    candidate: ratios=[0.8,0.1,0.1], seed=forceprior-v4.1-task1-split-1
     note: with 50 eligible episodes this yields 40 train, 5 validation, 5 test before any episode-quality exclusions alter counts
   - field: prefix_cache_parity_tolerances
     candidate: {fp32_atol: 1.0e-5, bf16_atol: 0.1, rtol: 0.0}

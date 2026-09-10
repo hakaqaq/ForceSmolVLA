@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from forcesmolvla.raw_to_lerobot_v3 import (
+from forceprior.raw_to_lerobot_v3 import (
     SUPPORTED_ACTION_ASSOCIATION,
     SUPPORTED_CLOCK_MAP,
     SUPPORTED_FILTER,
@@ -40,18 +40,38 @@ def contract(**overrides) -> RuntimeContract:
     return RuntimeContract(**values)
 
 
-def test_cli_defaults_are_direct_raw_to_separate_v3_output():
-    args = parse_args([])
-    assert args.raw_root == Path("/home/rlc123/fr3_client_ws/datasets/task1")
-    assert args.output_root == Path(
-        "/home/rlc123/ForceSmolVLA/datasets/task1_forcesmolvla_v4_1"
+def test_cli_requires_dataset_paths_and_uses_repository_as_project_root():
+    args = parse_args(
+        [
+            "--raw-root",
+            "raw/task2",
+            "--output-root",
+            "datasets/task2_lerobotv3",
+            "--repo-id",
+            "task2_lerobotv3",
+        ]
     )
-    assert args.project_root == Path("/home/rlc123/ForceSmolVLA")
+    assert args.raw_root == Path("raw/task2")
+    assert args.output_root == Path("datasets/task2_lerobotv3")
+    assert args.repo_id == "task2_lerobotv3"
+    assert args.project_root == Path(__file__).resolve().parents[1]
 
 
 def test_cli_accepts_explicit_task_specific_development_runtime_spec(tmp_path):
     runtime_spec = tmp_path / "task2.json"
-    args = parse_args(["--development-only", "--runtime-spec", str(runtime_spec)])
+    args = parse_args(
+        [
+            "--raw-root",
+            "raw/task2",
+            "--output-root",
+            "datasets/task2_lerobotv3",
+            "--repo-id",
+            "task2_lerobotv3",
+            "--development-only",
+            "--runtime-spec",
+            str(runtime_spec),
+        ]
+    )
     assert args.runtime_spec == runtime_spec
 
 

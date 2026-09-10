@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://forcesmolvla.local/schemas/stage3_ack_transition.v1.schema.json",
-  "title": "ForceSmolVLA Stage-3 ACK-authoritative transition",
+  "$id": "https://forceprior.local/schemas/stage3_ack_transition.v1.schema.json",
+  "title": "ForcePrior Stage-3 ACK-authoritative transition",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,7 +19,7 @@
     "integrity"
   ],
   "properties": {
-    "schema_version": {"const": "forcesmolvla_stage3_ack_transition.v1"},
+    "schema_version": {"const": "forceprior_stage3_ack_transition.v1"},
     "identity": {
       "type": "object",
       "additionalProperties": false,

@@ -6,4 +6,4 @@ online_replay_root: outputs/task2/online
 reward_calibration_path: outputs/task2/reward_classifier/detector_calibration.json
 normalizer_path: datasets/task2_lerobotv3/normalizer_manifest.json
 task_prompt: Pick up the purple ring and place it onto the red peg.
-workspace_configuration: configs/live_action_safety.task2.development.yaml
+workspace_configuration: configs/live_action_safety.task2.yaml

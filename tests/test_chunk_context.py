@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from forcesmolvla.context import ChunkContext
+from forceprior.context import ChunkContext
 
 
 def make_context(generation=0):

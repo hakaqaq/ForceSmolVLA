@@ -1,5 +1,5 @@
 {
-  "schema": "forcesmolvla.reward_classifier_training",
+  "schema": "forceprior.reward_classifier_training",
   "status": "final",
   "task_id": "task3",
   "dataset_root": "datasets/task3_lerobotv3",

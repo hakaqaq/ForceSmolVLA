@@ -11,7 +11,7 @@ from torch import nn
 sys.path.insert(0, str(Path(__file__).parent))
 import rft_losses_numpy_oracle as oracle
 
-from forcesmolvla.rft.losses import (
+from forceprior.rft.losses import (
     CriticObservation,
     build_actor_q_action,
     compute_actor_q_loss,

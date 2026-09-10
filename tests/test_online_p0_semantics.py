@@ -6,13 +6,13 @@ import numpy as np
 import pytest
 import torch
 
-from forcesmolvla.rft.online.production_bridge import (
+from forceprior.rft.online.production_bridge import (
     ProductionBridgeError,
     _formal_online_r_outcome,
     _pre_intervention_policy_boundary_decisions,
 )
-from forcesmolvla.rft.online import replay_training
-from forcesmolvla.rft.online.replay_training import build_ack_macros
+from forceprior.rft.online import replay_training
+from forceprior.rft.online.replay_training import build_ack_macros
 
 
 def _policy_row(
@@ -259,7 +259,7 @@ def test_replay_materializer_and_batch_preserve_truncated(
         lambda _path: np.zeros((3, 2, 2), dtype=np.uint8),
     )
     monkeypatch.setattr(
-        "forcesmolvla.rft.batch.build_actor_batch",
+        "forceprior.rft.batch.build_actor_batch",
         lambda _actor, samples, _device, include_action: {
             "sample_count": len(samples), "include_action": include_action
         },

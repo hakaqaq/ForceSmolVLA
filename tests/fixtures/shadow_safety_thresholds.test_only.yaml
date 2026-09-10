@@ -1,7 +1,7 @@
 schema_version: 1.0.0
 artifact_status: development_only
 acceptance_status: development_only
-profile: forcesmolvla-v4.1-available-sensor
+profile: forceprior-v4.1-available-sensor
 mode: test_only
 rules:
   - rule_id: SS_WORKSPACE

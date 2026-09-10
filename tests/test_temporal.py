@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from forcesmolvla.temporal import (
+from forceprior.temporal import (
     action_chunk_zoh_indices,
     controller_reference_grid,
     match_measured_tcp_pose_causal_zoh,

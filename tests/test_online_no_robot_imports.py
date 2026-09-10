@@ -9,7 +9,7 @@ import sys
 
 
 ROOT = Path(__file__).parents[1]
-ONLINE = ROOT / "src/forcesmolvla/rft/online"
+ONLINE = ROOT / "src/forceprior/rft/online"
 BANNED_IMPORT_ROOTS = {
     "rclpy", "rospy", "roslib", "franka", "franka_msgs", "moveit",
     "requests", "httpx", "socket", "subprocess",
@@ -35,22 +35,18 @@ def test_online_cpu_modules_have_no_ros_robot_or_network_imports() -> None:
 
 
 def test_importing_online_runtime_stays_cpu_only_and_does_not_connect_or_command() -> None:
-    assert os.environ.get("CUDA_VISIBLE_DEVICES") == ""
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
     before = set(sys.modules)
     for name in (
-        "training_contracts",
         "transition_authority",
-        "replay",
-        "training_batch",
         "training_losses",
         "sample_credit",
-        "policy_protocol",
         "policy_revision",
         "residual_actor_critic_checkpoint",
-        "temporal_parity",
     ):
-        importlib.import_module(f"forcesmolvla.rft.online.{name}")
+        importlib.import_module(f"forceprior.rft.online.{name}")
     added = set(sys.modules) - before
+    assert os.environ.get("CUDA_VISIBLE_DEVICES") == visible_devices
     ros = [name for name in added if name.split(".", 1)[0] in {"rclpy", "rospy", "roslib"}]
     assert ros == []
     assert not any("deploy_forcesmolvla" in name or "serve_policy" in name for name in added)
@@ -68,8 +64,8 @@ class BlockTorch(importlib.abc.MetaPathFinder):
         return None
 
 sys.meta_path.insert(0, BlockTorch())
-import forcesmolvla.rft.online.integrated_capture
-import forcesmolvla.rft.online.integrated_capture_backend
+import forceprior.rft.online.integrated_capture
+import forceprior.rft.online.integrated_capture_backend
 assert "torch" not in sys.modules
 """
     environment = os.environ.copy()

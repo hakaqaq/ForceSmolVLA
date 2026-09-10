@@ -7,7 +7,7 @@ import pytest
 import torch
 import yaml
 
-from forcesmolvla.rft.critic import (
+from forceprior.rft.critic import (
     CRITIC_ACTION_REPRESENTATION,
     CRITIC_CANDIDATE_FEASIBILITY,
     CRITIC_INPUT_SPEC,
@@ -15,22 +15,22 @@ from forcesmolvla.rft.critic import (
     build_twin_q,
     state_exact,
 )
-from forcesmolvla.rft.online.residual_actor_critic_runtime import (
+from forceprior.rft.online.residual_actor_critic_runtime import (
     AsyncRuntimeError,
     load_checkpoint_training_config,
     prepare_learner,
     require_exact_resume_algorithm_config,
 )
-from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (
+from forceprior.rft.online.residual_actor_critic_checkpoint import (
     OnlineCheckpointSchemaError,
     RESIDUAL_ACTOR_CRITIC_CHECKPOINT_FILES,
     TRAINING_CHECKPOINT_KIND,
     residual_actor_critic_checkpoint_is_recoverable,
     save_residual_actor_critic_checkpoint,
 )
-from forcesmolvla.rft.online.sample_credit import TdCycleCreditLedger
-from forcesmolvla.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
-from forcesmolvla.rft.residual_actor import make_residual_actor_pair
+from forceprior.rft.online.sample_credit import TdCycleCreditLedger
+from forceprior.rft.online.transition_authority import ONLINE_SEMANTICS_VERSION
+from forceprior.rft.residual_actor import make_residual_actor_pair
 
 
 ROOT = Path(__file__).parents[1]

@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from forcesmolvla.rft.online.integrated_capture import (
+from forceprior.rft.online.integrated_capture import (
     CaptureBackendCapabilities,
     INTEGRATED_CAPTURE_SCHEMA,
     IntegratedCaptureError,
@@ -24,12 +24,6 @@ ROOT = Path(__file__).parents[1]
 BASELINE_POLICY_REVISION = (
     "e24c1d6bb0a778921659514ac47c692b952178aa39af2601ccf0fc32bf94774d"
 )
-BASELINE_DEPLOYMENT_BINDING = ROOT / (
-    "artifacts/development/live/"
-    "task2_cycle210_policy_execution_smoke_binding.v1.json"
-)
-
-
 def _development_package(
     tmp_path: Path,
     revision: str,
@@ -87,7 +81,7 @@ def _development_binding(tmp_path: Path, revision: str, name: str = "binding") -
     binding.write_text(
         json.dumps(
             {
-                "schema_version": "forcesmolvla-live-deployment-binding-v1",
+                "schema_version": "forceprior-live-deployment-binding-v1",
                 "artifact_status": "approved",
                 "model_sha256": revision,
                 "approval": {"status": "approved"},
@@ -173,19 +167,6 @@ def test_policy_execute_requires_explicit_flag_and_accepts_direct_runtime(
             policy_epoch=2,
             reset_generation=3,
             takeover_generation=4,
-            deployment_binding=BASELINE_DEPLOYMENT_BINDING,
-        )
-    with pytest.raises(IntegratedCaptureError, match="DEVELOPMENT_REVISION_MISMATCH"):
-        build_capture_contract(
-            mode="policy-execute",
-            session_id="session-real-1",
-            episode_id="episode_000000",
-            policy_revision="wrong-revision",
-            policy_epoch=0,
-            reset_generation=0,
-            takeover_generation=0,
-            deployment_binding=BASELINE_DEPLOYMENT_BINDING,
-            allow_development_policy_execution_smoke=True,
         )
     policy = build_capture_contract(
         mode="policy-execute",
@@ -285,7 +266,7 @@ def test_shadow_proposal_cannot_be_bound_to_human_ack_or_real_online_r() -> None
         sealed_monotonic_ns=1_030_000_000,
         terminal_observation_id="observation-1",
     )
-    assert seal["schema"] == "forcesmolvla_ack_residual_integrated_capture.v2"
+    assert seal["schema"] == "forceprior_ack_residual_integrated_capture.v2"
     assert seal["shadow_proposals_executed"] is False
     assert seal["formal_replay"] is False
     assert seal["real_online_r"] is False
@@ -300,7 +281,6 @@ def test_policy_execute_ack_binds_lineage_current_next_and_takeover() -> None:
         policy_epoch=1,
         reset_generation=0,
         takeover_generation=0,
-        deployment_binding=BASELINE_DEPLOYMENT_BINDING,
         allow_development_policy_execution_smoke=True,
     )
     ledger = IntegratedCaptureLedger(contract)

@@ -12,11 +12,11 @@ import torch
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import build_forcerft_online_residual_bootstrap as seed_tool  # noqa: E402
-from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+from forceprior.rft.online.residual_actor_critic_runtime import (  # noqa: E402
     exact_resume_checkpoint_is_recoverable,
     prepare_learner,
 )
-from forcesmolvla.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
+from forceprior.rft.online.residual_actor_critic_checkpoint import (  # noqa: E402
     RESIDUAL_ACTOR_CRITIC_CHECKPOINT_FILES,
 )
 
@@ -30,7 +30,7 @@ class TinyBaseActor(torch.nn.Module):
 def test_online_residual_bootstrap_rejects_normalizer_parameter_drift(
     tmp_path: Path, monkeypatch,
 ) -> None:
-    from forcesmolvla import training_data
+    from forceprior import training_data
 
     class Normalizer:
         def __init__(self, std: float) -> None:
@@ -62,7 +62,7 @@ def test_online_residual_bootstrap_rejects_normalizer_parameter_drift(
 def test_online_residual_bootstrap_needs_no_critic_parent_and_starts_zero(
     tmp_path: Path, monkeypatch,
 ) -> None:
-    from forcesmolvla import training_data
+    from forceprior import training_data
 
     normalizer = SimpleNamespace(
         delta_action7=SimpleNamespace(std=[1.0] * 7),

@@ -3,9 +3,9 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from forcesmolvla.configuration_forcesmolvla import FORCE_TOKEN_MOE
-from forcesmolvla.force_token import RouterState
-from forcesmolvla.router_training import (
+from forceprior.configuration_forceprior import FORCE_TOKEN_MOE
+from forceprior.force_token import RouterState
+from forceprior.router_training import (
     MoEMicrobatch,
     SerializableUniformSampler,
     build_sft_optimizer_and_scheduler,

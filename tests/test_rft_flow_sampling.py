@@ -4,8 +4,8 @@ import pytest
 import torch
 from torch import nn
 
-from forcesmolvla.action_delta import decode_binary_gripper_width
-from forcesmolvla.rft.flow_sampling import (
+from forceprior.action_delta import decode_binary_gripper_width
+from forceprior.rft.flow_sampling import (
     critic_action_for_q_guidance,
     sample_normalized_action_chunk_with_grad,
 )

@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from forcesmolvla.prefix import PrefixLayout, assert_cache_unchanged, clone_cache
+from forceprior.prefix import PrefixLayout, assert_cache_unchanged, clone_cache
 
 
 def test_prefix_layout_is_fixed_and_contiguous():

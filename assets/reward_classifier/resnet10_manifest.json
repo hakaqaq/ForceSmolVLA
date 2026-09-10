@@ -942,7 +942,7 @@
     "round_trip_verified": true,
     "sha256": "16052142a3ef841a12fb1d2a03965951e8fbf0dda3d89b995244419be7e1f9a5"
   },
-  "schema": "forcesmolvla.reward_classifier_resnet10_asset",
+  "schema": "forceprior.reward_classifier_resnet10_asset",
   "source_commit": "a779fde7fa5db5a469960a8490c100f35b41b49e",
   "source_repository": "https://github.com/cccedric/conrft.git",
   "source_url": "https://github.com/rail-berkeley/serl/releases/download/resnet10/resnet10_params.pkl",

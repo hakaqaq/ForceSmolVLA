@@ -1,13 +1,13 @@
 import numpy as np
 import pytest
 
-from forcesmolvla.normalizer import (
+from forceprior.normalizer import (
     CartesianNormalizerBundle,
     NormalizationLedger,
     build_action_target_population,
     chunk_relative_delta_fit_rows,
 )
-from forcesmolvla.split import EpisodeSplit
+from forceprior.split import EpisodeSplit
 
 
 def test_normalizer_fits_train_only_and_applies_exactly_once():

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://forcesmolvla.local/schemas/stage3_policy_revision.v1.schema.json",
-  "title": "ForceSmolVLA isolated immutable policy revision",
+  "$id": "https://forceprior.local/schemas/stage3_policy_revision.v1.schema.json",
+  "title": "ForcePrior isolated immutable policy revision",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,7 +9,7 @@
     "model", "files", "files_tree_sha256", "bindings", "canonical_manifest_digest"
   ],
   "properties": {
-    "schema_version": {"const": "forcesmolvla_stage3_policy_revision.v1"},
+    "schema_version": {"const": "forceprior_stage3_policy_revision.v1"},
     "artifact_kind": {"const": "isolated_immutable_policy_revision"},
     "synthetic_revision_payload": {"const": true},
     "revision_id": {"$ref": "#/$defs/sha256"},
@@ -92,11 +92,11 @@
                 "coverage": {
                   "type": "object", "additionalProperties": false,
                   "required": [
-                    "forcesmolvla_recursive_python", "stage3_configs", "contracts",
+                    "forceprior_recursive_python", "stage3_configs", "contracts",
                     "vendor_smolvla", "environment_metadata", "deployment_recorder_protocol_when_present"
                   ],
                   "properties": {
-                    "forcesmolvla_recursive_python": {"const": true},
+                    "forceprior_recursive_python": {"const": true},
                     "stage3_configs": {"const": true},
                     "contracts": {"const": true},
                     "vendor_smolvla": {"const": true},

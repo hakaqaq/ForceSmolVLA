@@ -3,8 +3,8 @@ from types import MethodType, SimpleNamespace
 import pytest
 import torch
 
-from forcesmolvla.configuration_forcesmolvla import CAMERA1, CAMERA2
-from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
+from forceprior.configuration_forceprior import CAMERA1, CAMERA2
+from forceprior.modeling_forceprior import ForcePriorPolicy
 from lerobot.utils.constants import ACTION, OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS
 
 
@@ -24,7 +24,7 @@ class _FakeMaskedFlow(torch.nn.Module):
 
 
 def _fake_policy(scales=None):
-    policy = object.__new__(ForceSmolVLAPolicy)
+    policy = object.__new__(ForcePriorPolicy)
     torch.nn.Module.__init__(policy)
     policy.config = SimpleNamespace(max_action_dim=32)
     policy.model = _FakeMaskedFlow(scales=scales)

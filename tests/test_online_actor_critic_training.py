@@ -16,18 +16,18 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import serve_forcerft_residual_actor_critic as learner_server  # noqa: E402
 
-from forcesmolvla.rft.online.residual_actor_critic_runtime import (
+from forceprior.rft.online.residual_actor_critic_runtime import (
     InferencePriorityCoordinator,
     ResidualActorCriticSchedule,
 )
-from forcesmolvla.rft.online.controller_acceptance import (
+from forceprior.rft.online.controller_acceptance import (
     CandidateGuardBatch,
     ControllerAcceptanceBatch,
     HILSERL_ACCEPTANCE_MAPPING_KIND,
     map_residual_to_controller_ack,
     policy_candidate_guard_valid,
 )
-from forcesmolvla.rft.online.replay_training import (
+from forceprior.rft.online.replay_training import (
     ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
     LEGACY_ACK_RESIDUAL_TRANSITION_SCHEMA_VERSIONS,
     OnlineResidualReplay,
@@ -35,24 +35,24 @@ from forcesmolvla.rft.online.replay_training import (
     algorithm_hyperparameters,
     load_common_actor_critic_config,
 )
-from forcesmolvla.rft.online.transition_authority import (
+from forceprior.rft.online.transition_authority import (
     AckMacro,
     ActorQEligibility,
     DISPATCH_DECISION_CRITIC_CONTRACT_VERSION,
     ONLINE_SEMANTICS_VERSION,
     normalized_behavior_residual,
 )
-from forcesmolvla.rft.critic import (
+from forceprior.rft.critic import (
     RESIDUAL_ACTION_OFFSET,
     RESIDUAL_ACTION_WIDTH,
     build_twin_q,
 )
-from forcesmolvla.rft.online.training_losses import (
+from forceprior.rft.online.training_losses import (
     residual_actor_loss,
     residual_critic_loss,
 )
-from forcesmolvla.rft.online.sample_credit import TdCycleCreditLedger
-from forcesmolvla.rft.residual_actor import (
+from forceprior.rft.online.sample_credit import TdCycleCreditLedger
+from forceprior.rft.residual_actor import (
     RESIDUAL_BOUND_MODE_SCALAR,
     make_residual_actor_pair,
     resolve_residual_cap6,

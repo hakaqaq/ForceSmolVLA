@@ -5,11 +5,11 @@ from copy import deepcopy
 import numpy as np
 import pytest
 
-from forcesmolvla.rft.online.action_representation import (
+from forceprior.rft.online.action_representation import (
     legacy_absolute_action7_to_rpy_xyz,
 )
 
-from forcesmolvla.rft.online.transition_authority import (
+from forceprior.rft.online.transition_authority import (
     ACK_RESIDUAL_TRANSITION_SCHEMA_VERSION,
     AcceptedAck,
     TransitionContractError,
@@ -47,7 +47,7 @@ def observation(identifier: str, episode: str = "episode-1", timestamp: int = 10
 def transition_payload(*, owner: str = "policy", macro_index: int = 0) -> dict:
     expert = owner in {"human_intervention", "offline_demonstration"}
     return {
-        "schema_version": "forcesmolvla_stage3_ack_transition.v1",
+        "schema_version": "forceprior_stage3_ack_transition.v1",
         "identity": {
             "run_id": "run-1", "session_id": "session-1", "episode_id": "episode-1",
             "macro_index": macro_index, "task": "task",
@@ -120,7 +120,7 @@ def test_finalize_uid_digest_and_schema_are_stable() -> None:
 
 def test_reader_accepts_v1_but_v2_writer_requires_residual_lineage() -> None:
     legacy = finalize_ack_transition(transition_payload())
-    legacy["schema_version"] = "forcesmolvla_stage3_ack_transition.v1"
+    legacy["schema_version"] = "forceprior_stage3_ack_transition.v1"
     for field in (
         "base_normalized_action_k7",
         "applied_residual_tcp6",

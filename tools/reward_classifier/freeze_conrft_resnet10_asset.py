@@ -188,7 +188,7 @@ def main() -> None:
     reward_classifier = CONRFT / "serl_launcher/serl_launcher/networks/reward_classifier.py"
     resnet_source = CONRFT / "serl_launcher/serl_launcher/vision/resnet_v1.py"
     manifest = {
-        "schema": "forcesmolvla.reward_classifier_resnet10_asset",
+        "schema": "forceprior.reward_classifier_resnet10_asset",
         "status": "PASS_FROZEN_SAFE_COPY_READY",
         "source_url": SOURCE_URL,
         "source_repository": git("remote", "get-url", "origin"),

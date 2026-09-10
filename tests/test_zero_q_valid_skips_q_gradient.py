@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import torch
 
-from forcesmolvla.rft.online.controller_acceptance import CandidateGuardBatch
-from forcesmolvla.rft.online.training_losses import residual_actor_loss
+from forceprior.rft.online.controller_acceptance import CandidateGuardBatch
+from forceprior.rft.online.training_losses import residual_actor_loss
 
 
 class Residual(torch.nn.Module):

@@ -4,11 +4,11 @@ import pytest
 
 import torch
 
-from forcesmolvla.checkpoint import (
+from forceprior.checkpoint import (
     ALLOWED_DROPPED_NORMALIZER_KEYS,
     normalize_frozen_base_state_dict,
 )
-from forcesmolvla.configuration_forcesmolvla import (
+from forceprior.configuration_forceprior import (
     CAMERA1,
     CAMERA2,
     WRENCH,
@@ -20,7 +20,7 @@ from forcesmolvla.configuration_forcesmolvla import (
     FORCE_TOKEN_MOE_ADDITIVE,
     load_force_config,
 )
-from forcesmolvla.modeling_forcesmolvla import ForceSmolVLAPolicy
+from forceprior.modeling_forceprior import ForcePriorPolicy
 
 
 ROOT = Path(__file__).parents[1]
@@ -138,10 +138,10 @@ def test_extra_camera_fails_fast():
 def test_visual_batch_exact_order(keys):
     batch = {key: torch.zeros(1, 3, 8, 8) for key in keys}
     if keys == (CAMERA1, CAMERA2):
-        ForceSmolVLAPolicy._validate_visual_batch(batch)
+        ForcePriorPolicy._validate_visual_batch(batch)
     else:
         with pytest.raises(ValueError, match="exact ordered visual"):
-            ForceSmolVLAPolicy._validate_visual_batch(batch)
+            ForcePriorPolicy._validate_visual_batch(batch)
 
 
 def test_base_state_dict_transform_is_closed_allowlist():

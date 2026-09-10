@@ -142,7 +142,7 @@ def main() -> None:
     parser.add_argument("--approve", action="store_true")
     args = parser.parse_args()
 
-    from forcesmolvla.training_runtime import (
+    from forceprior.training_runtime import (
         resolve_task_dataset_root,
         resolve_task_output_root,
     )
@@ -284,7 +284,7 @@ def main() -> None:
     )
     selected = feasible[0]
     calibration = {
-        "schema": "forcesmolvla.reward_detector_calibration",
+        "schema": "forceprior.reward_detector_calibration",
         "status": "approved" if args.approve else "candidate",
         "task_id": args.task_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -311,7 +311,7 @@ def main() -> None:
         "post_trigger_frames": "excluded",
     }
     transition_config = {
-        "schema": "forcesmolvla.forcerft_offline_reward_transition_materialization",
+        "schema": "forceprior.forcerft_offline_reward_transition_materialization",
         "status": "final",
         "task_id": args.task_id,
         "classifier_train_state_step": best_step,
@@ -333,7 +333,7 @@ def main() -> None:
         },
         "action_contract": {
             "source": "recorded_absolute_action7",
-            "delta_owner": "forcesmolvla.action_delta.ActionDeltaProcessor",
+            "delta_owner": "forceprior.action_delta.ActionDeltaProcessor",
             "normalizer": "frozen_actor_action_normalizer", "normalizer_refit": False,
             "action_horizon": 50, "executed_slots": "first_executed_steps", "features": 7,
         },
@@ -341,7 +341,7 @@ def main() -> None:
             "classifier_checkpoint": str(checkpoint.relative_to(ROOT)),
             "safe_resnet10_npz": "assets/reward_classifier/resnet10_parameters.npz",
             "safe_resnet10_manifest": "assets/reward_classifier/resnet10_manifest.json",
-            "actor_checkpoint": str((output_root / "sft/checkpoints/forcesmolvla_sft_step_010000").relative_to(ROOT)),
+            "actor_checkpoint": str((output_root / "sft/checkpoints/forceprior_sft_step_010000").relative_to(ROOT)),
             "classifier_training_source": "tools/reward_classifier/train_reward_classifier.py",
             "adapter_source": "tools/reward_classifier/conrft_lerobot_v3_adapter.py",
             "detector_calibration": str(calibration_path.relative_to(ROOT)),

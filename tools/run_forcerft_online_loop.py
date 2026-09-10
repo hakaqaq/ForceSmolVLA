@@ -26,24 +26,24 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from forcesmolvla.rft.online.integrated_capture_backend import (  # noqa: E402
+from forceprior.rft.online.integrated_capture_backend import (  # noqa: E402
     CAPTURE_DISCARDED_EXIT_CODE,
     CAPTURE_EXITED_EXIT_CODE,
     CAPTURE_TIMED_OUT_EXIT_CODE,
 )
-from forcesmolvla.rft.online.replay_training import (  # noqa: E402
+from forceprior.rft.online.replay_training import (  # noqa: E402
     load_common_actor_critic_config,
 )
-from forcesmolvla.rft.online.residual_actor_critic_runtime import (  # noqa: E402
+from forceprior.rft.online.residual_actor_critic_runtime import (  # noqa: E402
     ONLINE_ADAPTATION_DIRECTORY_NAME,
     load_checkpoint_training_config,
     select_resume_or_bootstrap_checkpoint,
 )
-from forcesmolvla.rft.online.schedule_migration import (  # noqa: E402
+from forceprior.rft.online.schedule_migration import (  # noqa: E402
     schedule_migration_required,
 )
 
-MODEL_PYTHON = Path("/home/rlc123/anaconda3/envs/forcesmolvla/bin/python")
+MODEL_PYTHON = Path(sys.executable).resolve()
 ROBOT_PYTHON = Path("/home/rlc123/fr3_client_ws/.venv/bin/python")
 EPISODE_ID = "episode_000000"
 SERVER_SUMMARY_INTERVAL_SECONDS = 5.0
@@ -840,7 +840,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         or args.policy_port <= 0
     ):
         parser.error("invalid continuous-loop limits")
-    from forcesmolvla.training_runtime import (
+    from forceprior.training_runtime import (
         resolve_task_dataset_root,
         resolve_task_output_root,
     )

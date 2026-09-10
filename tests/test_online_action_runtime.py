@@ -10,7 +10,7 @@ import threading
 import numpy as np
 import pytest
 
-from forcesmolvla.rft.online.action_runtime import (
+from forceprior.rft.online.action_runtime import (
     ACTION_DELTA_DENORMALIZATION_ONCE,
     ACTION_SLOT_FIFO_PRESENT,
     CONTRACT_TRANSITION_MACRO_HZ,
@@ -864,7 +864,7 @@ def audit(event, args):
 sys.meta_path.insert(0, BlockRobotImports())
 sys.addaudithook(audit)
 threads_before = tuple(thread.ident for thread in threading.enumerate())
-import forcesmolvla.rft.online  # noqa: F401
+import forceprior.rft.online  # noqa: F401
 import torch
 threads_after = tuple(thread.ident for thread in threading.enumerate())
 assert threads_after == threads_before

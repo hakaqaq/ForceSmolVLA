@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from forcesmolvla.rft.online.action_representation import (
+from forceprior.rft.online.action_representation import (
     ABSOLUTE_ACTION_ROTATION_REPRESENTATION,
     legacy_absolute_action7_to_rpy_xyz,
     quaternion_xyzw_to_rpy_xyz,
     rotation_vector_to_rpy_xyz,
 )
-from forcesmolvla.rft.online import replay_training
+from forceprior.rft.online import replay_training
 
 
 def _ack_row(
