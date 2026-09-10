@@ -1,4 +1,4 @@
-# ForceRFT End-to-End User Guide
+# ForceRFT
 
 This guide describes only the final, fixed pipeline:
 
