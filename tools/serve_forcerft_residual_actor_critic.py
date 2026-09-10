@@ -912,9 +912,13 @@ class ResidualActorCriticLearner:
                 ) * 1000.0
                 return None
             loss_result.total.backward()
-            torch.nn.utils.clip_grad_norm_(
+            critic_grad_norm_tensor = torch.nn.utils.clip_grad_norm_(
                 (*learner["q1"].parameters(), *learner["q2"].parameters()),
                 float(learner["config"]["optimizer"]["twin_q"]["grad_clip_norm"]),
+            )
+            require(
+                bool(torch.isfinite(critic_grad_norm_tensor).item()),
+                "FORCERFT_CRITIC_GRADIENT_NONFINITE",
             )
             optimizer.step()
             tau = float(learner["config"]["optimizer"]["twin_q_polyak_tau"])

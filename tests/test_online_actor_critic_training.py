@@ -1781,6 +1781,94 @@ def test_no_currently_guard_eligible_td_row_waits_without_advancing_critic() -> 
     )
 
 
+@pytest.mark.parametrize("warmup", [True, False], ids=["warmup", "joint"])
+def test_nonfinite_critic_gradient_does_not_update_parameters_or_counters(
+    monkeypatch, warmup: bool
+) -> None:
+    learner = actor_update_test_learner()
+    q1_target, q2_target = build_twin_q(hidden_dim=16, seed=31)[2:]
+    learner.learner["q1_target"] = q1_target
+    learner.learner["q2_target"] = q2_target
+    learner.learner["critic_optimizer"] = torch.optim.Adam(
+        (
+            *learner.learner["q1"].parameters(),
+            *learner.learner["q2"].parameters(),
+        ),
+        lr=3.0e-4,
+    )
+    learner.learner["config"]["optimizer"]["twin_q"] = {
+        "grad_clip_norm": 10.0
+    }
+    learner.learner["config"]["objective"]["command_macro_discount"] = 0.99
+    critic_batch = batch(1)
+    critic_batch.session_ids = ("session",)
+    critic_batch.episode_ids = ("episode",)
+
+    class FiniteForwardNonfiniteBackward(torch.autograd.Function):
+        @staticmethod
+        def forward(ctx, parameter):
+            return parameter.new_tensor(1.0)
+
+        @staticmethod
+        def backward(ctx, grad_output):
+            parameter = next(learner.learner["q1"].parameters())
+            return torch.full_like(parameter, float("inf"))
+
+    def nonfinite_gradient_loss(*_args, **_kwargs):
+        parameter = next(learner.learner["q1"].parameters())
+        loss = FiniteForwardNonfiniteBackward.apply(parameter)
+        assert torch.isfinite(loss)
+        return SimpleNamespace(
+            total=loss,
+            td_valid_count=1,
+            target_candidate_guard_rejected_count=0,
+            target_candidate_guard_unknown_count=0,
+        )
+
+    class Replay:
+        @staticmethod
+        def iter_td_batches(*_args, **_kwargs):
+            yield critic_batch
+
+    monkeypatch.setattr(
+        learner_server, "residual_critic_loss", nonfinite_gradient_loss
+    )
+    module_names = ("q1", "q2", "q1_target", "q2_target")
+    parameters_before = {
+        module_name: {
+            name: value.detach().clone()
+            for name, value in learner.learner[module_name].state_dict().items()
+        }
+        for module_name in module_names
+    }
+    runtime = learner.learner["runtime"]
+    counters_before = dict(runtime["counters"])
+    warmup_steps_before = int(runtime["ack_critic_warmup_steps"])
+    partial_steps_before = int(runtime["partial_cycle_q_updates"])
+
+    with pytest.raises(RuntimeError, match="FORCERFT_CRITIC_GRADIENT_NONFINITE"):
+        learner._critic_update(
+            InferencePriorityCoordinator(), Replay(), warmup=warmup
+        )
+
+    for module_name in module_names:
+        assert all(
+            torch.equal(parameters_before[module_name][name], value)
+            for name, value in learner.learner[module_name].state_dict().items()
+        )
+    assert learner.learner["critic_optimizer"].state == {}
+    for counter_name in (
+        "twin_q_optimizer_steps",
+        "twin_q_target_update_steps",
+        "residual_actor_optimizer_steps",
+        "residual_actor_update_attempts",
+        "residual_actor_updates_skipped_no_gradient",
+    ):
+        assert runtime["counters"][counter_name] == counters_before[counter_name]
+    assert runtime["ack_critic_warmup_steps"] == warmup_steps_before
+    assert runtime["partial_cycle_q_updates"] == partial_steps_before
+
+
 def test_unavailable_td_does_not_complete_joint_cycle(monkeypatch) -> None:
     learner = tiny_continuous_learner(
         learner_state="residual_actor_critic_training", warmup_updates=256
